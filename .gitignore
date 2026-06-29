@@ -30,3 +30,9 @@ test_parse.py
 test_parse2.py
 process_gen_*.py
 test_out.json
+add_gender.py
+merge_bingshu.py
+merge_generals.py
+names.txt
+generals_backup.json
+data/generals_backup.json
