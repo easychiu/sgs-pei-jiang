@@ -7,6 +7,7 @@ const TROOPS = ["騎", "盾", "弓", "槍", "器"];
 const cardSrc = n => "cards/" + encodeURIComponent(n) + ".webp";
 const teams = { A: [null, null, null], B: [null, null, null] };
 const troops = { A: "", B: "" };                  // "" = 自動(依隊伍適性)
+const bsel = { A: [null, null, null], B: [null, null, null] };  // 各將兵書(null=預設主兵書)
 const $ = s => document.querySelector(s);
 const pct = v => (v * 100).toFixed(0);
 const APT_PCT = { S: 1.2, A: 1.0, B: 0.85, C: 0.7, D: 0.55 };
@@ -57,11 +58,12 @@ function tacticHTML(g) {
 const facBadge = f => `<span class="fac" style="background:${FACBG[f] || "#777"}">${f}</span>`;
 
 async function load() {
-  const [g, t] = await Promise.all([
+  const [g, t, bs] = await Promise.all([
     fetch("data/generals.json").then(r => r.json()),
-    fetch("data/tactics_parsed.json").then(r => r.json())]);
+    fetch("data/tactics_parsed.json").then(r => r.json()),
+    fetch("data/bingshu_parsed.json").then(r => r.json()).catch(() => [])]);
   g.forEach(x => RAW[x.name] = x);
-  POOL = SGZ.buildPool(g, t).POOL;
+  POOL = SGZ.buildPool(g, t, bs).POOL;
   $("#stat").textContent = `${Object.keys(POOL).length} 武將 · ${t.filter(x => x.type !== "none").length} 戰法`;
   initTabs();
   ["A", "B"].forEach(s => {
@@ -71,7 +73,7 @@ async function load() {
     renderSlots(s);
   });
   $("#runSim").onclick = runSim;
-  $("#clearSim").onclick = () => { teams.A = [null, null, null]; teams.B = [null, null, null]; renderSlots("A"); renderSlots("B"); $("#simResult").classList.add("hidden"); };
+  $("#clearSim").onclick = () => { teams.A = [null, null, null]; teams.B = [null, null, null]; bsel.A = [null, null, null]; bsel.B = [null, null, null]; renderSlots("A"); renderSlots("B"); $("#simResult").classList.add("hidden"); };
   $("#runRec").onclick = runRec;
   $("#dexSearch").oninput = renderDex;
   $("#modal").onclick = e => { if (e.target.id === "modal") closeModal(); };
@@ -85,6 +87,11 @@ function initTabs() {
   });
 }
 
+function availBooks(g) {
+  const m = SGZ.mainByCat(), out = [];
+  for (const c of (g.bingshuCats || [])) for (const b of (m[c] || [])) out.push(b);
+  return out;
+}
 function renderSlots(side) {
   const tr = effTroop(side);
   const sel = document.querySelector(`.troop[data-side="${side}"]`);
@@ -95,18 +102,30 @@ function renderSlots(side) {
     const n = teams[side][i], g = n && POOL[n];
     const d = document.createElement("div");
     d.className = "slot";
-    d.innerHTML = g
-      ? `${facBadge(g.faction)}<div><div class="nm">${n} <span class="apt ${g.apt[tr] || ""}">${tr}${aptOf(g, tr)}</span></div><div class="sub">${statStr(g, tr)}</div></div>`
-      : `<span class="ph">＋ 點選武將</span>`;
+    if (g) {
+      d.innerHTML = `${facBadge(g.faction)}<div style="flex:1">
+        <div class="nm">${n} <span class="apt ${g.apt[tr] || ""}">${tr}${aptOf(g, tr)}</span></div>
+        <div class="sub">${statStr(g, tr)}</div>
+        <div class="sub">兵書 <select class="bs"></select></div></div>`;
+      const books = availBooks(g), cur = bsel[side][i] || SGZ.defaultBingshu(g) || "";
+      const bs = d.querySelector(".bs");
+      bs.innerHTML = books.length ? books.map(b => `<option${b === cur ? " selected" : ""}>${b}</option>`).join("") : `<option>—</option>`;
+      bs.onclick = e => e.stopPropagation();
+      bs.onchange = e => { e.stopPropagation(); bsel[side][i] = bs.value; };
+    } else {
+      d.innerHTML = `<span class="ph">＋ 點選武將</span>`;
+    }
     d.onclick = () => openPicker(side, i);
     box.appendChild(d);
   }
 }
 function runSim() {
-  const A = teams.A.filter(Boolean), B = teams.B.filter(Boolean);
+  const A = [], B = [], bsA = [], bsB = [];
+  teams.A.forEach((n, i) => { if (n) { A.push(n); bsA.push(bsel.A[i] || SGZ.defaultBingshu(POOL[n])); } });
+  teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsel.B[i] || SGZ.defaultBingshu(POOL[n])); } });
   if (!A.length || !B.length) { alert("兩邊各至少放 1 名武將"); return; }
   const ta = effTroop("A"), tb = effTroop("B");
-  const r = SGZ.simulate(POOL, A, B, 3000, ta, tb);
+  const r = SGZ.simulate(POOL, A, B, 3000, ta, tb, bsA, bsB);
   const res = $("#simResult"); res.classList.remove("hidden");
   res.innerHTML = `
     <div class="bar"><div class="a" style="width:${r.winA * 100}%">${pct(r.winA)}%</div>
@@ -122,7 +141,7 @@ function runRec() {
   $("#recList").innerHTML = list.map(([team, sc, tr]) =>
     `<li data-team='${JSON.stringify(team)}' data-troop="${tr}"><span><b class="gold">[${tr}兵]</b> ${team.join("　／　")}</span><span class="sc">${sc}</span></li>`).join("");
   document.querySelectorAll("#recList li").forEach(li => li.onclick = () => {
-    teams.A = [...JSON.parse(li.dataset.team)]; troops.A = li.dataset.troop;
+    teams.A = [...JSON.parse(li.dataset.team)]; troops.A = li.dataset.troop; bsel.A = [null, null, null];
     document.querySelector(`.troop[data-side="A"]`).value = li.dataset.troop;
     renderSlots("A");
     document.querySelector('.tab[data-tab="sim"]').click();
@@ -154,7 +173,7 @@ function openPicker(side, idx) {
     names.filter(n => !q || n.includes(q)).map(n =>
       `<div class="pick" data-n="${n}">${facBadge(POOL[n].faction)} ${n}</div>`).join("");
   const bind = () => box.querySelectorAll(".pick").forEach(p => p.onclick = () => {
-    teams[side][idx] = p.dataset.n; renderSlots(side); closeModal();
+    teams[side][idx] = p.dataset.n; bsel[side][idx] = null; renderSlots(side); closeModal();
   });
   draw(""); bind();
   box.querySelector("#pickSearch").oninput = e => { draw(e.target.value.trim()); bind(); };
@@ -166,8 +185,9 @@ function showDetail(n) {
   box.innerHTML = `<div class="detail">
     <img src="${cardSrc(n)}" onerror="this.style.display='none'" alt="${n}">
     <div class="meta"><h2 class="gold" style="margin:0">${facBadge(g.faction)} ${n}
-      <small style="color:#b8a987">${"★".repeat(raw.stars || 5)}</small></h2>
+      <small style="color:#b8a987">${"★".repeat(raw.stars || 5)} ${g.gender === "Female" ? "♀" : "♂"}</small></h2>
       <div style="margin:10px 0">兵種適性：${aptBadges(g)}</div>
+      <div class="sub">可用兵書：${(g.bingshuCats || []).join("／") || "—"}</div>
       <div class="stat-row"><span><b>武</b> ${g.base.force | 0}</span><span><b>智</b> ${g.base.intel | 0}</span>
       <span><b>統</b> ${g.base.command | 0}</span><span><b>速</b> ${g.base.speed | 0}</span></div>
       <div class="sub">↑ 基礎面板；戰鬥時 ×隊伍兵種適性%（最佳：${bt}${aptOf(g, bt)} → ${statStr(g, bt)}）</div>

@@ -101,6 +101,7 @@ class General:
                      "command": st.get("統率", 90), "speed": st.get("速度", 70)}
         self.tactic = TACTICS.get(raw.get("tactic")) if raw.get("tactic") else None
         self.tactic_name = raw.get("tactic") or "—"
+        self.bingshu_cats = raw.get("availableBingshu", [])  # 可用兵書類別
 
     def apt_pct(self, troop):                         # 該武將用此兵種時的屬性發揮%
         return APT_PCT.get(self.apt.get(troop), 0.85)
@@ -137,6 +138,22 @@ with open(os.path.join(DATA, "generals.json"), encoding="utf-8") as f:
             g = General(raw)
             POOL[g.name] = g
 
+# 兵書: 名稱 -> 效果; 各類別的主兵書(供預設裝備)
+BINGSHU, MAIN_BY_CAT = {}, {}
+_bs = os.path.join(DATA, "bingshu_parsed.json")
+if os.path.exists(_bs):
+    for b in json.load(open(_bs, encoding="utf-8")):
+        BINGSHU[b["name"]] = b
+        if b.get("type") == "主兵書":
+            MAIN_BY_CAT.setdefault(b["category"], []).append(b["name"])
+
+
+def default_bingshu(g):                               # 預設主兵書: 該將首個可用類別的主兵書
+    for c in g.bingshu_cats:
+        if MAIN_BY_CAT.get(c):
+            return MAIN_BY_CAT[c][0]
+    return None
+
 
 # ---------------------------------------------------------------------------
 # 評分 + 配將推薦
@@ -171,8 +188,9 @@ def recommend(pool=None, k=3, top=8):
 # 引擎
 # ---------------------------------------------------------------------------
 class Unit:
-    def __init__(self, g, ttype):
+    def __init__(self, g, ttype, bingshu=None):
         self.g, self.ttype, self.troop, self.stun = g, ttype, START_TROOP, 0
+        self.bs = BINGSHU.get(bingshu, {}).get("effects", []) if bingshu else []  # 兵書被動效果
         mult = g.apt_pct(ttype)                       # 屬性 = 基礎 × 該兵種適性%
         self.force = g.base["force"] * mult
         self.intel = g.base["intel"] * mult
@@ -333,18 +351,22 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                              "prob": e.get("prob", 1.0)}
 
 
-def fight(teamA, teamB, troopA=None, troopB=None):
+def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None):
     troopA = troopA or team_troop(teamA)              # 未指定兵種則用隊伍最佳適性
     troopB = troopB or team_troop(teamB)
-    A = [Unit(POOL[n], troopA) for n in teamA]
-    B = [Unit(POOL[n], troopB) for n in teamB]
+    bsA = bsA or [default_bingshu(POOL[n]) for n in teamA]   # 未指定兵書則裝預設主兵書
+    bsB = bsB or [default_bingshu(POOL[n]) for n in teamB]
+    A = [Unit(POOL[n], troopA, bsA[i]) for i, n in enumerate(teamA)]
+    B = [Unit(POOL[n], troopB, bsB[i]) for i, n in enumerate(teamB)]
     setA = set(map(id, A))
     allies_of = lambda u: A if id(u) in setA else B
     foes_of = lambda u: B if id(u) in setA else A
 
-    for u in A + B:                                   # 被動/指揮的持久效果: 開戰套一次(治療除外)
+    for u in A + B:                                   # 被動/指揮 + 兵書 的持久效果: 開戰套一次(治療除外)
         if u.g.tactic and u.g.tactic["type"] in ("passive", "command"):
             apply_effects(u, None, u.g.tactic, allies_of(u), foes_of(u), no_heal=True)
+        if u.bs:
+            apply_effects(u, None, {"effects": u.bs, "kind": "phys"}, allies_of(u), foes_of(u), no_heal=True)
 
     for rnd in range(1, ROUNDS + 1):
         for u in A + B:
@@ -354,6 +376,8 @@ def fight(teamA, teamB, troopA=None, troopB=None):
                 u.stack["n"] = min(u.stack["max"], u.stack["n"] + 1)
             if u.g.tactic and u.g.tactic["type"] in ("passive", "command"):
                 apply_effects(u, None, u.g.tactic, allies_of(u), foes_of(u), heal_only=True)
+            if u.bs:                                  # 兵書治療逐回合
+                apply_effects(u, None, {"effects": u.bs, "kind": "phys"}, allies_of(u), foes_of(u), heal_only=True)
 
         for u in sorted([x for x in A + B if x.alive],
                         key=lambda x: x.eff("speed"), reverse=True):
@@ -414,11 +438,11 @@ def fight(teamA, teamB, troopA=None, troopB=None):
     return ("A" if ta >= tb else "B"), ROUNDS
 
 
-def simulate(teamA, teamB, n=3000, troopA=None, troopB=None):
+def simulate(teamA, teamB, n=3000, troopA=None, troopB=None, bsA=None, bsB=None):
     w = {"A": 0, "B": 0}
     rs = 0
     for _ in range(n):
-        winner, r = fight(teamA, teamB, troopA, troopB)
+        winner, r = fight(teamA, teamB, troopA, troopB, bsA, bsB)
         w[winner] += 1
         rs += r
     return {"A勝率": round(w["A"] / n, 3), "B勝率": round(w["B"] / n, 3),
@@ -474,6 +498,9 @@ def demo():
     assert ca.troop < a0, "反擊應讓攻擊者掉血"
     # 克制: 同隊伍兵種, 騎隊打盾隊 應比反過來占優(克制 1.15 vs 0.85)
     assert counter_mult("騎", "盾") > counter_mult("盾", "騎")
+    # 兵書: 載入 + 預設主兵書可裝
+    assert len(BINGSHU) >= 40, f"兵書應載入, got {len(BINGSHU)}"
+    assert default_bingshu(POOL["呂布"]) in BINGSHU, "呂布應有預設主兵書"
     res = simulate(["呂布", "趙雲", "關羽"], ["諸葛亮", "周瑜", "司馬懿"], n=400)
     assert 0 <= res["A勝率"] <= 1 and 1 <= res["平均回合"] <= ROUNDS
     print("self-check OK")
@@ -492,6 +519,7 @@ def info(name):
     print(f"{g.name}  {g.faction}　兵種適性[ {apt} ]")
     print(f"  基礎 武{g.base['force']:.0f} 智{g.base['intel']:.0f} "
           f"統{g.base['command']:.0f} 速{g.base['speed']:.0f}（戰鬥時 ×該兵種適性%）")
+    print(f"  可用兵書: {'/'.join(g.bingshu_cats) or '—'}　預設: {default_bingshu(g) or '—'}")
     print(f"  自帶戰法: {g.tactic_name}")
     if g.tactic:
         print(f"  解析: {json.dumps(g.tactic, ensure_ascii=False)}")
