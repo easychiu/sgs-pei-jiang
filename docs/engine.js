@@ -10,6 +10,7 @@
   const APT_RANK = { S: 4, A: 3, B: 2, C: 1, D: 0 };
   const TROOPS = ["騎", "盾", "弓", "槍", "器"];
   let BINGSHU = {}, MAIN_BY_CAT = {};               // 兵書: 名稱→效果; 類別→主兵書們
+  let BONDS = [], EQUIPS = {};                       // 緣分(隊伍級) / 裝備(自身)
   const rnd = () => Math.random();
 
   const moraleMult = m => 0.007 * m + 0.30;
@@ -39,14 +40,19 @@
     return null;
   }
 
-  function buildPool(generals, tactics, bingshu) {
+  function activeBonds(team) {                       // 隊伍湊齊 triggerCount 人即觸發
+    return BONDS.filter(b => (b.generals || []).filter(n => team.includes(n)).length >= (b.triggerCount || 99));
+  }
+
+  function buildPool(generals, tactics, bingshu, bonds, equips) {
     const TAC = {};
     for (const t of tactics) if (t.type !== "none") TAC[t.nameZh] = t;
-    BINGSHU = {}; MAIN_BY_CAT = {};
+    BINGSHU = {}; MAIN_BY_CAT = {}; BONDS = bonds || []; EQUIPS = {};
     for (const b of (bingshu || [])) {
       BINGSHU[b.name] = b;
       if (b.type === "主兵書") (MAIN_BY_CAT[b.category] = MAIN_BY_CAT[b.category] || []).push(b.name);
     }
+    for (const e of (equips || [])) EQUIPS[e.name] = e;
     const POOL = {};
     for (const raw of generals) {
       if (!raw.stats) continue;
@@ -63,9 +69,10 @@
   }
 
   class Unit {
-    constructor(g, ttype, bsName) {
+    constructor(g, ttype, bsName, eqName) {
       this.g = g; this.ttype = ttype; this.troop = START_TROOP; this.stun = 0;
       this.bs = (bsName && BINGSHU[bsName]) ? BINGSHU[bsName].effects : [];  // 兵書被動
+      this.eq = (eqName && EQUIPS[eqName]) ? EQUIPS[eqName].effects : [];    // 裝備被動
       const m = aptPct(g, ttype);                  // 屬性 = 基礎 × 該兵種適性%
       this.force = g.base.force * m; this.intel = g.base.intel * m;
       this.command = g.base.command * m; this.speed = g.base.speed * m;
@@ -173,29 +180,35 @@
     }
   }
 
-  function fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB) {
+  function fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB) {
     troopA = troopA || teamTroop(POOL, teamA);
     troopB = troopB || teamTroop(POOL, teamB);
     bsA = bsA || teamA.map(n => defaultBingshu(POOL[n]));
     bsB = bsB || teamB.map(n => defaultBingshu(POOL[n]));
-    const A = teamA.map((n, i) => new Unit(POOL[n], troopA, bsA[i])), B = teamB.map((n, i) => new Unit(POOL[n], troopB, bsB[i]));
+    eqA = eqA || teamA.map(() => null);
+    eqB = eqB || teamB.map(() => null);
+    const A = teamA.map((n, i) => new Unit(POOL[n], troopA, bsA[i], eqA[i])), B = teamB.map((n, i) => new Unit(POOL[n], troopB, bsB[i], eqB[i]));
     const setA = new Set(A);
     const alliesOf = u => setA.has(u) ? A : B, foesOf = u => setA.has(u) ? B : A;
-    const bsT = u => ({ effects: u.bs, kind: "phys" });
-    for (const u of [...A, ...B]) {
-      if (u.g.tactic && (u.g.tactic.type === "passive" || u.g.tactic.type === "command"))
-        applyEffects(u, null, u.g.tactic, alliesOf(u), foesOf(u), { noHeal: true });
-      if (u.bs.length) applyEffects(u, null, bsT(u), alliesOf(u), foesOf(u), { noHeal: true });
-    }
-
-    for (let r = 1; r <= ROUNDS; r++) {
+    const bondsA = activeBonds(teamA), bondsB = activeBonds(teamB);
+    const pt = eff => ({ effects: eff, kind: "phys" });
+    const applyPassives = opt => {                  // 被動/指揮/兵書/裝備/緣分 統一套用
       for (const u of [...A, ...B]) {
         if (!u.alive) continue;
-        if (u.stack) u.stack.n = Math.min(u.stack.max, u.stack.n + 1);
         if (u.g.tactic && (u.g.tactic.type === "passive" || u.g.tactic.type === "command"))
-          applyEffects(u, null, u.g.tactic, alliesOf(u), foesOf(u), { healOnly: true });
-        if (u.bs.length) applyEffects(u, null, bsT(u), alliesOf(u), foesOf(u), { healOnly: true });
+          applyEffects(u, null, u.g.tactic, alliesOf(u), foesOf(u), opt);
+        if (u.bs.length) applyEffects(u, null, pt(u.bs), alliesOf(u), foesOf(u), opt);
+        if (u.eq.length) applyEffects(u, null, pt(u.eq), alliesOf(u), foesOf(u), opt);
       }
+      for (const [team, bds] of [[A, bondsA], [B, bondsB]])
+        if (team.length) for (const bd of bds)
+          applyEffects(team[0], null, pt(bd.effects), team, foesOf(team[0]), opt);
+    };
+    applyPassives({ noHeal: true });
+
+    for (let r = 1; r <= ROUNDS; r++) {
+      for (const u of [...A, ...B]) if (u.alive && u.stack) u.stack.n = Math.min(u.stack.max, u.stack.n + 1);
+      applyPassives({ healOnly: true });
       const order = [...A, ...B].filter(u => u.alive).sort((x, y) => y.eff("speed") - x.eff("speed"));
       for (const u of order) {
         if (!u.alive || u.stun) continue;
@@ -232,9 +245,9 @@
     return { winner: ta >= tb ? "A" : "B", rounds: ROUNDS };
   }
 
-  function simulate(POOL, teamA, teamB, n = 2000, troopA = null, troopB = null, bsA = null, bsB = null) {
+  function simulate(POOL, teamA, teamB, n = 2000, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null) {
     let a = 0, rs = 0;
-    for (let i = 0; i < n; i++) { const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB); if (r.winner === "A") a++; rs += r.rounds; }
+    for (let i = 0; i < n; i++) { const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB); if (r.winner === "A") a++; rs += r.rounds; }
     return { winA: +(a / n).toFixed(3), winB: +(1 - a / n).toFixed(3), rounds: +(rs / n).toFixed(1) };
   }
 
@@ -261,7 +274,8 @@
   }
 
   const API = { buildPool, simulate, score, recommend, fight, teamTroop, aptPct, bestTroop, TROOPS,
-    defaultBingshu, mainByCat: () => MAIN_BY_CAT, bingshu: () => BINGSHU,
+    defaultBingshu, activeBonds, mainByCat: () => MAIN_BY_CAT, bingshu: () => BINGSHU,
+    bonds: () => BONDS, equips: () => EQUIPS,
     setKnobs: (c, p) => { CMD_TRIGGER = c; PASSIVE_TRIGGER = p; } };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   root.SGZ = API;

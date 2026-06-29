@@ -29,7 +29,9 @@ button{cursor:pointer;font-family:inherit}
 .team{flex:1;min-width:260px;background:var(--bg2);border:1px solid var(--line);
   border-radius:10px;padding:12px}
 .team h2{margin:0 0 10px;text-align:center;color:var(--gold2);font-size:18px}
+.bondbar{text-align:center;color:var(--gold2);font-size:13px;margin-top:4px;min-height:16px}
 .troop-sel{text-align:center;margin-bottom:10px;color:#b8a987;font-size:14px}
+.slot .eq,.slot .bs{max-width:46%}
 .troop-sel select{margin-left:4px}
 .apt{font-size:12px;padding:0 5px;border-radius:3px;margin-left:5px;color:#15100c;font-weight:bold}
 .apt.S{background:#e8c84a}.apt.A{background:#7fce8a}.apt.B{background:#8fb4e0}

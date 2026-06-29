@@ -1,0 +1,169 @@
+[
+  {
+    "name": "桃園結義",
+    "generals": ["劉備", "關羽", "張飛"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "mitig", "who": "ally", "val": 0.12, "dur": 99}
+    ]
+  },
+  {
+    "name": "五虎上將",
+    "generals": ["關羽", "張飛", "趙雲", "馬超", "黃忠"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "stat", "who": "ally", "stat": "force", "mult": 1.1, "dur": 99},
+      {"k": "stat", "who": "ally", "stat": "command", "mult": 1.1, "dur": 99}
+    ]
+  },
+  {
+    "name": "東吳大都督",
+    "generals": ["陸遜", "周瑜", "呂蒙", "魯肅"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "stat", "who": "ally", "stat": "speed", "mult": 1.16, "dur": 99},
+      {"k": "amp", "who": "ally", "val": 0.05, "dur": 99}
+    ]
+  },
+  {
+    "name": "魏之智",
+    "generals": ["荀彧", "賈詡", "程昱", "郭嘉", "荀攸"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "stat", "who": "ally", "stat": "intel", "mult": 1.16, "dur": 99},
+      {"k": "mitig", "who": "ally", "val": 0.12, "dur": 2}
+    ]
+  },
+  {
+    "name": "五子良將",
+    "generals": ["張遼", "樂進", "于禁", "張郃", "徐晃"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "stat", "who": "ally", "stat": "speed", "mult": 1.14, "dur": 99}
+    ]
+  },
+  {
+    "name": "蜀之智",
+    "generals": ["諸葛亮", "龐統", "法正", "徐庶"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "stat", "who": "ally", "stat": "intel", "mult": 1.14, "dur": 99},
+      {"k": "mitig", "who": "ally", "val": 0.12, "dur": 2}
+    ]
+  },
+  {
+    "name": "三足鼎立",
+    "generals": ["曹操", "劉備", "孫權"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "amp", "who": "ally", "val": 0.16, "dur": 2}
+    ]
+  },
+  {
+    "name": "虎衛神威",
+    "generals": ["曹操", "典韋", "許褚"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "mitig", "who": "ally", "val": 0.12, "dur": 99}
+    ]
+  },
+  {
+    "name": "亂世妖星",
+    "generals": ["張角", "于吉", "左慈"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "stat", "who": "ally", "stat": "intel", "mult": 1.1, "dur": 99},
+      {"k": "stat", "who": "ally", "stat": "speed", "mult": 1.1, "dur": 99}
+    ]
+  },
+  {
+    "name": "國之棟才",
+    "generals": ["司馬懿", "諸葛亮", "周瑜"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "stat", "who": "ally", "stat": "intel", "mult": 1.12, "dur": 99},
+      {"k": "mitig", "who": "ally", "val": 0.05, "dur": 99}
+    ]
+  },
+  {
+    "name": "飛將所望",
+    "generals": ["呂布", "張遼", "陳宮", "高順", "呂玲綺"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "stat", "who": "ally", "stat": "force", "mult": 1.12, "dur": 99},
+      {"k": "stat", "who": "ally", "stat": "speed", "mult": 1.12, "dur": 99}
+    ]
+  },
+  {
+    "name": "曹魏族將",
+    "generals": ["曹仁", "夏侯惇", "夏侯淵", "曹純", "曹洪", "曹真", "曹休"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "pierce", "who": "ally", "val": 0.3, "dur": 2}
+    ]
+  },
+  {
+    "name": "江東虎臣",
+    "generals": ["甘寧", "太史慈", "周泰", "凌統"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "stat", "who": "ally", "stat": "command", "mult": 1.2, "dur": 99}
+    ]
+  },
+  {
+    "name": "老當益壯",
+    "generals": ["黃忠", "嚴顏", "黃蓋", "程普"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "stat", "who": "ally", "stat": "command", "mult": 1.21, "dur": 99}
+    ]
+  },
+  {
+    "name": "黃巾之亂",
+    "generals": ["張角", "張寶", "張梁"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "stat", "who": "ally", "stat": "force", "mult": 1.09, "dur": 99},
+      {"k": "stat", "who": "ally", "stat": "intel", "mult": 1.09, "dur": 99}
+    ]
+  },
+  {
+    "name": "吳越猛士",
+    "generals": ["韓當", "丁奉", "潘璋", "蔣欽", "徐盛"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "stat", "who": "ally", "stat": "command", "mult": 1.12, "dur": 99}
+    ]
+  },
+  {
+    "name": "西涼霸王",
+    "generals": ["董卓", "馬騰", "李傕", "郭汜", "華雄"],
+    "triggerCount": 3,
+    "effects": []
+  },
+  {
+    "name": "太師動亂",
+    "generals": ["董卓", "呂布", "貂蟬", "李儒", "華雄", "李傕", "郭汜"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "stat", "who": "self", "stat": "force", "mult": 1.25, "dur": 99}
+    ]
+  },
+  {
+    "name": "霸王討逆",
+    "generals": ["孫策", "周瑜", "太史慈"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "mitig", "who": "ally", "val": 0.06, "dur": 4}
+    ]
+  },
+  {
+    "name": "美人計",
+    "generals": ["貂蟬", "呂布", "董卓"],
+    "triggerCount": 3,
+    "effects": [
+      {"k": "stat", "who": "ally", "stat": "force", "mult": 1.14, "dur": 99},
+      {"k": "stun", "who": "enemy", "dur": 1}
+    ]
+  }
+]

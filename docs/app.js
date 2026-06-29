@@ -8,6 +8,7 @@ const cardSrc = n => "cards/" + encodeURIComponent(n) + ".webp";
 const teams = { A: [null, null, null], B: [null, null, null] };
 const troops = { A: "", B: "" };                  // "" = 自動(依隊伍適性)
 const bsel = { A: [null, null, null], B: [null, null, null] };  // 各將兵書(null=預設主兵書)
+const eqsel = { A: [null, null, null], B: [null, null, null] }; // 各將裝備(null=無)
 const $ = s => document.querySelector(s);
 const pct = v => (v * 100).toFixed(0);
 const APT_PCT = { S: 1.2, A: 1.0, B: 0.85, C: 0.7, D: 0.55 };
@@ -58,12 +59,13 @@ function tacticHTML(g) {
 const facBadge = f => `<span class="fac" style="background:${FACBG[f] || "#777"}">${f}</span>`;
 
 async function load() {
-  const [g, t, bs] = await Promise.all([
+  const j = u => fetch(u).then(r => r.json()).catch(() => []);
+  const [g, t, bs, bo, eq] = await Promise.all([
     fetch("data/generals.json").then(r => r.json()),
     fetch("data/tactics_parsed.json").then(r => r.json()),
-    fetch("data/bingshu_parsed.json").then(r => r.json()).catch(() => [])]);
+    j("data/bingshu_parsed.json"), j("data/bonds_parsed.json"), j("data/equips_parsed.json")]);
   g.forEach(x => RAW[x.name] = x);
-  POOL = SGZ.buildPool(g, t, bs).POOL;
+  POOL = SGZ.buildPool(g, t, bs, bo, eq).POOL;
   $("#stat").textContent = `${Object.keys(POOL).length} 武將 · ${t.filter(x => x.type !== "none").length} 戰法`;
   initTabs();
   ["A", "B"].forEach(s => {
@@ -73,7 +75,7 @@ async function load() {
     renderSlots(s);
   });
   $("#runSim").onclick = runSim;
-  $("#clearSim").onclick = () => { teams.A = [null, null, null]; teams.B = [null, null, null]; bsel.A = [null, null, null]; bsel.B = [null, null, null]; renderSlots("A"); renderSlots("B"); $("#simResult").classList.add("hidden"); };
+  $("#clearSim").onclick = () => { teams.A = [null, null, null]; teams.B = [null, null, null]; bsel.A = [null, null, null]; bsel.B = [null, null, null]; eqsel.A = [null, null, null]; eqsel.B = [null, null, null]; renderSlots("A"); renderSlots("B"); $("#simResult").classList.add("hidden"); };
   $("#runRec").onclick = runRec;
   $("#dexSearch").oninput = renderDex;
   $("#modal").onclick = e => { if (e.target.id === "modal") closeModal(); };
@@ -92,6 +94,9 @@ function availBooks(g) {
   for (const c of (g.bingshuCats || [])) for (const b of (m[c] || [])) out.push(b);
   return out;
 }
+function availEquips(g) {
+  return Object.values(SGZ.equips()).filter(e => !e.exclusive || e.exclusive === g.name).map(e => e.name);
+}
 function renderSlots(side) {
   const tr = effTroop(side);
   const sel = document.querySelector(`.troop[data-side="${side}"]`);
@@ -106,26 +111,37 @@ function renderSlots(side) {
       d.innerHTML = `${facBadge(g.faction)}<div style="flex:1">
         <div class="nm">${n} <span class="apt ${g.apt[tr] || ""}">${tr}${aptOf(g, tr)}</span></div>
         <div class="sub">${statStr(g, tr)}</div>
-        <div class="sub">兵書 <select class="bs"></select></div></div>`;
-      const books = availBooks(g), cur = bsel[side][i] || SGZ.defaultBingshu(g) || "";
+        <div class="sub">兵書 <select class="bs"></select>　裝備 <select class="eq"></select></div></div>`;
+      const books = availBooks(g), curB = bsel[side][i] || SGZ.defaultBingshu(g) || "";
       const bs = d.querySelector(".bs");
-      bs.innerHTML = books.length ? books.map(b => `<option${b === cur ? " selected" : ""}>${b}</option>`).join("") : `<option>—</option>`;
+      bs.innerHTML = books.length ? books.map(b => `<option${b === curB ? " selected" : ""}>${b}</option>`).join("") : `<option>—</option>`;
       bs.onclick = e => e.stopPropagation();
       bs.onchange = e => { e.stopPropagation(); bsel[side][i] = bs.value; };
+      const eqs = availEquips(g), curE = eqsel[side][i] || "";
+      const eq = d.querySelector(".eq");
+      eq.innerHTML = `<option value="">無</option>` + eqs.map(x => `<option${x === curE ? " selected" : ""}>${x}</option>`).join("");
+      eq.onclick = e => e.stopPropagation();
+      eq.onchange = e => { e.stopPropagation(); eqsel[side][i] = eq.value || null; };
     } else {
       d.innerHTML = `<span class="ph">＋ 點選武將</span>`;
     }
     d.onclick = () => openPicker(side, i);
     box.appendChild(d);
   }
+  const filled = teams[side].filter(Boolean);
+  const bonds = filled.length ? SGZ.activeBonds(filled) : [];
+  const bn = document.createElement("div");
+  bn.className = "bondbar";
+  bn.textContent = bonds.length ? `🔗 緣分：${bonds.map(b => b.name).join("、")}` : "";
+  box.appendChild(bn);
 }
 function runSim() {
-  const A = [], B = [], bsA = [], bsB = [];
-  teams.A.forEach((n, i) => { if (n) { A.push(n); bsA.push(bsel.A[i] || SGZ.defaultBingshu(POOL[n])); } });
-  teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsel.B[i] || SGZ.defaultBingshu(POOL[n])); } });
+  const A = [], B = [], bsA = [], bsB = [], eqA = [], eqB = [];
+  teams.A.forEach((n, i) => { if (n) { A.push(n); bsA.push(bsel.A[i] || SGZ.defaultBingshu(POOL[n])); eqA.push(eqsel.A[i]); } });
+  teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsel.B[i] || SGZ.defaultBingshu(POOL[n])); eqB.push(eqsel.B[i]); } });
   if (!A.length || !B.length) { alert("兩邊各至少放 1 名武將"); return; }
   const ta = effTroop("A"), tb = effTroop("B");
-  const r = SGZ.simulate(POOL, A, B, 3000, ta, tb, bsA, bsB);
+  const r = SGZ.simulate(POOL, A, B, 3000, ta, tb, bsA, bsB, eqA, eqB);
   const res = $("#simResult"); res.classList.remove("hidden");
   res.innerHTML = `
     <div class="bar"><div class="a" style="width:${r.winA * 100}%">${pct(r.winA)}%</div>
@@ -141,7 +157,7 @@ function runRec() {
   $("#recList").innerHTML = list.map(([team, sc, tr]) =>
     `<li data-team='${JSON.stringify(team)}' data-troop="${tr}"><span><b class="gold">[${tr}兵]</b> ${team.join("　／　")}</span><span class="sc">${sc}</span></li>`).join("");
   document.querySelectorAll("#recList li").forEach(li => li.onclick = () => {
-    teams.A = [...JSON.parse(li.dataset.team)]; troops.A = li.dataset.troop; bsel.A = [null, null, null];
+    teams.A = [...JSON.parse(li.dataset.team)]; troops.A = li.dataset.troop; bsel.A = [null, null, null]; eqsel.A = [null, null, null];
     document.querySelector(`.troop[data-side="A"]`).value = li.dataset.troop;
     renderSlots("A");
     document.querySelector('.tab[data-tab="sim"]').click();
@@ -173,7 +189,7 @@ function openPicker(side, idx) {
     names.filter(n => !q || n.includes(q)).map(n =>
       `<div class="pick" data-n="${n}">${facBadge(POOL[n].faction)} ${n}</div>`).join("");
   const bind = () => box.querySelectorAll(".pick").forEach(p => p.onclick = () => {
-    teams[side][idx] = p.dataset.n; bsel[side][idx] = null; renderSlots(side); closeModal();
+    teams[side][idx] = p.dataset.n; bsel[side][idx] = null; eqsel[side][idx] = null; renderSlots(side); closeModal();
   });
   draw(""); bind();
   box.querySelector("#pickSearch").oninput = e => { draw(e.target.value.trim()); bind(); };
@@ -197,7 +213,7 @@ function showDetail(n) {
     <div style="text-align:right;margin-top:12px"><button id="toSim" class="primary">加入我方</button></div>`;
   box.querySelector("#toSim").onclick = () => {
     const i = teams.A.indexOf(null); if (i < 0) { alert("我方已滿"); return; }
-    teams.A[i] = n; renderSlots("A"); closeModal();
+    teams.A[i] = n; bsel.A[i] = null; eqsel.A[i] = null; renderSlots("A"); closeModal();
     document.querySelector('.tab[data-tab="sim"]').click();
   };
   $("#modal").classList.remove("hidden");
