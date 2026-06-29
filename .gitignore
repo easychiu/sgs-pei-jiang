@@ -1,0 +1,32 @@
+# 暫存 / 快取
+__pycache__/
+*.pyc
+.claude/launch.json
+
+# 大圖原檔(只發佈 docs/cards 的壓縮 webp)
+cards/portraits/
+cards/out/
+
+# sgsdeck 來源殘留(獨立發佈不收)
+data/reference/
+data/tactics.json
+data/tactics_backup.json
+
+# 資料建置管線(綁 sgsdeck/scratchpad, 不隨公開站發佈)
+scrape.py
+build_dataset.py
+merge_tactics.py
+apply_fixes.py
+audit_tactics.py
+check_parity.js
+data/tactics_review.md
+
+# 並行/暫存產物(非公開站內容)
+scratch/
+merge_fixes.py
+split_generals.py
+split_tactics.py
+test_parse.py
+test_parse2.py
+process_gen_*.py
+test_out.json

@@ -1,0 +1,6970 @@
+[
+ {
+  "nameZh": "一力拒守",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.55,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "self",
+    "coef": 2.68,
+    "dur": 1
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "mult": 1.08,
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "一身是膽",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "all",
+    "mult": 1.12,
+    "dur": 99
+   },
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.07,
+    "dur": 99
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "一騎當千",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 1.08,
+  "rate": 0.3,
+  "n": 3,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "七步成詩",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "三勢陣",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.3,
+    "dur": 1
+   },
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.25,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "三軍之眾",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.45,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 1.0,
+    "dur": 4
+   }
+  ]
+ },
+ {
+  "nameZh": "上兵伐謀",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.28,
+  "rate": 0.4,
+  "n": 3,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "丹陽兵",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "command",
+    "mult": 1.14,
+    "dur": 99
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.36,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "乘勝長驅",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.11,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "乘敵不虞",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 1.08,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "亂世奸雄",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.16,
+    "dur": 99
+   },
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.18,
+    "dur": 99
+   },
+   {
+    "k": "heal",
+    "who": "self",
+    "coef": 0.1,
+    "dur": 99
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "五雷轟頂",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.36,
+  "rate": 0.45,
+  "n": 3,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 1.36,
+    "dur": 1
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "仁德載世",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.68,
+    "dur": 1
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.04,
+    "dur": 1
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "以寡敵眾",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0.72,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "self",
+    "coef": 2.88,
+    "dur": 1
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.04,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "以逸待勞",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.35,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 1.54,
+    "dur": 1
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.5,
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "偽書相間",
+  "type": "active",
+  "kind": "intel",
+  "coef": 2.06,
+  "rate": 0.45,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "傲睨王侯",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "all",
+    "mult": 0.97,
+    "dur": 99
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 0.15,
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "all",
+    "mult": 0.8,
+    "dur": 99
+   }
+  ],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "傾國傾城",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.16,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "先成其慮",
+  "type": "charge",
+  "kind": "intel",
+  "coef": 1.45,
+  "rate": 0.5,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "先登死士",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "command",
+    "mult": 0.92,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "克敵制勝",
+  "type": "charge",
+  "kind": "intel",
+  "coef": 1.8,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "克遵畫一",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "八門金鎖陣",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.3,
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "兵無常勢",
+  "type": "passive",
+  "kind": "intel",
+  "coef": 2.4,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "self",
+    "coef": 1.8,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "兵鋒",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.35,
+  "n": 2,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "刀出如霆",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.8,
+  "rate": 0.4,
+  "n": 3,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.3,
+    "dur": 2
+   },
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.3,
+    "dur": 2
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 0.3,
+    "dur": 99
+   }
+  ],
+  "_src": "https://m.ali213.net/news/gl2111/721681.html",
+  "_real": "準備1回合。自身及友軍單體獲得30%倒戈持續2回合；對敵全體造成兵刃傷害（總傷害率300%，敵方全體平分，每有1名副將總傷害+120%，3敵全場合計540%即每人約180%）；對目標施加「掠陣」狀態，疊加2次後移除並使目標受兵刃傷害提升30%（可持續疊加）。coef取3敵情況下每人平均值1.80；掠陣增傷用enemy amp近似。",
+  "_conf": "med"
+ },
+ {
+  "nameZh": "別具匠心",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "刮骨療毒",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 2.56,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "剛勇無前",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.65,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "剛柔並濟",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.06,
+    "dur": 2
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.06,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "剛烈不屈",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0.84,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "mult": 1.19,
+    "dur": 99
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "功不唐捐",
+  "type": "passive",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.3,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "功勳克舉",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "勇冠三軍",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 1.8,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "勇烈持重",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "勇者得前",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.45,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.8,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "勠力同心",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.5,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 1.0,
+    "dur": 1
+   },
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "command",
+    "mult": 1.08,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "十二奇策",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.02,
+  "rate": 0.45,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.06,
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "十勝十敗",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.5,
+    "dur": 2
+   }
+  ],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "十面埋伏",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0.96,
+  "rate": 0.35,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.74,
+    "dur": 2
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 0.96,
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "千里走單騎",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 2.38,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.2,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "南蠻渠魁",
+  "type": "command",
+  "kind": "phys",
+  "coef": 1.06,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.15,
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "古之惡來",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0.8,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "redirect",
+    "who": "ally",
+    "guard": "self",
+    "share": 1.0
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.18,
+    "dur": 1
+   },
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.8,
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "合軍聚眾",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "self",
+    "coef": 1.24,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "同戰身先",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0.2,
+  "rate": 0.7,
+  "n": 3,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "四面楚歌",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.5,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "enemy",
+    "coef": -1.44,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "因利制權",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.55,
+  "n": 2,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "固若金湯",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.45,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "redirect",
+    "who": "ally",
+    "guard": "self",
+    "share": 0.8
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "mult": 1.15,
+    "dur": 2
+   }
+  ],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "國之楨榦",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "國士將風",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.2,
+    "dur": 3
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "國色",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "圍師必闕",
+  "type": "command",
+  "kind": "intel",
+  "coef": 1.2,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.39,
+    "dur": 3
+   },
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 1.2,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "坐斷東南",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "speed",
+    "mult": 1.0,
+    "dur": 2
+   }
+  ],
+  "_src": "https://sgz.ejoy.com/xuzhi/detail-4847.html",
+  "_real": "戰鬥中，自身及友軍單體成功發動普通攻擊後，自身有75%機率隨機獲得連擊/洞察/先攻/必中/破陣狀態之一，持續2回合，優先獲得不同狀態；自身為主將時，首回合行動前有75%機率獲得連擊/洞察/必中之一，持續1回合。無直接傷害，effects欄以speed stat近似表示「先攻」加速屬性，但核心機制（隨機5種狀態）引擎暫無法完整表達。",
+  "_conf": "high"
+ },
+ {
+  "nameZh": "垂心萬物",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "extra",
+    "who": "ally",
+    "val": 0.35,
+    "dur": 99
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 2.56,
+    "dur": 1
+   }
+  ],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "士別三日",
+  "type": "passive",
+  "kind": "intel",
+  "coef": 1.8,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "intel",
+    "mult": 1.27,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "士爭先赴",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.2,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "夢中弒臣",
+  "type": "command",
+  "kind": "phys",
+  "coef": 1.5,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.4,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "大戟士",
+  "type": "command",
+  "kind": "phys",
+  "coef": 1.22,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "force",
+    "mult": 1.06,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "天下名巧",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "天下無雙",
+  "type": "active",
+  "kind": "phys",
+  "coef": 3.0,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.07,
+    "dur": 2
+   }
+  ],
+  "_src": "https://game.xiaomi.com/viewpoint/1359077112_1683533965242_100",
+  "_real": "對敵軍單體發起決鬥，雙方輪流互相普通攻擊3次，自己率先出手；決鬥期間雙方不受繳械和震懾影響，可觸發群攻和突擊戰法；自身為主將時，決鬥前自身受兵刃傷害降低7%（受武力影響），持續2回合。決鬥3次互攻近似為coef=3.0單體兵刃；mitig 0.07為主將減傷效果。",
+  "_conf": "high"
+ },
+ {
+  "nameZh": "天香",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "太平道法",
+  "type": "passive",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "奇兵間道",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.3,
+    "dur": 4
+   },
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.45,
+    "dur": 99
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "奇施經略",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "奇計良謀",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.32,
+    "dur": 3
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.32,
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "奉令平虜",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.4,
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "奪魂挾魄",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.55,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "force",
+    "mult": 0.85,
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "intel",
+    "mult": 0.85,
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "speed",
+    "mult": 0.85,
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "mult": 0.85,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "奮矛英姿",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "mult": 0.85,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.15,
+    "dur": 99
+   },
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 1.0,
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "威武並昭",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "extra",
+    "who": "self",
+    "val": 0.33,
+    "dur": 99
+   },
+   {
+    "k": "pierce",
+    "who": "self",
+    "val": 0.33,
+    "dur": 99
+   }
+  ],
+  "_src": "https://m.7724.com/sgzzlbyx/news/140194.html",
+  "_real": "被動。每回合自身獲得33%看破（無視目標受傷降低效果之33%比例，受速度影響），持續1回合；敵主將每回合行動前，自身有33%機率（受雙方速度差影響）對速度低於自身的敵方武將發動1次普通攻擊；自身為主將時，每次觸發成功後速度+9點（可疊，受速度差影響）。看破用enemy amp -0.33近似；追加普攻引擎暫無法完整表達（追加後額外攻擊）。 [引擎] 以 extra 0.33(每回合33%追加普攻)近似追擊機制。",
+  "_conf": "med"
+ },
+ {
+  "nameZh": "威謀靡亢",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.58,
+  "rate": 0.4,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "威震華夏",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.46,
+  "rate": 0.35,
+  "n": 3,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   },
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.36,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "嬰城自守",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.5,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.92,
+    "dur": 1
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.62,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "守而必固",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 4
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "mult": 1.24,
+    "dur": 4
+   }
+  ]
+ },
+ {
+  "nameZh": "定謀貴決",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.5,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "定軍斬將",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.96,
+  "rate": 0.35,
+  "n": 3,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.32,
+    "dur": 2
+   }
+  ],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "宜城之志",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "密計誅逆",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.15,
+    "dur": 2
+   },
+   {
+    "k": "settle",
+    "who": "enemy",
+    "base": 1.0,
+    "per": 0.25,
+    "max": 3,
+    "dur": 1,
+    "init": 0
+   }
+  ],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "將行其疾",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 1.58,
+  "rate": 0.6,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "將門虎女",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.28,
+  "rate": 0.6,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   },
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.08,
+    "dur": 99
+   }
+  ],
+  "_src": "https://3g.7723.cn/strategy/67224.html",
+  "_real": "對敵軍2人造成兵刃傷害（傷害率128%）並施加「虎嗔」：下1回合對目標造成兵刃傷害（初始20%，每次受傷+30%，最多3層=110%）；目標在虎嗔期間受3次傷害時，立即結算虎嗔並額外施加1回合震慑，同時自身兵刃傷害提升8%（可疊加）。虎嗔DoT折入coef中暫未體現（上限110%額外傷害），震慑用stun near似；amp 0.08為自身累積增傷。",
+  "_conf": "high"
+ },
+ {
+  "nameZh": "工神",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "decay",
+    "who": "self",
+    "v0": 0.3,
+    "rounds": 3
+   },
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": -0.15,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "帷內擅權",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.7,
+  "n": 3,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "弓腰姬",
+  "type": "command",
+  "kind": "phys",
+  "coef": 1.22,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.2,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.0,
+    "dur": 99
+   },
+   {
+    "k": "stack",
+    "who": "self",
+    "per": 0.2,
+    "max": 5
+   }
+  ],
+  "_src": "https://sgz.ejoy.com/second/detail-5298.html",
+  "_real": "指揮戰法。發動普通攻擊前對敵軍單體造成兵刃傷害（滿級傷害率122%）；自身擁有功能性增益狀態時，額外對目標造成兵刃傷害（20%×增益狀態數）並提升18武力，最多疊加5層（額外最多100%傷害+90武力）。coef=1.22為基礎傷害；effects中amp 0.20代表每層20%增益（引擎目前僅能表達定值，層數機制需擴充）；force stat mult僅為武力提升標記，具體數值受層數動態變化。 [引擎] 每層+20%增傷,最多5層",
+  "_conf": "high"
+ },
+ {
+  "nameZh": "引弦力戰",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.06,
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "形一陣",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.3,
+    "dur": 3
+   },
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.16,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "形機軍略",
+  "type": "active",
+  "kind": "phys",
+  "coef": 2.1,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "忠勇義烈",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.18,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "戮力上國",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "戮力上心",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "所向披靡",
+  "type": "active",
+  "kind": "phys",
+  "coef": 2.46,
+  "rate": 0.3,
+  "n": 3,
+  "prep": 1,
+  "effects": []
+ },
+ {
+  "nameZh": "才辯機捷",
+  "type": "passive",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.9,
+    "dur": 99
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.3,
+    "dur": 99
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "扶危定傾",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.39,
+    "dur": 1
+   },
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "all",
+    "mult": 1.03,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "承天靖世",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0.1,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "折衝禦侮",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.25,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "mult": 0.6,
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "intel",
+    "mult": 0.6,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "抬棺決戰",
+  "type": "active",
+  "kind": "phys",
+  "coef": 2.55,
+  "rate": 0.5,
+  "n": 2,
+  "prep": 1,
+  "effects": [],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "持軍毅重",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.84,
+  "rate": 0.35,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.28,
+    "dur": 3
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "挫銳",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "振軍擊營",
+  "type": "active",
+  "kind": "phys",
+  "coef": 2.35,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 2.35,
+    "dur": 1
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 3
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "捨身救主",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.9,
+    "dur": 99
+   },
+   {
+    "k": "decay",
+    "who": "self",
+    "v0": 0.9,
+    "rounds": 30
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "掣刀斫敵",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "enemy",
+    "val": -0.15,
+    "dur": 1
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "揮兵謀勝",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.3,
+    "dur": 2,
+    "_note": "前3回合每回合60%概率（主將時基礎70%）賦予全體2-3人1次抵禦"
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.94,
+    "dur": 1,
+    "_note": "抵禦被消耗時觸發：治療單體，治療率94%（受智力影響）"
+   },
+   {
+    "k": "counter",
+    "who": "ally",
+    "coef": 0.94,
+    "kind": "phys",
+    "prob": 0.5,
+    "_note": "抵禦到期未消耗時觸發：武力最高友軍對敵隨機發起兵刃攻擊，傷害率94%"
+   }
+  ],
+  "_src": "https://game.xiaomi.com/viewpoint/1434643977_1692280393894_13",
+  "_real": "指揮戰法。前3回合每回合60%（主將基礎70%）概率賦予我軍群體2-3人1次抵禦；抵禦被消耗時治療單體（治療率94%受智力影響）；抵禦到期未消耗時我軍武力最高者兵刃反擊（傷害率94%）。",
+  "_conf": "med"
+ },
+ {
+  "nameZh": "搦戰群雄",
+  "type": "active",
+  "kind": "phys",
+  "coef": 2.0,
+  "rate": 0.35,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.25,
+    "dur": 2,
+    "_note": "自身兵刃增傷25%，持續2回合"
+   },
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.25,
+    "dur": 2,
+    "_note": "自身受兵刃傷害降低25%（受武力影響），持續2回合"
+   }
+  ],
+  "_src": "https://m.ali213.net/wiki/sgzzlb/zf64.html",
+  "_real": "準備1回合，對敵2人造成兵刃傷害（傷害率200%=每目標100%），隨後自身兵刃增傷25%、兵刃減傷25%（受武力影響），持續2回合。",
+  "_conf": "high"
+ },
+ {
+  "nameZh": "摧鋒斷刃",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.45,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.2,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "撫輯軍民",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 1.26,
+    "dur": 1
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.24,
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "擊其惰歸",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.54,
+  "rate": 0.4,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "self",
+    "coef": 2.96,
+    "dur": 1
+   },
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.25,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "據水斷橋",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0.78,
+  "rate": 0.4,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.08,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "整軍經武",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.25,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "文武雙全",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "intel",
+    "mult": 1.12,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.12,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "智計",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.55,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "force",
+    "mult": 0.85,
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "intel",
+    "mult": 0.85,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "暗渡陳倉",
+  "type": "active",
+  "kind": "intel",
+  "coef": 2.6,
+  "rate": 0.5,
+  "n": 1,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   }
+  ],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "暗箭難防",
+  "type": "active",
+  "kind": "phys",
+  "coef": 5.2,
+  "rate": 0.35,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2,
+    "_note": "60%概率（受速度影響最高~80%）捕獲單體敵將2回合：無法行動且禁用指揮/被動，無法被淨化"
+   }
+  ],
+  "_src": "https://www.gamersky.com/handbooksy/202305/1594508.shtml",
+  "_real": "準備1回合，35%發動。對敵2人兵刃傷害（傷害率520%=系數5.2）；60%概率捕獲單體2回合（無法行動且禁用指揮被動，不可淨化）；若目標已被捕獲則追加兵刃傷害系數2.6（260%）。單回合最高傷害系數7.8。",
+  "_conf": "high"
+ },
+ {
+  "nameZh": "暫避其鋒",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.4,
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "暴戾無仁",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 1.96,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "曉知良木",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "杯蛇鬼車",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.53,
+  "rate": 0.5,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 1.02,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "校勝帷幄",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.3,
+    "dur": 99,
+    "_note": "為主將分擔30%傷害（兵力移除，不觸發急救/減傷效果）"
+   },
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.2,
+    "dur": 99,
+    "_note": "主將奇謀/攻心傷害提升20%"
+   },
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "crit_chance",
+    "mult": 1.14,
+    "dur": 99,
+    "_note": "主將奇謀概率提升7%→14%（受智力影響）"
+   }
+  ],
+  "_src": "https://www.gamersky.com/handbooksy/202007/1308628.shtml",
+  "_real": "指揮戰法。提升主將奇謀（暴擊）概率7%→14%（受智力影響）、奇謀傷害提升20%；同時為主將分擔15%→30%傷害（分擔量視為兵力移除，不享受減傷加成）。",
+  "_conf": "high"
+ },
+ {
+  "nameZh": "桃園結義",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "梳妝擲戟",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.55,
+  "rate": 0.5,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "槊血縱橫",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.05,
+    "dur": 99
+   },
+   {
+    "k": "extra",
+    "who": "self",
+    "val": 0.54,
+    "dur": 99
+   }
+  ],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "槍舞如風",
+  "type": "active",
+  "kind": "phys",
+  "coef": 2.4,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.4,
+    "dur": 2,
+    "_note": "賦予自身及友軍單體2次抵禦，持續1回合（若與關興同出必定選關興）"
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.0,
+    "val": 40,
+    "dur": 99,
+    "_note": "掠陣疊2次後移除並使自身武力+40點，可無限疊加（每次觸發槍舞如風+普攻均可疊掠陣）"
+   }
+  ],
+  "_src": "https://m.ali213.net/news/gl2111/721697.html",
+  "_real": "35%瞬發主動。賦予自身及友軍單體2次抵禦（1回合）；普攻後對目標造成兵刃傷害240%並施掠陣；掠陣累積2層後移除並武力+40點（可疊加，愈戰愈勇）。",
+  "_conf": "high"
+ },
+ {
+  "nameZh": "機鑑先識",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.4,
+    "dur": 99
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "橫戈躍馬",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.3,
+    "dur": 3
+   },
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.2,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "橫掃千軍",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.0,
+  "rate": 0.4,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "權僭九鼎",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "self",
+    "coef": 0.12,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "止戈為武",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 1.95,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "武鋒陣",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.3,
+    "dur": 5
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 1.84,
+    "dur": 1
+   },
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.15,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "死戰不退",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 1.3,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stack",
+    "who": "self",
+    "per": 1.3,
+    "max": 20
+   },
+   {
+    "k": "extra",
+    "who": "self",
+    "val": 5,
+    "dur": 99
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "毒泉拒蜀",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.55,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "settle",
+    "who": "enemy",
+    "base": 1.5,
+    "per": 0.4,
+    "max": 3,
+    "dur": 2,
+    "init": 1,
+    "name": "猛毒"
+   }
+  ],
+  "_src": "user 提供 2026-06-29",
+  "_real": "結算型猛毒(非逐回合DoT): 對敵單體(80%選統率最高)施2回合猛毒, 中毒期間不造傷; 毒消失/被淨化/疊滿3層時對敵全體謀略爆發(滿級150%+每層40%, 最多3層=270%, 受智力影響), 並清空自身戰法冷卻。普攻/我方蠻族非普攻使目標+1層。引擎近似: 延遲(prep)群體謀略爆發 coef≈2.2(假設常疊~2-3層); 層數/淨化觸發/冷卻未建模。",
+  "_conf": "high"
+ },
+ {
+  "nameZh": "氣凌三軍",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0.74,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "水淹七軍",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.08,
+  "rate": 0.5,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 1.08,
+    "dur": 2
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 0.2,
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "水鏡先生",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "江天長焰",
+  "type": "command",
+  "kind": "intel",
+  "coef": 1.46,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 0.04,
+    "dur": 99
+   },
+   {
+    "k": "stack",
+    "who": "enemy",
+    "per": 0.02,
+    "max": 99
+   }
+  ],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "江東小霸王",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 1.92,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 1.92,
+    "dur": 1
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.56,
+    "dur": 1
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 0.3,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "江東猛虎",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.26,
+  "rate": 0.5,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 1.26,
+    "dur": 1
+   },
+   {
+    "k": "redirect",
+    "who": "self",
+    "guard": "self",
+    "share": 1.0
+   },
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.2,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "決水潰城",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.12,
+  "rate": 0.45,
+  "n": 2,
+  "prep": 1,
+  "effects": []
+ },
+ {
+  "nameZh": "沉斷機謀",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0.78,
+  "rate": 0.4,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.3,
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "intel",
+    "mult": 0.7,
+    "dur": 2
+   }
+  ],
+  "_src": "https://app.ali213.net/wiki/sgzzlb/zf114.html",
+  "_real": "對敵2人造謀略傷害（滿級78%），同時降低統率與智力各30%，持續2回合；無準備回合。effects[0]近似統率降30%（用amp enemy -0.30），effects[1]近似智力降30%（mult=0.70），引擎若支援雙屬性削弱可拆開。",
+  "_conf": "med"
+ },
+ {
+  "nameZh": "沉沙決水",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.26,
+  "rate": 0.4,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 0.25,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "淑懿之德",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "intel",
+    "mult": 1.06,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "command",
+    "mult": 1.06,
+    "dur": 99
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "深藏若虛",
+  "type": "passive",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "self",
+    "coef": 0.39,
+    "dur": 1
+   },
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.2,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "深謀遠慮",
+  "type": "command",
+  "kind": "intel",
+  "coef": 1.2,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.12,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "淵然難測",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 0.06,
+    "dur": 99
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "清流雅望",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "溯江搖櫓",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0.5,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   },
+   {
+    "k": "counter",
+    "who": "self",
+    "coef": 0.5,
+    "kind": "phys",
+    "prob": 0.6
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "潛龍陣",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.15,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "intel",
+    "mult": 1.15,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "speed",
+    "mult": 1.15,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "mult": 1.15,
+    "dur": 99
+   },
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.15,
+    "dur": 99
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.15,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "濟貧好施",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "all",
+    "mult": 1.4,
+    "dur": 99
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 2.84,
+    "dur": 1
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.26,
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "火熾原燎",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.18,
+  "rate": 0.5,
+  "n": 2,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "火燒連營",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0.82,
+  "rate": 0.5,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.82,
+    "dur": 3
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 0.62,
+    "dur": 1
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "火神英風",
+  "type": "command",
+  "kind": "phys",
+  "coef": 1.42,
+  "rate": 1,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 1.42,
+    "dur": 1
+   },
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "force",
+    "mult": 1.1,
+    "dur": 99
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 1.58,
+    "dur": 3
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "焚輜營壘",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.46,
+  "rate": 0.4,
+  "n": 2,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "無當飛軍",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0.8,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "command",
+    "mult": 1.09,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "speed",
+    "mult": 1.09,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "焰逐風飛",
+  "type": "active",
+  "kind": "intel",
+  "coef": 2.26,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 0.12,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "熯天熾地",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.02,
+  "rate": 0.35,
+  "n": 3,
+  "prep": 1,
+  "effects": []
+ },
+ {
+  "nameZh": "燕人咆哮",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 1.04,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "mult": 0.5,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "獅子奮迅",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.18,
+  "rate": 0.35,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 1.18,
+    "dur": 1
+   },
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 1.02,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "獨行赴鬥",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.5,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "mult": 1.4,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "王佐之才",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "用武通神",
+  "type": "command",
+  "kind": "intel",
+  "coef": 1.65,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "當鋒摧決",
+  "type": "charge",
+  "kind": "intel",
+  "coef": 1.82,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "疾風驟雨",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0.78,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "登鋒陷陣",
+  "type": "active",
+  "kind": "phys",
+  "coef": 2.08,
+  "rate": 0.55,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 2.08,
+    "dur": 1
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "白毦兵",
+  "type": "command",
+  "kind": "intel",
+  "coef": 1.1,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "白衣渡江",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.1,
+    "dur": 1
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "白馬義從",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "speed",
+    "mult": 1.5,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "百步穿楊",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.8,
+  "rate": 0.35,
+  "n": 3,
+  "prep": 1,
+  "effects": []
+ },
+ {
+  "nameZh": "百計多謀",
+  "type": "command",
+  "kind": "intel",
+  "coef": 1.4,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 1.4,
+    "dur": 99
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.4,
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "百騎劫營",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 1.62,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "益其金鼓",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.5,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.75,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "盛氣凌敵",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "監統震軍",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.38,
+    "dur": 99
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.92,
+    "dur": 1
+   }
+  ],
+  "_src": "https://m.ali213.net/news/gl2011/519859.html",
+  "_real": "指揮持續：友軍施加負面狀態時38%概率（受智力影響，實際可達70%+）延長1回合；自身普攻後對負面最多敵單體謀略傷害（伤害率114%，受智力），若敵無負面則治療損失最多友軍（治疗率92%）。以上数值疑为初级值，满级概率更高。effects[0]用amp enemy近似延長負面效果，effects[1]用heal ally近似輔助治療；謀略114%傷害引擎暫無觸發式output，需擴充。",
+  "_conf": "med"
+ },
+ {
+  "nameZh": "眾動萬計",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 1.4,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.4,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "眾志成城",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 1.0,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "眾望所歸",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0.86,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.72,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "瞋目橫矛",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.2,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "破軍威勝",
+  "type": "active",
+  "kind": "phys",
+  "coef": 2.28,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "mult": 0.72,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "破陣摧堅",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.58,
+  "rate": 0.35,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "mult": 0.68,
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "intel",
+    "mult": 0.68,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "神射",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "extra",
+    "who": "self",
+    "val": 1,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "mult": 0.85,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "神機妙算",
+  "type": "command",
+  "kind": "intel",
+  "coef": 1.0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "神機莫測",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.75,
+  "rate": 0.65,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "神火計",
+  "type": "passive",
+  "kind": "intel",
+  "coef": 0.68,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 0.68,
+    "dur": 1
+   },
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.34,
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "移花接木",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.5,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "竊幸乘寵",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "self",
+    "coef": 0.2,
+    "dur": 99
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.9,
+    "dur": 1
+   }
+  ],
+  "_src": "https://www.wywyx.com/gonglue/360587.html",
+  "_real": "指揮持續：副將時截取主將20%治療量自身恢復；奇數回合對敵2人謀略傷害90%，對其中智力低於自身者額外謀略傷害120%（共計最高210%）。effects[0]用heal self coef=0.20近似截取回復；effects[1]用amp enemy -0.90近似謀略傷害（奇數回合觸發機制引擎未支援，需擴充）。",
+  "_conf": "med"
+ },
+ {
+  "nameZh": "竭力佐謀",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.55,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "intel",
+    "mult": 0.8,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "竭忠盡智",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.5,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "speed",
+    "mult": 0.7,
+    "dur": 2
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.2,
+    "dur": 1
+   }
+  ],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "符命自立",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 0,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "decay",
+    "who": "self",
+    "v0": 1.0,
+    "rounds": 8
+   }
+  ],
+  "_src": "https://app.ali213.net/wiki/sgzzlb/zf107.html",
+  "_real": "被動：戰鬥前2回合自身獲得玉璽，滿級提升100%會心（兵刃暴擊）與奇謀（謀略暴擊）機率，逐回合衰減至第8回合歸零；主將時額外提高主動戰法發動率25%（準備戰法35%），同樣衰減。effects[0]用amp self val=1.0近似會心/奇謀+100%（衰減機制引擎未支援）；effects[1]用stat speed mult=1.25近似主將發動率提升。機制複雜建議引擎擴充「decay_amp」類型。 [引擎] 玉璽: 開場+100%增傷, 8回合線性歸零",
+  "_conf": "med"
+ },
+ {
+  "nameZh": "箕形陣",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.4,
+    "dur": 3
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.2,
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "精練策數",
+  "type": "active",
+  "kind": "intel",
+  "coef": 2.1,
+  "rate": 0.45,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 2.1,
+    "dur": 1
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "累世立名",
+  "type": "active",
+  "kind": "phys",
+  "coef": 2.52,
+  "rate": 0.5,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "mult": 0.88,
+    "dur": 2
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.6,
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "command",
+    "mult": 1.1,
+    "dur": 3
+   }
+  ],
+  "_src": "https://app.ali213.net/wiki/sgzzlb/zf56.html",
+  "_real": "準備1回合，對敵2人造兵刃傷害（滿級252%），降低統率約24點（受武力影響，mult近似0.88），附灼燒2回合（每次行動扣60%傷害率）；主將時提升全隊統率80點（mult近似1.10）持續3回合。effects[1]用amp enemy近似灼燒DoT（持續傷害引擎暫無DoT類型，用amp近似）；統率加減用點數非百分比，mult係依平均統率估算，實際應為flat加減。",
+  "_conf": "med"
+ },
+ {
+  "nameZh": "結盟",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.45,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "絕其汲道",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.62,
+  "rate": 0.5,
+  "n": 2,
+  "prep": 1,
+  "effects": []
+ },
+ {
+  "nameZh": "絕地反擊",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 1.2,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.24,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "絕計折謀",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "經天緯地",
+  "type": "command",
+  "kind": "intel",
+  "coef": 1.0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "經術政要",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "義心昭烈",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.14,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "義膽雄心",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 1.84,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "force",
+    "mult": 0.84,
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "intel",
+    "mult": 0.83,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "聚石成金",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.5,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "command",
+    "mult": 1.12,
+    "dur": 2
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.24,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "肉身鐵壁",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "redirect",
+    "who": "ally",
+    "guard": "self",
+    "share": 0.3
+   },
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.18,
+    "dur": 99
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "胡笳十八拍",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.5,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.5,
+    "dur": 1
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.2,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "胡笳餘音",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.5,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 1.22,
+    "dur": 1
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.26,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "臥薪嘗膽",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0.96,
+  "rate": 0.45,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "臨危救主",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0,
+    "dur": 99
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "臨戰先登",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.5,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "臨機制勝",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.55,
+  "n": 2,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "臨鋒決敵",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.55,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "至柔動剛",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.35,
+    "dur": 99
+   },
+   {
+    "k": "mitig",
+    "who": "enemy",
+    "val": 0.35,
+    "dur": 99
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -1.06,
+    "dur": 1
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "intel",
+    "mult": 0.9,
+    "dur": 5
+   }
+  ],
+  "_src": "http://m.7724.com/sgzzlbyx/news/140110.html",
+  "_real": "指揮持續：降低全體（我敵）普攻傷害35%；我軍普攻後自身50%概率對敵單體謀略傷害106%（受智力）；受到傷害時50%概率偷取來源智/統/速任一屬性10點，可疊加，持續5回合。effects[0/1]用mitig近似雙方普攻減傷35%；effects[2]用amp enemy near謀略反擊106%（觸發條件為普攻後，引擎需擴充「counter_intel」）；effects[3]用stat enemy intel mult=0.90近似偷屬性削弱（偷三種屬性之一随機，引擎暫簡化為intel削弱）。",
+  "_conf": "med"
+ },
+ {
+  "nameZh": "臻於至善",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.16,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "興雲佈雨",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.1,
+    "dur": 5
+   }
+  ]
+ },
+ {
+  "nameZh": "興雲布雨",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.72,
+    "dur": 5,
+    "note": "水攻狀態，第2回合起每回合造成謀略傷害，受智力影響，持續5回合（總傷害率360%）"
+   }
+  ],
+  "_src": "https://syzs.qq.com/blog/news/20221203A03RAE00",
+  "_real": "指揮戰法。戰鬥第2回合起使敵軍全體（3人）進入水攻狀態，每回合傷害率72%（受智力影響），持續5回合，總傷害率360%；DoT機制，非直接傷害。",
+  "_conf": "high"
+ },
+ {
+  "nameZh": "舌戰群儒",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "花容月貌",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "苦肉計",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.22,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 1.22,
+    "dur": 2
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   },
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.3,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "草船借箭",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.65,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.28,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "萬箭齊發",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.4,
+  "rate": 0.4,
+  "n": 3,
+  "prep": 1,
+  "effects": []
+ },
+ {
+  "nameZh": "萬軍取將",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "萬軍奪帥",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.6,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "speed",
+    "mult": 0.15,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "蓄勢待發",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "蕙質蘭心",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "command",
+    "mult": 1.04,
+    "dur": 99
+   },
+   {
+    "k": "stack",
+    "who": "self",
+    "per": 0.1,
+    "max": 7
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 2.22,
+    "dur": 1
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.2,
+    "dur": 99
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "藏器待時",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.2,
+    "dur": 2
+   },
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.2,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "藤甲兵",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.24,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "虎侯",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0.66,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "command",
+    "mult": 1.1,
+    "dur": 2
+   },
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.66,
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "虎痴",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 0.33,
+    "dur": 99
+   },
+   {
+    "k": "pierce",
+    "who": "self",
+    "val": 1.0,
+    "dur": 99
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "虎衛軍",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0.72,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "force",
+    "mult": 1.05,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "虎豹騎",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "force",
+    "mult": 1.16,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "虎踞鷹揚",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.28,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "處茲不惑",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.35,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.7,
+    "dur": 2,
+    "note": "灼燒/中毒/溃逃三狀態各獨立60%判定，每狀態每回合傷害率70%，持續2回合；最多3狀態疊加，引擎以單DoT近似"
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2,
+    "note": "潰逃狀態近似控制（實際為每回合持續傷害狀態，非行動禁止）"
+   }
+  ],
+  "_src": "https://www.gamedog.cn/games/a/2760730.html",
+  "_real": "主動戰法（35%）。對敵軍群體2人，灼燒、中毒、潰逃三狀態各以60%獨立判定施加，每狀態每回合傷害率70%（受智力/武力各別影響），持續2回合。引擎以單條DoT近似，_real記三狀態獨立疊加機制。",
+  "_conf": "high"
+ },
+ {
+  "nameZh": "虛實奇謀",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "all",
+    "mult": 1.08,
+    "dur": 99,
+    "note": "主將兵種適性為A時，主將戰鬥屬性+8%（受智力影響）全程"
+   },
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.08,
+    "dur": 99,
+    "note": "主將兵種適性為S時，主將自帶主動戰法發動率+8%（受智力影響）全程；與上條互斥依適性選一"
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.35,
+    "dur": 1,
+    "note": "每回合50%機率使我軍群體(2-3人)獲得1回合剛毅（解除/抵抗負面狀態）"
+   },
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.35,
+    "dur": 1,
+    "note": "每回合35%機率使持有者不受敵軍負面狀態影響1回合"
+   }
+  ],
+  "_src": "https://news.17173.com/content/01162025/013902358.shtml",
+  "_real": "指揮戰法。依主將兵種適性（A/S）提供不同增益：A→戰鬥屬性+8%；S→自帶主動發動率+8%（均受智力影響）。每回合50%機率（受智力影響）使我軍群體2-3人進入1回合剛毅；35%機率（受智力影響）使持有者不受負面狀態影響。引擎以stat/mitig近似。",
+  "_conf": "high"
+ },
+ {
+  "nameZh": "血刃爭鋒",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.75,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "裸衣血戰",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.9,
+    "dur": 3
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "mult": 0.6,
+    "dur": 3
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "mult": 0.6,
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "西涼鐵騎",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.25,
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "解煩衛",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "speed",
+    "mult": 1.1,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "計定謀決",
+  "type": "passive",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "intel",
+    "mult": 0.94,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "intel",
+    "mult": 1.03,
+    "dur": 99
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.64,
+    "dur": 1
+   }
+  ],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "誓守無降",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.35,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.3,
+    "dur": 2
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "誘敵深入",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.25,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "象兵",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.2,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "赴湯蹈火",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0,
+    "dur": 5
+   }
+  ]
+ },
+ {
+  "nameZh": "速乘其利",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 1.85,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "連環計",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.56,
+  "rate": 0.35,
+  "n": 3,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 0.15,
+    "dur": 2
+   },
+   {
+    "k": "heal",
+    "who": "self",
+    "coef": 0.05,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "運籌決算",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.76,
+  "rate": 0.45,
+  "n": 3,
+  "prep": 1,
+  "effects": []
+ },
+ {
+  "nameZh": "酒池肉林",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0.68,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "force",
+    "mult": 1.1,
+    "dur": 99
+   },
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.04,
+    "dur": 99
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "金丹秘術",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.35,
+    "dur": 2
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.58,
+    "dur": 3
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "金城湯池",
+  "type": "command",
+  "kind": "phys",
+  "coef": 1.02,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.98,
+    "dur": 1
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 1.02,
+    "dur": 1
+   },
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.72,
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "鋒矢陣",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.3,
+    "dur": 99
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.25,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "鋒芒畢露",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "錦囊妙計",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 1.0,
+    "dur": 1
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 1.0,
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "錦帆百翎",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.2,
+    "dur": 99
+   },
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.1,
+    "dur": 99
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "錦帆軍",
+  "type": "command",
+  "kind": "phys",
+  "coef": 1.1,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.06,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "鎮扼防拒",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "redirect",
+    "who": "ally",
+    "guard": "max_force",
+    "share": 1.0
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.96,
+    "dur": 1
+   }
+  ],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "鐵騎驅馳",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "mult": 0.85,
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "長驅直入",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stack",
+    "who": "self",
+    "per": 0.15,
+    "max": 5
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.16,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "閉月",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.75,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "redirect",
+    "who": "enemy",
+    "guard": "self",
+    "share": 0.25
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "陷陣營",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "force",
+    "mult": 1.09,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "command",
+    "mult": 1.09,
+    "dur": 99
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.6,
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "陷陣突襲",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0.95,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "extra",
+    "who": "self",
+    "val": 1,
+    "dur": 99
+   },
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.06,
+    "dur": 99
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "雁行陣",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "離月",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0.68,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.68,
+    "dur": 1
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.15,
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "雲聚影從",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "redirect",
+    "who": "ally",
+    "guard": "max_force",
+    "share": 0.4
+   },
+   {
+    "k": "counter",
+    "who": "ally",
+    "coef": 1.0,
+    "kind": "phys",
+    "prob": 0.5
+   }
+  ],
+  "_src": "http://www.7724.com/sggame/news/71486.html",
+  "_real": "指揮戰法。自身受普攻時50%機率（受武力影響）使武力最高友軍單體代承普攻，並賦予該友軍反擊效果（傷害率100%）及急救（受傷時30%機率治療率100%）。引擎以mitig+反擊amp+heal近似，真實機制為傷害轉移。 [引擎] 武力最高友軍代承40% [引擎] 加 counter 近似代承者反擊。",
+  "_conf": "med"
+ },
+ {
+  "nameZh": "震駭四境",
+  "type": "active",
+  "kind": "phys",
+  "coef": 3.56,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.3,
+    "dur": 2,
+    "note": "第一擊後施加受傷提升約30%（受武力影響），持續2回合"
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1,
+    "note": "第二擊後施加計窮1回合（禁止發動主動戰法）"
+   }
+  ],
+  "_src": "https://3g.7723.cn/strategy/235069.html",
+  "_real": "主動戰法（35%）。瞬發，對敵軍單體發動2次兵刃攻擊，合計傷害率約356%（兩段178%）；第一段附加受傷提升約30%（受武力影響，持續2回合），第二段附加計窮1回合（禁用主動戰法）。coef=3.56折合兩段合計。",
+  "_conf": "high"
+ },
+ {
+  "nameZh": "靈機一動",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.55,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "青囊",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "command",
+    "mult": 1.1,
+    "dur": 99
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.96,
+    "dur": 1
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "青州兵",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0.72,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 1.8,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "非攻制勝",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.5,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "韜心惑敵",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.3,
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "顧盼生姿",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.45,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "all",
+    "mult": 0.94,
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "all",
+    "mult": 1.03,
+    "dur": 2
+   }
+  ],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "風助火勢",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.54,
+  "rate": 0.5,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "飛沙走石",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.5,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "intel",
+    "mult": 0.64,
+    "dur": 1,
+    "note": "奇數回合：敵2人智力降低36點（受智力影響），持續1回合"
+   },
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.58,
+    "dur": 2,
+    "note": "奇數回合：敵2人陷入水攻狀態，傷害率58%/回，持續2回合"
+   },
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 1.08,
+    "dur": 2,
+    "note": "偶數回合：敵單體武力智力互換（近似智力大幅提傷），並陷入沙暴，傷害率108%/回，持續2回合；互換效果引擎無法精確表示，以高傷DoT近似"
+   },
+   {
+    "k": "swap",
+    "who": "enemy",
+    "dur": 1
+   }
+  ],
+  "_src": "https://www.gamersky.com/handbooksy/202307/1617272.shtml",
+  "_real": "主動戰法（50%）。奇數回合：使敵軍群體2人智力降低36點（受智力影響，1回合）並陷入水攻狀態2回合（傷害率58%/回）；偶數回合：使敵軍隨機單體武力智力數值對調（1回合）並陷入沙暴狀態2回合（傷害率108%/回）。引擎以stat+dot分別近似，武力智力互換機制記於_real待擴充。 [引擎] 偶數回合武智互換(近似)",
+  "_conf": "high"
+ },
+ {
+  "nameZh": "飛熊軍",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.5,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "高櫓連營",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "extra",
+    "who": "self",
+    "val": 2,
+    "dur": 99
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 0.06,
+    "dur": 2
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "鬼神霆威",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 2.04,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "魅惑",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "魚鱗陣",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "command",
+    "mult": 1.22,
+    "dur": 99
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.3,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "鳩毒",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.7,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "force",
+    "mult": 0.7,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "鴆毒",
+  "type": "active",
+  "kind": "intel",
+  "coef": 2.26,
+  "rate": 0.7,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "force",
+    "mult": 0.4,
+    "dur": 1
+   },
+   {
+    "k": "settle",
+    "who": "enemy",
+    "base": 2.26,
+    "per": 0,
+    "max": 99,
+    "dur": 99,
+    "init": 0
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "mult": 0.7,
+    "dur": 99
+   }
+  ],
+  "_src": " +整批重解(15原語)"
+ },
+ {
+  "nameZh": "鴟苕鳳姿",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.8,
+    "dur": 99
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "鷹視狼顧",
+  "type": "command",
+  "kind": "intel",
+  "coef": 1.54,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.8,
+    "dur": 1
+   },
+   {
+    "k": "extra",
+    "who": "self",
+    "val": 0.08,
+    "dur": 99
+   }
+  ],
+  "_src": " +他AI補全effectText/重解"
+ },
+ {
+  "nameZh": "黃天泰平",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "一舉殲滅",
+  "type": "active",
+  "kind": "phys",
+  "coef": 3.35,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "不辱使命",
+  "type": "active",
+  "kind": "phys",
+  "coef": 2.2,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "五穀豐登",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "倉廩豐實",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "偃旗息鼓",
+  "type": "active",
+  "kind": "intel",
+  "coef": 2.1,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.25,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "傳檄宣威",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.65,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "出其不意",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.2,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "出口成章",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "千里饋糧",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "self",
+    "coef": 0.5,
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.1,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "千里馳援",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "mult": 1.16,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "唇槍舌戰",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0.6,
+  "rate": 0.5,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "坐守孤城",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.45,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 1.16,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "天降火雨",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.18,
+  "rate": 0.5,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "enemy",
+    "coef": -0.66,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "奮突",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.12,
+    "dur": 99
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "妖術",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 3,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "enemy",
+    "coef": -0.72,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "威風凜凜",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.45,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "屠几上肉",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.5,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "左右開弓",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.8,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "enemy",
+    "coef": -0.9,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "廬江上甲",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "mult": 1.18,
+    "dur": 2
+   },
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.4,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "強攻",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.25,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "彎弓飲羽",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "mult": 0.7,
+    "dur": 1
+   },
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "後發制人",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0.52,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "手起刀落",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 2.14,
+  "rate": 0.3,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "才器過人",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "挫志怒襲",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.88,
+  "rate": 0.25,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "挾勢弄權",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.86,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "整裝待發",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.88,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "斂眾而擊",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.64,
+  "rate": 0.35,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "self",
+    "coef": 0.88,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "料事如神",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.06,
+  "rate": 0.35,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.16,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "明察秋毫",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "暗潮洶湧",
+  "type": "active",
+  "kind": "phys",
+  "coef": 2.72,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 1,
+  "effects": []
+ },
+ {
+  "nameZh": "暗潮湧動",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "暗藏玄機",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 1.44,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "暴斂四方",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.02,
+  "rate": 0.45,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "枯木逢春",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.5,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "機略縱橫",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.45,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "enemy",
+    "coef": -0.58,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "淨化",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.3,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "爭分奪秒",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "白眉",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "百鍊成鋼",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.14,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "intel",
+    "mult": 1.14,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "mult": 1.14,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "speed",
+    "mult": 1.14,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "矢志不移",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 1.0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "mult": 1.06,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "知己知彼",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.15,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "短兵相接",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "mult": 0.88,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "短兵相見",
+  "type": "active",
+  "kind": "phys",
+  "coef": 2.1,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "mult": 0.88,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "神上使",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.5,
+  "n": 3,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "enemy",
+    "coef": -0.68,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "禦敵屏障",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.25,
+    "dur": 4
+   }
+  ]
+ },
+ {
+  "nameZh": "縱兵劫掠",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.72,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "聲東擊西",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.75,
+  "rate": 0.4,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "speed",
+    "mult": 0.8,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "腹背受敵",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.45,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "自癒",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "self",
+    "coef": 1.0,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "落雷",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.7,
+  "rate": 0.5,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.18,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "落鳳",
+  "type": "active",
+  "kind": "phys",
+  "coef": 2.5,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "見機行事",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "詐降",
+  "type": "command",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "ally",
+    "dur": 1
+   },
+   {
+    "k": "heal",
+    "who": "self",
+    "coef": 1.6,
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "謙讓",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "ally",
+    "val": 0.22,
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "輕勇飛燕",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0.84,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "進言",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "intel",
+    "mult": 1.2,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "避實擊虛",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.85,
+  "rate": 0.5,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "長者之風",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "force",
+    "mult": 1.14,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "intel",
+    "mult": 1.14,
+    "dur": 99
+   }
+  ]
+ },
+ {
+  "nameZh": "風聲鶴唳",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.05,
+  "rate": 0.45,
+  "n": 2,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "enemy",
+    "coef": 1.2,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "養兵千日",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "養馬有道",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "騎虎難下",
+  "type": "command",
+  "kind": "phys",
+  "coef": 0.72,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "驅散",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.3,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "intel",
+    "mult": 1.14,
+    "dur": 3
+   }
+  ]
+ },
+ {
+  "nameZh": "驍健神行",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.56,
+  "rate": 0.25,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "驍勇善戰",
+  "type": "active",
+  "kind": "phys",
+  "coef": 3.0,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 1,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "speed",
+    "mult": 1.27,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "魯莽",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "self",
+    "coef": 0.42,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "鷹視",
+  "type": "command",
+  "kind": "intel",
+  "coef": 1.54,
+  "rate": 1,
+  "n": 2,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "伐木精通",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "刺傷",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "包紮",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.3,
+  "n": 2,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 1.2,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "博聞",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "取磨寸鐵",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "垂惠萬物",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "壓制",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.25,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "奮發",
+  "type": "passive",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "妙書銘石",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "巧匠",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "急馴",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "按圖索驥",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "挑釁",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.3,
+  "n": 3,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.2,
+    "dur": 1
+   }
+  ]
+ },
+ {
+  "nameZh": "挖採",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "挖礦精通",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "採石精通",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "揮砍",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.0,
+  "rate": 0.5,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "援救",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.75,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "放火",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "橫掃",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.3,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "殿後",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.25,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "毒氣",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "火攻",
+  "type": "active",
+  "kind": "intel",
+  "coef": 1.0,
+  "rate": 0.4,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "牽制",
+  "type": "active",
+  "kind": "phys",
+  "coef": 1.0,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "force",
+    "mult": 0.9,
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "intel",
+    "mult": 0.9,
+    "dur": 2
+   }
+  ]
+ },
+ {
+  "nameZh": "牽連",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "猛擊",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.45,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "砍伐",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "破甲",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "碩果累累",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "種田精通",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "端莊持重",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "簡政",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "細緻入微",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "談心",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.23,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "識破",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.25,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "踐踏",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0.8,
+  "rate": 0.35,
+  "n": 2,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "追傷",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.25,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "還擊",
+  "type": "active",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 0.35,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "重擊",
+  "type": "charge",
+  "kind": "phys",
+  "coef": 1.4,
+  "rate": 0.3,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "鑄匠",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "頑鐵生輝",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "高瞻遠矚",
+  "type": "none",
+  "kind": "phys",
+  "coef": 0,
+  "rate": 1,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ },
+ {
+  "nameZh": "鬥智",
+  "type": "active",
+  "kind": "intel",
+  "coef": 0,
+  "rate": 0.3,
+  "n": 1,
+  "prep": 0,
+  "effects": []
+ }
+]

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>三國志戰略版 · 配將模擬器</title>
+<meta name="description" content="三國志戰略版台服 配將評分與逐回合模擬對戰，193 武將圖鑑。社群非官方工具。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>三國志戰略版 · <span class="gold">配將模擬器</span></h1>
+  <nav>
+    <button class="tab active" data-tab="sim">配將模擬</button>
+    <button class="tab" data-tab="rec">自動推薦</button>
+    <button class="tab" data-tab="dex">武將圖鑑</button>
+  </nav>
+</header>
+
+<main>
+  <!-- 配將模擬 -->
+  <section id="sim" class="panel active">
+    <div class="teams">
+      <div class="team" data-side="A"><h2>我方</h2><div class="slots"></div></div>
+      <div class="vs">VS</div>
+      <div class="team" data-side="B"><h2>敵方</h2><div class="slots"></div></div>
+    </div>
+    <div class="sim-controls">
+      <button id="runSim" class="primary">⚔ 模擬對戰 (3000 場)</button>
+      <button id="clearSim">清空</button>
+    </div>
+    <div id="simResult" class="result hidden"></div>
+  </section>
+
+  <!-- 自動推薦 -->
+  <section id="rec" class="panel">
+    <div class="rec-controls">
+      勢力：
+      <select id="recFaction">
+        <option value="">全部</option><option>魏</option><option>蜀</option>
+        <option>吳</option><option>群</option>
+      </select>
+      <button id="runRec" class="primary">推薦最佳陣容</button>
+    </div>
+    <ol id="recList" class="rec-list"></ol>
+  </section>
+
+  <!-- 武將圖鑑 -->
+  <section id="dex" class="panel">
+    <input id="dexSearch" placeholder="搜尋武將…" autocomplete="off">
+    <div id="dexGrid" class="grid"></div>
+  </section>
+</main>
+
+<!-- 武將挑選 / 詳情 彈窗 -->
+<div id="modal" class="modal hidden"><div class="modal-box"></div></div>
+
+<footer>非官方社群工具 · 資料為遊戲事實，引擎為趨勢近似模擬，非逐幀還原 · <span id="stat"></span></footer>
+
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
