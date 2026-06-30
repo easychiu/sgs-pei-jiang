@@ -8,15 +8,16 @@ const cardSrc = n => "cards/" + encodeURIComponent(n) + ".webp";
 const teams = { A: [null, null, null], B: [null, null, null] };
 const troops = { A: "", B: "" };                  // "" = 自動(依隊伍適性)
 const bsel = { A: [null, null, null], B: [null, null, null] };  // 各將兵書(null=預設主兵書)
-const eqsel = { A: [{}, {}, {}], B: [{}, {}, {}] };            // 各將裝備 {type:name}
+const eqsel = { A: [{}, {}, {}], B: [{}, {}, {}] };            // 各將裝備 {type:[特技,...]} 每欄最多2(雙特技)→全身最多8
 const EQUIP_SLOTS = [{ t: "武器", l: "武器" }, { t: "防具", l: "護甲" }, { t: "坐騎", l: "馬匹" }, { t: "寶物", l: "寶物" }];
-const eqNames = cfg => EQUIP_SLOTS.map(s => cfg && cfg[s.t]).filter(Boolean);
+const eqSlot = (cfg, t) => { const v = cfg && cfg[t]; return Array.isArray(v) ? v.filter(Boolean) : (v ? [v] : []); };  // 容錯: 舊字串/新陣列
+const eqNames = cfg => EQUIP_SLOTS.flatMap(s => eqSlot(cfg, s.t));   // 攤平成名單(最多8)→引擎合併effects
 function eqByType(g, type) {
   return Object.values(SGZ.equips()).filter(e => e.type === type && (!e.exclusive || e.exclusive === g.name)).map(e => e.name);
 }
 function eqSummary(cfg) {
-  const on = EQUIP_SLOTS.filter(s => cfg && cfg[s.t]);
-  return on.length ? on.map(s => `${s.l[0]}·${cfg[s.t]}`).join(" ") : "無";
+  const on = EQUIP_SLOTS.map(s => [s, eqSlot(cfg, s.t)]).filter(([, v]) => v.length);
+  return on.length ? on.map(([s, v]) => `${s.l[0]}·${v.join("+")}`).join(" ") : "無";
 }
 const builds = { A: [null, null, null], B: [null, null, null] }; // 養成(null=預設: 進階滿+主屬性)
 const inhsel = { A: [[], [], []], B: [[], [], []] };           // 各將傳承戰法(最多2)
@@ -453,17 +454,24 @@ function openInherit(side, i) {
 
 function openEquip(side, i) {
   const n = teams[side][i], g = POOL[n];
-  const cfg = { ...(eqsel[side][i] || {}) };
+  const cfg = {};                                              // 工作副本: {type:[特技1,特技2]}
+  for (const s of EQUIP_SLOTS) cfg[s.t] = eqSlot(eqsel[side][i], s.t).slice();
   const box = $("#modal .modal-box");
-  box.innerHTML = `<h2 class="gold">${n}・裝備</h2>` +
+  box.innerHTML = `<h2 class="gold">${n}・裝備</h2>
+    <div class="sub" style="margin:-4px 0 8px">每欄主特技+副特技(雙特技),全身最多8</div>` +
     EQUIP_SLOTS.map(s => {
-      const list = eqByType(g, s.t), cur = cfg[s.t] || "";
-      return `<div class="brow">${s.l}　<select data-t="${s.t}"><option value="">無</option>` +
-        list.map(x => `<option${x === cur ? " selected" : ""}>${x}</option>`).join("") + `</select></div>`;
+      const list = eqByType(g, s.t), cur = cfg[s.t];
+      const dd = k => `<select data-t="${s.t}" data-k="${k}"><option value="">${k ? "—副特技—" : "—主特技—"}</option>` +
+        list.map(x => `<option${x === cur[k] ? " selected" : ""}>${x}</option>`).join("") + `</select>`;
+      return `<div class="brow">${s.l}　${dd(0)} ${dd(1)}</div>`;
     }).join("") +
     `<div style="text-align:right;margin-top:14px"><button id="eqSave" class="primary">套用</button></div>`;
-  box.querySelectorAll("select[data-t]").forEach(sel => sel.onchange = () => { if (sel.value) cfg[sel.dataset.t] = sel.value; else delete cfg[sel.dataset.t]; });
-  box.querySelector("#eqSave").onclick = () => { eqsel[side][i] = cfg; renderSlots(side); closeModal(); };
+  box.querySelectorAll("select[data-t]").forEach(sel => sel.onchange = () => { cfg[sel.dataset.t][+sel.dataset.k] = sel.value || null; });
+  box.querySelector("#eqSave").onclick = () => {
+    const out = {};
+    for (const s of EQUIP_SLOTS) { const v = [...new Set(cfg[s.t].filter(Boolean))]; if (v.length) out[s.t] = v; }  // 去重+去空
+    eqsel[side][i] = out; renderSlots(side); closeModal();
+  };
   $("#modal").classList.remove("hidden");
 }
 
