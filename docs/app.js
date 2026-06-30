@@ -35,10 +35,11 @@ function defaultBingshuCfg(g) {
 }
 const getBsel = (side, i) => bsel[side][i] || defaultBingshuCfg(POOL[teams[side][i]]);
 const bsNames = cfg => cfg.on ? [...new Set([cfg.main, ...(cfg.subs || [])].filter(Boolean))] : [];
+const bsLabel = k => (k && k.includes("·")) ? k.split("·")[1] : (k || "—");
 function bselSummary(cfg) {
   if (!cfg.on) return "兵書：<b>關</b>";
   const m = BINGSHU_CAT[cfg.category] || { i: "📖" };
-  return `<span style="color:${m.c || "var(--gold2)"}">${m.i} ${cfg.category || "—"}</span>・${cfg.main || "—"}＋${(cfg.subs || []).length}副`;
+  return `<span style="color:${m.c || "var(--gold2)"}">${m.i} ${cfg.category || "—"}</span>・${bsLabel(cfg.main)}＋${(cfg.subs || []).filter(Boolean).length}副`;
 }
 const $ = s => document.querySelector(s);
 const pct = v => (v * 100).toFixed(0);
@@ -310,11 +311,11 @@ function openBingshu(side, i) {
       render();
     });
     const mainSel = box.querySelector("#bsMain");
-    mainSel.innerHTML = mains.map(x => `<option${x === cfg.main ? " selected" : ""}>${x}</option>`).join("") || `<option value="">—</option>`;
+    mainSel.innerHTML = mains.map(x => `<option value="${x}"${x === cfg.main ? " selected" : ""}>${bsLabel(x)}</option>`).join("") || `<option value="">—</option>`;
     mainSel.onchange = () => cfg.main = mainSel.value || null;
     box.querySelectorAll(".bsSub").forEach(sel => {
       const x = +sel.dataset.x;
-      sel.innerHTML = `<option value="">無</option>` + subs.map(s => `<option${s === (cfg.subs || [])[x] ? " selected" : ""}>${s}</option>`).join("");
+      sel.innerHTML = `<option value="">無</option>` + subs.map(s => `<option value="${s}"${s === (cfg.subs || [])[x] ? " selected" : ""}>${bsLabel(s)}</option>`).join("");
       sel.onchange = () => { cfg.subs = cfg.subs || []; cfg.subs[x] = sel.value || null; };
     });
     box.querySelector("#bsOn").onchange = e => { cfg.on = e.target.checked; render(); };

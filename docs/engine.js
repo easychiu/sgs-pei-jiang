@@ -49,9 +49,10 @@
     for (const t of tactics) if (t.type !== "none") TAC[t.nameZh] = t;
     BINGSHU = {}; MAIN_BY_CAT = {}; SUB_BY_CAT = {}; BONDS = bonds || []; EQUIPS = {};
     for (const b of (bingshu || [])) {
-      BINGSHU[b.name] = b;
+      const key = b.category + "·" + b.name;        // 複合鍵(同名跨類別不撞)
+      BINGSHU[key] = b;
       const m = b.type === "主兵書" ? MAIN_BY_CAT : SUB_BY_CAT;
-      (m[b.category] = m[b.category] || []).push(b.name);
+      (m[b.category] = m[b.category] || []).push(key);
     }
     for (const e of (equips || [])) EQUIPS[e.name] = e;
     const POOL = {};

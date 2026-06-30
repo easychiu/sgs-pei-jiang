@@ -28,7 +28,7 @@
     "category": "作戰",
     "type": "主兵書",
     "effects": [
-      {"k": "extra", "who": "self", "val": 0.4, "dur": 99}
+      {"k": "extra", "who": "self", "val": 0.2, "dur": 99}
     ]
   },
   {
@@ -44,7 +44,7 @@
     "category": "作戰",
     "type": "副兵書",
     "effects": [
-      {"k": "pierce", "who": "self", "val": 1.0, "dur": 99}
+      {"k": "pierce", "who": "self", "val": 0.3, "dur": 99}
     ]
   },
   {
@@ -52,7 +52,7 @@
     "category": "作戰",
     "type": "副兵書",
     "effects": [
-      {"k": "amp", "who": "self", "val": 0.15, "dur": 99}
+      {"k": "amp", "who": "self", "val": 0.12, "dur": 99}
     ]
   },
   {
@@ -60,7 +60,7 @@
     "category": "作戰",
     "type": "副兵書",
     "effects": [
-      {"k": "amp", "who": "self", "val": 0.15, "dur": 99}
+      {"k": "amp", "who": "self", "val": 0.12, "dur": 99}
     ]
   },
   {
@@ -68,7 +68,7 @@
     "category": "作戰",
     "type": "副兵書",
     "effects": [
-      {"k": "amp", "who": "self", "val": 0.15, "dur": 99}
+      {"k": "amp", "who": "self", "val": 0.12, "dur": 99}
     ]
   },
   {
@@ -89,9 +89,7 @@
     "name": "後發先至",
     "category": "虛實",
     "type": "主兵書",
-    "effects": [
-      {"k": "amp", "who": "self", "val": 0.1, "dur": 1}
-    ]
+    "effects": []
   },
   {
     "name": "以治擊亂",
@@ -113,17 +111,13 @@
     "name": "順天應時",
     "category": "虛實",
     "type": "主兵書",
-    "effects": [
-      {"k": "amp", "who": "self", "val": 0.1, "dur": 99}
-    ]
+    "effects": []
   },
   {
     "name": "疾戰突圍",
     "category": "虛實",
     "type": "主兵書",
-    "effects": [
-      {"k": "amp", "who": "self", "val": 0.1, "dur": 99}
-    ]
+    "effects": []
   },
   {
     "name": "大謀不謀",
@@ -138,7 +132,7 @@
     "category": "虛實",
     "type": "副兵書",
     "effects": [
-      {"k": "amp", "who": "self", "val": 0.15, "dur": 99}
+      {"k": "amp", "who": "self", "val": 0.12, "dur": 99}
     ]
   },
   {
@@ -162,16 +156,14 @@
     "category": "虛實",
     "type": "副兵書",
     "effects": [
-      {"k": "amp", "who": "self", "val": 0.1, "dur": 99}
+      {"k": "stun", "who": "enemy", "dur": 1}
     ]
   },
   {
     "name": "神機",
     "category": "虛實",
     "type": "副兵書",
-    "effects": [
-      {"k": "amp", "who": "self", "val": 0.1, "dur": 1}
-    ]
+    "effects": []
   },
   {
     "name": "合變",
@@ -194,7 +186,7 @@
     "category": "軍形",
     "type": "主兵書",
     "effects": [
-      {"k": "extra", "who": "self", "val": 0.5, "dur": 3}
+      {"k": "amp", "who": "self", "val": 0.12, "dur": 3}
     ]
   },
   {
@@ -226,7 +218,7 @@
     "category": "軍形",
     "type": "主兵書",
     "effects": [
-      {"k": "heal", "who": "self", "coef": 0.5, "dur": 1}
+      {"k": "heal", "who": "self", "coef": 0.4, "dur": 1}
     ]
   },
   {
@@ -242,7 +234,7 @@
     "category": "軍形",
     "type": "副兵書",
     "effects": [
-      {"k": "mitig", "who": "self", "val": 0.15, "dur": 99}
+      {"k": "mitig", "who": "self", "val": 0.12, "dur": 99}
     ]
   },
   {
@@ -250,7 +242,7 @@
     "category": "軍形",
     "type": "副兵書",
     "effects": [
-      {"k": "mitig", "who": "self", "val": 0.15, "dur": 99}
+      {"k": "mitig", "who": "self", "val": 0.12, "dur": 99}
     ]
   },
   {
@@ -266,7 +258,7 @@
     "category": "軍形",
     "type": "副兵書",
     "effects": [
-      {"k": "mitig", "who": "self", "val": 0.15, "dur": 99}
+      {"k": "mitig", "who": "self", "val": 0.12, "dur": 99}
     ]
   },
   {
@@ -274,7 +266,7 @@
     "category": "軍形",
     "type": "副兵書",
     "effects": [
-      {"k": "heal", "who": "self", "coef": 0.2, "dur": 99}
+      {"k": "heal", "who": "self", "coef": 0.3, "dur": 1}
     ]
   },
   {
@@ -282,6 +274,7 @@
     "category": "九變",
     "type": "主兵書",
     "effects": [
+      {"k": "heal", "who": "self", "coef": 0.4, "dur": 1},
       {"k": "mitig", "who": "self", "val": 0.15, "dur": 1}
     ]
   },
@@ -303,16 +296,14 @@
     "name": "示敵以弱",
     "category": "九變",
     "type": "主兵書",
-    "effects": [
-      {"k": "amp", "who": "self", "val": 0.12, "dur": 99}
-    ]
+    "effects": []
   },
   {
     "name": "誘敵之策",
     "category": "九變",
     "type": "主兵書",
     "effects": [
-      {"k": "amp", "who": "self", "val": 0.15, "dur": 99}
+      {"k": "amp", "who": "self", "val": 0.12, "dur": 99}
     ]
   },
   {
@@ -336,7 +327,7 @@
     "category": "九變",
     "type": "副兵書",
     "effects": [
-      {"k": "mitig", "who": "self", "val": 0.15, "dur": 99}
+      {"k": "mitig", "who": "self", "val": 0.12, "dur": 99}
     ]
   },
   {
@@ -344,7 +335,7 @@
     "category": "九變",
     "type": "副兵書",
     "effects": [
-      {"k": "mitig", "who": "self", "val": 0.12, "dur": 1}
+      {"k": "mitig", "who": "self", "val": 0.15, "dur": 1}
     ]
   },
   {
@@ -352,7 +343,7 @@
     "category": "九變",
     "type": "副兵書",
     "effects": [
-      {"k": "stat", "who": "self", "stat": "speed", "mult": 1.1, "dur": 99}
+      {"k": "stat", "who": "self", "stat": "speed", "mult": 1.16, "dur": 99}
     ]
   },
   {
@@ -367,8 +358,178 @@
     "name": "百戰",
     "category": "九變",
     "type": "副兵書",
+    "effects": []
+  },
+  {
+    "name": "洞若觀火",
+    "category": "始計",
+    "type": "主兵書",
+    "effects": []
+  },
+  {
+    "name": "樂善好施",
+    "category": "始計",
+    "type": "主兵書",
+    "effects": [
+      {"k": "heal", "who": "self", "coef": 0.5, "dur": 1}
+    ]
+  },
+  {
+    "name": "枕戈坐甲",
+    "category": "始計",
+    "type": "主兵書",
+    "effects": [
+      {"k": "mitig", "who": "self", "val": 0.15, "dur": 99}
+    ]
+  },
+  {
+    "name": "三軍之眾",
+    "category": "始計",
+    "type": "主兵書",
+    "effects": [
+      {"k": "heal", "who": "self", "coef": 0.25, "dur": 1}
+    ]
+  },
+  {
+    "name": "神清氣淨",
+    "category": "始計",
+    "type": "主兵書",
+    "effects": []
+  },
+  {
+    "name": "應機立斷",
+    "category": "始計",
+    "type": "主兵書",
+    "effects": [
+      {"k": "amp", "who": "self", "val": 0.12, "dur": 99}
+    ]
+  },
+  {
+    "name": "久戰",
+    "category": "始計",
+    "type": "副兵書",
+    "effects": [
+      {"k": "amp", "who": "self", "val": 0.03, "dur": 99}
+    ]
+  },
+  {
+    "name": "遠謀",
+    "category": "始計",
+    "type": "副兵書",
+    "effects": [
+      {"k": "dot", "who": "enemy", "coef": 0.06, "dur": 2}
+    ]
+  },
+  {
+    "name": "銳利",
+    "category": "始計",
+    "type": "副兵書",
+    "effects": []
+  },
+  {
+    "name": "歸心",
+    "category": "始計",
+    "type": "副兵書",
+    "effects": []
+  },
+  {
+    "name": "錘煉",
+    "category": "始計",
+    "type": "副兵書",
+    "effects": [
+      {"k": "mitig", "who": "self", "val": 0.1, "dur": 99}
+    ]
+  },
+  {
+    "name": "統軍",
+    "category": "始計",
+    "type": "副兵書",
+    "effects": [
+      {"k": "stat", "who": "self", "stat": "command", "mult": 1.16, "dur": 99}
+    ]
+  },
+  {
+    "name": "審時度勢",
+    "category": "用間",
+    "type": "主兵書",
+    "effects": [
+      {"k": "heal", "who": "self", "coef": 0.5, "dur": 1}
+    ]
+  },
+  {
+    "name": "兵行詭道",
+    "category": "用間",
+    "type": "主兵書",
+    "effects": []
+  },
+  {
+    "name": "以直報怨",
+    "category": "用間",
+    "type": "主兵書",
+    "effects": [
+      {"k": "amp", "who": "self", "val": 0.12, "dur": 99}
+    ]
+  },
+  {
+    "name": "以退為進",
+    "category": "用間",
+    "type": "主兵書",
+    "effects": [
+      {"k": "mitig", "who": "self", "val": 0.15, "dur": 99}
+    ]
+  },
+  {
+    "name": "千里疾行",
+    "category": "用間",
+    "type": "主兵書",
+    "effects": []
+  },
+  {
+    "name": "出奇制勝",
+    "category": "用間",
+    "type": "主兵書",
     "effects": [
       {"k": "amp", "who": "self", "val": 0.1, "dur": 99}
+    ]
+  },
+  {
+    "name": "掩虛",
+    "category": "用間",
+    "type": "副兵書",
+    "effects": [
+      {"k": "mitig", "who": "self", "val": 0.06, "dur": 99}
+    ]
+  },
+  {
+    "name": "速戰",
+    "category": "用間",
+    "type": "副兵書",
+    "effects": [
+      {"k": "stat", "who": "self", "stat": "speed", "mult": 1.16, "dur": 99}
+    ]
+  },
+  {
+    "name": "靜心",
+    "category": "用間",
+    "type": "副兵書",
+    "effects": [
+      {"k": "mitig", "who": "self", "val": 0.07, "dur": 99}
+    ]
+  },
+  {
+    "name": "鐵甲",
+    "category": "用間",
+    "type": "副兵書",
+    "effects": [
+      {"k": "mitig", "who": "self", "val": 0.06, "dur": 99}
+    ]
+  },
+  {
+    "name": "防備",
+    "category": "用間",
+    "type": "副兵書",
+    "effects": [
+      {"k": "mitig", "who": "self", "val": 0.03, "dur": 99}
     ]
   }
 ]

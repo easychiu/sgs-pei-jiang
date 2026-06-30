@@ -143,9 +143,10 @@ BINGSHU, MAIN_BY_CAT, SUB_BY_CAT = {}, {}, {}
 _bs = os.path.join(DATA, "bingshu_parsed.json")
 if os.path.exists(_bs):
     for b in json.load(open(_bs, encoding="utf-8")):
-        BINGSHU[b["name"]] = b
+        key = b["category"] + "·" + b["name"]     # 複合鍵(同名跨類別不撞)
+        BINGSHU[key] = b
         (MAIN_BY_CAT if b.get("type") == "主兵書" else SUB_BY_CAT).setdefault(
-            b["category"], []).append(b["name"])
+            b["category"], []).append(key)
 
 
 def default_bingshu(g):                               # 預設主兵書: 該將首個可用類別的主兵書
