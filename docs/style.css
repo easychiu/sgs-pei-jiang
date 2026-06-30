@@ -48,6 +48,9 @@ button{cursor:pointer;font-family:inherit}
 #tacChips .catchip.on{background:#2a2212;border-color:var(--gold);color:var(--gold)}
 #tacChips .catchip.locked{opacity:.4;cursor:not-allowed}
 .pick.locked{opacity:.4;cursor:not-allowed;text-decoration:line-through;pointer-events:none}
+.tier{display:inline-block;min-width:15px;text-align:center;font-size:10px;font-weight:700;
+  border-radius:3px;padding:0 3px;margin-right:5px;color:#1b140e}
+.tier.tS{background:#e8c061}.tier.tA{background:#c8a2d8}.tier.tB{background:#8fb6d8}
 .brow{margin:10px 0;font-size:15px}
 .balloc{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}
 .balloc label{display:flex;flex-direction:column;gap:4px;color:var(--gold2);text-align:center}
