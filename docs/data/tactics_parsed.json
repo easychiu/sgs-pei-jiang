@@ -21,7 +21,10 @@
     "mult": 1.08,
     "dur": 3
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "一身是膽",
@@ -46,7 +49,10 @@
     "dur": 99
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "一騎當千",
@@ -56,7 +62,10 @@
   "rate": 0.3,
   "n": 3,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "七步成詩",
@@ -66,7 +75,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INNATE"
  },
  {
   "nameZh": "三勢陣",
@@ -89,7 +101,10 @@
     "val": 0.25,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "FORMATION",
+  "src": "EVENT"
  },
  {
   "nameZh": "三軍之眾",
@@ -103,10 +118,13 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 1.0,
+    "coef": 1,
     "dur": 4
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "上兵伐謀",
@@ -116,7 +134,10 @@
   "rate": 0.4,
   "n": 3,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "丹陽兵",
@@ -140,7 +161,10 @@
     "val": 0.36,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "EVENT"
  },
  {
   "nameZh": "乘勝長驅",
@@ -157,7 +181,10 @@
     "val": 0.11,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "乘敵不虞",
@@ -179,7 +206,10 @@
     "coef": 1.08,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "亂世奸雄",
@@ -209,7 +239,10 @@
     "dur": 99
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "五雷轟頂",
@@ -232,7 +265,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "仁德載世",
@@ -261,7 +297,10 @@
     "dur": 1
    }
   ],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "以寡敵眾",
@@ -285,7 +324,10 @@
     "mult": 1.04,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "以逸待勞",
@@ -309,7 +351,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "偽書相間",
@@ -325,7 +370,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "傲睨王侯",
@@ -357,7 +405,10 @@
     "dur": 99
    }
   ],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "傾國傾城",
@@ -379,7 +430,10 @@
     "val": 0.16,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "先成其慮",
@@ -389,7 +443,10 @@
   "rate": 0.5,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "先登死士",
@@ -407,7 +464,10 @@
     "mult": 0.92,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "克敵制勝",
@@ -423,7 +483,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "克遵畫一",
@@ -433,7 +496,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INNATE"
  },
  {
   "nameZh": "八門金鎖陣",
@@ -450,7 +516,10 @@
     "val": -0.3,
     "dur": 3
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "FORMATION",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "兵無常勢",
@@ -467,7 +536,10 @@
     "coef": 1.8,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "兵鋒",
@@ -477,7 +549,10 @@
   "rate": 0.35,
   "n": 2,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "刀出如霆",
@@ -509,7 +584,10 @@
   ],
   "_src": "https://m.ali213.net/news/gl2111/721681.html",
   "_real": "準備1回合。自身及友軍單體獲得30%倒戈持續2回合；對敵全體造成兵刃傷害（總傷害率300%，敵方全體平分，每有1名副將總傷害+120%，3敵全場合計540%即每人約180%）；對目標施加「掠陣」狀態，疊加2次後移除並使目標受兵刃傷害提升30%（可持續疊加）。coef取3敵情況下每人平均值1.80；掠陣增傷用enemy amp近似。",
-  "_conf": "med"
+  "_conf": "med",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "別具匠心",
@@ -519,7 +597,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "刮骨療毒",
@@ -536,7 +617,10 @@
     "coef": 2.56,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "剛勇無前",
@@ -553,7 +637,10 @@
     "val": 0.65,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "剛柔並濟",
@@ -576,7 +663,10 @@
     "val": -0.06,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "剛烈不屈",
@@ -595,7 +685,10 @@
     "dur": 99
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "功不唐捐",
@@ -612,7 +705,10 @@
     "val": 0.3,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "功勳克舉",
@@ -622,7 +718,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INNATE"
  },
  {
   "nameZh": "勇冠三軍",
@@ -639,7 +738,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "BURST",
+  "src": "INNATE"
  },
  {
   "nameZh": "勇烈持重",
@@ -656,7 +758,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "勇者得前",
@@ -673,7 +778,10 @@
     "val": 0.8,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "勠力同心",
@@ -687,7 +795,7 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 1.0,
+    "coef": 1,
     "dur": 1
    },
    {
@@ -697,7 +805,10 @@
     "mult": 1.08,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "十二奇策",
@@ -715,7 +826,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "十勝十敗",
@@ -733,7 +847,10 @@
     "dur": 2
    }
   ],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "十面埋伏",
@@ -762,7 +879,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "千里走單騎",
@@ -780,7 +900,10 @@
     "mult": 1.2,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "南蠻渠魁",
@@ -798,7 +921,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "古之惡來",
@@ -813,7 +939,7 @@
     "k": "redirect",
     "who": "ally",
     "guard": "self",
-    "share": 1.0
+    "share": 1
    },
    {
     "k": "amp",
@@ -828,7 +954,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "合軍聚眾",
@@ -845,7 +974,10 @@
     "coef": 1.24,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "同戰身先",
@@ -855,7 +987,10 @@
   "rate": 0.7,
   "n": 3,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "四面楚歌",
@@ -872,7 +1007,10 @@
     "coef": -1.44,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "因利制權",
@@ -882,7 +1020,10 @@
   "rate": 0.55,
   "n": 2,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "固若金湯",
@@ -907,7 +1048,10 @@
     "dur": 2
    }
   ],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "國之楨榦",
@@ -917,7 +1061,10 @@
   "rate": 1,
   "n": 3,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "國士將風",
@@ -935,7 +1082,10 @@
     "dur": 3
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "國色",
@@ -945,7 +1095,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INNATE"
  },
  {
   "nameZh": "圍師必闕",
@@ -969,7 +1122,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "坐斷東南",
@@ -984,13 +1140,16 @@
     "k": "stat",
     "who": "self",
     "stat": "speed",
-    "mult": 1.0,
+    "mult": 1,
     "dur": 2
    }
   ],
   "_src": "https://sgz.ejoy.com/xuzhi/detail-4847.html",
   "_real": "戰鬥中，自身及友軍單體成功發動普通攻擊後，自身有75%機率隨機獲得連擊/洞察/先攻/必中/破陣狀態之一，持續2回合，優先獲得不同狀態；自身為主將時，首回合行動前有75%機率獲得連擊/洞察/必中之一，持續1回合。無直接傷害，effects欄以speed stat近似表示「先攻」加速屬性，但核心機制（隨機5種狀態）引擎暫無法完整表達。",
-  "_conf": "high"
+  "_conf": "high",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "垂心萬物",
@@ -1014,7 +1173,10 @@
     "dur": 1
    }
   ],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "士別三日",
@@ -1032,7 +1194,10 @@
     "mult": 1.27,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "士爭先赴",
@@ -1049,7 +1214,10 @@
     "val": 0.2,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "夢中弒臣",
@@ -1066,7 +1234,10 @@
     "val": 0.4,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "大戟士",
@@ -1084,7 +1255,10 @@
     "mult": 1.06,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "天下名巧",
@@ -1094,13 +1268,16 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INNATE"
  },
  {
   "nameZh": "天下無雙",
   "type": "active",
   "kind": "phys",
-  "coef": 3.0,
+  "coef": 3,
   "rate": 0.35,
   "n": 1,
   "prep": 0,
@@ -1114,7 +1291,10 @@
   ],
   "_src": "https://game.xiaomi.com/viewpoint/1359077112_1683533965242_100",
   "_real": "對敵軍單體發起決鬥，雙方輪流互相普通攻擊3次，自己率先出手；決鬥期間雙方不受繳械和震懾影響，可觸發群攻和突擊戰法；自身為主將時，決鬥前自身受兵刃傷害降低7%（受武力影響），持續2回合。決鬥3次互攻近似為coef=3.0單體兵刃；mitig 0.07為主將減傷效果。",
-  "_conf": "high"
+  "_conf": "high",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "天香",
@@ -1124,7 +1304,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INNATE"
  },
  {
   "nameZh": "太平道法",
@@ -1134,7 +1317,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "奇兵間道",
@@ -1158,7 +1344,10 @@
     "dur": 99
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "奇施經略",
@@ -1168,7 +1357,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INNATE"
  },
  {
   "nameZh": "奇計良謀",
@@ -1191,7 +1383,10 @@
     "val": -0.32,
     "dur": 3
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "奉令平虜",
@@ -1209,7 +1404,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "奪魂挾魄",
@@ -1248,7 +1446,10 @@
     "mult": 0.85,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "奮矛英姿",
@@ -1276,11 +1477,14 @@
    {
     "k": "amp",
     "who": "self",
-    "val": 1.0,
+    "val": 1,
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "威武並昭",
@@ -1306,7 +1510,10 @@
   ],
   "_src": "https://m.7724.com/sgzzlbyx/news/140194.html",
   "_real": "被動。每回合自身獲得33%看破（無視目標受傷降低效果之33%比例，受速度影響），持續1回合；敵主將每回合行動前，自身有33%機率（受雙方速度差影響）對速度低於自身的敵方武將發動1次普通攻擊；自身為主將時，每次觸發成功後速度+9點（可疊，受速度差影響）。看破用enemy amp -0.33近似；追加普攻引擎暫無法完整表達（追加後額外攻擊）。 [引擎] 以 extra 0.33(每回合33%追加普攻)近似追擊機制。",
-  "_conf": "med"
+  "_conf": "med",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "威謀靡亢",
@@ -1322,7 +1529,10 @@
     "who": "enemy",
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "威震華夏",
@@ -1345,7 +1555,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "嬰城自守",
@@ -1368,7 +1581,10 @@
     "coef": 0.62,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "守而必固",
@@ -1391,7 +1607,10 @@
     "mult": 1.24,
     "dur": 4
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "定謀貴決",
@@ -1407,7 +1626,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "定軍斬將",
@@ -1425,7 +1647,10 @@
     "dur": 2
    }
   ],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "宜城之志",
@@ -1435,7 +1660,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "密計誅逆",
@@ -1455,14 +1683,17 @@
    {
     "k": "settle",
     "who": "enemy",
-    "base": 1.0,
+    "base": 1,
     "per": 0.25,
     "max": 3,
     "dur": 1,
     "init": 0
    }
   ],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "將行其疾",
@@ -1479,7 +1710,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "BURST",
+  "src": "INNATE"
  },
  {
   "nameZh": "將門虎女",
@@ -1504,7 +1738,10 @@
   ],
   "_src": "https://3g.7723.cn/strategy/67224.html",
   "_real": "對敵軍2人造成兵刃傷害（傷害率128%）並施加「虎嗔」：下1回合對目標造成兵刃傷害（初始20%，每次受傷+30%，最多3層=110%）；目標在虎嗔期間受3次傷害時，立即結算虎嗔並額外施加1回合震慑，同時自身兵刃傷害提升8%（可疊加）。虎嗔DoT折入coef中暫未體現（上限110%額外傷害），震慑用stun near似；amp 0.08為自身累積增傷。",
-  "_conf": "high"
+  "_conf": "high",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "工神",
@@ -1528,7 +1765,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "帷內擅權",
@@ -1538,7 +1778,10 @@
   "rate": 0.7,
   "n": 3,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "弓腰姬",
@@ -1559,7 +1802,7 @@
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1.0,
+    "mult": 1,
     "dur": 99
    },
    {
@@ -1571,7 +1814,10 @@
   ],
   "_src": "https://sgz.ejoy.com/second/detail-5298.html",
   "_real": "指揮戰法。發動普通攻擊前對敵軍單體造成兵刃傷害（滿級傷害率122%）；自身擁有功能性增益狀態時，額外對目標造成兵刃傷害（20%×增益狀態數）並提升18武力，最多疊加5層（額外最多100%傷害+90武力）。coef=1.22為基礎傷害；effects中amp 0.20代表每層20%增益（引擎目前僅能表達定值，層數機制需擴充）；force stat mult僅為武力提升標記，具體數值受層數動態變化。 [引擎] 每層+20%增傷,最多5層",
-  "_conf": "high"
+  "_conf": "high",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "引弦力戰",
@@ -1589,7 +1835,10 @@
     "mult": 1.06,
     "dur": 3
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "形一陣",
@@ -1612,7 +1861,10 @@
     "val": 0.16,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "FORMATION",
+  "src": "EVENT"
  },
  {
   "nameZh": "形機軍略",
@@ -1622,7 +1874,10 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "忠勇義烈",
@@ -1640,7 +1895,10 @@
     "mult": 1.18,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "戮力上國",
@@ -1650,7 +1908,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INNATE"
  },
  {
   "nameZh": "戮力上心",
@@ -1660,7 +1921,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INNATE"
  },
  {
   "nameZh": "所向披靡",
@@ -1670,7 +1934,10 @@
   "rate": 0.3,
   "n": 3,
   "prep": 1,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "才辯機捷",
@@ -1694,7 +1961,10 @@
     "dur": 99
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "扶危定傾",
@@ -1719,7 +1989,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "承天靖世",
@@ -1735,7 +2008,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "折衝禦侮",
@@ -1760,7 +2036,10 @@
     "mult": 0.6,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "抬棺決戰",
@@ -1771,7 +2050,10 @@
   "n": 2,
   "prep": 1,
   "effects": [],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "持軍毅重",
@@ -1790,7 +2072,10 @@
     "dur": 3
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "挫銳",
@@ -1806,7 +2091,10 @@
     "who": "enemy",
     "dur": 3
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "振軍擊營",
@@ -1829,7 +2117,10 @@
     "dur": 3
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "捨身救主",
@@ -1853,7 +2144,10 @@
     "rounds": 30
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "掣刀斫敵",
@@ -1875,7 +2169,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "揮兵謀勝",
@@ -1911,13 +2208,16 @@
   ],
   "_src": "https://game.xiaomi.com/viewpoint/1434643977_1692280393894_13",
   "_real": "指揮戰法。前3回合每回合60%（主將基礎70%）概率賦予我軍群體2-3人1次抵禦；抵禦被消耗時治療單體（治療率94%受智力影響）；抵禦到期未消耗時我軍武力最高者兵刃反擊（傷害率94%）。",
-  "_conf": "med"
+  "_conf": "med",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "搦戰群雄",
   "type": "active",
   "kind": "phys",
-  "coef": 2.0,
+  "coef": 2,
   "rate": 0.35,
   "n": 2,
   "prep": 1,
@@ -1939,7 +2239,10 @@
   ],
   "_src": "https://m.ali213.net/wiki/sgzzlb/zf64.html",
   "_real": "準備1回合，對敵2人造成兵刃傷害（傷害率200%=每目標100%），隨後自身兵刃增傷25%、兵刃減傷25%（受武力影響），持續2回合。",
-  "_conf": "high"
+  "_conf": "high",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "摧鋒斷刃",
@@ -1956,7 +2259,10 @@
     "val": -0.2,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "BURST",
+  "src": "EVENT"
  },
  {
   "nameZh": "撫輯軍民",
@@ -1979,7 +2285,10 @@
     "val": 0.24,
     "dur": 3
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "EVENT"
  },
  {
   "nameZh": "擊其惰歸",
@@ -2002,7 +2311,10 @@
     "val": 0.25,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "據水斷橋",
@@ -2019,7 +2331,10 @@
     "val": -0.08,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "整軍經武",
@@ -2036,7 +2351,10 @@
     "val": 0.25,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "文武雙全",
@@ -2061,7 +2379,10 @@
     "mult": 1.12,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "智計",
@@ -2086,7 +2407,10 @@
     "mult": 0.85,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "暗渡陳倉",
@@ -2103,7 +2427,10 @@
     "dur": 2
    }
   ],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "暗箭難防",
@@ -2123,7 +2450,10 @@
   ],
   "_src": "https://www.gamersky.com/handbooksy/202305/1594508.shtml",
   "_real": "準備1回合，35%發動。對敵2人兵刃傷害（傷害率520%=系數5.2）；60%概率捕獲單體2回合（無法行動且禁用指揮被動，不可淨化）；若目標已被捕獲則追加兵刃傷害系數2.6（260%）。單回合最高傷害系數7.8。",
-  "_conf": "high"
+  "_conf": "high",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "暫避其鋒",
@@ -2140,7 +2470,10 @@
     "val": 0.4,
     "dur": 3
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "暴戾無仁",
@@ -2156,7 +2489,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "曉知良木",
@@ -2166,7 +2502,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INNATE"
  },
  {
   "nameZh": "杯蛇鬼車",
@@ -2183,7 +2522,10 @@
     "coef": 1.02,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "校勝帷幄",
@@ -2219,7 +2561,10 @@
   ],
   "_src": "https://www.gamersky.com/handbooksy/202007/1308628.shtml",
   "_real": "指揮戰法。提升主將奇謀（暴擊）概率7%→14%（受智力影響）、奇謀傷害提升20%；同時為主將分擔15%→30%傷害（分擔量視為兵力移除，不享受減傷加成）。",
-  "_conf": "high"
+  "_conf": "high",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "桃園結義",
@@ -2229,7 +2574,10 @@
   "rate": 1,
   "n": 3,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "EVENT"
  },
  {
   "nameZh": "梳妝擲戟",
@@ -2239,7 +2587,10 @@
   "rate": 0.5,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "槊血縱橫",
@@ -2264,7 +2615,10 @@
     "dur": 99
    }
   ],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "槍舞如風",
@@ -2286,7 +2640,7 @@
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1.0,
+    "mult": 1,
     "val": 40,
     "dur": 99,
     "_note": "掠陣疊2次後移除並使自身武力+40點，可無限疊加（每次觸發槍舞如風+普攻均可疊掠陣）"
@@ -2294,7 +2648,10 @@
   ],
   "_src": "https://m.ali213.net/news/gl2111/721697.html",
   "_real": "35%瞬發主動。賦予自身及友軍單體2次抵禦（1回合）；普攻後對目標造成兵刃傷害240%並施掠陣；掠陣累積2層後移除並武力+40點（可疊加，愈戰愈勇）。",
-  "_conf": "high"
+  "_conf": "high",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "機鑑先識",
@@ -2312,7 +2669,10 @@
     "dur": 99
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "橫戈躍馬",
@@ -2335,13 +2695,16 @@
     "val": 0.2,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "橫掃千軍",
   "type": "active",
   "kind": "phys",
-  "coef": 1.0,
+  "coef": 1,
   "rate": 0.4,
   "n": 3,
   "prep": 0,
@@ -2351,7 +2714,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "權僭九鼎",
@@ -2368,7 +2734,10 @@
     "coef": 0.12,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "止戈為武",
@@ -2384,7 +2753,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "武鋒陣",
@@ -2413,7 +2785,10 @@
     "val": 0.15,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "FORMATION",
+  "src": "EVENT"
  },
  {
   "nameZh": "死戰不退",
@@ -2437,7 +2812,10 @@
     "dur": 99
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "毒泉拒蜀",
@@ -2461,7 +2839,10 @@
   ],
   "_src": "user 提供 2026-06-29",
   "_real": "結算型猛毒(非逐回合DoT): 對敵單體(80%選統率最高)施2回合猛毒, 中毒期間不造傷; 毒消失/被淨化/疊滿3層時對敵全體謀略爆發(滿級150%+每層40%, 最多3層=270%, 受智力影響), 並清空自身戰法冷卻。普攻/我方蠻族非普攻使目標+1層。引擎近似: 延遲(prep)群體謀略爆發 coef≈2.2(假設常疊~2-3層); 層數/淨化觸發/冷卻未建模。",
-  "_conf": "high"
+  "_conf": "high",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "氣凌三軍",
@@ -2471,7 +2852,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "水淹七軍",
@@ -2495,7 +2879,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "水鏡先生",
@@ -2505,7 +2892,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INNATE"
  },
  {
   "nameZh": "江天長焰",
@@ -2529,7 +2919,10 @@
     "max": 99
    }
   ],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "江東小霸王",
@@ -2559,7 +2952,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "江東猛虎",
@@ -2580,7 +2976,7 @@
     "k": "redirect",
     "who": "self",
     "guard": "self",
-    "share": 1.0
+    "share": 1
    },
    {
     "k": "mitig",
@@ -2589,7 +2985,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "決水潰城",
@@ -2599,7 +2998,10 @@
   "rate": 0.45,
   "n": 2,
   "prep": 1,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "沉斷機謀",
@@ -2626,7 +3028,10 @@
   ],
   "_src": "https://app.ali213.net/wiki/sgzzlb/zf114.html",
   "_real": "對敵2人造謀略傷害（滿級78%），同時降低統率與智力各30%，持續2回合；無準備回合。effects[0]近似統率降30%（用amp enemy -0.30），effects[1]近似智力降30%（mult=0.70），引擎若支援雙屬性削弱可拆開。",
-  "_conf": "med"
+  "_conf": "med",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "沉沙決水",
@@ -2643,7 +3048,10 @@
     "val": 0.25,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "淑懿之德",
@@ -2669,7 +3077,10 @@
     "dur": 99
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "深藏若虛",
@@ -2692,7 +3103,10 @@
     "val": 0.2,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "深謀遠慮",
@@ -2709,7 +3123,10 @@
     "coef": 0.12,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "淵然難測",
@@ -2732,7 +3149,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "清流雅望",
@@ -2742,7 +3162,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INNATE"
  },
  {
   "nameZh": "溯江搖櫓",
@@ -2766,7 +3189,10 @@
     "prob": 0.6
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "潛龍陣",
@@ -2817,7 +3243,10 @@
     "val": 0.15,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "FORMATION",
+  "src": "EVENT"
  },
  {
   "nameZh": "濟貧好施",
@@ -2848,7 +3277,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "火熾原燎",
@@ -2858,7 +3290,10 @@
   "rate": 0.5,
   "n": 2,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "火燒連營",
@@ -2887,7 +3322,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "火神英風",
@@ -2918,7 +3356,10 @@
     "dur": 3
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "焚輜營壘",
@@ -2928,7 +3369,10 @@
   "rate": 0.4,
   "n": 2,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "無當飛軍",
@@ -2953,7 +3397,10 @@
     "mult": 1.09,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "焰逐風飛",
@@ -2975,7 +3422,10 @@
     "val": 0.12,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "熯天熾地",
@@ -2985,7 +3435,10 @@
   "rate": 0.35,
   "n": 3,
   "prep": 1,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "燕人咆哮",
@@ -3004,7 +3457,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "獅子奮迅",
@@ -3028,7 +3484,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "獨行赴鬥",
@@ -3051,7 +3510,10 @@
     "mult": 1.4,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "王佐之才",
@@ -3061,7 +3523,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INNATE"
  },
  {
   "nameZh": "用武通神",
@@ -3071,7 +3536,10 @@
   "rate": 1,
   "n": 2,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "當鋒摧決",
@@ -3087,7 +3555,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "BURST",
+  "src": "EVENT"
  },
  {
   "nameZh": "疾風驟雨",
@@ -3097,7 +3568,10 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "登鋒陷陣",
@@ -3120,7 +3594,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "白毦兵",
@@ -3130,7 +3607,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "白衣渡江",
@@ -3158,7 +3638,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "白馬義從",
@@ -3176,7 +3659,10 @@
     "mult": 1.5,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "百步穿楊",
@@ -3186,7 +3672,10 @@
   "rate": 0.35,
   "n": 3,
   "prep": 1,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "百計多謀",
@@ -3210,7 +3699,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "百騎劫營",
@@ -3220,7 +3712,10 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "益其金鼓",
@@ -3242,7 +3737,10 @@
     "coef": 0.75,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "盛氣凌敵",
@@ -3258,7 +3756,10 @@
     "who": "enemy",
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "監統震軍",
@@ -3284,7 +3785,10 @@
   ],
   "_src": "https://m.ali213.net/news/gl2011/519859.html",
   "_real": "指揮持續：友軍施加負面狀態時38%概率（受智力影響，實際可達70%+）延長1回合；自身普攻後對負面最多敵單體謀略傷害（伤害率114%，受智力），若敵無負面則治療損失最多友軍（治疗率92%）。以上数值疑为初级值，满级概率更高。effects[0]用amp enemy近似延長負面效果，effects[1]用heal ally近似輔助治療；謀略114%傷害引擎暫無觸發式output，需擴充。",
-  "_conf": "med"
+  "_conf": "med",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "眾動萬計",
@@ -3301,7 +3805,10 @@
     "val": -0.4,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "眾志成城",
@@ -3315,10 +3822,13 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 1.0,
+    "coef": 1,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "EVENT"
  },
  {
   "nameZh": "眾望所歸",
@@ -3335,7 +3845,10 @@
     "coef": 0.72,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "瞋目橫矛",
@@ -3353,7 +3866,10 @@
     "mult": 1.2,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "破軍威勝",
@@ -3371,7 +3887,10 @@
     "mult": 0.72,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "破陣摧堅",
@@ -3396,7 +3915,10 @@
     "mult": 0.68,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "神射",
@@ -3421,13 +3943,16 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "神機妙算",
   "type": "command",
   "kind": "intel",
-  "coef": 1.0,
+  "coef": 1,
   "rate": 1,
   "n": 2,
   "prep": 0,
@@ -3438,7 +3963,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "神機莫測",
@@ -3455,7 +3983,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "神火計",
@@ -3479,7 +4010,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "移花接木",
@@ -3489,7 +4023,10 @@
   "rate": 0.5,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "竊幸乘寵",
@@ -3515,7 +4052,10 @@
   ],
   "_src": "https://www.wywyx.com/gonglue/360587.html",
   "_real": "指揮持續：副將時截取主將20%治療量自身恢復；奇數回合對敵2人謀略傷害90%，對其中智力低於自身者額外謀略傷害120%（共計最高210%）。effects[0]用heal self coef=0.20近似截取回復；effects[1]用amp enemy -0.90近似謀略傷害（奇數回合觸發機制引擎未支援，需擴充）。",
-  "_conf": "med"
+  "_conf": "med",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "竭力佐謀",
@@ -3533,7 +4073,10 @@
     "mult": 0.8,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "竭忠盡智",
@@ -3563,7 +4106,10 @@
     "dur": 1
    }
   ],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "符命自立",
@@ -3577,13 +4123,16 @@
    {
     "k": "decay",
     "who": "self",
-    "v0": 1.0,
+    "v0": 1,
     "rounds": 8
    }
   ],
   "_src": "https://app.ali213.net/wiki/sgzzlb/zf107.html",
   "_real": "被動：戰鬥前2回合自身獲得玉璽，滿級提升100%會心（兵刃暴擊）與奇謀（謀略暴擊）機率，逐回合衰減至第8回合歸零；主將時額外提高主動戰法發動率25%（準備戰法35%），同樣衰減。effects[0]用amp self val=1.0近似會心/奇謀+100%（衰減機制引擎未支援）；effects[1]用stat speed mult=1.25近似主將發動率提升。機制複雜建議引擎擴充「decay_amp」類型。 [引擎] 玉璽: 開場+100%增傷, 8回合線性歸零",
-  "_conf": "med"
+  "_conf": "med",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "箕形陣",
@@ -3606,7 +4155,10 @@
     "val": 0.2,
     "dur": 3
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "FORMATION",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "精練策數",
@@ -3629,7 +4181,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "累世立名",
@@ -3663,7 +4218,10 @@
   ],
   "_src": "https://app.ali213.net/wiki/sgzzlb/zf56.html",
   "_real": "準備1回合，對敵2人造兵刃傷害（滿級252%），降低統率約24點（受武力影響，mult近似0.88），附灼燒2回合（每次行動扣60%傷害率）；主將時提升全隊統率80點（mult近似1.10）持續3回合。effects[1]用amp enemy近似灼燒DoT（持續傷害引擎暫無DoT類型，用amp近似）；統率加減用點數非百分比，mult係依平均統率估算，實際應為flat加減。",
-  "_conf": "med"
+  "_conf": "med",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "結盟",
@@ -3673,7 +4231,10 @@
   "rate": 0.45,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "絕其汲道",
@@ -3683,7 +4244,10 @@
   "rate": 0.5,
   "n": 2,
   "prep": 1,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "絕地反擊",
@@ -3701,7 +4265,10 @@
     "mult": 1.24,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "絕計折謀",
@@ -3711,17 +4278,23 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "經天緯地",
   "type": "command",
   "kind": "intel",
-  "coef": 1.0,
+  "coef": 1,
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "經術政要",
@@ -3731,7 +4304,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "義心昭烈",
@@ -3748,7 +4324,10 @@
     "val": 0.14,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "義膽雄心",
@@ -3774,7 +4353,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "聚石成金",
@@ -3799,7 +4381,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "肉身鐵壁",
@@ -3823,7 +4408,10 @@
     "dur": 99
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "胡笳十八拍",
@@ -3847,7 +4435,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "胡笳餘音",
@@ -3870,7 +4461,10 @@
     "val": 0.26,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "臥薪嘗膽",
@@ -3886,7 +4480,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "臨危救主",
@@ -3909,7 +4506,10 @@
     "val": 0,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "EVENT"
  },
  {
   "nameZh": "臨戰先登",
@@ -3920,7 +4520,10 @@
   "n": 2,
   "prep": 0,
   "effects": [],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "臨機制勝",
@@ -3930,7 +4533,10 @@
   "rate": 0.55,
   "n": 2,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "臨鋒決敵",
@@ -3940,7 +4546,10 @@
   "rate": 0.55,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "至柔動剛",
@@ -3979,7 +4588,10 @@
   ],
   "_src": "http://m.7724.com/sgzzlbyx/news/140110.html",
   "_real": "指揮持續：降低全體（我敵）普攻傷害35%；我軍普攻後自身50%概率對敵單體謀略傷害106%（受智力）；受到傷害時50%概率偷取來源智/統/速任一屬性10點，可疊加，持續5回合。effects[0/1]用mitig近似雙方普攻減傷35%；effects[2]用amp enemy near謀略反擊106%（觸發條件為普攻後，引擎需擴充「counter_intel」）；effects[3]用stat enemy intel mult=0.90近似偷屬性削弱（偷三種屬性之一随機，引擎暫簡化為intel削弱）。",
-  "_conf": "med"
+  "_conf": "med",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "臻於至善",
@@ -3997,7 +4609,10 @@
     "mult": 1.16,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "興雲佈雨",
@@ -4014,7 +4629,10 @@
     "val": -0.1,
     "dur": 5
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "興雲布雨",
@@ -4035,7 +4653,10 @@
   ],
   "_src": "https://syzs.qq.com/blog/news/20221203A03RAE00",
   "_real": "指揮戰法。戰鬥第2回合起使敵軍全體（3人）進入水攻狀態，每回合傷害率72%（受智力影響），持續5回合，總傷害率360%；DoT機制，非直接傷害。",
-  "_conf": "high"
+  "_conf": "high",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "舌戰群儒",
@@ -4045,7 +4666,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "花容月貌",
@@ -4055,7 +4679,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "INTERNAL",
+  "src": "INNATE"
  },
  {
   "nameZh": "苦肉計",
@@ -4084,7 +4711,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "草船借箭",
@@ -4101,7 +4731,10 @@
     "coef": 0.28,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "萬箭齊發",
@@ -4111,7 +4744,10 @@
   "rate": 0.4,
   "n": 3,
   "prep": 1,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "萬軍取將",
@@ -4121,7 +4757,10 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "萬軍奪帥",
@@ -4144,7 +4783,10 @@
     "mult": 0.15,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "蓄勢待發",
@@ -4154,7 +4796,10 @@
   "rate": 1,
   "n": 3,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "EVENT"
  },
  {
   "nameZh": "蕙質蘭心",
@@ -4191,7 +4836,10 @@
     "dur": 99
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "藏器待時",
@@ -4214,7 +4862,10 @@
     "val": 0.2,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "藤甲兵",
@@ -4231,7 +4882,10 @@
     "val": 0.24,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "虎侯",
@@ -4256,7 +4910,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "虎痴",
@@ -4276,11 +4933,14 @@
    {
     "k": "pierce",
     "who": "self",
-    "val": 1.0,
+    "val": 1,
     "dur": 99
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "虎衛軍",
@@ -4298,7 +4958,10 @@
     "mult": 1.05,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "EVENT"
  },
  {
   "nameZh": "虎豹騎",
@@ -4316,7 +4979,10 @@
     "mult": 1.16,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "虎踞鷹揚",
@@ -4333,7 +4999,10 @@
     "val": 0.28,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "處茲不惑",
@@ -4360,7 +5029,10 @@
   ],
   "_src": "https://www.gamedog.cn/games/a/2760730.html",
   "_real": "主動戰法（35%）。對敵軍群體2人，灼燒、中毒、潰逃三狀態各以60%獨立判定施加，每狀態每回合傷害率70%（受智力/武力各別影響），持續2回合。引擎以單條DoT近似，_real記三狀態獨立疊加機制。",
-  "_conf": "high"
+  "_conf": "high",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "虛實奇謀",
@@ -4403,7 +5075,10 @@
   ],
   "_src": "https://news.17173.com/content/01162025/013902358.shtml",
   "_real": "指揮戰法。依主將兵種適性（A/S）提供不同增益：A→戰鬥屬性+8%；S→自帶主動發動率+8%（均受智力影響）。每回合50%機率（受智力影響）使我軍群體2-3人進入1回合剛毅；35%機率（受智力影響）使持有者不受負面狀態影響。引擎以stat/mitig近似。",
-  "_conf": "high"
+  "_conf": "high",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "血刃爭鋒",
@@ -4420,7 +5095,10 @@
     "val": 0.75,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "裸衣血戰",
@@ -4451,7 +5129,10 @@
     "mult": 0.6,
     "dur": 3
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "西涼鐵騎",
@@ -4468,7 +5149,10 @@
     "val": 0.25,
     "dur": 3
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "解煩衛",
@@ -4486,7 +5170,10 @@
     "mult": 1.1,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "EVENT"
  },
  {
   "nameZh": "計定謀決",
@@ -4518,7 +5205,10 @@
     "dur": 1
    }
   ],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "誓守無降",
@@ -4541,7 +5231,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "誘敵深入",
@@ -4558,7 +5251,10 @@
     "val": 0.25,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "象兵",
@@ -4575,7 +5271,10 @@
     "val": 0.2,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "赴湯蹈火",
@@ -4592,7 +5291,10 @@
     "val": 0,
     "dur": 5
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "速乘其利",
@@ -4608,7 +5310,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "連環計",
@@ -4632,7 +5337,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "運籌決算",
@@ -4642,7 +5350,10 @@
   "rate": 0.45,
   "n": 3,
   "prep": 1,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "酒池肉林",
@@ -4667,7 +5378,10 @@
     "dur": 99
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "金丹秘術",
@@ -4691,7 +5405,10 @@
     "dur": 3
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "金城湯池",
@@ -4721,7 +5438,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "鋒矢陣",
@@ -4744,7 +5464,10 @@
     "val": 0.25,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "FORMATION",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "鋒芒畢露",
@@ -4761,7 +5484,10 @@
     "val": 0,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "錦囊妙計",
@@ -4775,17 +5501,20 @@
    {
     "k": "amp",
     "who": "ally",
-    "val": 1.0,
+    "val": 1,
     "dur": 1
    },
    {
     "k": "heal",
     "who": "ally",
-    "coef": 1.0,
+    "coef": 1,
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "錦帆百翎",
@@ -4809,7 +5538,10 @@
     "dur": 99
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "錦帆軍",
@@ -4826,7 +5558,10 @@
     "val": 0.06,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "EVENT"
  },
  {
   "nameZh": "鎮扼防拒",
@@ -4841,7 +5576,7 @@
     "k": "redirect",
     "who": "ally",
     "guard": "max_force",
-    "share": 1.0
+    "share": 1
    },
    {
     "k": "heal",
@@ -4850,7 +5585,10 @@
     "dur": 1
    }
   ],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "鐵騎驅馳",
@@ -4873,7 +5611,10 @@
     "mult": 0.85,
     "dur": 3
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "EVENT"
  },
  {
   "nameZh": "長驅直入",
@@ -4897,7 +5638,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "閉月",
@@ -4920,7 +5664,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "陷陣營",
@@ -4951,7 +5698,10 @@
     "coef": 0.6,
     "dur": 3
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "陷陣突襲",
@@ -4975,7 +5725,10 @@
     "dur": 99
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "雁行陣",
@@ -4985,7 +5738,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "FORMATION",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "離月",
@@ -5009,7 +5765,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "雲聚影從",
@@ -5029,14 +5788,17 @@
    {
     "k": "counter",
     "who": "ally",
-    "coef": 1.0,
+    "coef": 1,
     "kind": "phys",
     "prob": 0.5
    }
   ],
   "_src": "http://www.7724.com/sggame/news/71486.html",
   "_real": "指揮戰法。自身受普攻時50%機率（受武力影響）使武力最高友軍單體代承普攻，並賦予該友軍反擊效果（傷害率100%）及急救（受傷時30%機率治療率100%）。引擎以mitig+反擊amp+heal近似，真實機制為傷害轉移。 [引擎] 武力最高友軍代承40% [引擎] 加 counter 近似代承者反擊。",
-  "_conf": "med"
+  "_conf": "med",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "震駭四境",
@@ -5063,7 +5825,10 @@
   ],
   "_src": "https://3g.7723.cn/strategy/235069.html",
   "_real": "主動戰法（35%）。瞬發，對敵軍單體發動2次兵刃攻擊，合計傷害率約356%（兩段178%）；第一段附加受傷提升約30%（受武力影響，持續2回合），第二段附加計窮1回合（禁用主動戰法）。coef=3.56折合兩段合計。",
-  "_conf": "high"
+  "_conf": "high",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "靈機一動",
@@ -5073,7 +5838,10 @@
   "rate": 0.55,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "青囊",
@@ -5098,7 +5866,10 @@
     "dur": 1
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "青州兵",
@@ -5115,7 +5886,10 @@
     "coef": 1.8,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "EVENT"
  },
  {
   "nameZh": "非攻制勝",
@@ -5132,7 +5906,10 @@
     "coef": 0.5,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "EVENT"
  },
  {
   "nameZh": "韜心惑敵",
@@ -5154,7 +5931,10 @@
     "val": -0.3,
     "dur": 3
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "顧盼生姿",
@@ -5180,7 +5960,10 @@
     "dur": 2
    }
   ],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "風助火勢",
@@ -5190,7 +5973,10 @@
   "rate": 0.5,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "飛沙走石",
@@ -5231,7 +6017,10 @@
   ],
   "_src": "https://www.gamersky.com/handbooksy/202307/1617272.shtml",
   "_real": "主動戰法（50%）。奇數回合：使敵軍群體2人智力降低36點（受智力影響，1回合）並陷入水攻狀態2回合（傷害率58%/回）；偶數回合：使敵軍隨機單體武力智力數值對調（1回合）並陷入沙暴狀態2回合（傷害率108%/回）。引擎以stat+dot分別近似，武力智力互換機制記於_real待擴充。 [引擎] 偶數回合武智互換(近似)",
-  "_conf": "high"
+  "_conf": "high",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "飛熊軍",
@@ -5248,7 +6037,10 @@
     "coef": 0.5,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "TROOP",
+  "src": "EVENT"
  },
  {
   "nameZh": "高櫓連營",
@@ -5277,7 +6069,10 @@
     "dur": 2
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INNATE"
  },
  {
   "nameZh": "鬼神霆威",
@@ -5287,7 +6082,10 @@
   "rate": 0.35,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "BURST",
+  "src": "EVENT"
  },
  {
   "nameZh": "魅惑",
@@ -5303,7 +6101,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "魚鱗陣",
@@ -5327,7 +6128,10 @@
     "coef": 0.3,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "FORMATION",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "鳩毒",
@@ -5345,7 +6149,10 @@
     "mult": 0.7,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "鴆毒",
@@ -5380,7 +6187,10 @@
     "dur": 99
    }
   ],
-  "_src": " +整批重解(15原語)"
+  "_src": " +整批重解(15原語)",
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "鴟苕鳳姿",
@@ -5402,7 +6212,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "PASSIVE",
+  "src": "INNATE"
  },
  {
   "nameZh": "鷹視狼顧",
@@ -5426,7 +6239,10 @@
     "dur": 99
    }
   ],
-  "_src": " +他AI補全effectText/重解"
+  "_src": " +他AI補全effectText/重解",
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "黃天泰平",
@@ -5442,7 +6258,10 @@
     "who": "enemy",
     "dur": 2
    }
-  ]
+  ],
+  "quality": "S",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "一舉殲滅",
@@ -5458,7 +6277,10 @@
     "who": "enemy",
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "不辱使命",
@@ -5474,7 +6296,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "五穀豐登",
@@ -5484,7 +6309,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "倉廩豐實",
@@ -5494,7 +6322,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "INTERNAL",
+  "src": "EVENT"
  },
  {
   "nameZh": "偃旗息鼓",
@@ -5511,7 +6342,10 @@
     "val": 0.25,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "傳檄宣威",
@@ -5527,7 +6361,10 @@
     "who": "enemy",
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "出其不意",
@@ -5543,7 +6380,10 @@
     "who": "enemy",
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "出口成章",
@@ -5553,7 +6393,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "千里饋糧",
@@ -5577,7 +6420,10 @@
     "mult": 1.1,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "千里馳援",
@@ -5595,7 +6441,10 @@
     "mult": 1.16,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "唇槍舌戰",
@@ -5611,7 +6460,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "坐守孤城",
@@ -5628,7 +6480,10 @@
     "coef": 1.16,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "天降火雨",
@@ -5645,7 +6500,10 @@
     "coef": -0.66,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "奮突",
@@ -5667,7 +6525,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "妖術",
@@ -5684,7 +6545,10 @@
     "coef": -0.72,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "威風凜凜",
@@ -5700,7 +6564,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "屠几上肉",
@@ -5710,7 +6577,10 @@
   "rate": 0.35,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "左右開弓",
@@ -5727,7 +6597,10 @@
     "coef": -0.9,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "廬江上甲",
@@ -5751,7 +6624,10 @@
     "val": 0.4,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "強攻",
@@ -5761,7 +6637,10 @@
   "rate": 0.25,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "彎弓飲羽",
@@ -5784,7 +6663,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "後發制人",
@@ -5794,7 +6676,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "手起刀落",
@@ -5804,7 +6689,10 @@
   "rate": 0.3,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "才器過人",
@@ -5814,7 +6702,10 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "挫志怒襲",
@@ -5830,7 +6721,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "挾勢弄權",
@@ -5846,7 +6740,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "整裝待發",
@@ -5863,7 +6760,10 @@
     "coef": 0.88,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "COMMAND",
+  "src": "EVENT"
  },
  {
   "nameZh": "斂眾而擊",
@@ -5880,7 +6780,10 @@
     "coef": 0.88,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "EVENT"
  },
  {
   "nameZh": "料事如神",
@@ -5897,7 +6800,10 @@
     "val": -0.16,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "明察秋毫",
@@ -5907,7 +6813,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "暗潮洶湧",
@@ -5917,7 +6826,10 @@
   "rate": 0.4,
   "n": 1,
   "prep": 1,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "暗潮湧動",
@@ -5927,7 +6839,10 @@
   "rate": 0.35,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "暗藏玄機",
@@ -5937,7 +6852,10 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "暴斂四方",
@@ -5953,7 +6871,10 @@
     "who": "enemy",
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "枯木逢春",
@@ -5970,7 +6891,10 @@
     "coef": 0.5,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "機略縱橫",
@@ -5987,7 +6911,10 @@
     "coef": -0.58,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "淨化",
@@ -5997,7 +6924,10 @@
   "rate": 0.3,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "爭分奪秒",
@@ -6007,7 +6937,10 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "白眉",
@@ -6017,7 +6950,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "百鍊成鋼",
@@ -6056,13 +6992,16 @@
     "mult": 1.14,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "矢志不移",
   "type": "passive",
   "kind": "phys",
-  "coef": 1.0,
+  "coef": 1,
   "rate": 1,
   "n": 3,
   "prep": 0,
@@ -6074,7 +7013,10 @@
     "mult": 1.06,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "知己知彼",
@@ -6091,7 +7033,10 @@
     "val": 0.15,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "COMMAND",
+  "src": "EVENT"
  },
  {
   "nameZh": "短兵相接",
@@ -6109,7 +7054,10 @@
     "mult": 0.88,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "短兵相見",
@@ -6127,7 +7075,10 @@
     "mult": 0.88,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "神上使",
@@ -6144,7 +7095,10 @@
     "coef": -0.68,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "禦敵屏障",
@@ -6161,7 +7115,10 @@
     "val": 0.25,
     "dur": 4
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "縱兵劫掠",
@@ -6177,7 +7134,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "聲東擊西",
@@ -6195,7 +7155,10 @@
     "mult": 0.8,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "腹背受敵",
@@ -6211,7 +7174,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "自癒",
@@ -6225,10 +7191,13 @@
    {
     "k": "heal",
     "who": "self",
-    "coef": 1.0,
+    "coef": 1,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "落雷",
@@ -6245,7 +7214,10 @@
     "val": -0.18,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "落鳳",
@@ -6261,7 +7233,10 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "見機行事",
@@ -6271,7 +7246,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "詐降",
@@ -6293,7 +7271,10 @@
     "coef": 1.6,
     "dur": 3
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "謙讓",
@@ -6310,7 +7291,10 @@
     "val": 0.22,
     "dur": 3
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "輕勇飛燕",
@@ -6320,7 +7304,10 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "進言",
@@ -6338,7 +7325,10 @@
     "mult": 1.2,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "避實擊虛",
@@ -6348,7 +7338,10 @@
   "rate": 0.5,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "長者之風",
@@ -6373,7 +7366,10 @@
     "mult": 1.14,
     "dur": 99
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "風聲鶴唳",
@@ -6390,7 +7386,10 @@
     "coef": 1.2,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "養兵千日",
@@ -6400,7 +7399,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "養馬有道",
@@ -6410,7 +7412,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "騎虎難下",
@@ -6420,7 +7425,10 @@
   "rate": 1,
   "n": 2,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "A",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "驅散",
@@ -6438,7 +7446,10 @@
     "mult": 1.14,
     "dur": 3
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "驍健神行",
@@ -6454,13 +7465,16 @@
     "who": "enemy",
     "dur": 1
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "驍勇善戰",
   "type": "active",
   "kind": "phys",
-  "coef": 3.0,
+  "coef": 3,
   "rate": 0.35,
   "n": 1,
   "prep": 1,
@@ -6472,7 +7486,10 @@
     "mult": 1.27,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "魯莽",
@@ -6489,7 +7506,10 @@
     "coef": 0.42,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "A",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "鷹視",
@@ -6499,7 +7519,10 @@
   "rate": 1,
   "n": 2,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "伐木精通",
@@ -6509,7 +7532,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "刺傷",
@@ -6519,7 +7545,10 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "包紮",
@@ -6536,7 +7565,10 @@
     "coef": 1.2,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "博聞",
@@ -6546,7 +7578,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "取磨寸鐵",
@@ -6556,7 +7591,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "垂惠萬物",
@@ -6566,7 +7604,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "S",
+  "cat": "COMMAND",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "壓制",
@@ -6576,7 +7617,10 @@
   "rate": 0.25,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "奮發",
@@ -6586,7 +7630,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "PASSIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "妙書銘石",
@@ -6596,7 +7643,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "巧匠",
@@ -6606,7 +7656,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "急馴",
@@ -6616,7 +7669,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "按圖索驥",
@@ -6626,7 +7682,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "挑釁",
@@ -6643,7 +7702,10 @@
     "val": 0.2,
     "dur": 1
    }
-  ]
+  ],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "挖採",
@@ -6653,7 +7715,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "挖礦精通",
@@ -6663,7 +7728,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "採石精通",
@@ -6673,17 +7741,23 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "揮砍",
   "type": "active",
   "kind": "phys",
-  "coef": 1.0,
+  "coef": 1,
   "rate": 0.5,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "援救",
@@ -6700,7 +7774,10 @@
     "coef": 0.75,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "放火",
@@ -6710,7 +7787,10 @@
   "rate": 0.35,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "橫掃",
@@ -6720,7 +7800,10 @@
   "rate": 0.3,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "殿後",
@@ -6730,7 +7813,10 @@
   "rate": 0.25,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "毒氣",
@@ -6740,23 +7826,29 @@
   "rate": 0.35,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "火攻",
   "type": "active",
   "kind": "intel",
-  "coef": 1.0,
+  "coef": 1,
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "牽制",
   "type": "active",
   "kind": "phys",
-  "coef": 1.0,
+  "coef": 1,
   "rate": 0.35,
   "n": 1,
   "prep": 0,
@@ -6775,7 +7867,10 @@
     "mult": 0.9,
     "dur": 2
    }
-  ]
+  ],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "牽連",
@@ -6785,7 +7880,10 @@
   "rate": 0.35,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "猛擊",
@@ -6795,7 +7893,10 @@
   "rate": 0.45,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "砍伐",
@@ -6805,7 +7906,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "破甲",
@@ -6815,7 +7919,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "碩果累累",
@@ -6825,7 +7932,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "種田精通",
@@ -6835,7 +7945,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "端莊持重",
@@ -6845,7 +7958,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "簡政",
@@ -6855,7 +7971,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "細緻入微",
@@ -6865,7 +7984,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "談心",
@@ -6875,7 +7997,10 @@
   "rate": 0.23,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "識破",
@@ -6885,7 +8010,10 @@
   "rate": 0.25,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "踐踏",
@@ -6895,7 +8023,10 @@
   "rate": 0.35,
   "n": 2,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "追傷",
@@ -6905,7 +8036,10 @@
   "rate": 0.25,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "還擊",
@@ -6915,7 +8049,10 @@
   "rate": 0.35,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "重擊",
@@ -6925,7 +8062,10 @@
   "rate": 0.3,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "BURST",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "鑄匠",
@@ -6935,7 +8075,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "頑鐵生輝",
@@ -6945,7 +8088,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "高瞻遠矚",
@@ -6955,7 +8101,10 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "INTERNAL",
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "鬥智",
@@ -6965,6 +8114,9 @@
   "rate": 0.3,
   "n": 1,
   "prep": 0,
-  "effects": []
+  "effects": [],
+  "quality": "B",
+  "cat": "ACTIVE",
+  "src": "INHERITANCE"
  }
 ]
