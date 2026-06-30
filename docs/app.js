@@ -171,6 +171,14 @@ function initTabs() {
 function availEquips(g) {
   return Object.values(SGZ.equips()).filter(e => !e.exclusive || e.exclusive === g.name).map(e => e.name);
 }
+function statBars(g, tr, alloc) {                  // 武智統速 + 加點(含適性)
+  const m = aptMul(g, tr);
+  return STAT4.map(s => {
+    const v = (g.base[s] + (alloc[s] || 0)) * m;
+    const add = alloc[s] ? `<i>+${alloc[s]}</i>` : "";
+    return `<span class="st">${STATLAB[s]}<b>${v | 0}</b>${add}</span>`;
+  }).join("");
+}
 function renderSlots(side) {
   const tr = effTroop(side);
   const sel = document.querySelector(`.troop[data-side="${side}"]`);
@@ -180,28 +188,35 @@ function renderSlots(side) {
   for (let i = 0; i < 3; i++) {
     const n = teams[side][i], g = n && POOL[n];
     const d = document.createElement("div");
-    d.className = "slot";
     if (g) {
       const bd = getBuild(side, i), bc = getBsel(side, i);
-      d.innerHTML = `${facBadge(g.faction)}<div style="flex:1">
-        <div class="nm">${n} <span class="apt ${g.apt[tr] || ""}">${tr}${aptOf(g, tr)}</span>
-          <button class="cog" title="養成加點">⚙</button></div>
-        <div class="sub">${statStr(g, tr, bd.alloc)}</div>
-        <div class="sub" style="color:#9a8b6a">${buildSummary(bd)}</div>
-        <div class="sub">${bselSummary(bc)} <button class="book" title="兵書設定">📖</button>　裝備 <select class="eq"></select></div>
-        <div class="sub" style="color:#9a8b6a">傳承：${(inhsel[side][i] || []).join("、") || "無"} <button class="inh" title="傳承戰法">📜</button></div></div>`;
-      d.querySelector(".cog").onclick = e => { e.stopPropagation(); openBuild(side, i); };
-      d.querySelector(".book").onclick = e => { e.stopPropagation(); openBingshu(side, i); };
-      d.querySelector(".inh").onclick = e => { e.stopPropagation(); openInherit(side, i); };
+      const act = g.tactic && g.tactic.type === "active" ? '<span class="gact">動</span>' : "";
+      const inh = inhsel[side][i] || [];
+      d.className = "gcard-sim";
+      d.innerHTML = `
+        <div class="grole ${i === 0 ? "main" : ""}">${i === 0 ? "主將" : "副將"}・總兵力 10000</div>
+        <div class="gport" style="background-image:url('${cardSrc(n)}')"></div>
+        <div class="gtag">${facBadge(g.faction)}<span class="gnm">${n}</span>${act}</div>
+        <div class="glv">Lv50・${tr}兵 <span class="apt ${g.apt[tr] || ""}">${aptOf(g, tr)}</span></div>
+        <div class="gstats">${statBars(g, tr, bd.alloc)}</div>
+        <div class="grow">⚔ ${g.tacticName}${inh.length ? "＋" + inh.join("/") : ""} <button class="inh" title="傳承戰法">📜</button></div>
+        <div class="grow">${bselSummary(bc)} <button class="book" title="兵書">📖</button></div>
+        <div class="grow">${buildSummary(bd)} <button class="cog" title="養成">⚙</button></div>
+        <div class="grow">裝備 <select class="eq"></select></div>`;
+      d.querySelector(".gport").onclick = () => openPicker(side, i);
+      d.querySelector(".gtag").onclick = () => openPicker(side, i);
+      d.querySelector(".cog").onclick = () => openBuild(side, i);
+      d.querySelector(".book").onclick = () => openBingshu(side, i);
+      d.querySelector(".inh").onclick = () => openInherit(side, i);
       const eqs = availEquips(g), curE = eqsel[side][i] || "";
       const eq = d.querySelector(".eq");
       eq.innerHTML = `<option value="">無</option>` + eqs.map(x => `<option${x === curE ? " selected" : ""}>${x}</option>`).join("");
-      eq.onclick = e => e.stopPropagation();
-      eq.onchange = e => { e.stopPropagation(); eqsel[side][i] = eq.value || null; };
+      eq.onchange = () => { eqsel[side][i] = eq.value || null; };
     } else {
-      d.innerHTML = `<span class="ph">＋ 點選武將</span>`;
+      d.className = "gcard-sim empty";
+      d.innerHTML = `<div class="gempty">＋<br>點選武將</div>`;
+      d.onclick = () => openPicker(side, i);
     }
-    d.onclick = () => openPicker(side, i);
     box.appendChild(d);
   }
   const filled = teams[side].filter(Boolean);

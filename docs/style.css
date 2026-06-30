@@ -54,15 +54,31 @@ button{cursor:pointer;font-family:inherit}
 .apt.S{background:#e8c84a}.apt.A{background:#7fce8a}.apt.B{background:#8fb4e0}
 .apt.C{background:#c9a98a}.apt.D{background:#b08a8a}
 .vs{align-self:center;color:var(--gold);font-size:24px;font-weight:bold;padding:10px}
-.slots{display:flex;flex-direction:column;gap:8px}
-.slot{height:64px;border:1px dashed var(--line);border-radius:8px;display:flex;
-  align-items:center;gap:10px;padding:0 10px;cursor:pointer;background:#1b140e}
-.slot:hover{border-color:var(--gold)}
-.slot .nm{font-size:17px;color:var(--gold2)}
-.slot .sub{font-size:12px;color:#b8a987}
-.slot .ph{color:#6b5a3e;font-size:15px}
-.slot .fac{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;
-  justify-content:center;color:#fff;font-size:15px;flex-shrink:0}
+.slots{display:flex;gap:8px}
+.fac{width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;
+  justify-content:center;color:#fff;font-size:13px;flex-shrink:0;vertical-align:middle}
+.gcard-sim{flex:1;min-width:0;background:#1b140e;border:1px solid var(--line);border-radius:10px;
+  overflow:hidden;display:flex;flex-direction:column}
+.gcard-sim.empty{cursor:pointer;align-items:center;justify-content:center;min-height:260px}
+.gcard-sim.empty:hover{border-color:var(--gold)}
+.gempty{color:#6b5a3e;text-align:center;font-size:15px;line-height:1.8}
+.grole{background:linear-gradient(90deg,#3a2a18,#1b140e);color:#b8a987;font-size:11px;
+  padding:3px 6px;border-bottom:1px solid var(--line)}
+.grole.main{color:var(--gold2)}
+.gport{aspect-ratio:832/1216;background-size:cover;background-position:top center;background-color:#0d0a07;
+  cursor:pointer}
+.gtag{padding:5px 6px 2px;cursor:pointer;font-size:14px;color:var(--gold2);display:flex;align-items:center;gap:4px}
+.gnm{font-weight:bold}
+.gact{background:var(--red);color:#fff;font-size:10px;border-radius:3px;padding:0 4px;margin-left:auto}
+.glv{font-size:11px;color:#9a8b6a;padding:0 6px}
+.gstats{display:grid;grid-template-columns:1fr 1fr;gap:2px 6px;padding:5px 6px}
+.gstats .st{font-size:11px;color:#b8a987}
+.gstats .st b{color:var(--ink);font-size:12px}
+.gstats .st i{color:var(--gold);font-style:normal}
+.grow{font-size:11px;color:#b8a987;padding:3px 6px;display:flex;align-items:center;gap:4px;
+  border-top:1px solid #2a2018}
+.grow .eq{flex:1;min-width:0;font-size:11px}
+.grow button{margin-left:auto}
 .sim-controls{text-align:center;margin:20px 0;display:flex;gap:10px;justify-content:center}
 #clearSim,#optimize{background:#2a2018;color:var(--ink);border:1px solid var(--line);
   padding:12px 18px;border-radius:8px;font-family:inherit;font-size:15px}
