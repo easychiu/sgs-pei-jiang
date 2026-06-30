@@ -197,7 +197,8 @@ function renderSlots(side) {
         <div class="grole ${i === 0 ? "main" : ""}">${i === 0 ? "主將" : "副將"}・總兵力 10000</div>
         <div class="gport" style="background-image:url('${cardSrc(n)}')"></div>
         <div class="gtag">${facBadge(g.faction)}<span class="gnm">${n}</span>${act}</div>
-        <div class="glv">Lv50・${tr}兵 <span class="apt ${g.apt[tr] || ""}">${aptOf(g, tr)}</span></div>
+        <div class="glv">Lv50・採用 <b>${tr}兵</b></div>
+        <div class="gapt">${aptBadges(g)}</div>
         <div class="gstats">${statBars(g, tr, bd.alloc)}</div>
         <div class="grow">⚔ ${g.tacticName}${inh.length ? "＋" + inh.join("/") : ""} <button class="inh" title="傳承戰法">📜</button></div>
         <div class="grow">${bselSummary(bc)} <button class="book" title="兵書">📖</button></div>
