@@ -30,6 +30,17 @@ button{cursor:pointer;font-family:inherit}
   border-radius:10px;padding:12px}
 .team h2{margin:0 0 10px;text-align:center;color:var(--gold2);font-size:18px}
 .bondbar{text-align:center;color:var(--gold2);font-size:13px;margin-top:4px;min-height:16px}
+.cog{background:transparent;border:1px solid var(--line);color:var(--gold2);border-radius:5px;
+  font-size:13px;padding:0 6px;margin-left:4px;line-height:1.4}
+.cog:hover{border-color:var(--gold)}
+.brow{margin:10px 0;font-size:15px}
+.balloc{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}
+.balloc label{display:flex;flex-direction:column;gap:4px;color:var(--gold2);text-align:center}
+.balloc input{background:#2a2018;color:var(--ink);border:1px solid var(--line);border-radius:6px;
+  padding:8px;font-size:16px;text-align:center;font-family:inherit}
+#modal .modal-box button{background:#2a2018;color:var(--ink);border:1px solid var(--line);
+  padding:10px 16px;border-radius:8px}
+#modal .modal-box button.primary{background:linear-gradient(180deg,var(--red),#5c1a1a);color:var(--gold2);border-color:var(--gold)}
 .troop-sel{text-align:center;margin-bottom:10px;color:#b8a987;font-size:14px}
 .slot .eq,.slot .bs{max-width:46%}
 .troop-sel select{margin-left:4px}

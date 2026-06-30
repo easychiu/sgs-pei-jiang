@@ -9,6 +9,17 @@ const teams = { A: [null, null, null], B: [null, null, null] };
 const troops = { A: "", B: "" };                  // "" = 自動(依隊伍適性)
 const bsel = { A: [null, null, null], B: [null, null, null] };  // 各將兵書(null=預設主兵書)
 const eqsel = { A: [null, null, null], B: [null, null, null] }; // 各將裝備(null=無)
+const builds = { A: [null, null, null], B: [null, null, null] }; // 養成(null=預設: 進階滿+主屬性)
+const STAT4 = ["force", "intel", "command", "speed"];
+const STATLAB = { force: "武", intel: "智", command: "統", speed: "速" };
+const maxAdv = g => (g.stars >= 5 ? 5 : 4);
+const poolSize = (adv, col) => 50 + adv * 10 + (col ? 10 : 0);   // 加點池: 50 + 進階×10 + 典藏×10
+const primaryStat = g => STAT4.reduce((a, b) => g.base[b] > g.base[a] ? b : a);
+function defaultBuild(g) {                          // 預設: 進階滿、不典藏、點全加最高屬性
+    const adv = maxAdv(g);
+    return { advance: adv, collection: false, alloc: { [primaryStat(g)]: poolSize(adv, false) } };
+}
+const getBuild = (side, i) => builds[side][i] || defaultBuild(POOL[teams[side][i]]);
 const $ = s => document.querySelector(s);
 const pct = v => (v * 100).toFixed(0);
 const APT_PCT = { S: 1.2, A: 1.0, B: 0.85, C: 0.7, D: 0.55 };
@@ -20,9 +31,9 @@ function effTroop(side) {                          // 該隊實際採用兵種
   const m = teams[side].filter(Boolean);
   return m.length ? SGZ.teamTroop(POOL, m) : "騎";
 }
-function statStr(g, t) {                            // 套兵種適性後的面板
-  const m = aptMul(g, t);
-  return `武${g.base.force * m | 0} 智${g.base.intel * m | 0} 統${g.base.command * m | 0} 速${g.base.speed * m | 0}`;
+function statStr(g, t, add) {                       // 套養成加點 + 兵種適性後的面板
+  const m = aptMul(g, t), a = add || {};
+  return STAT4.map(s => `${STATLAB[s]}${(g.base[s] + (a[s] || 0)) * m | 0}`).join(" ");
 }
 function aptBadges(g) {
   return TROOPS.map(t => `<span class="apt ${g.apt[t] || ""}">${t}${aptOf(g, t)}</span>`).join("");
@@ -75,7 +86,7 @@ async function load() {
     renderSlots(s);
   });
   $("#runSim").onclick = runSim;
-  $("#clearSim").onclick = () => { teams.A = [null, null, null]; teams.B = [null, null, null]; bsel.A = [null, null, null]; bsel.B = [null, null, null]; eqsel.A = [null, null, null]; eqsel.B = [null, null, null]; renderSlots("A"); renderSlots("B"); $("#simResult").classList.add("hidden"); };
+  $("#clearSim").onclick = () => { for (const s of ["A", "B"]) { teams[s] = [null, null, null]; bsel[s] = [null, null, null]; eqsel[s] = [null, null, null]; builds[s] = [null, null, null]; } renderSlots("A"); renderSlots("B"); $("#simResult").classList.add("hidden"); };
   $("#runRec").onclick = runRec;
   $("#dexSearch").oninput = renderDex;
   $("#modal").onclick = e => { if (e.target.id === "modal") closeModal(); };
@@ -108,10 +119,15 @@ function renderSlots(side) {
     const d = document.createElement("div");
     d.className = "slot";
     if (g) {
+      const bd = getBuild(side, i);
       d.innerHTML = `${facBadge(g.faction)}<div style="flex:1">
-        <div class="nm">${n} <span class="apt ${g.apt[tr] || ""}">${tr}${aptOf(g, tr)}</span></div>
-        <div class="sub">${statStr(g, tr)}</div>
+        <div class="nm">${n} <span class="apt ${g.apt[tr] || ""}">${tr}${aptOf(g, tr)}</span>
+          <button class="cog" title="養成加點">⚙</button></div>
+        <div class="sub">${statStr(g, tr, bd.alloc)}</div>
+        <div class="sub" style="color:#9a8b6a">${buildSummary(bd)}</div>
         <div class="sub">兵書 <select class="bs"></select>　裝備 <select class="eq"></select></div></div>`;
+      const cog = d.querySelector(".cog");
+      cog.onclick = e => { e.stopPropagation(); openBuild(side, i); };
       const books = availBooks(g), curB = bsel[side][i] || SGZ.defaultBingshu(g) || "";
       const bs = d.querySelector(".bs");
       bs.innerHTML = books.length ? books.map(b => `<option${b === curB ? " selected" : ""}>${b}</option>`).join("") : `<option>—</option>`;
@@ -136,12 +152,12 @@ function renderSlots(side) {
   box.appendChild(bn);
 }
 function runSim() {
-  const A = [], B = [], bsA = [], bsB = [], eqA = [], eqB = [];
-  teams.A.forEach((n, i) => { if (n) { A.push(n); bsA.push(bsel.A[i] || SGZ.defaultBingshu(POOL[n])); eqA.push(eqsel.A[i]); } });
-  teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsel.B[i] || SGZ.defaultBingshu(POOL[n])); eqB.push(eqsel.B[i]); } });
+  const A = [], B = [], bsA = [], bsB = [], eqA = [], eqB = [], adA = [], adB = [];
+  teams.A.forEach((n, i) => { if (n) { A.push(n); bsA.push(bsel.A[i] || SGZ.defaultBingshu(POOL[n])); eqA.push(eqsel.A[i]); adA.push(getBuild("A", i).alloc); } });
+  teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsel.B[i] || SGZ.defaultBingshu(POOL[n])); eqB.push(eqsel.B[i]); adB.push(getBuild("B", i).alloc); } });
   if (!A.length || !B.length) { alert("兩邊各至少放 1 名武將"); return; }
   const ta = effTroop("A"), tb = effTroop("B");
-  const r = SGZ.simulate(POOL, A, B, 3000, ta, tb, bsA, bsB, eqA, eqB);
+  const r = SGZ.simulate(POOL, A, B, 3000, ta, tb, bsA, bsB, eqA, eqB, adA, adB);
   const res = $("#simResult"); res.classList.remove("hidden");
   res.innerHTML = `
     <div class="bar"><div class="a" style="width:${r.winA * 100}%">${pct(r.winA)}%</div>
@@ -157,7 +173,7 @@ function runRec() {
   $("#recList").innerHTML = list.map(([team, sc, tr]) =>
     `<li data-team='${JSON.stringify(team)}' data-troop="${tr}"><span><b class="gold">[${tr}兵]</b> ${team.join("　／　")}</span><span class="sc">${sc}</span></li>`).join("");
   document.querySelectorAll("#recList li").forEach(li => li.onclick = () => {
-    teams.A = [...JSON.parse(li.dataset.team)]; troops.A = li.dataset.troop; bsel.A = [null, null, null]; eqsel.A = [null, null, null];
+    teams.A = [...JSON.parse(li.dataset.team)]; troops.A = li.dataset.troop; bsel.A = [null, null, null]; eqsel.A = [null, null, null]; builds.A = [null, null, null];
     document.querySelector(`.troop[data-side="A"]`).value = li.dataset.troop;
     renderSlots("A");
     document.querySelector('.tab[data-tab="sim"]').click();
@@ -189,7 +205,7 @@ function openPicker(side, idx) {
     names.filter(n => !q || n.includes(q)).map(n =>
       `<div class="pick" data-n="${n}">${facBadge(POOL[n].faction)} ${n}</div>`).join("");
   const bind = () => box.querySelectorAll(".pick").forEach(p => p.onclick = () => {
-    teams[side][idx] = p.dataset.n; bsel[side][idx] = null; eqsel[side][idx] = null; renderSlots(side); closeModal();
+    teams[side][idx] = p.dataset.n; bsel[side][idx] = null; eqsel[side][idx] = null; builds[side][idx] = null; renderSlots(side); closeModal();
   });
   draw(""); bind();
   box.querySelector("#pickSearch").oninput = e => { draw(e.target.value.trim()); bind(); };
@@ -213,11 +229,45 @@ function showDetail(n) {
     <div style="text-align:right;margin-top:12px"><button id="toSim" class="primary">加入我方</button></div>`;
   box.querySelector("#toSim").onclick = () => {
     const i = teams.A.indexOf(null); if (i < 0) { alert("我方已滿"); return; }
-    teams.A[i] = n; bsel.A[i] = null; eqsel.A[i] = null; renderSlots("A"); closeModal();
+    teams.A[i] = n; bsel.A[i] = null; eqsel.A[i] = null; builds.A[i] = null; renderSlots("A"); closeModal();
     document.querySelector('.tab[data-tab="sim"]').click();
   };
   $("#modal").classList.remove("hidden");
 }
 function closeModal() { $("#modal").classList.add("hidden"); }
+
+function buildSummary(bd) {
+  const al = STAT4.filter(k => bd.alloc[k] > 0).map(k => `${STATLAB[k]}+${bd.alloc[k]}`).join(" ");
+  return `進階${bd.advance}${bd.collection ? " 典藏" : ""}・加點 ${al || "未配"}`;
+}
+function openBuild(side, i) {
+  const n = teams[side][i], g = POOL[n], max = maxAdv(g);
+  const bd = JSON.parse(JSON.stringify(getBuild(side, i)));   // 工作副本
+  const box = $("#modal .modal-box");
+  const render = () => {
+    const pool = poolSize(bd.advance, bd.collection);
+    const left = pool - STAT4.reduce((s, k) => s + (bd.alloc[k] || 0), 0);
+    box.innerHTML = `<h2 class="gold">${n}・養成加點</h2>
+      <div class="brow">進階 <select id="bAdv"></select>
+        　<label><input type="checkbox" id="bCol"${bd.collection ? " checked" : ""}> 典藏（+10點）</label></div>
+      <div class="brow">可分配 <b class="gold">${pool}</b> 點，剩餘 <b id="bLeft" style="${left < 0 ? "color:#e36" : "color:var(--gold2)"}">${left}</b></div>
+      <div class="balloc">${STAT4.map(k => `<label>${STATLAB[k]}<input type="number" min="0" data-k="${k}" value="${bd.alloc[k] || 0}"></label>`).join("")}</div>
+      <div class="brow" style="color:#9a8b6a">面板（主兵種 ${SGZ.bestTroop(g.apt)}）：${statStr(g, SGZ.bestTroop(g.apt), bd.alloc)}</div>
+      <div style="text-align:right;margin-top:14px">
+        <button id="bAuto">主屬性全加</button>　<button id="bSave" class="primary">套用</button></div>`;
+    const adv = box.querySelector("#bAdv");
+    adv.innerHTML = Array.from({ length: max + 1 }, (_, x) => `<option${x === bd.advance ? " selected" : ""}>${x}</option>`).join("");
+    adv.onchange = () => { bd.advance = +adv.value; render(); };
+    box.querySelector("#bCol").onchange = e => { bd.collection = e.target.checked; render(); };
+    box.querySelectorAll(".balloc input").forEach(inp => inp.onchange = () => { bd.alloc[inp.dataset.k] = Math.max(0, +inp.value || 0); render(); });
+    box.querySelector("#bAuto").onclick = () => { bd.alloc = { [primaryStat(g)]: poolSize(bd.advance, bd.collection) }; render(); };
+    box.querySelector("#bSave").onclick = () => {
+      if (pool - STAT4.reduce((s, k) => s + (bd.alloc[k] || 0), 0) < 0) { alert("超出可分配點數"); return; }
+      builds[side][i] = bd; renderSlots(side); closeModal();
+    };
+  };
+  render();
+  $("#modal").classList.remove("hidden");
+}
 
 load();

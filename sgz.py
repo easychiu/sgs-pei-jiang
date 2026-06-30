@@ -202,15 +202,16 @@ def recommend(pool=None, k=3, top=8):
 # 引擎
 # ---------------------------------------------------------------------------
 class Unit:
-    def __init__(self, g, ttype, bingshu=None, equip=None):
+    def __init__(self, g, ttype, bingshu=None, equip=None, add=None):
         self.g, self.ttype, self.troop, self.stun = g, ttype, START_TROOP, 0
         self.bs = BINGSHU.get(bingshu, {}).get("effects", []) if bingshu else []  # 兵書被動效果
         self.eq = EQUIPS.get(equip, {}).get("effects", []) if equip else []       # 裝備被動效果
-        mult = g.apt_pct(ttype)                       # 屬性 = 基礎 × 該兵種適性%
-        self.force = g.base["force"] * mult
-        self.intel = g.base["intel"] * mult
-        self.command = g.base["command"] * mult
-        self.speed = g.base["speed"] * mult
+        a = add or {}                                 # 養成加值: 加點/進階/典藏(於適性前疊加)
+        mult = g.apt_pct(ttype)                       # 屬性 = (基礎+養成) × 該兵種適性%
+        self.force = (g.base["force"] + a.get("force", 0)) * mult
+        self.intel = (g.base["intel"] + a.get("intel", 0)) * mult
+        self.command = (g.base["command"] + a.get("command", 0)) * mult
+        self.speed = (g.base["speed"] + a.get("speed", 0)) * mult
         self.mods = []                                # 乘法: [stat, mult, left]
         self.adds = []                                # 加法: [amp|mitig|extra, val, left]
         self.dots = []                                # 持續傷害: [每回合傷害, left]
@@ -366,15 +367,18 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                              "prob": e.get("prob", 1.0)}
 
 
-def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, eqB=None):
+def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, eqB=None,
+          addA=None, addB=None):
     troopA = troopA or team_troop(teamA)              # 未指定兵種則用隊伍最佳適性
     troopB = troopB or team_troop(teamB)
     bsA = bsA or [default_bingshu(POOL[n]) for n in teamA]   # 未指定兵書則裝預設主兵書
     bsB = bsB or [default_bingshu(POOL[n]) for n in teamB]
     eqA = eqA or [None] * len(teamA)
     eqB = eqB or [None] * len(teamB)
-    A = [Unit(POOL[n], troopA, bsA[i], eqA[i]) for i, n in enumerate(teamA)]
-    B = [Unit(POOL[n], troopB, bsB[i], eqB[i]) for i, n in enumerate(teamB)]
+    addA = addA or [None] * len(teamA)
+    addB = addB or [None] * len(teamB)
+    A = [Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i]) for i, n in enumerate(teamA)]
+    B = [Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i]) for i, n in enumerate(teamB)]
     setA = set(map(id, A))
     allies_of = lambda u: A if id(u) in setA else B
     foes_of = lambda u: B if id(u) in setA else A
@@ -463,11 +467,12 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
     return ("A" if ta >= tb else "B"), ROUNDS
 
 
-def simulate(teamA, teamB, n=3000, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, eqB=None):
+def simulate(teamA, teamB, n=3000, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, eqB=None,
+             addA=None, addB=None):
     w = {"A": 0, "B": 0}
     rs = 0
     for _ in range(n):
-        winner, r = fight(teamA, teamB, troopA, troopB, bsA, bsB, eqA, eqB)
+        winner, r = fight(teamA, teamB, troopA, troopB, bsA, bsB, eqA, eqB, addA, addB)
         w[winner] += 1
         rs += r
     return {"A勝率": round(w["A"] / n, 3), "B勝率": round(w["B"] / n, 3),

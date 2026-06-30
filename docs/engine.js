@@ -69,13 +69,14 @@
   }
 
   class Unit {
-    constructor(g, ttype, bsName, eqName) {
+    constructor(g, ttype, bsName, eqName, add) {
       this.g = g; this.ttype = ttype; this.troop = START_TROOP; this.stun = 0;
       this.bs = (bsName && BINGSHU[bsName]) ? BINGSHU[bsName].effects : [];  // 兵書被動
       this.eq = (eqName && EQUIPS[eqName]) ? EQUIPS[eqName].effects : [];    // 裝備被動
-      const m = aptPct(g, ttype);                  // 屬性 = 基礎 × 該兵種適性%
-      this.force = g.base.force * m; this.intel = g.base.intel * m;
-      this.command = g.base.command * m; this.speed = g.base.speed * m;
+      const a = add || {};                         // 養成加值: 加點/進階/典藏(適性前疊加)
+      const m = aptPct(g, ttype);                  // 屬性 = (基礎+養成) × 該兵種適性%
+      this.force = (g.base.force + (a.force || 0)) * m; this.intel = (g.base.intel + (a.intel || 0)) * m;
+      this.command = (g.base.command + (a.command || 0)) * m; this.speed = (g.base.speed + (a.speed || 0)) * m;
       this.mods = []; this.adds = []; this.dots = [];
       this.settle = null; this.guardian = null; this.guardShare = 0;
       this.stack = null; this.decay = null; this.swap = 0; this.counter = null;
@@ -180,14 +181,16 @@
     }
   }
 
-  function fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB) {
+  function fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB) {
     troopA = troopA || teamTroop(POOL, teamA);
     troopB = troopB || teamTroop(POOL, teamB);
     bsA = bsA || teamA.map(n => defaultBingshu(POOL[n]));
     bsB = bsB || teamB.map(n => defaultBingshu(POOL[n]));
     eqA = eqA || teamA.map(() => null);
     eqB = eqB || teamB.map(() => null);
-    const A = teamA.map((n, i) => new Unit(POOL[n], troopA, bsA[i], eqA[i])), B = teamB.map((n, i) => new Unit(POOL[n], troopB, bsB[i], eqB[i]));
+    addA = addA || teamA.map(() => null);
+    addB = addB || teamB.map(() => null);
+    const A = teamA.map((n, i) => new Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i])), B = teamB.map((n, i) => new Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i]));
     const setA = new Set(A);
     const alliesOf = u => setA.has(u) ? A : B, foesOf = u => setA.has(u) ? B : A;
     const bondsA = activeBonds(teamA), bondsB = activeBonds(teamB);
@@ -245,9 +248,9 @@
     return { winner: ta >= tb ? "A" : "B", rounds: ROUNDS };
   }
 
-  function simulate(POOL, teamA, teamB, n = 2000, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null) {
+  function simulate(POOL, teamA, teamB, n = 2000, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null, addA = null, addB = null) {
     let a = 0, rs = 0;
-    for (let i = 0; i < n; i++) { const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB); if (r.winner === "A") a++; rs += r.rounds; }
+    for (let i = 0; i < n; i++) { const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB); if (r.winner === "A") a++; rs += r.rounds; }
     return { winA: +(a / n).toFixed(3), winB: +(1 - a / n).toFixed(3), rounds: +(rs / n).toFixed(1) };
   }
 
