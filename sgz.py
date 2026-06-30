@@ -17,6 +17,8 @@ DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 ROUNDS = 8
 START_TROOP = 10000
 MORALE = 100                                         # ponytail: 士氣固定滿
+CITY = 20                                            # 城建滿: 武智統速各+20(每級+2×10級)
+FACTION = 1.10                                       # 陣營滿: 全屬性+10%(每級1%×10級)
 # 指揮/被動戰法的傷害多為條件觸發(敵出主動時、第N回合起…), 引擎無法判條件,
 # 用觸發折扣近似。ponytail: 全域旋鈕, 要精準得逐戰法建模條件
 CMD_TRIGGER = 0.40
@@ -242,10 +244,10 @@ class Unit:
         sm = season or {}                             # 賽季修正
         apt = (1.20 if sm.get("apt_s") else g.apt_pct(ttype)) + sm.get("apt_add", 0)
         scm, flat = sm.get("mult", 1.0), sm.get("flat", 0)  # 屬性 = (基礎+養成+賽季固定)×適性×賽季乘數
-        self.force = (g.base["force"] + a.get("force", 0) + flat) * apt * scm
-        self.intel = (g.base["intel"] + a.get("intel", 0) + flat) * apt * scm
-        self.command = (g.base["command"] + a.get("command", 0) + flat) * apt * scm
-        self.speed = (g.base["speed"] + a.get("speed", 0) + flat) * apt * scm
+        self.force = (g.base["force"] + CITY + a.get("force", 0) + flat) * apt * scm * FACTION
+        self.intel = (g.base["intel"] + CITY + a.get("intel", 0) + flat) * apt * scm * FACTION
+        self.command = (g.base["command"] + CITY + a.get("command", 0) + flat) * apt * scm * FACTION
+        self.speed = (g.base["speed"] + CITY + a.get("speed", 0) + flat) * apt * scm * FACTION
         self.mods = []                                # 乘法: [stat, mult, left]
         self.adds = []                                # 加法: [amp|mitig|extra, val, left]
         if a.get("amp"):                              # 進階/典藏 攻防加成: 每階+2%攻+2%防
@@ -560,7 +562,7 @@ def demo():
     grd, prot = Unit(lb, "騎"), Unit(POOL["諸葛亮"], "弓")
     prot.guardian, prot.guard_share = grd, 0.4
     g0, p0 = grd.troop, prot.troop
-    hit(Unit(POOL["周瑜"], "弓"), prot, 1.0, "phys")
+    hit(Unit(lb, "騎"), prot, 1.5, "phys")        # 高武力攻擊者確保有傷害(避免守將過肉時0傷)
     assert grd.troop < g0 and prot.troop < p0, "代承者與被保護者各吃一部分"
     atk, df = Unit(lb, "騎"), Unit(POOL["張飛"], "盾")
     df.adds.append(["mitig", 0.5, 9])

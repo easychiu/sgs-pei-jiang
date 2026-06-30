@@ -4,6 +4,7 @@
 "use strict";
 (function (root) {
   const ROUNDS = 8, START_TROOP = 10000, MORALE = 100;
+  const CITY = 20, FACTION = 1.10;                   // 城建滿(武智統速各+20) + 陣營滿(全屬性+10%), 雙方皆有
   let CMD_TRIGGER = 0.40, PASSIVE_TRIGGER = 0.45;
   const COUNTER = { "騎": "盾", "盾": "弓", "弓": "槍", "槍": "騎" };
   const APT_PCT = { S: 1.20, A: 1.00, B: 0.85, C: 0.70, D: 0.55 };
@@ -101,8 +102,8 @@
       const a = add || {}, sm = season || {};      // 養成加值 + 賽季修正
       const apt = (sm.aptS ? 1.20 : aptPct(g, ttype)) + (sm.aptAdd || 0);
       const scm = sm.mult || 1.0, flat = sm.flat || 0;  // 屬性=(基礎+養成+賽季固定)×適性×賽季乘數
-      this.force = (g.base.force + (a.force || 0) + flat) * apt * scm; this.intel = (g.base.intel + (a.intel || 0) + flat) * apt * scm;
-      this.command = (g.base.command + (a.command || 0) + flat) * apt * scm; this.speed = (g.base.speed + (a.speed || 0) + flat) * apt * scm;
+      this.force = (g.base.force + CITY + (a.force || 0) + flat) * apt * scm * FACTION; this.intel = (g.base.intel + CITY + (a.intel || 0) + flat) * apt * scm * FACTION;
+      this.command = (g.base.command + CITY + (a.command || 0) + flat) * apt * scm * FACTION; this.speed = (g.base.speed + CITY + (a.speed || 0) + flat) * apt * scm * FACTION;
       this.mods = []; this.adds = []; this.dots = [];
       if (a.amp) this.adds.push(["amp", a.amp, 9999]);    // 進階/典藏 攻防加成
       if (a.mitig) this.adds.push(["mitig", a.mitig, 9999]);
@@ -229,12 +230,21 @@
     const alliesOf = u => setA.has(u) ? A : B, foesOf = u => setA.has(u) ? B : A;
     const bondsA = activeBonds(teamA), bondsB = activeBonds(teamB);
     const pt = eff => ({ effects: eff, kind: "phys" });
-    const applyPassives = opt => {                  // 被動/指揮/兵書/裝備/緣分 統一套用
+    const CAT_ORDER = ["PASSIVE", "FORMATION", "TROOP", "COMMAND"];   // 準備階段嚴格順序: 被動→陣法→兵種→指揮
+    const CAT_LABEL = { PASSIVE: "被動", FORMATION: "陣法", TROOP: "兵種", COMMAND: "指揮" };
+    const catOf = t => CAT_ORDER.includes(t.cat) ? t.cat : "COMMAND";
+    const applyPassives = opt => {                  // 被動/陣法/兵種/指揮(依序) + 兵書/裝備/緣分
+      for (const cat of CAT_ORDER)
+        for (const u of [...A, ...B]) {
+          if (!u.alive) continue;
+          for (const t of u.tactics)            // 同將多個同類: 戰法格順序(陣列順序)決定先後
+            if ((t.type === "passive" || t.type === "command") && catOf(t) === cat) {
+              if (TRACE && opt.prep) lg(`【${u.side}】${u.nm}〔${CAT_LABEL[cat]}〕${t.nameZh}`);
+              applyEffects(u, null, t, alliesOf(u), foesOf(u), opt);
+            }
+        }
       for (const u of [...A, ...B]) {
         if (!u.alive) continue;
-        for (const t of u.tactics)
-          if (t.type === "passive" || t.type === "command")
-            applyEffects(u, null, t, alliesOf(u), foesOf(u), opt);
         if (u.bs.length) applyEffects(u, null, pt(u.bs), alliesOf(u), foesOf(u), opt);
         if (u.eq.length) applyEffects(u, null, pt(u.eq), alliesOf(u), foesOf(u), opt);
       }
@@ -242,16 +252,19 @@
         if (team.length) for (const bd of bds)
           applyEffects(team[0], null, pt(bd.effects), team, foesOf(team[0]), opt);
     };
-    applyPassives({ noHeal: true });
-    if (TRACE) {                                    // 準備階段: 列出各將備戰後面板 + 套用系統
+    if (TRACE) {                                    // 準備階段標頭: 兵種 + 城建/陣營
       CUR_R = 0;
       lg(`〔採用兵種〕我方 ${troopA}兵　·　敵方 ${troopB}兵`);
+      lg(`〔城建滿〕全員 武智統速 各+${CITY}　〔陣營滿〕全屬性 +${Math.round((FACTION - 1) * 100)}%`);
+    }
+    applyPassives({ noHeal: true, prep: true });    // 依序套用並記錄各類戰法
+    if (TRACE) {                                    // 備戰後面板 + 緣分 + 預備戰法
       for (const u of [...A, ...B]) {
-        const sys = [u.tactics.map(t => t.nameZh).filter(Boolean).join("／") || "無戰法",
-          u.bs.length ? "兵書" : "", u.eq.length ? "裝備" : ""].filter(Boolean).join("・");
-        lg(`【${u.side}】${u.nm}　武${Math.round(u.eff("force"))} 智${Math.round(u.eff("intel"))} 統${Math.round(u.eff("command"))} 速${Math.round(u.eff("speed"))}　${sys}`);
+        const sys = [u.bs.length ? "兵書" : "", u.eq.length ? "裝備" : ""].filter(Boolean).join("・");
+        lg(`【${u.side}】${u.nm} 備戰　武${Math.round(u.eff("force"))} 智${Math.round(u.eff("intel"))} 統${Math.round(u.eff("command"))} 速${Math.round(u.eff("speed"))}${sys ? "　" + sys : ""}`);
       }
       for (const [team, bds] of [[A, bondsA], [B, bondsB]]) if (team.length && bds.length) lg(`【${team[0].side}】緣分發動: ${bds.map(b => b.name).join("、")}`);
+      for (const u of [...A, ...B]) for (const t of u.tactics) if (t.type === "active" && t.prep) lg(`【${u.side}】${u.nm} 戰法【${t.nameZh}】進入預備(首回合後生效)`);
     }
 
     for (let r = 1; r <= ROUNDS; r++) {
