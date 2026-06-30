@@ -10,6 +10,7 @@
   const APT_RANK = { S: 4, A: 3, B: 2, C: 1, D: 0 };
   const TROOPS = ["騎", "盾", "弓", "槍", "器"];
   let BINGSHU = {}, MAIN_BY_CAT = {}, SUB_BY_CAT = {};  // 兵書: 名稱→效果; 類別→主/副兵書們
+  let TACTICS = {};                                 // 名稱→戰法(供傳承查詢)
   let BONDS = [], EQUIPS = {};                       // 緣分(隊伍級) / 裝備(自身)
   const rnd = () => Math.random();
 
@@ -47,6 +48,7 @@
   function buildPool(generals, tactics, bingshu, bonds, equips) {
     const TAC = {};
     for (const t of tactics) if (t.type !== "none") TAC[t.nameZh] = t;
+    TACTICS = TAC;
     BINGSHU = {}; MAIN_BY_CAT = {}; SUB_BY_CAT = {}; BONDS = bonds || []; EQUIPS = {};
     for (const b of (bingshu || [])) {
       const key = b.category + "·" + b.name;        // 複合鍵(同名跨類別不撞)
@@ -71,8 +73,9 @@
   }
 
   class Unit {
-    constructor(g, ttype, bsName, eqName, add) {
+    constructor(g, ttype, bsName, eqName, add, inherit) {
       this.g = g; this.ttype = ttype; this.troop = START_TROOP; this.stun = 0;
+      this.tactics = (g.tactic ? [g.tactic] : []).concat((inherit || []).map(nm => TACTICS[nm]).filter(Boolean));  // 自帶 + 傳承
       const _bn = Array.isArray(bsName) ? bsName : (bsName ? [bsName] : []);
       this.bs = _bn.flatMap(nm => (BINGSHU[nm] ? BINGSHU[nm].effects : []));  // 兵書(主+副)合併
       this.eq = (eqName && EQUIPS[eqName]) ? EQUIPS[eqName].effects : [];    // 裝備被動
@@ -171,7 +174,7 @@
       else if (who === "enemy") dests = (k === "stun") ? (tgt && tgt.alive ? [tgt] : []) : enemies.filter(x => x.alive);
       else dests = allies.filter(a => a.alive);
       for (const u of dests) {
-        if (k === "amp") u.adds.push(["amp", e.val, e.dur]);
+        if (k === "amp") u.adds.push(who === "enemy" && e.val > 0 ? ["mitig", -e.val, e.dur] : ["amp", e.val, e.dur]);
         else if (k === "mitig") u.adds.push(["mitig", e.val, e.dur]);
         else if (k === "stun") u.stun = Math.max(u.stun, (e.dur ?? 1) + 1);
         else if (k === "stat") u.mods.push([e.stat, e.mult ?? 1, e.dur]);
@@ -186,7 +189,7 @@
     }
   }
 
-  function fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB) {
+  function fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB) {
     troopA = troopA || teamTroop(POOL, teamA);
     troopB = troopB || teamTroop(POOL, teamB);
     bsA = bsA || teamA.map(n => defaultBingshu(POOL[n]));
@@ -195,7 +198,9 @@
     eqB = eqB || teamB.map(() => null);
     addA = addA || teamA.map(() => null);
     addB = addB || teamB.map(() => null);
-    const A = teamA.map((n, i) => new Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i])), B = teamB.map((n, i) => new Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i]));
+    inhA = inhA || teamA.map(() => null);
+    inhB = inhB || teamB.map(() => null);
+    const A = teamA.map((n, i) => new Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i])), B = teamB.map((n, i) => new Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i]));
     const setA = new Set(A);
     const alliesOf = u => setA.has(u) ? A : B, foesOf = u => setA.has(u) ? B : A;
     const bondsA = activeBonds(teamA), bondsB = activeBonds(teamB);
@@ -203,8 +208,9 @@
     const applyPassives = opt => {                  // 被動/指揮/兵書/裝備/緣分 統一套用
       for (const u of [...A, ...B]) {
         if (!u.alive) continue;
-        if (u.g.tactic && (u.g.tactic.type === "passive" || u.g.tactic.type === "command"))
-          applyEffects(u, null, u.g.tactic, alliesOf(u), foesOf(u), opt);
+        for (const t of u.tactics)
+          if (t.type === "passive" || t.type === "command")
+            applyEffects(u, null, t, alliesOf(u), foesOf(u), opt);
         if (u.bs.length) applyEffects(u, null, pt(u.bs), alliesOf(u), foesOf(u), opt);
         if (u.eq.length) applyEffects(u, null, pt(u.eq), alliesOf(u), foesOf(u), opt);
       }
@@ -221,21 +227,21 @@
       for (const u of order) {
         if (!u.alive || u.stun) continue;
         if (!pickTarget(foesOf(u))) break;
-        const t = u.g.tactic;
-        let cast = false;
-        if (t) {
-          if (t.type === "active" && (t.coef || t.effects.length) && !(t.prep && r === 1)) cast = rnd() < t.rate;
-          else if (t.type === "command" && t.coef) cast = rnd() < CMD_TRIGGER;
-          else if (t.type === "passive" && t.coef) cast = rnd() < t.rate * PASSIVE_TRIGGER;
+        for (const t of u.tactics) {                  // 自帶 + 傳承: 各自獨立附加發動
+          let fire = false;
+          if (t.type === "active" && (t.coef || t.effects.length) && !(t.prep && r === 1)) fire = rnd() < t.rate;
+          else if (t.type === "command" && t.coef) fire = rnd() < CMD_TRIGGER;
+          else if (t.type === "passive" && t.coef) fire = rnd() < t.rate * PASSIVE_TRIGGER;
+          if (fire) {
+            for (let i = 0; i < t.n; i++) { const v = pickTarget(foesOf(u)); if (v && t.coef) hit(u, v, t.coef, t.kind); }
+            if (t.type === "active") applyEffects(u, pickTarget(foesOf(u)), t, alliesOf(u), foesOf(u));
+          }
         }
-        if (cast) {
-          for (let i = 0; i < t.n; i++) { const v = pickTarget(foesOf(u)); if (v && t.coef) hit(u, v, t.coef, t.kind); }
-          if (t.type === "active") applyEffects(u, pickTarget(foesOf(u)), t, alliesOf(u), foesOf(u));
-        } else {
-          const tgt = pickTarget(foesOf(u));
+        const tgt = pickTarget(foesOf(u));            // 普攻(常駐) + 連擊 + 突擊
+        if (tgt) {
           hit(u, tgt, 1.0, "phys");
           for (let i = 0; i < extraCount(u.addbonus("extra")); i++) { const nt = pickTarget(foesOf(u)); if (nt) hit(u, nt, 1.0, "phys"); }
-          if (t && t.type === "charge" && rnd() < t.rate) { if (t.coef) hit(u, tgt, t.coef, t.kind); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
+          for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate) { if (t.coef) hit(u, tgt, t.coef, t.kind); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
         }
       }
       for (const u of [...A, ...B]) {
@@ -253,9 +259,9 @@
     return { winner: ta >= tb ? "A" : "B", rounds: ROUNDS };
   }
 
-  function simulate(POOL, teamA, teamB, n = 2000, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null, addA = null, addB = null) {
+  function simulate(POOL, teamA, teamB, n = 2000, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null, addA = null, addB = null, inhA = null, inhB = null) {
     let a = 0, rs = 0;
-    for (let i = 0; i < n; i++) { const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB); if (r.winner === "A") a++; rs += r.rounds; }
+    for (let i = 0; i < n; i++) { const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB); if (r.winner === "A") a++; rs += r.rounds; }
     return { winA: +(a / n).toFixed(3), winB: +(1 - a / n).toFixed(3), rounds: +(rs / n).toFixed(1) };
   }
 

@@ -30,9 +30,10 @@ button{cursor:pointer;font-family:inherit}
   border-radius:10px;padding:12px}
 .team h2{margin:0 0 10px;text-align:center;color:var(--gold2);font-size:18px}
 .bondbar{text-align:center;color:var(--gold2);font-size:13px;margin-top:4px;min-height:16px}
-.cog,.book{background:transparent;border:1px solid var(--line);color:var(--gold2);border-radius:5px;
+.cog,.book,.inh{background:transparent;border:1px solid var(--line);color:var(--gold2);border-radius:5px;
   font-size:13px;padding:0 6px;margin-left:4px;line-height:1.4}
-.cog:hover,.book:hover{border-color:var(--gold)}
+.cog:hover,.book:hover,.inh:hover{border-color:var(--gold)}
+.pick.on{border-color:var(--gold);color:var(--gold2);background:#2a2212}
 .catchips{display:inline-flex;flex-wrap:wrap;gap:6px;vertical-align:middle}
 .catchip{border:1px solid;border-radius:14px;padding:3px 12px;font-size:14px;font-family:inherit;cursor:pointer}
 .brow{margin:10px 0;font-size:15px}

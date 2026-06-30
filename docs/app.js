@@ -10,6 +10,8 @@ const troops = { A: "", B: "" };                  // "" = 自動(依隊伍適性
 const bsel = { A: [null, null, null], B: [null, null, null] };  // 各將兵書(null=預設主兵書)
 const eqsel = { A: [null, null, null], B: [null, null, null] }; // 各將裝備(null=無)
 const builds = { A: [null, null, null], B: [null, null, null] }; // 養成(null=預設: 進階滿+主屬性)
+const inhsel = { A: [[], [], []], B: [[], [], []] };           // 各將傳承戰法(最多2)
+let TACTIC_NAMES = [];                                          // 全戰法名(供傳承選)
 const STAT4 = ["force", "intel", "command", "speed"];
 const STATLAB = { force: "武", intel: "智", command: "統", speed: "速" };
 const maxAdv = g => (g.stars >= 5 ? 5 : 4);
@@ -98,6 +100,7 @@ async function load() {
     j("data/bingshu_parsed.json"), j("data/bonds_parsed.json"), j("data/equips_parsed.json")]);
   g.forEach(x => RAW[x.name] = x);
   POOL = SGZ.buildPool(g, t, bs, bo, eq).POOL;
+  TACTIC_NAMES = t.filter(x => x.type !== "none").map(x => x.nameZh).sort((a, b) => a.localeCompare(b));
   $("#stat").textContent = `${Object.keys(POOL).length} 武將 · ${t.filter(x => x.type !== "none").length} 戰法`;
   initTabs();
   ["A", "B"].forEach(s => {
@@ -107,7 +110,7 @@ async function load() {
     renderSlots(s);
   });
   $("#runSim").onclick = runSim;
-  $("#clearSim").onclick = () => { for (const s of ["A", "B"]) { teams[s] = [null, null, null]; bsel[s] = [null, null, null]; eqsel[s] = [null, null, null]; builds[s] = [null, null, null]; } renderSlots("A"); renderSlots("B"); $("#simResult").classList.add("hidden"); };
+  $("#clearSim").onclick = () => { for (const s of ["A", "B"]) { teams[s] = [null, null, null]; bsel[s] = [null, null, null]; eqsel[s] = [null, null, null]; builds[s] = [null, null, null]; inhsel[s] = [[], [], []]; } renderSlots("A"); renderSlots("B"); $("#simResult").classList.add("hidden"); };
   $("#runRec").onclick = runRec;
   $("#dexSearch").oninput = renderDex;
   $("#modal").onclick = e => { if (e.target.id === "modal") closeModal(); };
@@ -141,9 +144,11 @@ function renderSlots(side) {
           <button class="cog" title="養成加點">⚙</button></div>
         <div class="sub">${statStr(g, tr, bd.alloc)}</div>
         <div class="sub" style="color:#9a8b6a">${buildSummary(bd)}</div>
-        <div class="sub">${bselSummary(bc)} <button class="book" title="兵書設定">📖</button>　裝備 <select class="eq"></select></div></div>`;
+        <div class="sub">${bselSummary(bc)} <button class="book" title="兵書設定">📖</button>　裝備 <select class="eq"></select></div>
+        <div class="sub" style="color:#9a8b6a">傳承：${(inhsel[side][i] || []).join("、") || "無"} <button class="inh" title="傳承戰法">📜</button></div></div>`;
       d.querySelector(".cog").onclick = e => { e.stopPropagation(); openBuild(side, i); };
       d.querySelector(".book").onclick = e => { e.stopPropagation(); openBingshu(side, i); };
+      d.querySelector(".inh").onclick = e => { e.stopPropagation(); openInherit(side, i); };
       const eqs = availEquips(g), curE = eqsel[side][i] || "";
       const eq = d.querySelector(".eq");
       eq.innerHTML = `<option value="">無</option>` + eqs.map(x => `<option${x === curE ? " selected" : ""}>${x}</option>`).join("");
@@ -163,12 +168,12 @@ function renderSlots(side) {
   box.appendChild(bn);
 }
 function runSim() {
-  const A = [], B = [], bsA = [], bsB = [], eqA = [], eqB = [], adA = [], adB = [];
-  teams.A.forEach((n, i) => { if (n) { A.push(n); bsA.push(bsNames(getBsel("A", i))); eqA.push(eqsel.A[i]); adA.push(buildAdd(getBuild("A", i), getBsel("A", i).on)); } });
-  teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsNames(getBsel("B", i))); eqB.push(eqsel.B[i]); adB.push(buildAdd(getBuild("B", i), getBsel("B", i).on)); } });
+  const A = [], B = [], bsA = [], bsB = [], eqA = [], eqB = [], adA = [], adB = [], inA = [], inB = [];
+  teams.A.forEach((n, i) => { if (n) { A.push(n); bsA.push(bsNames(getBsel("A", i))); eqA.push(eqsel.A[i]); adA.push(buildAdd(getBuild("A", i), getBsel("A", i).on)); inA.push(inhsel.A[i]); } });
+  teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsNames(getBsel("B", i))); eqB.push(eqsel.B[i]); adB.push(buildAdd(getBuild("B", i), getBsel("B", i).on)); inB.push(inhsel.B[i]); } });
   if (!A.length || !B.length) { alert("兩邊各至少放 1 名武將"); return; }
   const ta = effTroop("A"), tb = effTroop("B");
-  const r = SGZ.simulate(POOL, A, B, 3000, ta, tb, bsA, bsB, eqA, eqB, adA, adB);
+  const r = SGZ.simulate(POOL, A, B, 3000, ta, tb, bsA, bsB, eqA, eqB, adA, adB, inA, inB);
   const res = $("#simResult"); res.classList.remove("hidden");
   res.innerHTML = `
     <div class="bar"><div class="a" style="width:${r.winA * 100}%">${pct(r.winA)}%</div>
@@ -184,7 +189,7 @@ function runRec() {
   $("#recList").innerHTML = list.map(([team, sc, tr]) =>
     `<li data-team='${JSON.stringify(team)}' data-troop="${tr}"><span><b class="gold">[${tr}兵]</b> ${team.join("　／　")}</span><span class="sc">${sc}</span></li>`).join("");
   document.querySelectorAll("#recList li").forEach(li => li.onclick = () => {
-    teams.A = [...JSON.parse(li.dataset.team)]; troops.A = li.dataset.troop; bsel.A = [null, null, null]; eqsel.A = [null, null, null]; builds.A = [null, null, null];
+    teams.A = [...JSON.parse(li.dataset.team)]; troops.A = li.dataset.troop; bsel.A = [null, null, null]; eqsel.A = [null, null, null]; builds.A = [null, null, null]; inhsel.A = [[], [], []];
     document.querySelector(`.troop[data-side="A"]`).value = li.dataset.troop;
     renderSlots("A");
     document.querySelector('.tab[data-tab="sim"]').click();
@@ -216,7 +221,7 @@ function openPicker(side, idx) {
     names.filter(n => !q || n.includes(q)).map(n =>
       `<div class="pick" data-n="${n}">${facBadge(POOL[n].faction)} ${n}</div>`).join("");
   const bind = () => box.querySelectorAll(".pick").forEach(p => p.onclick = () => {
-    teams[side][idx] = p.dataset.n; bsel[side][idx] = null; eqsel[side][idx] = null; builds[side][idx] = null; renderSlots(side); closeModal();
+    teams[side][idx] = p.dataset.n; bsel[side][idx] = null; eqsel[side][idx] = null; builds[side][idx] = null; inhsel[side][idx] = []; renderSlots(side); closeModal();
   });
   draw(""); bind();
   box.querySelector("#pickSearch").oninput = e => { draw(e.target.value.trim()); bind(); };
@@ -240,7 +245,7 @@ function showDetail(n) {
     <div style="text-align:right;margin-top:12px"><button id="toSim" class="primary">加入我方</button></div>`;
   box.querySelector("#toSim").onclick = () => {
     const i = teams.A.indexOf(null); if (i < 0) { alert("我方已滿"); return; }
-    teams.A[i] = n; bsel.A[i] = null; eqsel.A[i] = null; builds.A[i] = null; renderSlots("A"); closeModal();
+    teams.A[i] = n; bsel.A[i] = null; eqsel.A[i] = null; builds.A[i] = null; inhsel.A[i] = []; renderSlots("A"); closeModal();
     document.querySelector('.tab[data-tab="sim"]').click();
   };
   $("#modal").classList.remove("hidden");
@@ -322,6 +327,35 @@ function openBingshu(side, i) {
     box.querySelector("#bsSave").onclick = () => { bsel[side][i] = cfg; renderSlots(side); closeModal(); };
   };
   render();
+  $("#modal").classList.remove("hidden");
+}
+
+function openInherit(side, i) {
+  const n = teams[side][i];
+  let sel = [...(inhsel[side][i] || [])];
+  const box = $("#modal .modal-box");
+  box.innerHTML = `<h2 class="gold">${n}・傳承戰法（最多 2）</h2>
+    <div class="brow">已選：<b id="inhSel" class="gold"></b>　<button id="inhClr">清空</button></div>
+    <input id="inhSearch" placeholder="搜尋戰法…" style="width:100%;padding:9px;margin:8px 0;background:#2a2018;color:var(--ink);border:1px solid var(--line);border-radius:6px">
+    <div class="pick-grid"></div>
+    <div style="text-align:right;margin-top:12px"><button id="inhSave" class="primary">套用</button></div>`;
+  const selSpan = box.querySelector("#inhSel"), grid = box.querySelector(".pick-grid");
+  const upd = () => selSpan.textContent = sel.join("、") || "無";
+  const draw = q => {
+    grid.innerHTML = TACTIC_NAMES.filter(t => !q || t.includes(q)).slice(0, 150)
+      .map(t => `<div class="pick${sel.includes(t) ? " on" : ""}" data-t="${t}">${t}</div>`).join("");
+    grid.querySelectorAll(".pick").forEach(p => p.onclick = () => {
+      const t = p.dataset.t;
+      if (sel.includes(t)) { sel = sel.filter(x => x !== t); p.classList.remove("on"); }
+      else if (sel.length < 2) { sel.push(t); p.classList.add("on"); }
+      else { alert("最多 2 個傳承"); return; }
+      upd();
+    });
+  };
+  upd(); draw("");
+  box.querySelector("#inhSearch").oninput = e => draw(e.target.value.trim());
+  box.querySelector("#inhClr").onclick = () => { sel = []; upd(); draw(box.querySelector("#inhSearch").value.trim()); };
+  box.querySelector("#inhSave").onclick = () => { inhsel[side][i] = sel; renderSlots(side); closeModal(); };
   $("#modal").classList.remove("hidden");
 }
 

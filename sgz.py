@@ -203,8 +203,10 @@ def recommend(pool=None, k=3, top=8):
 # 引擎
 # ---------------------------------------------------------------------------
 class Unit:
-    def __init__(self, g, ttype, bingshu=None, equip=None, add=None):
+    def __init__(self, g, ttype, bingshu=None, equip=None, add=None, inherit=None):
         self.g, self.ttype, self.troop, self.stun = g, ttype, START_TROOP, 0
+        self.tactics = ([g.tactic] if g.tactic else []) + \
+            [TACTICS[nm] for nm in (inherit or []) if nm in TACTICS]  # 自帶 + 傳承戰法
         _bn = bingshu if isinstance(bingshu, (list, tuple)) else ([bingshu] if bingshu else [])
         self.bs = [e for nm in _bn for e in BINGSHU.get(nm, {}).get("effects", [])]  # 兵書(主+副)合併效果
         self.eq = EQUIPS.get(equip, {}).get("effects", []) if equip else []       # 裝備被動效果
@@ -347,7 +349,10 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             dests = [a for a in allies if a.alive]
         for u in dests:
             if k == "amp":
-                u.adds.append(["amp", e["val"], e["dur"]])
+                if who == "enemy" and e["val"] > 0:   # 修正: 敵方正amp(誤幫敵增傷)→ 視為敵方易傷
+                    u.adds.append(["mitig", -e["val"], e["dur"]])
+                else:
+                    u.adds.append(["amp", e["val"], e["dur"]])
             elif k == "mitig":
                 u.adds.append(["mitig", e["val"], e["dur"]])
             elif k == "stun":
@@ -374,7 +379,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
 
 
 def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, eqB=None,
-          addA=None, addB=None):
+          addA=None, addB=None, inhA=None, inhB=None):
     troopA = troopA or team_troop(teamA)              # 未指定兵種則用隊伍最佳適性
     troopB = troopB or team_troop(teamB)
     bsA = bsA or [default_bingshu(POOL[n]) for n in teamA]   # 未指定兵書則裝預設主兵書
@@ -383,8 +388,10 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
     eqB = eqB or [None] * len(teamB)
     addA = addA or [None] * len(teamA)
     addB = addB or [None] * len(teamB)
-    A = [Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i]) for i, n in enumerate(teamA)]
-    B = [Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i]) for i, n in enumerate(teamB)]
+    inhA = inhA or [None] * len(teamA)
+    inhB = inhB or [None] * len(teamB)
+    A = [Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i]) for i, n in enumerate(teamA)]
+    B = [Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i]) for i, n in enumerate(teamB)]
     setA = set(map(id, A))
     allies_of = lambda u: A if id(u) in setA else B
     foes_of = lambda u: B if id(u) in setA else A
@@ -394,8 +401,9 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
         for u in A + B:
             if not u.alive:
                 continue
-            if u.g.tactic and u.g.tactic["type"] in ("passive", "command"):
-                apply_effects(u, None, u.g.tactic, allies_of(u), foes_of(u), no_heal=no_heal, heal_only=heal_only)
+            for t in u.tactics:                       # 自帶 + 傳承 的被動/指揮持久效果
+                if t["type"] in ("passive", "command"):
+                    apply_effects(u, None, t, allies_of(u), foes_of(u), no_heal=no_heal, heal_only=heal_only)
             for eff in (u.bs, u.eq):
                 if eff:
                     apply_effects(u, None, {"effects": eff, "kind": "phys"}, allies_of(u), foes_of(u),
@@ -420,34 +428,34 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 continue
             if pick_target(foes_of(u)) is None:
                 break
-            t = u.g.tactic
-            cast = False
-            if t:                                         # 哪種戰法這回合發動?
+            for t in u.tactics:                           # 自帶 + 傳承: 各自獨立附加發動(不占普攻)
+                fire = False
                 if t["type"] == "active" and (t["coef"] or t["effects"]) \
                         and not (t["prep"] and rnd == 1):
-                    cast = random.random() < t["rate"]    # 主動: 有傷害或有效果就試發
+                    fire = random.random() < t["rate"]
                 elif t["type"] == "command" and t["coef"]:
-                    cast = random.random() < CMD_TRIGGER  # 指揮傷害: 條件觸發折扣
+                    fire = random.random() < CMD_TRIGGER
                 elif t["type"] == "passive" and t["coef"]:
-                    cast = random.random() < t["rate"] * PASSIVE_TRIGGER  # 被動傷害: 折扣
-            if cast:
-                for _ in range(t["n"]):
-                    v = pick_target(foes_of(u))
-                    if v and t["coef"]:
-                        hit(u, v, t["coef"], t["kind"])
-                if t["type"] == "active":                 # 主動附帶效果隨擊發動(指揮/被動效果已在開戰套)
-                    apply_effects(u, pick_target(foes_of(u)), t, allies_of(u), foes_of(u))
-            else:
-                tgt = pick_target(foes_of(u))
+                    fire = random.random() < t["rate"] * PASSIVE_TRIGGER
+                if fire:
+                    for _ in range(t["n"]):
+                        v = pick_target(foes_of(u))
+                        if v and t["coef"]:
+                            hit(u, v, t["coef"], t["kind"])
+                    if t["type"] == "active":
+                        apply_effects(u, pick_target(foes_of(u)), t, allies_of(u), foes_of(u))
+            tgt = pick_target(foes_of(u))                 # 普攻(每回合常駐) + 連擊 + 突擊
+            if tgt:
                 hit(u, tgt, 1.0, "phys")
                 for _ in range(extra_count(u.addbonus("extra"))):  # 連擊/追擊
                     nt = pick_target(foes_of(u))
                     if nt:
                         hit(u, nt, 1.0, "phys")
-                if t and t["type"] == "charge" and random.random() < t["rate"]:
-                    if t["coef"]:
-                        hit(u, tgt, t["coef"], t["kind"])
-                    apply_effects(u, tgt, t, allies_of(u), foes_of(u))
+                for t in u.tactics:
+                    if t["type"] == "charge" and random.random() < t["rate"]:
+                        if t["coef"]:
+                            hit(u, tgt, t["coef"], t["kind"])
+                        apply_effects(u, tgt, t, allies_of(u), foes_of(u))
 
         for u in A + B:                               # 結算傷害: 疊滿層數或到期 → 對其所屬全隊爆發
             s = u.settle
@@ -474,11 +482,11 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
 
 
 def simulate(teamA, teamB, n=3000, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, eqB=None,
-             addA=None, addB=None):
+             addA=None, addB=None, inhA=None, inhB=None):
     w = {"A": 0, "B": 0}
     rs = 0
     for _ in range(n):
-        winner, r = fight(teamA, teamB, troopA, troopB, bsA, bsB, eqA, eqB, addA, addB)
+        winner, r = fight(teamA, teamB, troopA, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB)
         w[winner] += 1
         rs += r
     return {"A勝率": round(w["A"] / n, 3), "B勝率": round(w["B"] / n, 3),
