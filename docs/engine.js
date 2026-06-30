@@ -94,7 +94,8 @@
       this.tactics = (g.tactic ? [g.tactic] : []).concat((inherit || []).map(nm => TACTICS[nm]).filter(Boolean));  // 自帶 + 傳承
       const _bn = Array.isArray(bsName) ? bsName : (bsName ? [bsName] : []);
       this.bs = _bn.flatMap(nm => (BINGSHU[nm] ? BINGSHU[nm].effects : []));  // 兵書(主+副)合併
-      this.eq = (eqName && EQUIPS[eqName]) ? EQUIPS[eqName].effects : [];    // 裝備被動
+      const _eq = Array.isArray(eqName) ? eqName : (eqName ? [eqName] : []);
+      this.eq = _eq.flatMap(nm => (EQUIPS[nm] ? EQUIPS[nm].effects : []));   // 裝備(4欄)合併
       const a = add || {}, sm = season || {};      // 養成加值 + 賽季修正
       const apt = (sm.aptS ? 1.20 : aptPct(g, ttype)) + (sm.aptAdd || 0);
       const scm = sm.mult || 1.0, flat = sm.flat || 0;  // 屬性=(基礎+養成+賽季固定)×適性×賽季乘數

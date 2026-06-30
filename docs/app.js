@@ -8,7 +8,16 @@ const cardSrc = n => "cards/" + encodeURIComponent(n) + ".webp";
 const teams = { A: [null, null, null], B: [null, null, null] };
 const troops = { A: "", B: "" };                  // "" = 自動(依隊伍適性)
 const bsel = { A: [null, null, null], B: [null, null, null] };  // 各將兵書(null=預設主兵書)
-const eqsel = { A: [null, null, null], B: [null, null, null] }; // 各將裝備(null=無)
+const eqsel = { A: [{}, {}, {}], B: [{}, {}, {}] };            // 各將裝備 {type:name}
+const EQUIP_SLOTS = [{ t: "武器", l: "武器" }, { t: "防具", l: "護甲" }, { t: "坐騎", l: "馬匹" }, { t: "寶物", l: "寶物" }];
+const eqNames = cfg => EQUIP_SLOTS.map(s => cfg && cfg[s.t]).filter(Boolean);
+function eqByType(g, type) {
+  return Object.values(SGZ.equips()).filter(e => e.type === type && (!e.exclusive || e.exclusive === g.name)).map(e => e.name);
+}
+function eqSummary(cfg) {
+  const on = EQUIP_SLOTS.filter(s => cfg && cfg[s.t]);
+  return on.length ? on.map(s => `${s.l[0]}·${cfg[s.t]}`).join(" ") : "無";
+}
 const builds = { A: [null, null, null], B: [null, null, null] }; // 養成(null=預設: 進階滿+主屬性)
 const inhsel = { A: [[], [], []], B: [[], [], []] };           // 各將傳承戰法(最多2)
 let TACTIC_NAMES = [];                                          // 全戰法名(供傳承選)
@@ -74,7 +83,7 @@ function setAll(side, red) {                        // 一鍵滿紅(進階滿+�
 function teamParams(side) {                         // 收集一隊的模擬參數
   const names = [], bs = [], eq = [], ad = [], inh = [];
   teams[side].forEach((n, i) => {
-    if (n) { names.push(n); bs.push(bsNames(getBsel(side, i))); eq.push(eqsel[side][i]); ad.push(buildAdd(getBuild(side, i), getBsel(side, i).on)); inh.push(inhsel[side][i]); }
+    if (n) { names.push(n); bs.push(bsNames(getBsel(side, i))); eq.push(eqNames(eqsel[side][i])); ad.push(buildAdd(getBuild(side, i), getBsel(side, i).on)); inh.push(inhsel[side][i]); }
   });
   return { names, bs, eq, ad, inh };
 }
@@ -183,7 +192,7 @@ async function load() {
   });
   $("#runSim").onclick = runSim;
   $("#optimize").onclick = optimizeTeam;
-  $("#clearSim").onclick = () => { for (const s of ["A", "B"]) { teams[s] = [null, null, null]; bsel[s] = [null, null, null]; eqsel[s] = [null, null, null]; builds[s] = [null, null, null]; inhsel[s] = [[], [], []]; } renderSlots("A"); renderSlots("B"); $("#simResult").classList.add("hidden"); };
+  $("#clearSim").onclick = () => { for (const s of ["A", "B"]) { teams[s] = [null, null, null]; bsel[s] = [null, null, null]; eqsel[s] = [{}, {}, {}]; builds[s] = [null, null, null]; inhsel[s] = [[], [], []]; } renderSlots("A"); renderSlots("B"); $("#simResult").classList.add("hidden"); };
   $("#runRec").onclick = runRec;
   $("#dexSearch").oninput = renderDex;
   $("#modal").onclick = e => { if (e.target.id === "modal") closeModal(); };
@@ -197,9 +206,6 @@ function initTabs() {
   });
 }
 
-function availEquips(g) {
-  return Object.values(SGZ.equips()).filter(e => !e.exclusive || e.exclusive === g.name).map(e => e.name);
-}
 function statBars(g, tr, alloc) {                  // 武智統速 + 加點(含適性)
   const m = aptMul(g, tr);
   return STAT4.map(s => {
@@ -232,16 +238,13 @@ function renderSlots(side) {
         <div class="grow">⚔ ${g.tacticName}${inh.length ? "＋" + inh.join("/") : ""} <button class="inh" title="傳承戰法">📜</button></div>
         <div class="grow">${bselSummary(bc)} <button class="book" title="兵書">📖</button></div>
         <div class="grow">${buildSummary(bd)} <button class="cog" title="養成">⚙</button></div>
-        <div class="grow">裝備 <select class="eq"></select></div>`;
+        <div class="grow">🛡 ${eqSummary(eqsel[side][i])} <button class="equip" title="裝備(武器/護甲/馬匹/寶物)">＋</button></div>`;
       d.querySelector(".gport").onclick = () => openPicker(side, i);
       d.querySelector(".gtag").onclick = () => openPicker(side, i);
       d.querySelector(".cog").onclick = () => openBuild(side, i);
       d.querySelector(".book").onclick = () => openBingshu(side, i);
       d.querySelector(".inh").onclick = () => openInherit(side, i);
-      const eqs = availEquips(g), curE = eqsel[side][i] || "";
-      const eq = d.querySelector(".eq");
-      eq.innerHTML = `<option value="">無</option>` + eqs.map(x => `<option${x === curE ? " selected" : ""}>${x}</option>`).join("");
-      eq.onchange = () => { eqsel[side][i] = eq.value || null; };
+      d.querySelector(".equip").onclick = () => openEquip(side, i);
     } else {
       d.className = "gcard-sim empty";
       d.innerHTML = `<div class="gempty">＋<br>點選武將</div>`;
@@ -258,8 +261,8 @@ function renderSlots(side) {
 }
 function runSim() {
   const A = [], B = [], bsA = [], bsB = [], eqA = [], eqB = [], adA = [], adB = [], inA = [], inB = [];
-  teams.A.forEach((n, i) => { if (n) { A.push(n); bsA.push(bsNames(getBsel("A", i))); eqA.push(eqsel.A[i]); adA.push(buildAdd(getBuild("A", i), getBsel("A", i).on)); inA.push(inhsel.A[i]); } });
-  teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsNames(getBsel("B", i))); eqB.push(eqsel.B[i]); adB.push(buildAdd(getBuild("B", i), getBsel("B", i).on)); inB.push(inhsel.B[i]); } });
+  teams.A.forEach((n, i) => { if (n) { A.push(n); bsA.push(bsNames(getBsel("A", i))); eqA.push(eqNames(eqsel.A[i])); adA.push(buildAdd(getBuild("A", i), getBsel("A", i).on)); inA.push(inhsel.A[i]); } });
+  teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsNames(getBsel("B", i))); eqB.push(eqNames(eqsel.B[i])); adB.push(buildAdd(getBuild("B", i), getBsel("B", i).on)); inB.push(inhsel.B[i]); } });
   if (!A.length || !B.length) { alert("兩邊各至少放 1 名武將"); return; }
   const ta = effTroop("A"), tb = effTroop("B");
   const r = SGZ.simulate(POOL, A, B, 3000, ta, tb, bsA, bsB, eqA, eqB, adA, adB, inA, inB, CURRENT_SEASON);
@@ -278,7 +281,7 @@ function runRec() {
   $("#recList").innerHTML = list.map(([team, sc, tr]) =>
     `<li data-team='${JSON.stringify(team)}' data-troop="${tr}"><span><b class="gold">[${tr}兵]</b> ${team.join("　／　")}</span><span class="sc">${sc}</span></li>`).join("");
   document.querySelectorAll("#recList li").forEach(li => li.onclick = () => {
-    teams.A = [...JSON.parse(li.dataset.team)]; troops.A = li.dataset.troop; bsel.A = [null, null, null]; eqsel.A = [null, null, null]; builds.A = [null, null, null]; inhsel.A = [[], [], []];
+    teams.A = [...JSON.parse(li.dataset.team)]; troops.A = li.dataset.troop; bsel.A = [null, null, null]; eqsel.A = [{}, {}, {}]; builds.A = [null, null, null]; inhsel.A = [[], [], []];
     document.querySelector(`.troop[data-side="A"]`).value = li.dataset.troop;
     renderSlots("A");
     document.querySelector('.tab[data-tab="sim"]').click();
@@ -310,7 +313,7 @@ function openPicker(side, idx) {
     names.filter(n => !q || n.includes(q)).map(n =>
       `<div class="pick" data-n="${n}">${facBadge(POOL[n].faction)} ${n}</div>`).join("");
   const bind = () => box.querySelectorAll(".pick").forEach(p => p.onclick = () => {
-    teams[side][idx] = p.dataset.n; bsel[side][idx] = null; eqsel[side][idx] = null; builds[side][idx] = null; inhsel[side][idx] = []; renderSlots(side); closeModal();
+    teams[side][idx] = p.dataset.n; bsel[side][idx] = null; eqsel[side][idx] = {}; builds[side][idx] = null; inhsel[side][idx] = []; renderSlots(side); closeModal();
   });
   draw(""); bind();
   box.querySelector("#pickSearch").oninput = e => { draw(e.target.value.trim()); bind(); };
@@ -334,7 +337,7 @@ function showDetail(n) {
     <div style="text-align:right;margin-top:12px"><button id="toSim" class="primary">加入我方</button></div>`;
   box.querySelector("#toSim").onclick = () => {
     const i = teams.A.indexOf(null); if (i < 0) { alert("我方已滿"); return; }
-    teams.A[i] = n; bsel.A[i] = null; eqsel.A[i] = null; builds.A[i] = null; inhsel.A[i] = []; renderSlots("A"); closeModal();
+    teams.A[i] = n; bsel.A[i] = null; eqsel.A[i] = {}; builds.A[i] = null; inhsel.A[i] = []; renderSlots("A"); closeModal();
     document.querySelector('.tab[data-tab="sim"]').click();
   };
   $("#modal").classList.remove("hidden");
@@ -445,6 +448,22 @@ function openInherit(side, i) {
   box.querySelector("#inhSearch").oninput = e => draw(e.target.value.trim());
   box.querySelector("#inhClr").onclick = () => { sel = []; upd(); draw(box.querySelector("#inhSearch").value.trim()); };
   box.querySelector("#inhSave").onclick = () => { inhsel[side][i] = sel; renderSlots(side); closeModal(); };
+  $("#modal").classList.remove("hidden");
+}
+
+function openEquip(side, i) {
+  const n = teams[side][i], g = POOL[n];
+  const cfg = { ...(eqsel[side][i] || {}) };
+  const box = $("#modal .modal-box");
+  box.innerHTML = `<h2 class="gold">${n}・裝備</h2>` +
+    EQUIP_SLOTS.map(s => {
+      const list = eqByType(g, s.t), cur = cfg[s.t] || "";
+      return `<div class="brow">${s.l}　<select data-t="${s.t}"><option value="">無</option>` +
+        list.map(x => `<option${x === cur ? " selected" : ""}>${x}</option>`).join("") + `</select></div>`;
+    }).join("") +
+    `<div style="text-align:right;margin-top:14px"><button id="eqSave" class="primary">套用</button></div>`;
+  box.querySelectorAll("select[data-t]").forEach(sel => sel.onchange = () => { if (sel.value) cfg[sel.dataset.t] = sel.value; else delete cfg[sel.dataset.t]; });
+  box.querySelector("#eqSave").onclick = () => { eqsel[side][i] = cfg; renderSlots(side); closeModal(); };
   $("#modal").classList.remove("hidden");
 }
 

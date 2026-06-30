@@ -236,7 +236,8 @@ class Unit:
             [TACTICS[nm] for nm in (inherit or []) if nm in TACTICS]  # 自帶 + 傳承戰法
         _bn = bingshu if isinstance(bingshu, (list, tuple)) else ([bingshu] if bingshu else [])
         self.bs = [e for nm in _bn for e in BINGSHU.get(nm, {}).get("effects", [])]  # 兵書(主+副)合併效果
-        self.eq = EQUIPS.get(equip, {}).get("effects", []) if equip else []       # 裝備被動效果
+        _eq = equip if isinstance(equip, (list, tuple)) else ([equip] if equip else [])
+        self.eq = [e for nm in _eq for e in EQUIPS.get(nm, {}).get("effects", [])]  # 裝備(4欄)合併效果
         a = add or {}                                 # 養成加值: 加點/進階/典藏
         sm = season or {}                             # 賽季修正
         apt = (1.20 if sm.get("apt_s") else g.apt_pct(ttype)) + sm.get("apt_add", 0)
