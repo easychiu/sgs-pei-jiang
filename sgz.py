@@ -214,6 +214,10 @@ class Unit:
         self.speed = (g.base["speed"] + a.get("speed", 0)) * mult
         self.mods = []                                # 乘法: [stat, mult, left]
         self.adds = []                                # 加法: [amp|mitig|extra, val, left]
+        if a.get("amp"):                              # 進階/典藏 攻防加成: 每階+2%攻+2%防
+            self.adds.append(["amp", a["amp"], 9999])
+        if a.get("mitig"):
+            self.adds.append(["mitig", a["mitig"], 9999])
         self.dots = []                                # 持續傷害: [每回合傷害, left]
         self.settle = None                            # 結算狀態(猛毒)
         self.guardian = None                          # 傷害轉移: 代承者

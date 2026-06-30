@@ -78,6 +78,8 @@
       this.force = (g.base.force + (a.force || 0)) * m; this.intel = (g.base.intel + (a.intel || 0)) * m;
       this.command = (g.base.command + (a.command || 0)) * m; this.speed = (g.base.speed + (a.speed || 0)) * m;
       this.mods = []; this.adds = []; this.dots = [];
+      if (a.amp) this.adds.push(["amp", a.amp, 9999]);    // 進階/典藏 攻防加成
+      if (a.mitig) this.adds.push(["mitig", a.mitig, 9999]);
       this.settle = null; this.guardian = null; this.guardShare = 0;
       this.stack = null; this.decay = null; this.swap = 0; this.counter = null;
     }

@@ -20,6 +20,8 @@ function defaultBuild(g) {                          // 預設: 進階滿、不�
     return { advance: adv, collection: false, alloc: { [primaryStat(g)]: poolSize(adv, false) } };
 }
 const getBuild = (side, i) => builds[side][i] || defaultBuild(POOL[teams[side][i]]);
+const combatPct = bd => (bd.advance + (bd.collection ? 1 : 0)) * 0.02;   // 進階/典藏: 每階+2%攻防
+const buildAdd = bd => ({ ...bd.alloc, amp: combatPct(bd), mitig: combatPct(bd) });
 const $ = s => document.querySelector(s);
 const pct = v => (v * 100).toFixed(0);
 const APT_PCT = { S: 1.2, A: 1.0, B: 0.85, C: 0.7, D: 0.55 };
@@ -153,8 +155,8 @@ function renderSlots(side) {
 }
 function runSim() {
   const A = [], B = [], bsA = [], bsB = [], eqA = [], eqB = [], adA = [], adB = [];
-  teams.A.forEach((n, i) => { if (n) { A.push(n); bsA.push(bsel.A[i] || SGZ.defaultBingshu(POOL[n])); eqA.push(eqsel.A[i]); adA.push(getBuild("A", i).alloc); } });
-  teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsel.B[i] || SGZ.defaultBingshu(POOL[n])); eqB.push(eqsel.B[i]); adB.push(getBuild("B", i).alloc); } });
+  teams.A.forEach((n, i) => { if (n) { A.push(n); bsA.push(bsel.A[i] || SGZ.defaultBingshu(POOL[n])); eqA.push(eqsel.A[i]); adA.push(buildAdd(getBuild("A", i))); } });
+  teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsel.B[i] || SGZ.defaultBingshu(POOL[n])); eqB.push(eqsel.B[i]); adB.push(buildAdd(getBuild("B", i))); } });
   if (!A.length || !B.length) { alert("兩邊各至少放 1 名武將"); return; }
   const ta = effTroop("A"), tb = effTroop("B");
   const r = SGZ.simulate(POOL, A, B, 3000, ta, tb, bsA, bsB, eqA, eqB, adA, adB);
@@ -238,7 +240,7 @@ function closeModal() { $("#modal").classList.add("hidden"); }
 
 function buildSummary(bd) {
   const al = STAT4.filter(k => bd.alloc[k] > 0).map(k => `${STATLAB[k]}+${bd.alloc[k]}`).join(" ");
-  return `進階${bd.advance}${bd.collection ? " 典藏" : ""}・加點 ${al || "未配"}`;
+  return `進階${bd.advance}${bd.collection ? " 典藏" : ""}・攻防+${Math.round(combatPct(bd) * 100)}%・加點 ${al || "未配"}`;
 }
 function openBuild(side, i) {
   const n = teams[side][i], g = POOL[n], max = maxAdv(g);
@@ -250,7 +252,8 @@ function openBuild(side, i) {
     box.innerHTML = `<h2 class="gold">${n}・養成加點</h2>
       <div class="brow">進階 <select id="bAdv"></select>
         　<label><input type="checkbox" id="bCol"${bd.collection ? " checked" : ""}> 典藏（+10點）</label></div>
-      <div class="brow">可分配 <b class="gold">${pool}</b> 點，剩餘 <b id="bLeft" style="${left < 0 ? "color:#e36" : "color:var(--gold2)"}">${left}</b></div>
+      <div class="brow">攻防加成 <b class="gold">+${Math.round(combatPct(bd) * 100)}%</b>（進階/典藏每階 +2%攻 +2%防）</div>
+      <div class="brow">加點可分配 <b class="gold">${pool}</b> 點，剩餘 <b id="bLeft" style="${left < 0 ? "color:#e36" : "color:var(--gold2)"}">${left}</b></div>
       <div class="balloc">${STAT4.map(k => `<label>${STATLAB[k]}<input type="number" min="0" data-k="${k}" value="${bd.alloc[k] || 0}"></label>`).join("")}</div>
       <div class="brow" style="color:#9a8b6a">面板（主兵種 ${SGZ.bestTroop(g.apt)}）：${statStr(g, SGZ.bestTroop(g.apt), bd.alloc)}</div>
       <div style="text-align:right;margin-top:14px">
