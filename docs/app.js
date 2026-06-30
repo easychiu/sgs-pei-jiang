@@ -43,6 +43,22 @@ function bselSummary(cfg) {
   const m = BINGSHU_CAT[cfg.category] || { i: "📖" };
   return `<span style="color:${m.c || "var(--gold2)"}">${m.i} ${cfg.category || "—"}</span>・${bsLabel(cfg.main)}＋${(cfg.subs || []).filter(Boolean).length}副`;
 }
+function setAll(side, red) {                        // 一鍵滿紅(進階滿+典藏+主屬性+開兵書) / 白板
+  teams[side].forEach((n, i) => {
+    if (!n) return;
+    const g = POOL[n];
+    if (red) {
+      const adv = maxAdv(g);
+      builds[side][i] = { advance: adv, collection: true, alloc: { [primaryStat(g)]: poolSize(adv, true) } };
+      bsel[side][i] = defaultBingshuCfg(g);
+    } else {
+      builds[side][i] = { advance: 0, collection: false, alloc: {} };
+      bsel[side][i] = { on: false, category: null, main: null, subs: [] };
+    }
+  });
+  renderSlots(side);
+  $("#simResult").classList.add("hidden");
+}
 const $ = s => document.querySelector(s);
 const pct = v => (v * 100).toFixed(0);
 const APT_PCT = { S: 1.2, A: 1.0, B: 0.85, C: 0.7, D: 0.55 };
@@ -107,6 +123,8 @@ async function load() {
     const sel = document.querySelector(`.troop[data-side="${s}"]`);
     sel.innerHTML = `<option value="">自動</option>` + TROOPS.map(x => `<option>${x}</option>`).join("");
     sel.onchange = () => { troops[s] = sel.value; renderSlots(s); $("#simResult").classList.add("hidden"); };
+    document.querySelector(`.redall[data-side="${s}"]`).onclick = () => setAll(s, true);
+    document.querySelector(`.blankall[data-side="${s}"]`).onclick = () => setAll(s, false);
     renderSlots(s);
   });
   $("#runSim").onclick = runSim;

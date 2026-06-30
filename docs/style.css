@@ -47,6 +47,9 @@ button{cursor:pointer;font-family:inherit}
 .troop-sel{text-align:center;margin-bottom:10px;color:#b8a987;font-size:14px}
 .slot .eq,.slot .bs{max-width:46%}
 .troop-sel select{margin-left:4px}
+.redall,.blankall{font-family:inherit;font-size:13px;border-radius:6px;padding:4px 10px;margin-left:6px;cursor:pointer}
+.redall{background:linear-gradient(180deg,#b5392f,#7a241d);color:var(--gold2);border:1px solid var(--gold)}
+.blankall{background:#2a2018;color:var(--ink);border:1px solid var(--line)}
 .apt{font-size:12px;padding:0 5px;border-radius:3px;margin-left:5px;color:#15100c;font-weight:bold}
 .apt.S{background:#e8c84a}.apt.A{background:#7fce8a}.apt.B{background:#8fb4e0}
 .apt.C{background:#c9a98a}.apt.D{background:#b08a8a}
