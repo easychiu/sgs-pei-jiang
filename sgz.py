@@ -139,13 +139,13 @@ with open(os.path.join(DATA, "generals.json"), encoding="utf-8") as f:
             POOL[g.name] = g
 
 # 兵書: 名稱 -> 效果; 各類別的主兵書(供預設裝備)
-BINGSHU, MAIN_BY_CAT = {}, {}
+BINGSHU, MAIN_BY_CAT, SUB_BY_CAT = {}, {}, {}
 _bs = os.path.join(DATA, "bingshu_parsed.json")
 if os.path.exists(_bs):
     for b in json.load(open(_bs, encoding="utf-8")):
         BINGSHU[b["name"]] = b
-        if b.get("type") == "主兵書":
-            MAIN_BY_CAT.setdefault(b["category"], []).append(b["name"])
+        (MAIN_BY_CAT if b.get("type") == "主兵書" else SUB_BY_CAT).setdefault(
+            b["category"], []).append(b["name"])
 
 
 def default_bingshu(g):                               # 預設主兵書: 該將首個可用類別的主兵書
@@ -204,7 +204,8 @@ def recommend(pool=None, k=3, top=8):
 class Unit:
     def __init__(self, g, ttype, bingshu=None, equip=None, add=None):
         self.g, self.ttype, self.troop, self.stun = g, ttype, START_TROOP, 0
-        self.bs = BINGSHU.get(bingshu, {}).get("effects", []) if bingshu else []  # 兵書被動效果
+        _bn = bingshu if isinstance(bingshu, (list, tuple)) else ([bingshu] if bingshu else [])
+        self.bs = [e for nm in _bn for e in BINGSHU.get(nm, {}).get("effects", [])]  # 兵書(主+副)合併效果
         self.eq = EQUIPS.get(equip, {}).get("effects", []) if equip else []       # 裝備被動效果
         a = add or {}                                 # 養成加值: 加點/進階/典藏(於適性前疊加)
         mult = g.apt_pct(ttype)                       # 屬性 = (基礎+養成) × 該兵種適性%

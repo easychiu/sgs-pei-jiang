@@ -21,7 +21,25 @@ function defaultBuild(g) {                          // 預設: 進階滿、不�
 }
 const getBuild = (side, i) => builds[side][i] || defaultBuild(POOL[teams[side][i]]);
 const combatPct = bd => (bd.advance + (bd.collection ? 1 : 0)) * 0.02;   // 進階/典藏: 每階+2%攻防
-const buildAdd = bd => ({ ...bd.alloc, amp: combatPct(bd), mitig: combatPct(bd) });
+const buildAdd = (bd, bsOn) => ({ ...bd.alloc, amp: bsOn ? combatPct(bd) : 0, mitig: bsOn ? combatPct(bd) : 0 });
+// 兵書 6 類別(顏色/圖示) — PK 賽季: 1 主兵書 + 2 副兵書
+const BINGSHU_CAT = {
+  "作戰": { c: "#c0392b", i: "⚔" }, "虛實": { c: "#8e44ad", i: "🚩" }, "軍形": { c: "#2e86de", i: "🛡" },
+  "九變": { c: "#16a085", i: "☯" }, "始計": { c: "#b7950b", i: "⛑" }, "用間": { c: "#7f8c8d", i: "🥷" },
+};
+const SUBS_MAX = 2;
+function defaultBingshuCfg(g) {
+  const cat = (g.bingshuCats || [])[0] || null;
+  const mains = cat ? (SGZ.mainByCat()[cat] || []) : [], subs = cat ? (SGZ.subByCat()[cat] || []) : [];
+  return { on: true, category: cat, main: mains[0] || null, subs: subs.slice(0, SUBS_MAX) };
+}
+const getBsel = (side, i) => bsel[side][i] || defaultBingshuCfg(POOL[teams[side][i]]);
+const bsNames = cfg => cfg.on ? [...new Set([cfg.main, ...(cfg.subs || [])].filter(Boolean))] : [];
+function bselSummary(cfg) {
+  if (!cfg.on) return "兵書：<b>關</b>";
+  const m = BINGSHU_CAT[cfg.category] || { i: "📖" };
+  return `<span style="color:${m.c || "var(--gold2)"}">${m.i} ${cfg.category || "—"}</span>・${cfg.main || "—"}＋${(cfg.subs || []).length}副`;
+}
 const $ = s => document.querySelector(s);
 const pct = v => (v * 100).toFixed(0);
 const APT_PCT = { S: 1.2, A: 1.0, B: 0.85, C: 0.7, D: 0.55 };
@@ -102,11 +120,6 @@ function initTabs() {
   });
 }
 
-function availBooks(g) {
-  const m = SGZ.mainByCat(), out = [];
-  for (const c of (g.bingshuCats || [])) for (const b of (m[c] || [])) out.push(b);
-  return out;
-}
 function availEquips(g) {
   return Object.values(SGZ.equips()).filter(e => !e.exclusive || e.exclusive === g.name).map(e => e.name);
 }
@@ -121,20 +134,15 @@ function renderSlots(side) {
     const d = document.createElement("div");
     d.className = "slot";
     if (g) {
-      const bd = getBuild(side, i);
+      const bd = getBuild(side, i), bc = getBsel(side, i);
       d.innerHTML = `${facBadge(g.faction)}<div style="flex:1">
         <div class="nm">${n} <span class="apt ${g.apt[tr] || ""}">${tr}${aptOf(g, tr)}</span>
           <button class="cog" title="養成加點">⚙</button></div>
         <div class="sub">${statStr(g, tr, bd.alloc)}</div>
         <div class="sub" style="color:#9a8b6a">${buildSummary(bd)}</div>
-        <div class="sub">兵書 <select class="bs"></select>　裝備 <select class="eq"></select></div></div>`;
-      const cog = d.querySelector(".cog");
-      cog.onclick = e => { e.stopPropagation(); openBuild(side, i); };
-      const books = availBooks(g), curB = bsel[side][i] || SGZ.defaultBingshu(g) || "";
-      const bs = d.querySelector(".bs");
-      bs.innerHTML = books.length ? books.map(b => `<option${b === curB ? " selected" : ""}>${b}</option>`).join("") : `<option>—</option>`;
-      bs.onclick = e => e.stopPropagation();
-      bs.onchange = e => { e.stopPropagation(); bsel[side][i] = bs.value; };
+        <div class="sub">${bselSummary(bc)} <button class="book" title="兵書設定">📖</button>　裝備 <select class="eq"></select></div></div>`;
+      d.querySelector(".cog").onclick = e => { e.stopPropagation(); openBuild(side, i); };
+      d.querySelector(".book").onclick = e => { e.stopPropagation(); openBingshu(side, i); };
       const eqs = availEquips(g), curE = eqsel[side][i] || "";
       const eq = d.querySelector(".eq");
       eq.innerHTML = `<option value="">無</option>` + eqs.map(x => `<option${x === curE ? " selected" : ""}>${x}</option>`).join("");
@@ -155,8 +163,8 @@ function renderSlots(side) {
 }
 function runSim() {
   const A = [], B = [], bsA = [], bsB = [], eqA = [], eqB = [], adA = [], adB = [];
-  teams.A.forEach((n, i) => { if (n) { A.push(n); bsA.push(bsel.A[i] || SGZ.defaultBingshu(POOL[n])); eqA.push(eqsel.A[i]); adA.push(buildAdd(getBuild("A", i))); } });
-  teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsel.B[i] || SGZ.defaultBingshu(POOL[n])); eqB.push(eqsel.B[i]); adB.push(buildAdd(getBuild("B", i))); } });
+  teams.A.forEach((n, i) => { if (n) { A.push(n); bsA.push(bsNames(getBsel("A", i))); eqA.push(eqsel.A[i]); adA.push(buildAdd(getBuild("A", i), getBsel("A", i).on)); } });
+  teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsNames(getBsel("B", i))); eqB.push(eqsel.B[i]); adB.push(buildAdd(getBuild("B", i), getBsel("B", i).on)); } });
   if (!A.length || !B.length) { alert("兩邊各至少放 1 名武將"); return; }
   const ta = effTroop("A"), tb = effTroop("B");
   const r = SGZ.simulate(POOL, A, B, 3000, ta, tb, bsA, bsB, eqA, eqB, adA, adB);
@@ -268,6 +276,49 @@ function openBuild(side, i) {
       if (pool - STAT4.reduce((s, k) => s + (bd.alloc[k] || 0), 0) < 0) { alert("超出可分配點數"); return; }
       builds[side][i] = bd; renderSlots(side); closeModal();
     };
+  };
+  render();
+  $("#modal").classList.remove("hidden");
+}
+
+function openBingshu(side, i) {
+  const n = teams[side][i], g = POOL[n], bd = getBuild(side, i);
+  const cfg = JSON.parse(JSON.stringify(getBsel(side, i)));
+  const cats = g.bingshuCats || [];
+  const box = $("#modal .modal-box");
+  const render = () => {
+    const mains = cfg.category ? (SGZ.mainByCat()[cfg.category] || []) : [];
+    const subs = cfg.category ? (SGZ.subByCat()[cfg.category] || []) : [];
+    const pct = cfg.on ? Math.round(combatPct(bd) * 100) : 0;
+    box.innerHTML = `<h2 class="gold">${n}・兵書</h2>
+      <div class="brow"><label><input type="checkbox" id="bsOn"${cfg.on ? " checked" : ""}> 開啟兵書（PK：主1＋副2）</label>
+        　攻防加成 <b class="gold">+${pct}%</b><span style="color:#9a8b6a;font-size:13px">（進階/典藏，需開兵書）</span></div>
+      <div id="bsBody" style="${cfg.on ? "" : "opacity:.4;pointer-events:none"}">
+        <div class="brow">類別：<span class="catchips"></span></div>
+        <div class="brow">大兵書 <select id="bsMain"></select></div>
+        <div class="brow">小兵書 <select class="bsSub" data-x="0"></select> <select class="bsSub" data-x="1"></select></div>
+      </div>
+      <div style="text-align:right;margin-top:14px"><button id="bsSave" class="primary">套用</button></div>`;
+    const chips = box.querySelector(".catchips");
+    chips.innerHTML = cats.length ? cats.map(c => { const m = BINGSHU_CAT[c] || {}; const on = c === cfg.category;
+      return `<button class="catchip" data-c="${c}" style="border-color:${m.c || "#777"};color:${on ? "#15100c" : (m.c || "#ccc")};background:${on ? (m.c || "#777") : "transparent"}">${m.i || ""} ${c}</button>`; }).join("")
+      : '<span style="color:#9a8b6a">此武將可用兵書待補（Gemini）</span>';
+    chips.querySelectorAll(".catchip").forEach(b => b.onclick = () => {
+      cfg.category = b.dataset.c;
+      cfg.main = (SGZ.mainByCat()[cfg.category] || [])[0] || null;
+      cfg.subs = (SGZ.subByCat()[cfg.category] || []).slice(0, SUBS_MAX);
+      render();
+    });
+    const mainSel = box.querySelector("#bsMain");
+    mainSel.innerHTML = mains.map(x => `<option${x === cfg.main ? " selected" : ""}>${x}</option>`).join("") || `<option value="">—</option>`;
+    mainSel.onchange = () => cfg.main = mainSel.value || null;
+    box.querySelectorAll(".bsSub").forEach(sel => {
+      const x = +sel.dataset.x;
+      sel.innerHTML = `<option value="">無</option>` + subs.map(s => `<option${s === (cfg.subs || [])[x] ? " selected" : ""}>${s}</option>`).join("");
+      sel.onchange = () => { cfg.subs = cfg.subs || []; cfg.subs[x] = sel.value || null; };
+    });
+    box.querySelector("#bsOn").onchange = e => { cfg.on = e.target.checked; render(); };
+    box.querySelector("#bsSave").onclick = () => { bsel[side][i] = cfg; renderSlots(side); closeModal(); };
   };
   render();
   $("#modal").classList.remove("hidden");

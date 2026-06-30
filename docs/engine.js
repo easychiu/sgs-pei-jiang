@@ -9,7 +9,7 @@
   const APT_PCT = { S: 1.20, A: 1.00, B: 0.85, C: 0.70, D: 0.55 };
   const APT_RANK = { S: 4, A: 3, B: 2, C: 1, D: 0 };
   const TROOPS = ["騎", "盾", "弓", "槍", "器"];
-  let BINGSHU = {}, MAIN_BY_CAT = {};               // 兵書: 名稱→效果; 類別→主兵書們
+  let BINGSHU = {}, MAIN_BY_CAT = {}, SUB_BY_CAT = {};  // 兵書: 名稱→效果; 類別→主/副兵書們
   let BONDS = [], EQUIPS = {};                       // 緣分(隊伍級) / 裝備(自身)
   const rnd = () => Math.random();
 
@@ -47,10 +47,11 @@
   function buildPool(generals, tactics, bingshu, bonds, equips) {
     const TAC = {};
     for (const t of tactics) if (t.type !== "none") TAC[t.nameZh] = t;
-    BINGSHU = {}; MAIN_BY_CAT = {}; BONDS = bonds || []; EQUIPS = {};
+    BINGSHU = {}; MAIN_BY_CAT = {}; SUB_BY_CAT = {}; BONDS = bonds || []; EQUIPS = {};
     for (const b of (bingshu || [])) {
       BINGSHU[b.name] = b;
-      if (b.type === "主兵書") (MAIN_BY_CAT[b.category] = MAIN_BY_CAT[b.category] || []).push(b.name);
+      const m = b.type === "主兵書" ? MAIN_BY_CAT : SUB_BY_CAT;
+      (m[b.category] = m[b.category] || []).push(b.name);
     }
     for (const e of (equips || [])) EQUIPS[e.name] = e;
     const POOL = {};
@@ -71,7 +72,8 @@
   class Unit {
     constructor(g, ttype, bsName, eqName, add) {
       this.g = g; this.ttype = ttype; this.troop = START_TROOP; this.stun = 0;
-      this.bs = (bsName && BINGSHU[bsName]) ? BINGSHU[bsName].effects : [];  // 兵書被動
+      const _bn = Array.isArray(bsName) ? bsName : (bsName ? [bsName] : []);
+      this.bs = _bn.flatMap(nm => (BINGSHU[nm] ? BINGSHU[nm].effects : []));  // 兵書(主+副)合併
       this.eq = (eqName && EQUIPS[eqName]) ? EQUIPS[eqName].effects : [];    // 裝備被動
       const a = add || {};                         // 養成加值: 加點/進階/典藏(適性前疊加)
       const m = aptPct(g, ttype);                  // 屬性 = (基礎+養成) × 該兵種適性%
@@ -279,7 +281,7 @@
   }
 
   const API = { buildPool, simulate, score, recommend, fight, teamTroop, aptPct, bestTroop, TROOPS,
-    defaultBingshu, activeBonds, mainByCat: () => MAIN_BY_CAT, bingshu: () => BINGSHU,
+    defaultBingshu, activeBonds, mainByCat: () => MAIN_BY_CAT, subByCat: () => SUB_BY_CAT, bingshu: () => BINGSHU,
     bonds: () => BONDS, equips: () => EQUIPS,
     setKnobs: (c, p) => { CMD_TRIGGER = c; PASSIVE_TRIGGER = p; } };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
