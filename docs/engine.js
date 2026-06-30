@@ -13,6 +13,8 @@
   let TACTICS = {};                                 // 名稱→戰法(供傳承查詢)
   let BONDS = [], EQUIPS = {};                       // 緣分(隊伍級) / 裝備(自身)
   let SEASON_MODS = {};                              // 賽季修正 {id:[mod]}
+  let TRACE = null, CUR_R = 0;                        // 推演日誌: TRACE=陣列時記錄事件; CUR_R=當前回合(0=準備)
+  const lg = t => { if (TRACE) TRACE.push({ r: CUR_R, t }); };
   function seasonModsFor(POOL, g, idx, team, scenario) {
     const out = { aptAdd: 0, aptS: false, flat: 0, mult: 1.0 };
     for (const m of (scenario ? (SEASON_MODS[scenario] || []) : [])) {
@@ -150,10 +152,13 @@
     const g = dst.guardian;
     if (g && g.alive && g !== dst) { g.troop -= dmg * dst.guardShare; dst.troop -= dmg * (1 - dst.guardShare); }
     else dst.troop -= dmg;
+    if (TRACE) lg(`　→ ${dst.nm} 損兵 ${Math.round(dmg)}，剩餘 ${Math.max(0, Math.round(dst.troop))}` + (dst.troop <= 0 ? " 【擊破】" : ""));
     if (dst.settle) dst.settle.layers = Math.min(dst.settle.max, dst.settle.layers + 1);
     const c = dst.counter;
-    if (c && dst.alive && src.alive && rnd() < (c.prob ?? 1))
-      src.troop -= damage(dst, src, c.coef ?? 1, c.kind || "phys");
+    if (c && dst.alive && src.alive && rnd() < (c.prob ?? 1)) {
+      const cd = damage(dst, src, c.coef ?? 1, c.kind || "phys"); src.troop -= cd;
+      if (TRACE) lg(`　↩ ${dst.nm} 反擊 ${src.nm} 損兵 ${Math.round(cd)}，剩餘 ${Math.max(0, Math.round(src.troop))}`);
+    }
   }
   function extraCount(ex) { const i = Math.floor(ex); return i + (rnd() < ex - i ? 1 : 0); }
   function pickTarget(units) {
@@ -218,8 +223,8 @@
     addB = addB || teamB.map(() => null);
     inhA = inhA || teamA.map(() => null);
     inhB = inhB || teamB.map(() => null);
-    const A = teamA.map((n, i) => new Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i], seasonModsFor(POOL, POOL[n], i, teamA, scenario)));
-    const B = teamB.map((n, i) => new Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i], seasonModsFor(POOL, POOL[n], i, teamB, scenario)));
+    const A = teamA.map((n, i) => Object.assign(new Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i], seasonModsFor(POOL, POOL[n], i, teamA, scenario)), { nm: n, side: "我" }));
+    const B = teamB.map((n, i) => Object.assign(new Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i], seasonModsFor(POOL, POOL[n], i, teamB, scenario)), { nm: n, side: "敵" }));
     const setA = new Set(A);
     const alliesOf = u => setA.has(u) ? A : B, foesOf = u => setA.has(u) ? B : A;
     const bondsA = activeBonds(teamA), bondsB = activeBonds(teamB);
@@ -238,13 +243,25 @@
           applyEffects(team[0], null, pt(bd.effects), team, foesOf(team[0]), opt);
     };
     applyPassives({ noHeal: true });
+    if (TRACE) {                                    // 準備階段: 列出各將備戰後面板 + 套用系統
+      CUR_R = 0;
+      lg(`〔採用兵種〕我方 ${troopA}兵　·　敵方 ${troopB}兵`);
+      for (const u of [...A, ...B]) {
+        const sys = [u.tactics.map(t => t.nameZh).filter(Boolean).join("／") || "無戰法",
+          u.bs.length ? "兵書" : "", u.eq.length ? "裝備" : ""].filter(Boolean).join("・");
+        lg(`【${u.side}】${u.nm}　武${Math.round(u.eff("force"))} 智${Math.round(u.eff("intel"))} 統${Math.round(u.eff("command"))} 速${Math.round(u.eff("speed"))}　${sys}`);
+      }
+      for (const [team, bds] of [[A, bondsA], [B, bondsB]]) if (team.length && bds.length) lg(`【${team[0].side}】緣分發動: ${bds.map(b => b.name).join("、")}`);
+    }
 
     for (let r = 1; r <= ROUNDS; r++) {
+      CUR_R = r;
       for (const u of [...A, ...B]) if (u.alive && u.stack) u.stack.n = Math.min(u.stack.max, u.stack.n + 1);
       applyPassives({ healOnly: true });
       const order = [...A, ...B].filter(u => u.alive).sort((x, y) => y.eff("speed") - x.eff("speed"));
       for (const u of order) {
-        if (!u.alive || u.stun) continue;
+        if (!u.alive) continue;
+        if (u.stun) { lg(`【${u.side}】${u.nm} 被控制，無法行動`); continue; }
         if (!pickTarget(foesOf(u))) break;
         for (const t of u.tactics) {                  // 自帶 + 傳承: 各自獨立附加發動
           let fire = false;
@@ -252,15 +269,17 @@
           else if (t.type === "command" && t.coef) fire = rnd() < CMD_TRIGGER;
           else if (t.type === "passive" && t.coef) fire = rnd() < t.rate * PASSIVE_TRIGGER;
           if (fire) {
+            if (TRACE) lg(`【${u.side}】${u.nm} 發動戰法【${t.nameZh}】`);
             for (let i = 0; i < t.n; i++) { const v = pickTarget(foesOf(u)); if (v && t.coef) hit(u, v, t.coef, t.kind); }
             if (t.type === "active") applyEffects(u, pickTarget(foesOf(u)), t, alliesOf(u), foesOf(u));
           }
         }
         const tgt = pickTarget(foesOf(u));            // 普攻(常駐) + 連擊 + 突擊
         if (tgt) {
+          if (TRACE) lg(`【${u.side}】${u.nm} 普通攻擊 → ${tgt.nm}`);
           hit(u, tgt, 1.0, "phys");
-          for (let i = 0; i < extraCount(u.addbonus("extra")); i++) { const nt = pickTarget(foesOf(u)); if (nt) hit(u, nt, 1.0, "phys"); }
-          for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate) { if (t.coef) hit(u, tgt, t.coef, t.kind); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
+          for (let i = 0; i < extraCount(u.addbonus("extra")); i++) { const nt = pickTarget(foesOf(u)); if (nt) { if (TRACE) lg(`【${u.side}】${u.nm} 連擊 → ${nt.nm}`); hit(u, nt, 1.0, "phys"); } }
+          for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
         }
       }
       for (const u of [...A, ...B]) {
@@ -278,6 +297,12 @@
     return { winner: ta >= tb ? "A" : "B", rounds: ROUNDS };
   }
 
+  function trace(POOL, teamA, teamB, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null, addA = null, addB = null, inhA = null, inhB = null, scenario = null) {
+    TRACE = []; CUR_R = 0;                           // 跑一場並記錄事件日誌
+    const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario);
+    const log = TRACE; TRACE = null;
+    return { ...r, log };
+  }
   function simulate(POOL, teamA, teamB, n = 2000, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null, addA = null, addB = null, inhA = null, inhB = null, scenario = null) {
     let a = 0, rs = 0;
     for (let i = 0; i < n; i++) { const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario); if (r.winner === "A") a++; rs += r.rounds; }
@@ -306,7 +331,7 @@
     return out.slice(0, top).map(c => [c, score(POOL, c), teamTroop(POOL, c)]);
   }
 
-  const API = { buildPool, simulate, score, recommend, fight, teamTroop, aptPct, bestTroop, TROOPS,
+  const API = { buildPool, simulate, trace, score, recommend, fight, teamTroop, aptPct, bestTroop, TROOPS,
     defaultBingshu, activeBonds, seasonModsFor, mainByCat: () => MAIN_BY_CAT, subByCat: () => SUB_BY_CAT, bingshu: () => BINGSHU,
     bonds: () => BONDS, equips: () => EQUIPS,
     setKnobs: (c, p) => { CMD_TRIGGER = c; PASSIVE_TRIGGER = p; } };

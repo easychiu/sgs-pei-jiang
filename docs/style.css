@@ -51,6 +51,11 @@ button{cursor:pointer;font-family:inherit}
 .tier{display:inline-block;min-width:15px;text-align:center;font-size:10px;font-weight:700;
   border-radius:3px;padding:0 3px;margin-right:5px;color:#1b140e}
 .tier.tS{background:#e8c061}.tier.tA{background:#c8a2d8}.tier.tB{background:#8fb6d8}
+#trTabs .catchip{color:var(--gold2);font-size:12px;padding:3px 9px}
+#trTabs .catchip.on{background:#2a2212;border-color:var(--gold);color:var(--gold)}
+.tracelog{max-height:55vh;overflow:auto;font-size:12px;line-height:1.7;background:#1b140e;
+  border:1px solid var(--line);border-radius:8px;padding:10px}
+.logln{color:#cdbf9c;white-space:pre-wrap}
 .brow{margin:10px 0;font-size:15px}
 .balloc{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}
 .balloc label{display:flex;flex-direction:column;gap:4px;color:var(--gold2);text-align:center}

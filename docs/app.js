@@ -207,6 +207,7 @@ async function load() {
     renderSlots(s);
   });
   $("#runSim").onclick = runSim;
+  $("#trace").onclick = openTrace;
   $("#optimize").onclick = optimizeTeam;
   $("#clearSim").onclick = () => { for (const s of ["A", "B"]) { teams[s] = [null, null, null]; bsel[s] = [null, null, null]; eqsel[s] = [{}, {}, {}]; builds[s] = [null, null, null]; inhsel[s] = [[], [], []]; } renderSlots("A"); renderSlots("B"); $("#simResult").classList.add("hidden"); };
   $("#runRec").onclick = runRec;
@@ -288,6 +289,30 @@ function runSim() {
     <div class="b" style="width:${r.winB * 100}%">${pct(r.winB)}%</div></div>
     <div>我方[${ta}兵] <b class="gold">${pct(r.winA)}%</b> 勝　·　敵方[${tb}兵] <b class="gold">${pct(r.winB)}%</b> 勝　·　平均 ${r.rounds} 回合</div>
     <div style="font-size:13px;color:#9a8b6a;margin-top:6px">${A.join("／")}　vs　${B.join("／")}</div>`;
+}
+
+function openTrace() {                                         // 推演明細: 跑一場並顯示逐回合日誌
+  const A = [], B = [], bsA = [], bsB = [], eqA = [], eqB = [], adA = [], adB = [], inA = [], inB = [];
+  teams.A.forEach((n, i) => { if (n) { A.push(n); bsA.push(bsNames(getBsel("A", i))); eqA.push(eqNames(eqsel.A[i])); adA.push(buildAdd(getBuild("A", i), getBsel("A", i).on)); inA.push((inhsel.A[i] || []).filter(Boolean)); } });
+  teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsNames(getBsel("B", i))); eqB.push(eqNames(eqsel.B[i])); adB.push(buildAdd(getBuild("B", i), getBsel("B", i).on)); inB.push((inhsel.B[i] || []).filter(Boolean)); } });
+  if (!A.length || !B.length) { alert("兩邊各至少放 1 名武將"); return; }
+  const ta = effTroop("A"), tb = effTroop("B");
+  const r = SGZ.trace(POOL, A, B, ta, tb, bsA, bsB, eqA, eqB, adA, adB, inA, inB, CURRENT_SEASON);
+  const maxR = r.log.reduce((m, x) => Math.max(m, x.r), 0);
+  const tabs = ["準備階段"].concat(Array.from({ length: maxR }, (_, i) => "回合" + (i + 1)));
+  let cur = 0;
+  const box = $("#modal .modal-box");
+  const winTxt = r.winner === "A" ? `我方勝 · ${r.rounds}回合` : `敵方勝 · ${r.rounds}回合`;
+  const render = () => {
+    const lines = r.log.filter(x => x.r === cur).map(x => `<div class="logln">${x.t}</div>`).join("") || `<div class="logln" style="color:#8a7c5c">（此回合無事件）</div>`;
+    box.innerHTML = `<h2 class="gold">📜 推演明細　<small style="color:#b8a987">${winTxt}</small></h2>
+      <div id="trTabs" class="catchips" style="margin:6px 0"></div>
+      <div class="tracelog">${lines}</div>`;
+    $("#trTabs").innerHTML = tabs.map((t, i) => `<button class="catchip${i === cur ? " on" : ""}" data-i="${i}">${t}</button>`).join("");
+    $("#trTabs").querySelectorAll(".catchip").forEach(b => b.onclick = () => { cur = +b.dataset.i; render(); });
+  };
+  render();
+  $("#modal").classList.remove("hidden");
 }
 
 function runRec() {
