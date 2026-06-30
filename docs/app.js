@@ -59,6 +59,31 @@ function setAll(side, red) {                        // 一鍵滿紅(進階滿+�
   renderSlots(side);
   $("#simResult").classList.add("hidden");
 }
+function teamParams(side) {                         // 收集一隊的模擬參數
+  const names = [], bs = [], eq = [], ad = [], inh = [];
+  teams[side].forEach((n, i) => {
+    if (n) { names.push(n); bs.push(bsNames(getBsel(side, i))); eq.push(eqsel[side][i]); ad.push(buildAdd(getBuild(side, i), getBsel(side, i).on)); inh.push(inhsel[side][i]); }
+  });
+  return { names, bs, eq, ad, inh };
+}
+function optimizeTeam() {                           // 為我方試 5 兵種, 模擬找最佳
+  const pa = teamParams("A"), pb = teamParams("B");
+  if (!pa.names.length) { alert("先放我方武將"); return; }
+  const hasB = pb.names.length > 0;
+  const foe = hasB ? pb.names : ["呂布", "趙雲", "關羽"];   // 無敵方則對基準隊
+  const tb = hasB ? effTroop("B") : null;
+  let best = null;
+  for (const tr of SGZ.TROOPS) {
+    const r = SGZ.simulate(POOL, pa.names, foe, 1000, tr, tb, pa.bs, hasB ? pb.bs : null,
+      pa.eq, hasB ? pb.eq : null, pa.ad, hasB ? pb.ad : null, pa.inh, hasB ? pb.inh : null);
+    if (!best || r.winA > best.win) best = { troop: tr, win: r.winA };
+  }
+  troops.A = best.troop;
+  document.querySelector('.troop[data-side="A"]').value = best.troop;
+  renderSlots("A");
+  const res = $("#simResult"); res.classList.remove("hidden");
+  res.innerHTML = `<div>🔧 我方最佳兵種：<b class="gold">${best.troop}</b>　勝率 <b class="gold">${(best.win * 100).toFixed(0)}%</b>　${hasB ? "vs 敵方" : "vs 基準隊"}</div>`;
+}
 const $ = s => document.querySelector(s);
 const pct = v => (v * 100).toFixed(0);
 const APT_PCT = { S: 1.2, A: 1.0, B: 0.85, C: 0.7, D: 0.55 };
@@ -128,6 +153,7 @@ async function load() {
     renderSlots(s);
   });
   $("#runSim").onclick = runSim;
+  $("#optimize").onclick = optimizeTeam;
   $("#clearSim").onclick = () => { for (const s of ["A", "B"]) { teams[s] = [null, null, null]; bsel[s] = [null, null, null]; eqsel[s] = [null, null, null]; builds[s] = [null, null, null]; inhsel[s] = [[], [], []]; } renderSlots("A"); renderSlots("B"); $("#simResult").classList.add("hidden"); };
   $("#runRec").onclick = runRec;
   $("#dexSearch").oninput = renderDex;

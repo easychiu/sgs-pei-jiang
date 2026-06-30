@@ -64,8 +64,9 @@ button{cursor:pointer;font-family:inherit}
 .slot .fac{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;
   justify-content:center;color:#fff;font-size:15px;flex-shrink:0}
 .sim-controls{text-align:center;margin:20px 0;display:flex;gap:10px;justify-content:center}
-#clearSim{background:#2a2018;color:var(--ink);border:1px solid var(--line);
-  padding:12px 18px;border-radius:8px}
+#clearSim,#optimize{background:#2a2018;color:var(--ink);border:1px solid var(--line);
+  padding:12px 18px;border-radius:8px;font-family:inherit;font-size:15px}
+#optimize{border-color:var(--gold);color:var(--gold2)}
 .result{background:var(--bg2);border:1px solid var(--gold);border-radius:10px;
   padding:20px;text-align:center}
 .bar{height:38px;border-radius:8px;overflow:hidden;display:flex;margin:14px 0;
