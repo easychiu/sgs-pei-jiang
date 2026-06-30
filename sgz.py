@@ -349,8 +349,8 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 continue
             hurt = min((a for a in allies if a.alive),
                        key=lambda a: a.troop, default=None)
-            if hurt:                                  # ponytail: 治療量粗估
-                hurt.troop += e.get("coef", 0.8) * caster.troop * 0.10
+            if hurt:                                  # ponytail: 治療量粗估, 上限不超過初始兵力
+                hurt.troop = min(START_TROOP, hurt.troop + e.get("coef", 0.8) * caster.troop * 0.10)
             continue
         if k == "settle":                             # 結算傷害(猛毒): 掛統率最高敵將, 觸發見 fight
             tg = max((x for x in enemies if x.alive),

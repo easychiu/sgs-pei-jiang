@@ -168,6 +168,28 @@
     return best;
   }
 
+  const STAT_ZH = { force: "武力", intel: "智力", command: "統率", speed: "速度", all: "全屬性" };
+  function effDesc(k, e) {                          // 把15原語效果翻成可讀中文(供日誌)
+    const p = v => Math.round(Math.abs(v) * 100) + "%";
+    const d = e.dur && e.dur < 90 ? `(${e.dur}回合)` : "";
+    switch (k) {
+      case "amp": return e.who === "enemy" && e.val > 0 ? `易傷+${p(e.val)}${d}` : (e.val >= 0 ? `增傷+${p(e.val)}${d}` : `減傷${p(e.val)}${d}`);
+      case "mitig": return e.val >= 0 ? `減傷+${p(e.val)}${d}` : `易傷+${p(e.val)}${d}`;
+      case "stun": return `暈眩${d || "(1回合)"}`;
+      case "stat": return `${STAT_ZH[e.stat] || e.stat} ×${e.mult}${d}`;
+      case "dot": return `持續傷害${d}`;
+      case "extra": return `額外攻擊+${e.val}`;
+      case "stack": return "疊加增傷";
+      case "decay": return "遞減增傷(開場高)";
+      case "swap": return `武智互換${d}`;
+      case "pierce": return "無視減傷";
+      case "counter": return "反擊";
+      case "redirect": return `代承傷害(分擔${Math.round((e.share ?? 0.3) * 100)}%)`;
+      case "settle": return "猛毒·結算傷害";
+      case "heal": return "治療";
+      default: return k;
+    }
+  }
   function applyEffects(caster, tgt, t, allies, enemies, opt) {
     opt = opt || {};
     for (const e of t.effects) {
@@ -177,19 +199,20 @@
         if (opt.noHeal) continue;
         let hurt = null;
         for (const a of allies) if (a.alive && (!hurt || a.troop < hurt.troop)) hurt = a;
-        if (hurt) hurt.troop += (e.coef ?? 0.8) * caster.troop * 0.10;
+        if (hurt) { const before = hurt.troop; hurt.troop = Math.min(START_TROOP, hurt.troop + (e.coef ?? 0.8) * caster.troop * 0.10); if (TRACE && hurt.troop - before >= 1) lg(`　▸ 治療 ${hurt.nm} +${Math.round(hurt.troop - before)}`); }
         continue;
       }
       if (k === "settle") {
         let tg = null;
         for (const x of enemies) if (x.alive && (!tg || x.eff("command") > tg.eff("command"))) tg = x;
-        if (tg) tg.settle = { layers: e.init ?? 1, max: e.max ?? 3, left: e.dur ?? 2, caster, snap: caster.troop, base: e.base ?? 1.5, per: e.per ?? 0.4, kind: t.kind || "intel" };
+        if (tg) { tg.settle = { layers: e.init ?? 1, max: e.max ?? 3, left: e.dur ?? 2, caster, snap: caster.troop, base: e.base ?? 1.5, per: e.per ?? 0.4, kind: t.kind || "intel" }; if (TRACE) lg(`　▸ 猛毒·結算傷害 → ${tg.nm}`); }
         continue;
       }
       if (k === "redirect") {
         let guard = caster;
         if (e.guard === "max_force") { for (const a of allies) if (a.alive && (guard === caster || a.eff("force") > guard.eff("force"))) guard = a; }
         for (const a of allies) if (a.alive && a !== guard) { a.guardian = guard; a.guardShare = e.share ?? 0.3; }
+        if (TRACE) lg(`　▸ ${guard.nm} 代承友軍傷害(分擔${Math.round((e.share ?? 0.3) * 100)}%)`);
         continue;
       }
       const who = e.who || "ally";
@@ -197,6 +220,7 @@
       if (who === "self") dests = caster.alive ? [caster] : [];
       else if (who === "enemy") dests = (k === "stun") ? (tgt && tgt.alive ? [tgt] : []) : enemies.filter(x => x.alive);
       else dests = allies.filter(a => a.alive);
+      if (TRACE && dests.length) lg(`　▸ ${effDesc(k, e)} → ${dests.map(u => u.nm).join("、")}`);
       for (const u of dests) {
         if (k === "amp") u.adds.push(who === "enemy" && e.val > 0 ? ["mitig", -e.val, e.dur] : ["amp", e.val, e.dur]);
         else if (k === "mitig") u.adds.push(["mitig", e.val, e.dur]);
@@ -245,12 +269,14 @@
         }
       for (const u of [...A, ...B]) {
         if (!u.alive) continue;
-        if (u.bs.length) applyEffects(u, null, pt(u.bs), alliesOf(u), foesOf(u), opt);
-        if (u.eq.length) applyEffects(u, null, pt(u.eq), alliesOf(u), foesOf(u), opt);
+        if (u.bs.length) { if (TRACE && opt.prep) lg(`【${u.side}】${u.nm}〔兵書〕`); applyEffects(u, null, pt(u.bs), alliesOf(u), foesOf(u), opt); }
+        if (u.eq.length) { if (TRACE && opt.prep) lg(`【${u.side}】${u.nm}〔裝備〕`); applyEffects(u, null, pt(u.eq), alliesOf(u), foesOf(u), opt); }
       }
       for (const [team, bds] of [[A, bondsA], [B, bondsB]])
-        if (team.length) for (const bd of bds)
+        if (team.length) for (const bd of bds) {
+          if (TRACE && opt.prep) lg(`【${team[0].side}】〔緣分〕${bd.name}`);
           applyEffects(team[0], null, pt(bd.effects), team, foesOf(team[0]), opt);
+        }
     };
     if (TRACE) {                                    // 準備階段標頭: 兵種 + 城建/陣營
       CUR_R = 0;
@@ -258,12 +284,12 @@
       lg(`〔城建滿〕全員 武智統速 各+${CITY}　〔陣營滿〕全屬性 +${Math.round((FACTION - 1) * 100)}%`);
     }
     applyPassives({ noHeal: true, prep: true });    // 依序套用並記錄各類戰法
-    if (TRACE) {                                    // 備戰後面板 + 緣分 + 預備戰法
+    if (TRACE) {                                    // 備戰後面板(含適性) + 預備戰法
+      lg("〔備戰面板〕屬性 = (基礎+加點+城建)×兵種適性×陣營");
       for (const u of [...A, ...B]) {
-        const sys = [u.bs.length ? "兵書" : "", u.eq.length ? "裝備" : ""].filter(Boolean).join("・");
-        lg(`【${u.side}】${u.nm} 備戰　武${Math.round(u.eff("force"))} 智${Math.round(u.eff("intel"))} 統${Math.round(u.eff("command"))} 速${Math.round(u.eff("speed"))}${sys ? "　" + sys : ""}`);
+        const ap = (u.g.apt || {})[u.ttype] || "—";
+        lg(`【${u.side}】${u.nm}（${u.ttype}兵·適性${ap}）　武${Math.round(u.eff("force"))} 智${Math.round(u.eff("intel"))} 統${Math.round(u.eff("command"))} 速${Math.round(u.eff("speed"))}`);
       }
-      for (const [team, bds] of [[A, bondsA], [B, bondsB]]) if (team.length && bds.length) lg(`【${team[0].side}】緣分發動: ${bds.map(b => b.name).join("、")}`);
       for (const u of [...A, ...B]) for (const t of u.tactics) if (t.type === "active" && t.prep) lg(`【${u.side}】${u.nm} 戰法【${t.nameZh}】進入預備(首回合後生效)`);
     }
 
