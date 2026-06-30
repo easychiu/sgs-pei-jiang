@@ -1,0 +1,13 @@
+{
+  "_note": "賽季修正(P0)。type: faction_scale/apt_add/apt_override/stat_flat/effect。Gemini 可擴充 P1/P2。",
+  "pk_guandu": [
+    {"id": "guandu_2plus1", "label": "2+1陣營協調", "type": "faction_scale",
+     "fullBonus": 0.10, "partialBonus": 0.07, "partialThreshold": 2}
+  ],
+  "pk_beiding": [
+    {"id": "jinguo", "label": "巾幗(女將適性+15%)", "type": "apt_add", "gender": "Female", "value": 0.15}
+  ],
+  "pk_hanyan": [
+    {"id": "double_s", "label": "雙S兵種(前2將)", "type": "apt_override", "maxSlots": 2}
+  ]
+}

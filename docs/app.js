@@ -12,6 +12,7 @@ const eqsel = { A: [null, null, null], B: [null, null, null] }; // 各將裝備(
 const builds = { A: [null, null, null], B: [null, null, null] }; // 養成(null=預設: 進階滿+主屬性)
 const inhsel = { A: [[], [], []], B: [[], [], []] };           // 各將傳承戰法(最多2)
 let TACTIC_NAMES = [];                                          // 全戰法名(供傳承選)
+let SEASON_MODS = {}, CURRENT_SEASON = null;                    // 賽季修正 / 當前賽季 id
 const STAT4 = ["force", "intel", "command", "speed"];
 const STATLAB = { force: "武", intel: "智", command: "統", speed: "速" };
 const maxAdv = g => (g.stars >= 5 ? 5 : 4);
@@ -86,7 +87,7 @@ function optimizeTeam() {                           // 為我方試 5 兵種, �
   let best = null;
   for (const tr of SGZ.TROOPS) {
     const r = SGZ.simulate(POOL, pa.names, foe, 1000, tr, tb, pa.bs, hasB ? pb.bs : null,
-      pa.eq, hasB ? pb.eq : null, pa.ad, hasB ? pb.ad : null, pa.inh, hasB ? pb.inh : null);
+      pa.eq, hasB ? pb.eq : null, pa.ad, hasB ? pb.ad : null, pa.inh, hasB ? pb.inh : null, CURRENT_SEASON);
     if (!best || r.winA > best.win) best = { troop: tr, win: r.winA };
   }
   troops.A = best.troop;
@@ -146,19 +147,28 @@ const facBadge = f => `<span class="fac" style="background:${FACBG[f] || "#777"}
 
 async function load() {
   const j = u => fetch(u).then(r => r.json()).catch(() => []);
-  const [g, t, bs, bo, eq] = await Promise.all([
+  const jo = u => fetch(u).then(r => r.json()).catch(() => ({}));
+  const [g, t, bs, bo, eq, sm] = await Promise.all([
     fetch("data/generals.json").then(r => r.json()),
     fetch("data/tactics_parsed.json").then(r => r.json()),
-    j("data/bingshu_parsed.json"), j("data/bonds_parsed.json"), j("data/equips_parsed.json")]);
+    j("data/bingshu_parsed.json"), j("data/bonds_parsed.json"), j("data/equips_parsed.json"),
+    jo("data/season_modifiers.json")]);
   g.forEach(x => RAW[x.name] = x);
-  POOL = SGZ.buildPool(g, t, bs, bo, eq).POOL;
+  SEASON_MODS = sm;
+  POOL = SGZ.buildPool(g, t, bs, bo, eq, sm).POOL;
   TACTIC_NAMES = t.filter(x => x.type !== "none").map(x => x.nameZh).sort((a, b) => a.localeCompare(b));
   const sc = await j("data/scenarios.json");                  // 賽季(資訊性)
   if (sc.length) {
     const ss = $("#season");
     ss.innerHTML = sc.map((s, i) => `<option value="${i}">${s.name}</option>`).join("");
     ss.value = String(sc.length - 1);
-    const showSeason = () => { const s = sc[+ss.value]; $("#seasonInfo").textContent = s ? "　" + (s.coreMechanics || []).join("・") : ""; };
+    const showSeason = () => {
+      const s = sc[+ss.value];
+      CURRENT_SEASON = s ? s.id : null;
+      const mods = (SEASON_MODS[CURRENT_SEASON] || []).map(m => m.label).join("・");
+      $("#seasonInfo").textContent = s ? "　" + (s.coreMechanics || []).join("・") + (mods ? "　✦特色生效: " + mods : "") : "";
+      renderSlots("A"); renderSlots("B");
+    };
     ss.onchange = showSeason; showSeason();
   }
   $("#stat").textContent = `${Object.keys(POOL).length} 武將 · ${t.filter(x => x.type !== "none").length} 戰法`;
@@ -252,7 +262,7 @@ function runSim() {
   teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsNames(getBsel("B", i))); eqB.push(eqsel.B[i]); adB.push(buildAdd(getBuild("B", i), getBsel("B", i).on)); inB.push(inhsel.B[i]); } });
   if (!A.length || !B.length) { alert("兩邊各至少放 1 名武將"); return; }
   const ta = effTroop("A"), tb = effTroop("B");
-  const r = SGZ.simulate(POOL, A, B, 3000, ta, tb, bsA, bsB, eqA, eqB, adA, adB, inA, inB);
+  const r = SGZ.simulate(POOL, A, B, 3000, ta, tb, bsA, bsB, eqA, eqB, adA, adB, inA, inB, CURRENT_SEASON);
   const res = $("#simResult"); res.classList.remove("hidden");
   res.innerHTML = `
     <div class="bar"><div class="a" style="width:${r.winA * 100}%">${pct(r.winA)}%</div>

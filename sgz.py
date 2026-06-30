@@ -95,6 +95,7 @@ class General:
     def __init__(self, raw):
         self.name = raw["name"]
         self.faction = raw.get("faction", "?")
+        self.gender = raw.get("gender")
         self.apt = raw.get("affinity", {})           # 各兵種適性 S/A/B/C/D, 戰鬥兵種由隊伍決定
         st = raw.get("stats", {})
         self.base = {"force": st.get("武力", 80), "intel": st.get("智力", 80),
@@ -170,6 +171,32 @@ def active_bonds(team):                               # 隊伍觸發的緣分(�
     return [bd for bd in BONDS if len(s & set(bd.get("generals", []))) >= bd.get("triggerCount", 99)]
 
 
+SEASON_MODS = {}
+_sm = os.path.join(DATA, "season_modifiers.json")
+if os.path.exists(_sm):
+    SEASON_MODS = {k: v for k, v in json.load(open(_sm, encoding="utf-8")).items()
+                   if not k.startswith("_")}
+
+
+def season_mods(g, idx, team, scenario):              # 該將在此賽季的養成修正
+    out = {"apt_add": 0.0, "apt_s": False, "flat": 0, "mult": 1.0}
+    for m in SEASON_MODS.get(scenario, []) if scenario else []:
+        t = m.get("type")
+        if t == "faction_scale":
+            facs = [POOL[n].faction for n in team]
+            top = max((facs.count(f) for f in set(facs)), default=0)
+            if top >= m.get("partialThreshold", 2):
+                out["mult"] *= 1 + (m.get("fullBonus", 0.1) if top >= len(team)
+                                    else m.get("partialBonus", 0.07))
+        elif t == "apt_add" and g.gender == m.get("gender"):
+            out["apt_add"] += m.get("value", 0.15)
+        elif t == "apt_override" and idx < m.get("maxSlots", 2):
+            out["apt_s"] = True
+        elif t == "stat_flat":
+            out["flat"] += m.get("all", 0)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # 評分 + 配將推薦
 # ---------------------------------------------------------------------------
@@ -203,19 +230,21 @@ def recommend(pool=None, k=3, top=8):
 # 引擎
 # ---------------------------------------------------------------------------
 class Unit:
-    def __init__(self, g, ttype, bingshu=None, equip=None, add=None, inherit=None):
+    def __init__(self, g, ttype, bingshu=None, equip=None, add=None, inherit=None, season=None):
         self.g, self.ttype, self.troop, self.stun = g, ttype, START_TROOP, 0
         self.tactics = ([g.tactic] if g.tactic else []) + \
             [TACTICS[nm] for nm in (inherit or []) if nm in TACTICS]  # 自帶 + 傳承戰法
         _bn = bingshu if isinstance(bingshu, (list, tuple)) else ([bingshu] if bingshu else [])
         self.bs = [e for nm in _bn for e in BINGSHU.get(nm, {}).get("effects", [])]  # 兵書(主+副)合併效果
         self.eq = EQUIPS.get(equip, {}).get("effects", []) if equip else []       # 裝備被動效果
-        a = add or {}                                 # 養成加值: 加點/進階/典藏(於適性前疊加)
-        mult = g.apt_pct(ttype)                       # 屬性 = (基礎+養成) × 該兵種適性%
-        self.force = (g.base["force"] + a.get("force", 0)) * mult
-        self.intel = (g.base["intel"] + a.get("intel", 0)) * mult
-        self.command = (g.base["command"] + a.get("command", 0)) * mult
-        self.speed = (g.base["speed"] + a.get("speed", 0)) * mult
+        a = add or {}                                 # 養成加值: 加點/進階/典藏
+        sm = season or {}                             # 賽季修正
+        apt = (1.20 if sm.get("apt_s") else g.apt_pct(ttype)) + sm.get("apt_add", 0)
+        scm, flat = sm.get("mult", 1.0), sm.get("flat", 0)  # 屬性 = (基礎+養成+賽季固定)×適性×賽季乘數
+        self.force = (g.base["force"] + a.get("force", 0) + flat) * apt * scm
+        self.intel = (g.base["intel"] + a.get("intel", 0) + flat) * apt * scm
+        self.command = (g.base["command"] + a.get("command", 0) + flat) * apt * scm
+        self.speed = (g.base["speed"] + a.get("speed", 0) + flat) * apt * scm
         self.mods = []                                # 乘法: [stat, mult, left]
         self.adds = []                                # 加法: [amp|mitig|extra, val, left]
         if a.get("amp"):                              # 進階/典藏 攻防加成: 每階+2%攻+2%防
@@ -379,7 +408,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
 
 
 def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, eqB=None,
-          addA=None, addB=None, inhA=None, inhB=None):
+          addA=None, addB=None, inhA=None, inhB=None, scenario=None):
     troopA = troopA or team_troop(teamA)              # 未指定兵種則用隊伍最佳適性
     troopB = troopB or team_troop(teamB)
     bsA = bsA or [default_bingshu(POOL[n]) for n in teamA]   # 未指定兵書則裝預設主兵書
@@ -390,8 +419,10 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
     addB = addB or [None] * len(teamB)
     inhA = inhA or [None] * len(teamA)
     inhB = inhB or [None] * len(teamB)
-    A = [Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i]) for i, n in enumerate(teamA)]
-    B = [Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i]) for i, n in enumerate(teamB)]
+    A = [Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i], season_mods(POOL[n], i, teamA, scenario))
+         for i, n in enumerate(teamA)]
+    B = [Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i], season_mods(POOL[n], i, teamB, scenario))
+         for i, n in enumerate(teamB)]
     setA = set(map(id, A))
     allies_of = lambda u: A if id(u) in setA else B
     foes_of = lambda u: B if id(u) in setA else A
@@ -482,11 +513,11 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
 
 
 def simulate(teamA, teamB, n=3000, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, eqB=None,
-             addA=None, addB=None, inhA=None, inhB=None):
+             addA=None, addB=None, inhA=None, inhB=None, scenario=None):
     w = {"A": 0, "B": 0}
     rs = 0
     for _ in range(n):
-        winner, r = fight(teamA, teamB, troopA, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB)
+        winner, r = fight(teamA, teamB, troopA, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario)
         w[winner] += 1
         rs += r
     return {"A勝率": round(w["A"] / n, 3), "B勝率": round(w["B"] / n, 3),

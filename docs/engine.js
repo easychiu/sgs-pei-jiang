@@ -12,6 +12,20 @@
   let BINGSHU = {}, MAIN_BY_CAT = {}, SUB_BY_CAT = {};  // 兵書: 名稱→效果; 類別→主/副兵書們
   let TACTICS = {};                                 // 名稱→戰法(供傳承查詢)
   let BONDS = [], EQUIPS = {};                       // 緣分(隊伍級) / 裝備(自身)
+  let SEASON_MODS = {};                              // 賽季修正 {id:[mod]}
+  function seasonModsFor(POOL, g, idx, team, scenario) {
+    const out = { aptAdd: 0, aptS: false, flat: 0, mult: 1.0 };
+    for (const m of (scenario ? (SEASON_MODS[scenario] || []) : [])) {
+      if (m.type === "faction_scale") {
+        const facs = team.map(n => POOL[n].faction);
+        const top = Math.max(0, ...[...new Set(facs)].map(f => facs.filter(x => x === f).length));
+        if (top >= (m.partialThreshold ?? 2)) out.mult *= 1 + (top >= team.length ? (m.fullBonus ?? 0.1) : (m.partialBonus ?? 0.07));
+      } else if (m.type === "apt_add" && g.gender === m.gender) out.aptAdd += m.value ?? 0.15;
+      else if (m.type === "apt_override" && idx < (m.maxSlots ?? 2)) out.aptS = true;
+      else if (m.type === "stat_flat") out.flat += m.all ?? 0;
+    }
+    return out;
+  }
   const rnd = () => Math.random();
 
   const moraleMult = m => 0.007 * m + 0.30;
@@ -45,7 +59,8 @@
     return BONDS.filter(b => (b.generals || []).filter(n => team.includes(n)).length >= (b.triggerCount || 99));
   }
 
-  function buildPool(generals, tactics, bingshu, bonds, equips) {
+  function buildPool(generals, tactics, bingshu, bonds, equips, seasonMods) {
+    SEASON_MODS = seasonMods || {};
     const TAC = {};
     for (const t of tactics) if (t.type !== "none") TAC[t.nameZh] = t;
     TACTICS = TAC;
@@ -74,16 +89,17 @@
   }
 
   class Unit {
-    constructor(g, ttype, bsName, eqName, add, inherit) {
+    constructor(g, ttype, bsName, eqName, add, inherit, season) {
       this.g = g; this.ttype = ttype; this.troop = START_TROOP; this.stun = 0;
       this.tactics = (g.tactic ? [g.tactic] : []).concat((inherit || []).map(nm => TACTICS[nm]).filter(Boolean));  // 自帶 + 傳承
       const _bn = Array.isArray(bsName) ? bsName : (bsName ? [bsName] : []);
       this.bs = _bn.flatMap(nm => (BINGSHU[nm] ? BINGSHU[nm].effects : []));  // 兵書(主+副)合併
       this.eq = (eqName && EQUIPS[eqName]) ? EQUIPS[eqName].effects : [];    // 裝備被動
-      const a = add || {};                         // 養成加值: 加點/進階/典藏(適性前疊加)
-      const m = aptPct(g, ttype);                  // 屬性 = (基礎+養成) × 該兵種適性%
-      this.force = (g.base.force + (a.force || 0)) * m; this.intel = (g.base.intel + (a.intel || 0)) * m;
-      this.command = (g.base.command + (a.command || 0)) * m; this.speed = (g.base.speed + (a.speed || 0)) * m;
+      const a = add || {}, sm = season || {};      // 養成加值 + 賽季修正
+      const apt = (sm.aptS ? 1.20 : aptPct(g, ttype)) + (sm.aptAdd || 0);
+      const scm = sm.mult || 1.0, flat = sm.flat || 0;  // 屬性=(基礎+養成+賽季固定)×適性×賽季乘數
+      this.force = (g.base.force + (a.force || 0) + flat) * apt * scm; this.intel = (g.base.intel + (a.intel || 0) + flat) * apt * scm;
+      this.command = (g.base.command + (a.command || 0) + flat) * apt * scm; this.speed = (g.base.speed + (a.speed || 0) + flat) * apt * scm;
       this.mods = []; this.adds = []; this.dots = [];
       if (a.amp) this.adds.push(["amp", a.amp, 9999]);    // 進階/典藏 攻防加成
       if (a.mitig) this.adds.push(["mitig", a.mitig, 9999]);
@@ -190,7 +206,7 @@
     }
   }
 
-  function fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB) {
+  function fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario) {
     troopA = troopA || teamTroop(POOL, teamA);
     troopB = troopB || teamTroop(POOL, teamB);
     bsA = bsA || teamA.map(n => defaultBingshu(POOL[n]));
@@ -201,7 +217,8 @@
     addB = addB || teamB.map(() => null);
     inhA = inhA || teamA.map(() => null);
     inhB = inhB || teamB.map(() => null);
-    const A = teamA.map((n, i) => new Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i])), B = teamB.map((n, i) => new Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i]));
+    const A = teamA.map((n, i) => new Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i], seasonModsFor(POOL, POOL[n], i, teamA, scenario)));
+    const B = teamB.map((n, i) => new Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i], seasonModsFor(POOL, POOL[n], i, teamB, scenario)));
     const setA = new Set(A);
     const alliesOf = u => setA.has(u) ? A : B, foesOf = u => setA.has(u) ? B : A;
     const bondsA = activeBonds(teamA), bondsB = activeBonds(teamB);
@@ -260,9 +277,9 @@
     return { winner: ta >= tb ? "A" : "B", rounds: ROUNDS };
   }
 
-  function simulate(POOL, teamA, teamB, n = 2000, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null, addA = null, addB = null, inhA = null, inhB = null) {
+  function simulate(POOL, teamA, teamB, n = 2000, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null, addA = null, addB = null, inhA = null, inhB = null, scenario = null) {
     let a = 0, rs = 0;
-    for (let i = 0; i < n; i++) { const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB); if (r.winner === "A") a++; rs += r.rounds; }
+    for (let i = 0; i < n; i++) { const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario); if (r.winner === "A") a++; rs += r.rounds; }
     return { winA: +(a / n).toFixed(3), winB: +(1 - a / n).toFixed(3), rounds: +(rs / n).toFixed(1) };
   }
 
@@ -289,7 +306,7 @@
   }
 
   const API = { buildPool, simulate, score, recommend, fight, teamTroop, aptPct, bestTroop, TROOPS,
-    defaultBingshu, activeBonds, mainByCat: () => MAIN_BY_CAT, subByCat: () => SUB_BY_CAT, bingshu: () => BINGSHU,
+    defaultBingshu, activeBonds, seasonModsFor, mainByCat: () => MAIN_BY_CAT, subByCat: () => SUB_BY_CAT, bingshu: () => BINGSHU,
     bonds: () => BONDS, equips: () => EQUIPS,
     setKnobs: (c, p) => { CMD_TRIGGER = c; PASSIVE_TRIGGER = p; } };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
