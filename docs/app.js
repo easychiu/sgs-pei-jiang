@@ -1,5 +1,5 @@
 "use strict";
-let RAW = {}, POOL = {};
+let RAW = {}, POOL = {}, TECH_OPTIONS = {};   // TECH_OPTIONS: 各欄可選特技名單(權威, 來自參考app)
 const FACBG = { "魏": "var(--魏)", "蜀": "var(--蜀)", "吳": "var(--吳)", "群": "var(--群)" };
 const STATN = { force: "武力", intel: "智力", command: "統率", speed: "速度", all: "全屬性" };
 const TYPEN = { active: "主動", charge: "突擊", command: "指揮", passive: "被動" };
@@ -13,7 +13,12 @@ const EQUIP_SLOTS = [{ t: "武器", l: "武器" }, { t: "防具", l: "護甲" },
 const eqSlot = (cfg, t) => { const v = cfg && cfg[t]; return Array.isArray(v) ? v.filter(Boolean) : (v ? [v] : []); };  // 容錯: 舊字串/新陣列
 const eqNames = cfg => EQUIP_SLOTS.flatMap(s => eqSlot(cfg, s.t));   // 攤平成名單(最多8)→引擎合併effects
 function eqByType(g, type) {
-  return Object.values(SGZ.equips()).filter(e => e.type === type && (!e.exclusive || e.exclusive === g.name)).map(e => e.name);
+  const opts = (TECH_OPTIONS[type] || []).slice();           // 權威通用特技名單
+  for (const e of Object.values(SGZ.equips())) {              // 加上該將專屬特技(專屬不在通用名單)
+    if (e.type === type && e.exclusive && (e.exclusive === g.name || e.exclusive.includes(g.name)) && !opts.includes(e.name)) opts.push(e.name);
+  }
+  if (!opts.length) return Object.values(SGZ.equips()).filter(e => e.type === type && (!e.exclusive || e.exclusive === g.name)).map(e => e.name);  // 後備: 名單未載入
+  return opts;
 }
 function eqSummary(cfg) {
   const on = EQUIP_SLOTS.map(s => [s, eqSlot(cfg, s.t)]).filter(([, v]) => v.length);
@@ -158,12 +163,13 @@ const facBadge = f => `<span class="fac" style="background:${FACBG[f] || "#777"}
 async function load() {
   const j = u => fetch(u).then(r => r.json()).catch(() => []);
   const jo = u => fetch(u).then(r => r.json()).catch(() => ({}));
-  const [g, t, bs, bo, eq, sm] = await Promise.all([
+  const [g, t, bs, bo, eq, sm, to] = await Promise.all([
     fetch("data/generals.json").then(r => r.json()),
     fetch("data/tactics_parsed.json").then(r => r.json()),
     j("data/bingshu_parsed.json"), j("data/bonds_parsed.json"), j("data/equips_parsed.json"),
-    jo("data/season_modifiers.json")]);
+    jo("data/season_modifiers.json"), jo("data/tech_options.json")]);
   g.forEach(x => RAW[x.name] = x);
+  TECH_OPTIONS = to;
   SEASON_MODS = sm;
   POOL = SGZ.buildPool(g, t, bs, bo, eq, sm).POOL;
   TACTIC_NAMES = t.filter(x => x.type !== "none").map(x => x.nameZh).sort((a, b) => a.localeCompare(b));
