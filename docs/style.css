@@ -44,6 +44,10 @@ button{cursor:pointer;font-family:inherit}
 .pick.on{border-color:var(--gold);color:var(--gold2);background:#2a2212}
 .catchips{display:inline-flex;flex-wrap:wrap;gap:6px;vertical-align:middle}
 .catchip{border:1px solid;border-radius:14px;padding:3px 12px;font-size:14px;font-family:inherit;cursor:pointer}
+#tacChips .catchip{color:var(--gold2);font-size:13px;padding:3px 10px}
+#tacChips .catchip.on{background:#2a2212;border-color:var(--gold);color:var(--gold)}
+#tacChips .catchip.locked{opacity:.4;cursor:not-allowed}
+.pick.locked{opacity:.4;cursor:not-allowed;text-decoration:line-through;pointer-events:none}
 .brow{margin:10px 0;font-size:15px}
 .balloc{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}
 .balloc label{display:flex;flex-direction:column;gap:4px;color:var(--gold2);text-align:center}
