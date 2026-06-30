@@ -25,6 +25,9 @@ button{cursor:pointer;font-family:inherit}
 .primary:hover{filter:brightness(1.15)}
 
 /* 模擬 */
+.season-bar{text-align:center;margin-bottom:14px;color:#b8a987;font-size:14px}
+.season-bar select{background:#2a2018;color:var(--gold2);border:1px solid var(--gold);padding:7px 10px;border-radius:6px;font-family:inherit;margin-left:4px}
+.season-bar #seasonInfo{color:#9a8b6a;font-size:12px}
 .teams{display:flex;align-items:flex-start;gap:10px;justify-content:center;flex-wrap:wrap}
 .team{flex:1;min-width:260px;background:var(--bg2);border:1px solid var(--line);
   border-radius:10px;padding:12px}

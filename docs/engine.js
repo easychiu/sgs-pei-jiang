@@ -64,6 +64,7 @@
       POOL[raw.name] = {
         name: raw.name, faction: raw.faction || "?", stars: raw.stars,
         apt: raw.affinity || {}, bingshuCats: raw.availableBingshu || [],
+        bingshuOptions: raw.bingshuOptions || null,
         gender: raw.gender, growth: raw.growthStats || null,
         base: { force: st["武力"] ?? 80, intel: st["智力"] ?? 80, command: st["統率"] ?? 90, speed: st["速度"] ?? 70 },
         tacticName: raw.tactic || "—", tactic: raw.tactic ? (TAC[raw.tactic] || null) : null,

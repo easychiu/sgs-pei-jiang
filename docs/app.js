@@ -30,10 +30,21 @@ const BINGSHU_CAT = {
   "九變": { c: "#16a085", i: "☯" }, "始計": { c: "#b7950b", i: "⛑" }, "用間": { c: "#7f8c8d", i: "🥷" },
 };
 const SUBS_MAX = 2;
+const bsKey = (cat, nm) => cat + "·" + nm;
+function catList(g) { return g.bingshuOptions ? Object.keys(g.bingshuOptions) : (g.bingshuCats || []); }
+function mainsFor(g, cat) {                          // 該將該類別的主兵書(優先用 bingshuOptions)
+  if (!cat) return [];
+  if (g.bingshuOptions && g.bingshuOptions[cat]) return (g.bingshuOptions[cat].primary || []).map(nm => bsKey(cat, nm));
+  return SGZ.mainByCat()[cat] || [];
+}
+function subsFor(g, cat) {
+  if (!cat) return [];
+  if (g.bingshuOptions && g.bingshuOptions[cat]) return (g.bingshuOptions[cat].secondary || []).map(nm => bsKey(cat, nm));
+  return SGZ.subByCat()[cat] || [];
+}
 function defaultBingshuCfg(g) {
-  const cat = (g.bingshuCats || [])[0] || null;
-  const mains = cat ? (SGZ.mainByCat()[cat] || []) : [], subs = cat ? (SGZ.subByCat()[cat] || []) : [];
-  return { on: true, category: cat, main: mains[0] || null, subs: subs.slice(0, SUBS_MAX) };
+  const cat = catList(g)[0] || null;
+  return { on: true, category: cat, main: mainsFor(g, cat)[0] || null, subs: subsFor(g, cat).slice(0, SUBS_MAX) };
 }
 const getBsel = (side, i) => bsel[side][i] || defaultBingshuCfg(POOL[teams[side][i]]);
 const bsNames = cfg => cfg.on ? [...new Set([cfg.main, ...(cfg.subs || [])].filter(Boolean))] : [];
@@ -142,6 +153,14 @@ async function load() {
   g.forEach(x => RAW[x.name] = x);
   POOL = SGZ.buildPool(g, t, bs, bo, eq).POOL;
   TACTIC_NAMES = t.filter(x => x.type !== "none").map(x => x.nameZh).sort((a, b) => a.localeCompare(b));
+  const sc = await j("data/scenarios.json");                  // 賽季(資訊性)
+  if (sc.length) {
+    const ss = $("#season");
+    ss.innerHTML = sc.map((s, i) => `<option value="${i}">${s.name}</option>`).join("");
+    ss.value = String(sc.length - 1);
+    const showSeason = () => { const s = sc[+ss.value]; $("#seasonInfo").textContent = s ? "　" + (s.coreMechanics || []).join("・") : ""; };
+    ss.onchange = showSeason; showSeason();
+  }
   $("#stat").textContent = `${Object.keys(POOL).length} 武將 · ${t.filter(x => x.type !== "none").length} 戰法`;
   initTabs();
   ["A", "B"].forEach(s => {
@@ -350,11 +369,11 @@ function openBuild(side, i) {
 function openBingshu(side, i) {
   const n = teams[side][i], g = POOL[n], bd = getBuild(side, i);
   const cfg = JSON.parse(JSON.stringify(getBsel(side, i)));
-  const cats = g.bingshuCats || [];
+  const cats = catList(g);
   const box = $("#modal .modal-box");
   const render = () => {
-    const mains = cfg.category ? (SGZ.mainByCat()[cfg.category] || []) : [];
-    const subs = cfg.category ? (SGZ.subByCat()[cfg.category] || []) : [];
+    const mains = mainsFor(g, cfg.category);
+    const subs = subsFor(g, cfg.category);
     const pct = cfg.on ? Math.round(combatPct(bd) * 100) : 0;
     box.innerHTML = `<h2 class="gold">${n}・兵書</h2>
       <div class="brow"><label><input type="checkbox" id="bsOn"${cfg.on ? " checked" : ""}> 開啟兵書（PK：主1＋副2）</label>
@@ -371,8 +390,8 @@ function openBingshu(side, i) {
       : '<span style="color:#9a8b6a">此武將可用兵書待補（Gemini）</span>';
     chips.querySelectorAll(".catchip").forEach(b => b.onclick = () => {
       cfg.category = b.dataset.c;
-      cfg.main = (SGZ.mainByCat()[cfg.category] || [])[0] || null;
-      cfg.subs = (SGZ.subByCat()[cfg.category] || []).slice(0, SUBS_MAX);
+      cfg.main = mainsFor(g, cfg.category)[0] || null;
+      cfg.subs = subsFor(g, cfg.category).slice(0, SUBS_MAX);
       render();
     });
     const mainSel = box.querySelector("#bsMain");

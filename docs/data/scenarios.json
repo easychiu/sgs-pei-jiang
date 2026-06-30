@@ -1,0 +1,542 @@
+[
+  {
+    "id": "s1_classic",
+    "name": "S1 經典賽季",
+    "description": "三國志戰略版最初的賽季，群雄並起，逐鹿中原。",
+    "coreMechanics": [
+      "基礎機制",
+      "同盟攻城"
+    ],
+    "exclusiveSkills": []
+  },
+  {
+    "id": "s2_ranger",
+    "name": "S2 俠客軍賽季",
+    "description": "引入俠客軍（土匪）玩法，正規軍與俠客軍的陣營對抗。",
+    "coreMechanics": [
+      "俠客軍系統",
+      "兵書系統開啟",
+      "事件戰法"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "俠客軍特性",
+        "type": "陣營特性",
+        "effect": "無主城建築限制，靠掠奪獲取資源，行軍速度加快"
+      }
+    ]
+  },
+  {
+    "id": "s3_merit",
+    "name": "S3 功勳賽季",
+    "description": "引入功勳系統，玩家可兌換強力裝備特技，並新增四大新兵種。",
+    "coreMechanics": [
+      "功勳系統",
+      "四大新兵種"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "功勳商店",
+        "type": "賽季系統",
+        "effect": "可兌換專屬裝備特技與資源"
+      }
+    ]
+  },
+  {
+    "id": "s4_qunxiong",
+    "name": "群雄割據",
+    "description": "PK賽季首個劇本，六大勢力爭霸，引入民心系統與勢力專屬特性。",
+    "coreMechanics": [
+      "勢力特性",
+      "民心系統"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "馬騰勢力加成",
+        "type": "勢力增益",
+        "effect": "騎兵移速提升，衝鋒傷害增加"
+      },
+      {
+        "name": "劉備勢力加成",
+        "type": "勢力增益",
+        "effect": "民心提升速度增加，減少陣亡"
+      },
+      {
+        "name": "曹操勢力加成",
+        "type": "勢力增益",
+        "effect": "屯田產量提升，名氣值加成"
+      }
+    ]
+  },
+  {
+    "id": "s5_tianxia",
+    "name": "天下爭鋒",
+    "description": "曹魏與孫劉兩大陣營南北對抗，引入季節與秘策系統。",
+    "coreMechanics": [
+      "南北對抗",
+      "同盟秘策"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "摧鋒拔城",
+        "type": "同盟秘策",
+        "effect": "可直接拔除敵方城池"
+      },
+      {
+        "name": "季節增益",
+        "type": "環境加成",
+        "effect": "不同季節提供不同的資源與戰鬥加成"
+      }
+    ]
+  },
+  {
+    "id": "s6_yingxiong",
+    "name": "英雄露穎",
+    "description": "高自由度劇本，無固定陣營，由玩家自由選擇出生州。",
+    "coreMechanics": [
+      "自由結盟",
+      "洛陽爭奪"
+    ],
+    "exclusiveSkills": []
+  },
+  {
+    "id": "pk_junzheng",
+    "name": "軍爭地利",
+    "description": "四大特殊地形（森林、濕地、丘陵、沙漠），兵種在特定地形解鎖專屬指令。",
+    "coreMechanics": [
+      "特殊地形",
+      "專屬指令"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "盾牆",
+        "type": "指令(丘陵/盾兵)",
+        "effect": "提升防禦，降低受到的傷害"
+      },
+      {
+        "name": "火計",
+        "type": "指令(森林/弓兵)",
+        "effect": "可對相鄰地塊放火"
+      },
+      {
+        "name": "伏擊",
+        "type": "指令(濕地/槍兵)",
+        "effect": "進入隱身狀態，對首個接觸敵軍造成先手傷害"
+      },
+      {
+        "name": "突擊",
+        "type": "指令(沙漠/騎兵)",
+        "effect": "提升行軍速度並增加首回合傷害"
+      }
+    ]
+  },
+  {
+    "id": "pk_chibi",
+    "name": "赤壁之戰",
+    "description": "還原赤壁古戰場，引入水戰與火攻風向系統。",
+    "coreMechanics": [
+      "水戰機制",
+      "火攻",
+      "風向系統"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "火計",
+        "type": "特殊指令",
+        "effect": "點燃目標地塊，火焰會隨風向蔓延"
+      },
+      {
+        "name": "水軍適性",
+        "type": "兵種特性",
+        "effect": "武將獲得額外的水軍適性(S/A/B/C)"
+      }
+    ]
+  },
+  {
+    "id": "pk_xingshi",
+    "name": "興師伐亂",
+    "description": "引入虎牢關魔王呂布副本，以及水火計策攻城。",
+    "coreMechanics": [
+      "虎牢關副本",
+      "水火計策"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "決水",
+        "type": "計策",
+        "effect": "對低窪地形使用，淹沒敵軍陣地"
+      },
+      {
+        "name": "火燒",
+        "type": "計策",
+        "effect": "對森林地形使用，引發大火"
+      }
+    ]
+  },
+  {
+    "id": "pk_beiding",
+    "name": "北定中原",
+    "description": "引入個性系統（王翼、兵道、軍用），並可建造橋樑與棧道。",
+    "coreMechanics": [
+      "個性系統",
+      "棧道與橋樑"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "王翼",
+        "type": "個性天賦",
+        "effect": "提供招降、裝備特技等增益"
+      },
+      {
+        "name": "兵道",
+        "type": "個性天賦",
+        "effect": "提供資源、徵兵速度等增益"
+      },
+      {
+        "name": "軍用",
+        "type": "個性天賦",
+        "effect": "提供行軍速度、體力恢復等增益"
+      }
+    ]
+  },
+  {
+    "id": "pk_guandu",
+    "name": "官渡之戰",
+    "description": "六大勢力，引入戰械改裝系統，並打破同陣營限制（2+1陣營加成）。",
+    "coreMechanics": [
+      "戰械系統",
+      "2+1陣營協調"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "2+1 陣營協調",
+        "type": "組隊增益",
+        "effect": "上陣兩名同陣營武將即可獲得 70% 陣營屬性加成"
+      },
+      {
+        "name": "極·霹靂車",
+        "type": "戰械專屬(曹操)",
+        "effect": "遠程投石，可不接觸敵軍造成傷害"
+      },
+      {
+        "name": "極·木獸",
+        "type": "戰械專屬(劉備)",
+        "effect": "噴火攻擊，對藤甲兵造成毀滅傷害"
+      }
+    ]
+  },
+  {
+    "id": "pk_wangshi",
+    "name": "王師秉節",
+    "description": "引入信符系統，玩家可裝備各種信符套裝獲得強大戰場增益。",
+    "coreMechanics": [
+      "信符系統",
+      "國都系統"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "傳國玉璽",
+        "type": "信符套裝",
+        "effect": "主將獲得額外屬性與統率力加成"
+      },
+      {
+        "name": "侯音符",
+        "type": "信符套裝",
+        "effect": "提升部隊的謀略傷害與免傷"
+      },
+      {
+        "name": "總兵將印",
+        "type": "信符套裝",
+        "effect": "提升部隊兵力上限與續航"
+      }
+    ]
+  },
+  {
+    "id": "pk_yingxiong_jijie",
+    "name": "英雄集結",
+    "description": "名將招降機制，NPC名將會在地圖上巡邏，擊敗可招降，並提供賽季專屬戰法。",
+    "coreMechanics": [
+      "名將招降",
+      "賽季專屬戰法"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "長蛇陣",
+        "type": "賽季戰法",
+        "effect": "(賽季特有版本) 降低受到的謀略傷害，受武力影響"
+      },
+      {
+        "name": "拓·虎痴",
+        "type": "拓印戰法",
+        "effect": "拓印許褚自帶戰法，讓其他武將學習"
+      }
+    ]
+  },
+  {
+    "id": "pk_bingzhan",
+    "name": "兵戰四時",
+    "description": "引入春夏秋冬四季更迭，每季提供不同的資源與戰鬥環境，並有季節政策。",
+    "coreMechanics": [
+      "四季更迭",
+      "季節政策"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "春季政策",
+        "type": "季節加成",
+        "effect": "開荒資源消耗降低"
+      },
+      {
+        "name": "冬季政策",
+        "type": "季節加成",
+        "effect": "行軍受阻，冰面結冰可通行"
+      }
+    ]
+  },
+  {
+    "id": "pk_xiangfan",
+    "name": "襄樊之戰",
+    "description": "引入六大出身系統與淹地水戰，天氣變化會引發洪水。",
+    "coreMechanics": [
+      "出身系統",
+      "淹地水戰",
+      "天氣系統"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "文人",
+        "type": "出身",
+        "effect": "智力武將獲得經驗加成，可使用特殊勸降指令"
+      },
+      {
+        "name": "農夫",
+        "type": "出身",
+        "effect": "糧食產量大增，士氣恢復加快"
+      },
+      {
+        "name": "商賈",
+        "type": "出身",
+        "effect": "銅幣產量提升，商人處購買物資有折扣"
+      },
+      {
+        "name": "官吏",
+        "type": "出身",
+        "effect": "主城可調動更多部隊，陣營加成限制放寬"
+      },
+      {
+        "name": "工匠",
+        "type": "出身",
+        "effect": "可打造專屬神兵利器"
+      },
+      {
+        "name": "兵卒",
+        "type": "出身",
+        "effect": "戰鬥中體力消耗減少，重傷恢復加快"
+      }
+    ]
+  },
+  {
+    "id": "pk_tianshi",
+    "name": "天師舉義",
+    "description": "漢室與黃巾兩大陣營對抗，擁有獨特的陣營加成與戰鬥指令。",
+    "coreMechanics": [
+      "兩大陣營",
+      "陣營特性"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "漢室加成",
+        "type": "陣營特性",
+        "effect": "提升部隊的防禦與續航能力"
+      },
+      {
+        "name": "黃巾加成",
+        "type": "陣營特性",
+        "effect": "提升部隊的爆發傷害與行軍速度"
+      }
+    ]
+  },
+  {
+    "id": "pk_chencang",
+    "name": "陳倉之戰",
+    "description": "以軍道爭奪為核心，引入錦囊妙計系統。",
+    "coreMechanics": [
+      "軍道爭奪",
+      "錦囊妙計"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "錦囊",
+        "type": "戰場道具",
+        "effect": "可瞬間改變戰場局勢（如緊急撤退、無敵一回合等）"
+      }
+    ]
+  },
+  {
+    "id": "pk_qimen",
+    "name": "奇門八陣",
+    "description": "八陣圖迷宮玩法，觀星台可提供多種戰鬥增益與專屬寶物。",
+    "coreMechanics": [
+      "八陣圖",
+      "觀星台",
+      "專屬寶物"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "觀星增益",
+        "type": "場外BUFF",
+        "effect": "提升部隊全屬性或特定戰法發動率"
+      },
+      {
+        "name": "八陣寶物",
+        "type": "劇本裝備",
+        "effect": "提供特殊的兵書效果或特技"
+      }
+    ]
+  },
+  {
+    "id": "pk_tongguan",
+    "name": "潼關之戰",
+    "description": "冰城機制與異族部落，玩家可客製化異族專屬戰法。",
+    "coreMechanics": [
+      "冰城機制",
+      "異族戰法客製化"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "築冰城",
+        "type": "地圖指令",
+        "effect": "在嚴寒天氣下建造防禦力極高的冰城"
+      },
+      {
+        "name": "異族戰法",
+        "type": "自訂戰法",
+        "effect": "透過與異族交好，組合出專屬自己部隊的戰法"
+      }
+    ]
+  },
+  {
+    "id": "pk_dingjunshan",
+    "name": "定軍山之戰",
+    "description": "經典戰役重現，聚焦於山地戰與奇襲戰術。",
+    "coreMechanics": [
+      "山地戰",
+      "奇襲指令"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "奇襲",
+        "type": "戰術指令",
+        "effect": "繞過正面防線直接攻擊敵方後排"
+      }
+    ]
+  },
+  {
+    "id": "pk_bawang",
+    "name": "霸王討逆",
+    "description": "治軍武將全面增強，並提供六大強力拓印戰法供玩家選擇。",
+    "coreMechanics": [
+      "治軍武將增強",
+      "拓印戰法"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "拓印戰法選一",
+        "type": "賽季選擇",
+        "effect": "可從多個強力事件戰法中選擇一個免費使用"
+      }
+    ]
+  },
+  {
+    "id": "pk_changan",
+    "name": "長安之亂",
+    "description": "強化傭工系統，鋪路速度大增，適合快節奏推進。",
+    "coreMechanics": [
+      "傭工鋪路",
+      "治軍武將增強"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "快速鋪路",
+        "type": "內政指令",
+        "effect": "使用傭工無須消耗武將體力即可快速佔領無人地塊"
+      }
+    ]
+  },
+  {
+    "id": "pk_yingxiong_mingshi",
+    "name": "英雄命世",
+    "description": "引入12位都尉供玩家招攬拜師，並擁有30點天賦樹與文臣提案系統。",
+    "coreMechanics": [
+      "都尉拜師",
+      "天賦系統",
+      "文臣提案"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "拜師繼承",
+        "type": "都尉系統",
+        "effect": "自創武將可繼承名將的面板與兵種適性"
+      },
+      {
+        "name": "天賦點",
+        "type": "養成樹",
+        "effect": "自由分配30點天賦，強化部隊特定能力"
+      }
+    ]
+  },
+  {
+    "id": "pk_hanyan",
+    "name": "漢焰長明",
+    "description": "雙武將可選全 S 兵種，奇略玩法強化中後期作戰，漢陣營強勢崛起。",
+    "coreMechanics": [
+      "全S兵種",
+      "奇略系統",
+      "漢陣營加成"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "兵種轉換",
+        "type": "開局福利",
+        "effect": "可任選兩名武將將其某兵種適性提升至 S"
+      },
+      {
+        "name": "奇略",
+        "type": "戰場卡牌",
+        "effect": "第 2-6 回合獲得強力的隨機戰鬥增益"
+      }
+    ]
+  },
+  {
+    "id": "pk_jiuzhou",
+    "name": "九州兵興",
+    "description": "強化10個冷門戰法，引入太學、進學系統，優化武將練級體驗。",
+    "coreMechanics": [
+      "戰法增強",
+      "太學系統"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "進學",
+        "type": "養成指令",
+        "effect": "放置武將於太學中即可持續獲得經驗，無需打地"
+      }
+    ]
+  },
+  {
+    "id": "pk_yanzhou",
+    "name": "兗州之戰",
+    "description": "以特定地圖板塊與戰略要地為核心的全新博弈賽季。",
+    "coreMechanics": [
+      "戰略地圖",
+      "要地爭奪"
+    ],
+    "exclusiveSkills": [
+      {
+        "name": "要地加成",
+        "type": "地圖機制",
+        "effect": "佔領特定要地可提供全盟視野或屬性增益"
+      }
+    ]
+  }
+]
