@@ -628,6 +628,20 @@
     "who": "enemy",
     "val": 0.3,
     "dur": 99
+   },
+   {
+    "k": "lifesteal",
+    "who": "self",
+    "val": 0.3,
+    "dur": 2,
+    "_note": "30%倒戈(自身)"
+   },
+   {
+    "k": "lifesteal",
+    "who": "ally",
+    "val": 0.3,
+    "dur": 2,
+    "_note": "30%倒戈(友軍單體)"
    }
   ],
   "_src": "https://m.ali213.net/news/gl2111/721681.html",
@@ -635,8 +649,7 @@
   "_conf": "med",
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE",
-  "_est": true
+  "src": "INNATE"
  },
  {
   "nameZh": "別具匠心",
@@ -898,16 +911,20 @@
   "effects": [
    {
     "k": "mitig",
-    "who": "ally",
+    "who": "leader",
     "val": 0.5,
+    "dur": 2
+   },
+   {
+    "k": "insight",
+    "who": "leader",
     "dur": 2
    }
   ],
   "_src": " +他AI補全effectText/重解",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE",
-  "_est": true
+  "src": "INNATE"
  },
  {
   "nameZh": "十面埋伏",
@@ -1647,7 +1664,9 @@
     "k": "pierce",
     "who": "self",
     "val": 0.33,
-    "dur": 99
+    "dur": 99,
+    "scale": "speed",
+    "_note": "原文「每回合...持續1回合」, 因無when子句只在開戰套用一次, dur改99以反映常駐(見上方分項註解)"
    }
   ],
   "_src": "https://m.7724.com/sgzzlbyx/news/140194.html",
@@ -1655,8 +1674,7 @@
   "_conf": "med",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE",
-  "_est": true
+  "src": "INNATE"
  },
  {
   "nameZh": "威謀靡亢",
@@ -2110,12 +2128,6 @@
     "who": "self",
     "val": 0.9,
     "dur": 99
-   },
-   {
-    "k": "heal",
-    "who": "ally",
-    "coef": 0.3,
-    "dur": 99
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -2294,14 +2306,10 @@
    {
     "k": "mitig",
     "who": "self",
-    "val": 0.9,
-    "dur": 99
-   },
-   {
-    "k": "decay",
-    "who": "self",
-    "v0": 0.9,
-    "rounds": 30
+    "val": 0.45,
+    "dur": 99,
+    "_approx": "decay-avg",
+    "_note": "90%→0%線性遞減(每受擊-3%,上限30次)時間平均值近似; decay原語語意為攻擊增傷不適用防禦"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -2714,25 +2722,26 @@
   "effects": [
    {
     "k": "mitig",
-    "who": "ally",
+    "who": "leader",
     "val": 0.3,
     "dur": 99,
     "_note": "為主將分擔30%傷害（兵力移除，不觸發急救/減傷效果）"
    },
    {
     "k": "amp",
-    "who": "ally",
-    "val": 0.2,
+    "who": "leader",
+    "val": 0.168,
     "dur": 99,
-    "_note": "主將奇謀/攻心傷害提升20%"
+    "_approx": "crit-ev",
+    "_note": "14%奇謀機率(觸發+100%)+20%奇謀傷害 期望折算0.14+0.14*0.20"
    },
    {
-    "k": "stat",
-    "who": "ally",
-    "stat": "crit_chance",
-    "mult": 1.14,
+    "k": "lifesteal",
+    "who": "leader",
+    "val": 0.14,
     "dur": 99,
-    "_note": "主將奇謀概率提升7%→14%（受智力影響）"
+    "_approx": "crit-ev",
+    "_note": "14%攻心(觸發時按傷害比例回血)近似, 借用觸發率代入回血比例"
    }
   ],
   "_src": "https://www.gamersky.com/handbooksy/202007/1308628.shtml",
@@ -2791,7 +2800,7 @@
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1.05,
+    "add": 34,
     "dur": 99
    },
    {
@@ -2804,8 +2813,7 @@
   "_src": " +他AI補全effectText/重解",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE",
-  "_est": true
+  "src": "INNATE"
  },
  {
   "nameZh": "槍舞如風",
@@ -4389,8 +4397,7 @@
   "_conf": "med",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE",
-  "_est": true
+  "src": "INNATE"
  },
  {
   "nameZh": "箕形陣",
@@ -4664,7 +4671,8 @@
     "k": "redirect",
     "who": "ally",
     "guard": "self",
-    "share": 0.3
+    "share": 0.45,
+    "_note": "為副將分擔30%/為主將分擔60%, 取平均值0.45近似(原語不支援依受益者身分分別設定)"
    },
    {
     "k": "amp",
@@ -4677,8 +4685,7 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE",
-  "_est": true
+  "src": "INNATE"
  },
  {
   "nameZh": "胡笳十八拍",
@@ -5225,10 +5232,10 @@
   "effects": [
    {
     "k": "amp",
-    "who": "enemy",
+    "who": "self",
     "val": 0.33,
     "dur": 99,
-    "scale": "force"
+    "_note": "自身對鎖定目標傷害+33%(who由enemy修正為self: who=enemy+val>0會被引擎轉成全隊對敵易傷,方向錯誤); 原文無受X影響字樣,不加scale"
    },
    {
     "k": "pierce",
@@ -5240,8 +5247,7 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE",
-  "_est": true
+  "src": "INNATE"
  },
  {
   "nameZh": "虎衛軍",
@@ -5849,21 +5855,31 @@
    {
     "k": "amp",
     "who": "self",
-    "val": 0.2,
-    "dur": 99
+    "val": 0.65,
+    "dur": 99,
+    "_approx": "crit-ev",
+    "_note": "50%會心機率+30%會心傷害 期望折算0.5+0.15"
    },
    {
     "k": "amp",
     "who": "ally",
-    "val": 0.1,
-    "dur": 99
+    "val": 0.25,
+    "dur": 99,
+    "_approx": "crit-ev",
+    "_note": "友軍10%會心機率+15%會心傷害 期望折算0.10+0.15"
+   },
+   {
+    "k": "lifesteal",
+    "who": "ally",
+    "val": 0.15,
+    "dur": 99,
+    "_note": "15%倒戈(造成兵刃傷害恢復自身兵力)"
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE",
-  "_est": true
+  "src": "INNATE"
  },
  {
   "nameZh": "錦帆軍",
@@ -6107,8 +6123,8 @@
   "nameZh": "雲聚影從",
   "type": "command",
   "kind": "phys",
-  "coef": 0,
-  "rate": 1,
+  "coef": 1.0,
+  "rate": 0.5,
   "n": 1,
   "prep": 0,
   "effects": [

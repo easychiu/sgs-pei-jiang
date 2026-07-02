@@ -344,6 +344,165 @@ BATCH8_TACTIC_EFFECTS = {
     ],
 }
 
+# --- 批9: 外部查證14個自帶戰法整合(見 docs/data/tactics_overrides.json 的 effectText, 來源
+# C:/.../scratchpad/agy_est_tactics.json, 全 high confidence) --------------------------
+# 沿用批7/批8的整批覆寫白名單模式: BATCH9_TACTIC_EFFECTS[name] 為該戰法「目標 effects 全列表」
+# (非 add-only), 逐條核對現有(整批重解時代留下的估計值) effectText 後決定改動:
+#   - 能被既有原語精確/近似表達的落地, 標 _approx 揭露折算方式(crit-ev/decay-avg等)。
+#   - 找不到任何既有原語能表達的子機制(如「每4次普攻」計數觸發、「準備回合-1」機率觸發、
+#     「鎖定目標」單體綁定), 保留在 effectText/_note 供未來擴充, 不硬套錯誤原語。
+#   - 逐戰法決策依據見下方分項註解; 全部落地後由 main() 統一從 _est 集合中移除(除非該戰法仍有
+#     完全無法表達的核心機制, 則保留 _est+_todo, 見 BATCH9_KEEP_EST)。
+#
+# 1) 刀出如霆(180%×3次+30%倒戈): coef/n 已由既有整批重解正確抽到(coef=1.80=540%/3人平均,
+#    n=3); 本批只新增 30%倒戈(lifesteal, 持續2回合, 自身+友軍單體) 這個新原語補件, 既有
+#    amp(self/ally 0.3 dur2 = 掠陣觸發後+30%易傷近似) + amp(enemy 0.3 dur99 = 目標受傷+30%
+#    近似, 沿用既有寫法) 保留不動。
+# 2) 十勝十敗(前2回合主將洞察+減傷50%): who 由 ally 精修為 leader(原文「我軍主將」非泛指友軍),
+#    新增 insight(who:leader, dur:2)。「主將發動主動/突擊戰法時30%機率治療」為 proc-on-cast
+#    觸發鏈, 無對應原語, 跳過(_todo)。
+# 3) 威武並昭(33%看破,受速度影響): 新增 pierce(who:self, val:0.33, scale:speed)。原文「每回合
+#    獲得...持續1回合」照字面該用 dur:1, 但本戰法 effectText 無 when 子句 → 引擎的被動套用
+#    時機是開戰時一次性套用(apply_passives 只在戰鬥開始前跑一次, 見 sgz.py fight() 開頭
+#    apply_passives(no_heal=True)), dur:1 會在第1回合後失效、之後不再重新套用(無 when.rounds
+#    重觸發), 與原文「每回合」的常駐語意不符; 比照全庫慣例(戰鬥中不帶 when 的被動效果一律
+#    dur:99 表達「全程生效」, 如奇兵間道/虎痴/錦帆百翎等), 改用 dur:99 才能正確反映「每回合
+#    都有」的持續效果, 差異已於此處說明。既有 extra(0.33, dur99 近似追加普攻機制) 保留。
+#    「鎖定速度更低敵軍+9速度疊加」為單體鎖定+條件觸發複合機制, 無原語, 跳過(_todo)。
+# 4) 才辯機捷(狀態傷害+90%/治療+30%): 既有 amp(self, 0.9, dur99) 對應「灼燒等狀態傷害+90%」
+#    保留(amp 是通用增傷, 用於 dot 類最貼近)。原 heal(who:ally, coef:0.3) 是錯誤映射——
+#    heal 原語語意是「直接治療」, 而原文是「治療效果量提升30%」(乘算修飾其他戰法的治療,
+#    非自身施放治療), 15+2原語無「治療量增益」概念, 保留會產生本不存在的每回合自我治療,
+#    移除該筆; 治療加成30% 標 _todo, amp(0.9)的落地保留 _est=false 的資格但因治療子機制
+#    整段缺失, 保守維持 _est=true(見 BATCH9_KEEP_EST)。
+# 5) 捨身救主(減傷90%,每受擊-3%遞減): 既有 decay(v0:0.9, rounds:30) 是錯誤映射——decay 原語
+#    語意是「攻擊增傷衰減」(Unit.amp() 讀 decay 疊加進總增傷, 見 sgz.py 407行), 用在此處會
+#    變成自身攻擊力開場+90%再30回合線性歸零, 與原文「受到傷害降低」(防禦向)完全相反; 改為
+#    對 mitig(who:self) 取全程時間平均值近似(90%→0%線性遞減, 平均≈45%), _approx:"decay-avg"。
+#    「降5次後35%機率視為2次觸發以額外觸發反擊/急救」為條件計數+效果複製機制, 無原語, 跳過
+#    (_todo)。
+# 6) 校勝帷幄(主將14%奇謀+20%奇謀傷+14%攻心+30%分擔): mitig(who:ally)精修為 who:leader(原文
+#    明確「己方主將」); amp(who:ally)精修為 who:leader, val 由「14%機率觸發+100%」+「20%奇謀
+#    傷害」期望折算 0.14+0.14*0.20≈0.168(_approx:"crit-ev", 沿用會心/奇謀期望值折算慣例);
+#    新增 lifesteal(who:leader, val:0.14, _approx:"crit-ev") 近似「14%攻心(觸發時回復等同傷害
+#    量一定比例兵力)」——lifesteal 語意(按造成傷害比例回血)與攻心描述高度吻合, 用觸發機率
+#    14%本身近似期望回血比例(無法得知攻心的確切回復比例, 保守用觸發率代入)。原 stat(crit_chance)
+#    效果為死欄位(引擎 eff() 不支援 crit_chance 這個 stat key, 純無效字段), 移除。
+# 7) 槊血縱橫(34武+群攻54%/主將60%): 既有 stat(self, force, mult:1.05) 用乘算表達固定加值34點
+#    是型別錯誤(原文「獲得34點武力」是平加不是倍率), 改為 stat(self, force, add:34, dur:99);
+#    既有 extra(0.54, dur99近似群攻54%) 保留。「主將時群攻提升至60%」條件分支無法與固定54%
+#    共存於單一 extra 值, 保守取一般值54%(非主將情境更常見), 跳過主將分支(_todo)。
+# 8) 符命自立(前2回合任一回合100%會心/奇謀,8回合線性歸零): 既有 decay(v0:1.0, rounds:8) 精確
+#    對應原文「提高100%會心/奇謀機率...每回合逐漸降低,直至第8回合降至0」, decay 原語語意
+#    (Unit.amp() 攻擊增傷開場v0、rounds內線性歸零) 與此機制完全吻合, 優於任務指引建議的
+#    amp+when:until2簡化版(那個只能表達「固定100%持續2回合」, 丟失「逐回合遞減到第8回合」
+#    的漸變曲線, decay 原語資訊量更高更貼近原文), 保留不動。「主將時額外提高主動戰法發動率
+#    (準備35%/瞬發25%),同樣衰減」為第二條 decay 曲線, rateup 原語不支援 decay 型衰減(只有
+#    flat dur), 無法疊加第二條衰減曲線在同一 rateup 上, 跳過(_todo)。
+# 9) 肉身鐵壁(為副將分擔30%/為主將分擔60%): 既有 redirect(share:0.3) 只反映副將分擔比例,
+#    取兩種分擔對象的平均值0.45 更貼近「不分對象」的簡化語意(redirect 原語目前不支援依受益者
+#    身分給不同分擔比例), share 由 0.3 改為 0.45, _note 說明為平均值近似。既有
+#    amp(who:ally, val:0.18, scale:command) 對應「兵力>70%時傷害+18%受統率影響」保留
+#    (「兵力高於70%」條件無法表達, 近似恆真, 沿用既有做法)。「孫權主將時基礎值增至30%」的
+#    陣營+主將條件分支跳過(_todo)。
+# 10) 虎痴(鎖定目標傷害+33%,擊敗後獲得破陣): 既有 amp(who:enemy, val:0.33, scale:force) 是
+#     方向性錯誤——sgz.py 620-626行: who:enemy 且 val>0 的 amp 會被引擎自動轉換成
+#     mitig(-val)套用在敵方身上(「敵方正amp視為敵方易傷」的既有修正邏輯), 語意變成「鎖定目標
+#     受到全隊傷害+33%」, 但原文是「自身對該目標造成的傷害+33%」(只影響施放者自己的攻擊,
+#     非全隊); 改為 amp(who:self, val:0.33, dur:99), 並移除不存在於原文的 scale:force(原文
+#     明寫「無受X影響字樣」)。既有 pierce(who:self, val:1, dur:99) 對應「破陣狀態無視統率
+#     和智力」保留(pierce 語意是無視減傷, 與無視統率/智力的防禦加成方向一致, 是現有原語中
+#     最貼近的近似; 「擊敗目標後才觸發」的條件無法表達, 近似成開戰即恆定生效, 略強於原文)。
+#     「每回合鎖定/最多3次判定」的單體鎖定機制跳過(_todo)。
+# 11) 錦帆百翎(自身50%會心+30%會心傷/主將時友軍10%會心+15%會心傷+15%倒戈): amp(self) 由
+#     0.2 改為 0.5+0.15=0.65(50%會心機率期望值+30%會心傷害加成, 沿用任務指引的直接相加折算
+#     公式); amp(ally) 由 0.1 改為 0.10+0.15=0.25(10%會心機率+15%會心傷害, 同一公式); 新增
+#     lifesteal(who:ally, val:0.15, dur:99) 對應「造成兵刃傷害時恢復自身兵力」的15%倒戈。
+# 12) 雲聚影從(50%機率使武力最高友軍代承普攻並獲反擊+急救): 既有
+#     redirect(who:ally, guard:max_force, share:0.4) + counter(who:ally, coef:1, prob:0.5) 已是
+#     「單次觸發的普攻代承」在恆定機制下的合理穩態近似(share=0.4 介於「50%機率×100%代承」的
+#     期望值), 保留不動。「急救(受傷30%機率治療100%)」為代承者專屬的條件治療, 目前 heal 原語
+#     無法限定「只在代承後才生效」, 跳過(_todo)。
+BATCH9_TACTIC_EFFECTS = {
+    "刀出如霆": [
+        {"k": "amp", "who": "self", "val": 0.3, "dur": 2},
+        {"k": "amp", "who": "ally", "val": 0.3, "dur": 2},
+        {"k": "amp", "who": "enemy", "val": 0.3, "dur": 99},
+        {"k": "lifesteal", "who": "self", "val": 0.3, "dur": 2, "_note": "30%倒戈(自身)"},
+        {"k": "lifesteal", "who": "ally", "val": 0.3, "dur": 2, "_note": "30%倒戈(友軍單體)"},
+    ],
+    "十勝十敗": [
+        {"k": "mitig", "who": "leader", "val": 0.5, "dur": 2},
+        {"k": "insight", "who": "leader", "dur": 2},
+    ],
+    "威武並昭": [
+        {"k": "extra", "who": "self", "val": 0.33, "dur": 99},
+        {"k": "pierce", "who": "self", "val": 0.33, "dur": 99, "scale": "speed",
+         "_note": "原文「每回合...持續1回合」, 因無when子句只在開戰套用一次, dur改99以反映常駐(見上方分項註解)"},
+    ],
+    "才辯機捷": [
+        {"k": "amp", "who": "self", "val": 0.9, "dur": 99},
+    ],
+    "捨身救主": [
+        {"k": "mitig", "who": "self", "val": 0.45, "dur": 99, "_approx": "decay-avg",
+         "_note": "90%→0%線性遞減(每受擊-3%,上限30次)時間平均值近似; decay原語語意為攻擊增傷不適用防禦"},
+    ],
+    "校勝帷幄": [
+        {"k": "mitig", "who": "leader", "val": 0.3, "dur": 99,
+         "_note": "為主將分擔30%傷害（兵力移除，不觸發急救/減傷效果）"},
+        {"k": "amp", "who": "leader", "val": 0.168, "dur": 99, "_approx": "crit-ev",
+         "_note": "14%奇謀機率(觸發+100%)+20%奇謀傷害 期望折算0.14+0.14*0.20"},
+        {"k": "lifesteal", "who": "leader", "val": 0.14, "dur": 99, "_approx": "crit-ev",
+         "_note": "14%攻心(觸發時按傷害比例回血)近似, 借用觸發率代入回血比例"},
+    ],
+    "槊血縱橫": [
+        {"k": "stat", "who": "self", "stat": "force", "add": 34, "dur": 99},
+        {"k": "extra", "who": "self", "val": 0.54, "dur": 99},
+    ],
+    "肉身鐵壁": [
+        {"k": "redirect", "who": "ally", "guard": "self", "share": 0.45,
+         "_note": "為副將分擔30%/為主將分擔60%, 取平均值0.45近似(原語不支援依受益者身分分別設定)"},
+        {"k": "amp", "who": "ally", "val": 0.18, "dur": 99, "scale": "command"},
+    ],
+    "虎痴": [
+        {"k": "amp", "who": "self", "val": 0.33, "dur": 99,
+         "_note": "自身對鎖定目標傷害+33%(who由enemy修正為self: who=enemy+val>0會被引擎轉成全隊對敵易傷,方向錯誤); 原文無受X影響字樣,不加scale"},
+        {"k": "pierce", "who": "self", "val": 1, "dur": 99},
+    ],
+    "錦帆百翎": [
+        {"k": "amp", "who": "self", "val": 0.65, "dur": 99, "_approx": "crit-ev",
+         "_note": "50%會心機率+30%會心傷害 期望折算0.5+0.15"},
+        {"k": "amp", "who": "ally", "val": 0.25, "dur": 99, "_approx": "crit-ev",
+         "_note": "友軍10%會心機率+15%會心傷害 期望折算0.10+0.15"},
+        {"k": "lifesteal", "who": "ally", "val": 0.15, "dur": 99, "_note": "15%倒戈(造成兵刃傷害恢復自身兵力)"},
+    ],
+    "雲聚影從": [
+        {"k": "redirect", "who": "ally", "guard": "max_force", "share": 0.4},
+        {"k": "counter", "who": "ally", "coef": 1, "kind": "phys", "prob": 0.5},
+    ],
+}
+
+# 批9: 全落地/仍缺核心機制的戰法分流 --------------------------------------------------
+# BATCH9_DROP_EST: effects 已涵蓋 effectText 絕大部分數值機制(缺口僅剩無原語可表達的條件觸發
+# 細節, 已於上方逐項註解說明並標_todo於此處), 移除 _est。
+BATCH9_DROP_EST = {
+    "刀出如霆", "十勝十敗", "威武並昭", "槊血縱橫", "符命自立", "肉身鐵壁", "虎痴", "錦帆百翎",
+}
+# BATCH9_KEEP_EST: 核心機制仍有無法表達的重大缺口(見各自 _todo), 保留 _est=true 供UI標示。
+BATCH9_TODO = {
+    "十勝十敗": "主將發動主動/突擊戰法時30%機率治療我軍單體(proc-on-cast, 無觸發鏈原語)",
+    "奇兵間道": "準備戰法75%機率減1回合準備(proc-on-cast); 第5回合兵力<50%分支(45%倒戈)與否則+6%發動率分支(僅落地45%倒戈近似, 另一分支跳過)",
+    "奮矛英姿": "每4次普攻觸發的全體傷害+100%(計數觸發, 無「每N次行動」原語); 現有stat近似僅覆蓋統率轉移/武力提升",
+    "威武並昭": "鎖定速度更低敵軍+9速度可疊加(單體鎖定+條件觸發, 無原語)",
+    "才辯機捷": "治療效果量+30%(治療增益修飾, 現有heal原語僅支援直接治療非修飾其他治療, 已移除誤用的heal效果)",
+    "捨身救主": "減傷降5次後35%機率視為2次觸發(條件計數+效果複製, 無原語)",
+    "校勝帷幄": "主將分擔15%→30%為等級區間, 已取滿級值",
+    "符命自立": "主將時額外提高主動戰法發動率(準備35%/瞬發25%, 同樣8回合衰減)為第二條decay曲線, rateup不支援decay型衰減",
+    "肉身鐵壁": "孫權主將時基礎值增至30%(陣營+主將條件分支, 近似恆真取一般值18%)",
+    "虎痴": "每回合鎖定敵軍單體+最多3次判定的目標綁定機制(無單體鎖定原語, 近似成對施放者恆定生效)",
+    "雲聚影從": "代承者專屬急救(受傷30%機率治療100%), heal原語無法限定僅代承後生效",
+}
+
 # --- 批7: rateup/chargeup 已落地條目全庫掃描, 補「受X影響」的 scale --------------
 # 逐條核對目前所有已落地 rateup/chargeup 效果(白眉/先成其慮/獅子奮迅/進言/虎豹騎/陷陣突襲)
 # 對應的 effectText, 找「受X影響」措辭是否修飾發動率子句本身:
@@ -593,6 +752,8 @@ def main():
     chargeup_tagged_names = []
     n_taiping_tagged = 0
     n_batch8_tagged = 0                                   # 批8: 竭力佐謀/三勢陣 白名單套用數
+    n_batch9_tagged = 0                                   # 批9: 14個自帶戰法查證整合 白名單套用數
+    batch9_tagged_names = []
     n_rate_scale_backfilled = 0
     rate_scale_backfilled_names = []
 
@@ -906,6 +1067,27 @@ def main():
                 n_batch8_tagged += 1
             touched_meaningful = True
 
+        # --- 20) 批9: 外部查證14個自帶戰法整合, 見 BATCH9_TACTIC_EFFECTS 註解 -----------------
+        # 全列表覆寫(非 add-only): 這批戰法的既有 effects 是「整批重解」年代留下的粗估, 逐條核對
+        # 後決定整體結構調整(如 who 精修、mult→add 型別修正、錯誤 decay 換成 mitig 等), 用完整
+        # 目標列表直接比對覆寫, 比逐條 index/k 比對更不容易在結構變動時產生殘留舊效果。
+        if name in BATCH9_TACTIC_EFFECTS:
+            want9 = [dict(x) for x in BATCH9_TACTIC_EFFECTS[name]]
+            if p.get("effects") != want9:
+                p["effects"] = want9
+                n_batch9_tagged += 1
+                batch9_tagged_names.append(name)
+            if name in BATCH9_DROP_EST and p.pop("_est", None) is not None:
+                n_batch9_tagged += 1                      # 移除 _est 也算一次變動, 供冪等統計
+            touched_meaningful = True
+        elif name in BATCH9_DROP_EST:
+            # 符命自立: effects(既有 decay 曲線) 已是精確映射, 不動 effects 本身, 只移除 _est
+            # (見 BATCH9_TACTIC_EFFECTS 上方分項註解 8, decay 優於任務指引的 amp+when 簡化版)。
+            if p.pop("_est", None) is not None:
+                n_batch9_tagged += 1
+                batch9_tagged_names.append(f"{name}(僅移除_est)")
+            touched_meaningful = True
+
         # --- 18) rateup/chargeup 已落地條目全庫掃描: 原文「受X影響」有寫的補 scale, 沒寫的不加 --
         # 見 RATE_SCALE_PLAN 註解(批7新增, 與 SCALE_PLAN 同保守白名單原則, 只是這次逐條核對後
         # 全部落空, 詳見腳本輸出的 skip 清單)。
@@ -975,6 +1157,10 @@ def main():
           f"；跳過: 三勢陣(僅限「主將」概念, 引擎無通用主將機制)"
           f"、經天緯地(proc-on-cast觸發鏈, 非chargeup原語)——詳見 CHARGEUP_ADD 註解")
     print(f"批8 白名單(竭力佐謀 inheritedOnly / 三勢陣 who:leader): {n_batch8_tagged} 個戰法套用/更新(0=已是目標值冪等)")
+    print(f"批9 白名單(14個自帶戰法外部查證整合): {n_batch9_tagged} 個戰法套用/更新"
+          f"（{', '.join(batch9_tagged_names) if batch9_tagged_names else '無變動(冪等)'}）"
+          f"；移除_est: {sorted(BATCH9_DROP_EST)}；仍保留_est(缺口見BATCH9_TODO): "
+          f"{sorted(set(BATCH9_TACTIC_EFFECTS) - BATCH9_DROP_EST)}")
     print(f"--- 批7: 發動率縮放(rate-scale) + 太平道法落地 ---")
     print(f"太平道法 白名單落地: {'已套用/更新' if n_taiping_tagged else '已是目標值(無變動, 冪等)'}"
           f"（amp 0.28 + rateup×2〔一般6% nativeOnly + 準備戰法額外6% prepOnly+nativeOnly, "
