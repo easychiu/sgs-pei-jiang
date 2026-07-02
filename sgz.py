@@ -586,6 +586,33 @@ def resolve_locked_target(u, t, foes):
     return picked
 
 
+def fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit):
+    """批13: extraHits —— 多段傷害(兵刃+謀略雙段/主傷+補刀等單一 coef/kind/n 無法表達的戰法)。
+    戰法欄 extraHits:[{coef,kind,n,nMax,rate,who,_note}]: 主 coef 結算後逐段獨立處理, 每段各自
+    rate 擲骰(預設1必發)、選目標、hit()。who 可選: "sameTarget"(沿用主 coef 段已選定的(單體)
+    目標, 如屠几上肉 兵刃+謀略同目標/一騎當千 主將加成同目標)、"enemyLeader"(固定打敵方主將
+    foes[0], 如百騎劫營/暗藏玄機 額外段明確打敵軍主將)、不填則預設 pick_targets(敵方, 依n/nMax)。
+    與主 coef 段完全獨立(各自的 kind 可不同, 如兵刃主傷+謀略補刀), 不與 hitsRepeat/lockTarget
+    互斥(hitsRepeat/lockTarget 只影響主 coef 段的選標方式, extraHits 段固定用上述規則)。"""
+    for eh in t.get("extraHits") or []:
+        if random.random() >= eh.get("rate", 1.0):
+            continue
+        n = eh.get("n") or 1
+        cnt = n + random.randint(0, eh["nMax"] - n) if eh.get("nMax") else n
+        who = eh.get("who")
+        if who == "sameTarget":
+            dests = [tgt] if (tgt and tgt.alive) else []          # 沿用主段已選定的(單體)目標
+        elif who == "enemyLeader":
+            foes = foes_of(u)
+            dests = [foes[0]] if (foes and foes[0].alive) else []  # 固定打敵方主將(index 0)
+        elif cnt <= 1 and tgt and tgt.alive and not who:
+            dests = [tgt]                                    # 未指定who且單體: 沿用主段目標(向後相容預設行為)
+        else:
+            dests = pick_targets(foes_of(u), cnt)
+        for v in dests:
+            hit(u, v, eh["coef"], eh.get("kind", "phys"), False, on_hit)
+
+
 def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=False):
     src = t.get("nameZh")                              # 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → None, 不去重)
     for e in t["effects"]:
@@ -630,6 +657,8 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             dests = [caster] if caster.alive else []
         elif who == "leader":                         # 批8: 主將限定(隊伍 index 0)
             dests = [allies[0]] if allies and allies[0].alive else []
+        elif who == "subs":                           # 批13: 副將群限定(隊伍 index 0 以外; 如鋒矢陣/箕形陣副將分化段)
+            dests = [a for a in allies[1:] if a.alive]
         elif who == "enemy":
             if ctrl_k:                                # 群體控制隨機挑不重複目標; 單體優先鎖定 tgt
                 n = t.get("n") or 1
@@ -817,6 +846,8 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             dst.hit_flags.add(id(t))
             if t["coef"]:
                 hit(dst, src, t["coef"], t["kind"], False, on_hit)
+            if t.get("extraHits"):
+                fire_extra_hits(dst, t, src, allies_of, foes_of, on_hit)  # 批13: 受擊觸發類多段傷害(如剛烈不屈 反擊後群體額外段)
             if t["effects"]:
                 apply_effects(dst, src, t, allies_of(dst), foes_of(dst))
 
@@ -870,6 +901,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                             and not (t.get("when") and t["when"].get("on")) and round_ok(t, rnd):
                         fire = random.random() < t["rate"]  # 每回合以資料 rate 擲骰; when.rounds/from/until 只在符合回合才擲骰; when.on(反應式) 改由 on_hit 事件點觸發
                     if fire:
+                        main_hit_tgt = None  # 批13: 記錄主 coef 段命中的(單體)目標, 供 extraHits 同目標段沿用
                         if t["coef"]:
                             cnt = t["n"]
                             if t.get("nMax"):
@@ -884,14 +916,21 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                                 v = resolve_locked_target(u, t, foes_of(u))
                                 if v:
                                     hit(u, v, t["coef"], t["kind"], False, on_hit)
+                                    main_hit_tgt = v
                             elif t.get("hitsRepeat"):
                                 for _ in range(cnt):
                                     v = pick_target(foes_of(u), u)
                                     if v:
                                         hit(u, v, t["coef"], t["kind"], False, on_hit)
+                                        main_hit_tgt = v
                             else:
-                                for v in pick_targets(foes_of(u), cnt):
+                                vs = pick_targets(foes_of(u), cnt)
+                                for v in vs:
                                     hit(u, v, t["coef"], t["kind"], False, on_hit)
+                                if len(vs) == 1:
+                                    main_hit_tgt = vs[0]
+                        if t.get("extraHits"):
+                            fire_extra_hits(u, t, main_hit_tgt, allies_of, foes_of, on_hit)  # 批13: 多段傷害(兵刃+謀略雙段/主傷+補刀等)
                         if t["type"] == "active":
                             # 批12 ModeF: 混亂下單體主動戰法目標改敵我不分(pick_target_chaos); 群體/AoE
                             # (who=enemy 全體/n>1)維持 apply_effects 內部既有邏輯不變 —— 這裡傳入的 tgt
@@ -915,6 +954,8 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     if t["type"] == "charge" and random.random() < t["rate"] + up:
                         if t["coef"]:
                             hit(u, tgt, t["coef"], t["kind"], False, on_hit)
+                        if t.get("extraHits"):
+                            fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit)
                         apply_effects(u, tgt, t, allies_of(u), foes_of(u))
 
         for u in A + B:                               # 結算傷害: 疊滿層數或到期 → 對其所屬全隊爆發
@@ -1553,6 +1594,49 @@ def demo():
     lt_pool2 = [Unit(POOL["諸葛亮"], "弓"), Unit(POOL["周瑜"], "弓")]
     t5 = resolve_locked_target(lt_caster, lt_tac_other, lt_pool2)
     assert id(lt_tac_other) in lt_caster.locked_targets, "不同戰法物件應各自在 locked_targets 建立獨立鎖定項"
+
+    # --- 批13: extraHits(多段傷害) + who="subs"(副將群) --------------------------
+    # 42) extraHits: 主 coef 段(兵刃) + 額外段(謀略) 應各自獨立結算傷害, 額外段的 kind 與主段
+    #     不同時各自套用正確的攻防屬性(如屠几上肉 兵刃150%+謀略150%)。用一個 intel 遠高於
+    #     force 的施法者驗證: 額外段(intel)理論傷害應與主段(phys)不同, 證明兩段各自獨立算傷害
+    #     (非合併成單一 coef)。
+    eh_src = Unit(POOL["諸葛亮"], "弓")           # 智力遠高於武力, 兵刃段/謀略段傷害應有明顯差異
+    eh_tgt42 = Unit(POOL["張飛"], "盾")
+    eh_tac = {"nameZh": "測試extraHits42", "type": "active", "kind": "phys", "coef": 1.5,
+              "rate": 1.0, "n": 1, "prep": 0,
+              "extraHits": [{"coef": 1.5, "kind": "intel"}], "effects": []}
+    troop_before_42 = eh_tgt42.troop
+    hit(eh_src, eh_tgt42, eh_tac["coef"], eh_tac["kind"], False, None)   # 模擬主段(phys)
+    troop_after_main = eh_tgt42.troop
+    fire_extra_hits(eh_src, eh_tac, eh_tgt42, lambda u: [eh_src], lambda u: [eh_tgt42], None)  # 模擬額外段(intel)
+    assert eh_tgt42.troop < troop_after_main, "extraHits: 額外段應對目標造成獨立的第二次傷害(非被主段吞掉)"
+    dmg_main = troop_before_42 - troop_after_main
+    dmg_extra = troop_after_main - eh_tgt42.troop
+    # 諸葛亮智力遠高於武力, 謀略段(intel)理論傷害應明顯大於兵刃段(phys)(相同coef下), 證明額外段
+    # 確實各自用自己的kind獨立算傷害(而非誤用主段的kind或複製主段傷害量)
+    assert dmg_extra > dmg_main * 1.05, "extraHits: 額外段應依自己的kind(intel)獨立算傷害, 不與主段(phys)相同"
+
+    # extraHits.rate: rate=0 時額外段不應觸發(0次傷害)
+    eh_tgt42b = Unit(POOL["張飛"], "盾")
+    eh_tac_norate = {"nameZh": "測試extraHits42b", "type": "active", "kind": "phys", "coef": 0,
+                      "rate": 1.0, "n": 1, "prep": 0,
+                      "extraHits": [{"coef": 1.5, "kind": "phys", "rate": 0.0}], "effects": []}
+    troop_before_42b = eh_tgt42b.troop
+    fire_extra_hits(eh_src, eh_tac_norate, eh_tgt42b, lambda u: [eh_src], lambda u: [eh_tgt42b], None)
+    assert eh_tgt42b.troop == troop_before_42b, "extraHits: rate=0 的額外段不應觸發傷害"
+
+    # 43) who="subs": 副將群 = allies 除 index 0(主將), 效果只套用到非主將的存活友軍
+    subs_leader = Unit(POOL["呂布"], "騎")
+    subs_a = Unit(POOL["張飛"], "盾")
+    subs_b = Unit(POOL["趙雲"], "騎")
+    subs_team = [subs_leader, subs_a, subs_b]
+    subs_tac = {"nameZh": "測試who_subs43", "type": "command", "kind": "phys", "coef": 0,
+                "rate": 1.0, "n": 1, "prep": 0,
+                "effects": [{"k": "mitig", "who": "subs", "val": 0.25, "dur": 5}]}
+    apply_effects(subs_leader, None, subs_tac, subs_team, [], no_heal=True)
+    assert abs(subs_leader.addbonus("mitig") - 0) < 1e-9, "who=subs: 主將(index 0)不應被套用副將群效果"
+    assert abs(subs_a.addbonus("mitig") - 0.25) < 1e-9, "who=subs: 副將應被套用效果"
+    assert abs(subs_b.addbonus("mitig") - 0.25) < 1e-9, "who=subs: 副將應被套用效果"
 
     print("self-check OK")
 

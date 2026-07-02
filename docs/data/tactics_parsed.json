@@ -73,7 +73,15 @@
   "effects": [],
   "quality": "S",
   "cat": "BURST",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "extraHits": [
+   {
+    "coef": 0.36,
+    "kind": "phys",
+    "n": 3,
+    "_note": "自身為主將時, 該次兵刃攻擊更強(54%→108%, 即在基礎72%上再加36%), n=3=AoE全體(同主段對象)"
+   }
+  ]
  },
  {
   "nameZh": "七步成詩",
@@ -753,7 +761,7 @@
   "nameZh": "剛烈不屈",
   "type": "passive",
   "kind": "phys",
-  "coef": 0.84,
+  "coef": 0,
   "rate": 0.4,
   "n": 2,
   "prep": 0,
@@ -772,7 +780,15 @@
   "src": "INNATE",
   "when": {
    "on": "damaged"
-  }
+  },
+  "extraHits": [
+   {
+    "coef": 0.84,
+    "kind": "phys",
+    "n": 2,
+    "rate": 1.0
+   }
+  ]
  },
  {
   "nameZh": "功不唐捐",
@@ -1587,14 +1603,8 @@
     "who": "enemy",
     "val": -0.32,
     "dur": 3,
-    "scale": "speed"
-   },
-   {
-    "k": "amp",
-    "who": "enemy",
-    "val": -0.32,
-    "dur": 3,
-    "scale": "speed"
+    "scale": "speed",
+    "_note": "僅套用敵軍武力最高者(未區分目標篩選, who=enemy會套用全體敵軍非僅武力最高者)"
    }
   ],
   "quality": "S",
@@ -2120,7 +2130,16 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "extraHits": [
+   {
+    "coef": 0.52,
+    "kind": "phys",
+    "n": 2,
+    "rate": 0.45,
+    "_note": "群攻(普攻命中目標同部隊其他武將)近似為敵軍群體2人"
+   }
+  ]
  },
  {
   "nameZh": "形一陣",
@@ -2152,14 +2171,21 @@
   "nameZh": "形機軍略",
   "type": "active",
   "kind": "phys",
-  "coef": 3.9,
+  "coef": 2.1,
   "rate": 0.4,
   "n": 1,
   "prep": 0,
   "effects": [],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "extraHits": [
+   {
+    "coef": 1.8,
+    "kind": "intel",
+    "who": "sameTarget"
+   }
+  ]
  },
  {
   "nameZh": "忠勇義烈",
@@ -2305,14 +2331,22 @@
   "type": "command",
   "kind": "intel",
   "coef": 0.1,
-  "rate": 1,
-  "n": 2,
+  "rate": 0.12,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "silence",
     "who": "enemy",
-    "dur": 1
+    "dur": 1,
+    "_approx": "威懾(使目標一個戰法失效,除陣法外)無精確對應原語,以silence(禁主動戰法)近似;原文機率6%→12%受統帥影響,此處取滿級值且未做scale縮放(coef/rate段已用資料層rate表達機率)"
+   },
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.1,
+    "dur": 1,
+    "_approx": "每回合結束對敵2-3人造成謀略傷害,基礎5%→10%+5%→10%*威懾次數(無視防禦);疊加項(威懾次數)無法追蹤,僅取基礎值近似,實際傷害會隨戰鬥推進被低估"
    }
   ],
   "quality": "S",
@@ -3053,7 +3087,8 @@
     "who": "ally",
     "val": 0.4,
     "dur": 99,
-    "scale": "intel"
+    "scale": "intel",
+    "_approx": "警戒疊層(最多4層,每層消耗觸發20%→40%減傷)簡化為常駐40%減傷上限值,未建模「受傷超過閾值才消耗1層」的觸發條件與層數耗盡後失效的機制"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -3189,19 +3224,22 @@
     "k": "mitig",
     "who": "self",
     "val": 0.3,
-    "dur": 5
+    "dur": 5,
+    "_approx": "「主將80%機率優先成為戰法目標且該戰法傷害降低15%→30%」簡化為主將常駐30%減傷(缺80%機率判定與taunt式目標優先語意, 且mitig對象應限self=主將而非全體)"
    },
    {
     "k": "heal",
     "who": "ally",
     "coef": 1.84,
-    "dur": 1
+    "dur": 1,
+    "_approx": "原文「奇數回合」限定(治療率92%→184%)簡化為常駐每回合觸發, 且未區分「兵種適性較低的副將」執行者(固定用caster觸發, 非依適性動態指定副將)"
    },
    {
     "k": "amp",
     "who": "ally",
     "val": 0.15,
-    "dur": 99
+    "dur": 99,
+    "_approx": "原文「偶數回合」限定(7.5%→15%可疊加)簡化為常駐15%增傷且未疊加,同樣未區分「兵種適性較高的副將」執行者"
    }
   ],
   "quality": "S",
@@ -3597,21 +3635,23 @@
   "type": "passive",
   "kind": "phys",
   "coef": 0.5,
-  "rate": 0.35,
+  "rate": 0.6,
   "n": 1,
   "prep": 0,
   "effects": [
    {
     "k": "stun",
     "who": "enemy",
-    "dur": 1
+    "dur": 1,
+    "_approx": "「造成傷害時17.5%→35%機率使隨機敵軍單體進入計窮或震懾(擇一)」簡化為固定stun(震懾,全禁), 未表達「計窮或震懾」的擇一語意, 也未表達此段本身另有35%獨立機率(現用戰法整體rate=0.35近似, 與「造成傷害時」的觸發時機非完全等價)"
    },
    {
     "k": "counter",
     "who": "self",
     "coef": 0.5,
     "kind": "phys",
-    "prob": 0.6
+    "prob": 0.6,
+    "_note": "原文為「受到傷害時30%→60%機率對敵軍單體造成對應類型(受對應屬性影響)傷害」非嚴格反擊(不限攻擊來源), counter原語近似為反擊(僅對本次攻擊者造成傷害)"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -3775,8 +3815,9 @@
     "k": "stat",
     "who": "ally",
     "stat": "force",
-    "mult": 1.1,
-    "dur": 99
+    "add": 20,
+    "dur": 99,
+    "_note": "批13 ModeA修正: 原文「武力提升10→20(受武力影響)」為flat平加,非mult係數,stat.mult:1.1→stat.add:20"
    },
    {
     "k": "heal",
@@ -3790,7 +3831,10 @@
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "nMax": 3
+  "nMax": 3,
+  "when": {
+   "until": 2
+  }
  },
  {
   "nameZh": "焚輜營壘",
@@ -4009,9 +4053,10 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "silence",
     "who": "enemy",
-    "dur": 1
+    "dur": 1,
+    "_approx": "偽報(禁用被動戰法及指揮戰法)無精確對應原語(現有silence僅禁「主動戰法」,不含被動/指揮), 以計窮(silence)近似代表「禁戰法類」方向, 較stun(全禁,含普攻)更貼近原文範圍但仍非完全等價(silence會誤禁主動戰法, 但不會誤放行對方原本該被禁的被動/指揮戰法, 兩者互有過寬/過窄, 相較stun全面過度懲罰更保守)"
    }
   ],
   "quality": "S",
@@ -4139,7 +4184,16 @@
   "effects": [],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "extraHits": [
+   {
+    "coef": 0.6,
+    "kind": "phys",
+    "n": 3,
+    "rate": 0.5,
+    "_note": "若目標處於控制狀態則該次兵刃攻擊更強(120%→240%, 即基礎180%上再加60%);引擎無法判斷目標是否處於控制狀態, 以50%機率近似模擬「部分目標中控」的期望增量"
+   }
+  ]
  },
  {
   "nameZh": "百計多謀",
@@ -4174,7 +4228,15 @@
   "effects": [],
   "quality": "S",
   "cat": "BURST",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "extraHits": [
+   {
+    "coef": 1.2,
+    "kind": "phys",
+    "who": "enemyLeader",
+    "rate": 0.5
+   }
+  ]
  },
  {
   "nameZh": "益其金鼓",
@@ -4305,7 +4367,7 @@
   "kind": "phys",
   "coef": 0.86,
   "rate": 0.4,
-  "n": 2,
+  "n": 1,
   "prep": 0,
   "effects": [
    {
@@ -4318,7 +4380,13 @@
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "extraHits": [
+   {
+    "coef": 0.86,
+    "kind": "intel"
+   }
+  ]
  },
  {
   "nameZh": "瞋目橫矛",
@@ -4518,12 +4586,6 @@
     "who": "self",
     "coef": 0.2,
     "dur": 99
-   },
-   {
-    "k": "amp",
-    "who": "enemy",
-    "val": -0.9,
-    "dur": 1
    }
   ],
   "_src": "https://www.wywyx.com/gonglue/360587.html",
@@ -4531,7 +4593,23 @@
   "_conf": "med",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "when": {
+   "rounds": [
+    1,
+    3,
+    5,
+    7
+   ]
+  },
+  "extraHits": [
+   {
+    "coef": 1.2,
+    "kind": "intel",
+    "rate": 0.5,
+    "_note": "若自身智力高於目標則額外造成一次謀略傷害(120%), 引擎無法比較施法者與目標智力高低, 以50%機率近似"
+   }
+  ]
  },
  {
   "nameZh": "竭力佐謀",
@@ -4635,13 +4713,15 @@
     "who": "enemy",
     "val": -0.4,
     "dur": 3,
-    "scale": "force"
+    "scale": "force",
+    "_note": "僅套用敵軍主將(未區分目標篩選, who=enemy會套用全體敵軍非僅主將)"
    },
    {
     "k": "mitig",
-    "who": "ally",
+    "who": "subs",
     "val": 0.2,
-    "dur": 3
+    "dur": 3,
+    "_approx": "原文為兩名副將分別受「兵刃傷害-10%→20%」與「謀略傷害-10%→20%」的不同傷害類型減傷(各自只防一種傷害類型), mitig原語不分兵刃/謀略、套用給全部副將,近似為兩名副將都獲得同一份不分類型的20%減傷(比原文範圍更寬但方向一致)"
    }
   ],
   "quality": "S",
@@ -4769,7 +4849,7 @@
   "nameZh": "絕計折謀",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
+  "coef": 1.5,
   "rate": 0.4,
   "n": 1,
   "prep": 0,
@@ -5428,7 +5508,8 @@
     "k": "stack",
     "who": "self",
     "per": 0.1,
-    "max": 7
+    "max": 7,
+    "_approx": "原文為「7層蘭心,每層降低5%→10%自身造成和受到傷害」的雙向buff(增傷+減傷同源),stack原語僅表達單向增傷疊加, 減傷方向(受到傷害降低)未建模; 且stack是遞增疊層(開戰0層逐回合+1), 原文是「初始7層, 受擊消耗1層」的遞減疊層, 方向相反的近似"
    },
    {
     "k": "heal",
@@ -5593,8 +5674,9 @@
     "k": "stat",
     "who": "ally",
     "stat": "force",
-    "mult": 1.16,
-    "dur": 99
+    "add": 40,
+    "dur": 99,
+    "_note": "批13 ModeA修正: 原文「我軍全體提高20→40武力」為flat平加,非mult係數,stat.mult:1.16→stat.add:40"
    },
    {
     "k": "chargeup",
@@ -5778,7 +5860,8 @@
     "k": "amp",
     "who": "ally",
     "val": 0.25,
-    "dur": 3
+    "dur": 3,
+    "_approx": "「12.5%→25%會心機率, 觸發時兵刃傷害+100%」EV折算為常駐25%增傷(0.25機率×100%傷害加成=25% EV, 未建模會心的二元觸發性質,只作用於兵刃傷害而非常駐全類型增傷)"
    }
   ],
   "quality": "S",
@@ -6115,6 +6198,19 @@
     "val": -0.2,
     "dur": 99,
     "_note": "主將受到的兵刃/謀略傷害提高20%(負面,非減傷)"
+   },
+   {
+    "k": "amp",
+    "who": "subs",
+    "val": -0.15,
+    "dur": 99
+   },
+   {
+    "k": "mitig",
+    "who": "subs",
+    "val": 0.25,
+    "dur": 99,
+    "_note": "副將受到的兵刃/謀略傷害降低12.5%→25%"
    }
   ],
   "quality": "S",
@@ -6696,7 +6792,16 @@
   "effects": [],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "extraHits": [
+   {
+    "coef": 2.28,
+    "kind": "intel",
+    "who": "sameTarget",
+    "rate": 0.5,
+    "_note": "若目標處於灼燒狀態則額外造成一次謀略傷害(114%→228%), 50%機率為戰法本身發動機率(非條件判定), 引擎無法判斷目標是否處於灼燒狀態, 近似為無條件50%機率觸發"
+   }
+  ]
  },
  {
   "nameZh": "飛沙走石",
@@ -7340,14 +7445,20 @@
   "nameZh": "屠几上肉",
   "type": "active",
   "kind": "phys",
-  "coef": 3.0,
+  "coef": 1.5,
   "rate": 0.35,
   "n": 1,
   "prep": 0,
   "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "extraHits": [
+   {
+    "coef": 1.5,
+    "kind": "intel"
+   }
+  ]
  },
  {
   "nameZh": "左右開弓",
@@ -8008,14 +8119,21 @@
   "nameZh": "腹背受敵",
   "type": "active",
   "kind": "intel",
-  "coef": 2.32,
+  "coef": 1.16,
   "rate": 0.45,
   "n": 1,
   "prep": 0,
   "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "extraHits": [
+   {
+    "coef": 1.16,
+    "kind": "intel",
+    "who": "sameTarget"
+   }
+  ]
  },
  {
   "nameZh": "自癒",
@@ -8195,7 +8313,8 @@
   "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "lockTarget": true
  },
  {
   "nameZh": "長者之風",

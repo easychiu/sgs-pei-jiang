@@ -339,6 +339,30 @@
     return picked;
   }
 
+  // 批13: extraHits —— 多段傷害(兵刃+謀略雙段/主傷+補刀等單一 coef/kind/n 無法表達的戰法)。
+  // 戰法欄 "extraHits":[{coef,kind,n,nMax,rate,who,_note}]: 主 coef 結算後逐段獨立處理,
+  // 每段各自 rate 擲骰(預設1必發)、選目標、hit()。who 可選: "sameTarget"(沿用主 coef 段已
+  // 選定的(單體)目標, 如屠几上肉 兵刃+謀略同目標/一騎當千 主將加成同目標)、"enemyLeader"
+  // (固定打敵方主將 foes[0], 如百騎劫營/暗藏玄機 額外段明確打敵軍主將)、不填則預設
+  // pickTargets(敵方, 依 n/nMax)。與主 coef 段完全獨立(各自的 kind 可不同, 如兵刃主傷+謀略
+  // 補刀), 不與 hitsRepeat/lockTarget 互斥(hitsRepeat/lockTarget 只影響主 coef 段的選標方式,
+  // extraHits 段固定用上述規則)。
+  function fireExtraHits(u, t, tgt, alliesOf, foesOf, onHit) {
+    if (!t.extraHits) return;
+    for (const eh of t.extraHits) {
+      if (rnd() >= (eh.rate ?? 1)) continue;
+      const n = eh.n || 1;
+      const cnt = eh.nMax ? n + Math.floor(rnd() * (eh.nMax - n + 1)) : n;
+      let dests;
+      if (eh.who === "sameTarget") dests = tgt && tgt.alive ? [tgt] : [];        // 沿用主段已選定的(單體)目標
+      else if (eh.who === "enemyLeader") { const fl = foesOf(u)[0]; dests = (fl && fl.alive) ? [fl] : []; }  // 固定打敵方主將(index 0)
+      else if (cnt <= 1 && tgt && tgt.alive && !eh.who) dests = [tgt];   // 未指定 who 且單體: 沿用主段目標(向後相容預設行為)
+      else dests = pickTargets(foesOf(u), cnt);
+      if (TRACE && dests.length) lg(`　▸ ${t.nameZh || "?"}〔額外段〕${eh.kind === "intel" ? "謀略" : "兵刃"}傷害` + (eh._note ? `（${eh._note}）` : ""));
+      for (const v of dests) hit(u, v, eh.coef, eh.kind || "phys", false, onHit);
+    }
+  }
+
   const STAT_ZH = { force: "武力", intel: "智力", command: "統率", speed: "速度", all: "全屬性", charm: "魅力" };
   function effDesc(k, e, caster) {                  // 把15原語效果翻成可讀中文(供日誌); caster 供 scale 縮放後實際值顯示
     const p = v => Math.round(Math.abs(v) * 100) + "%";
@@ -420,6 +444,7 @@
       let dests;
       if (who === "self") dests = caster.alive ? [caster] : [];
       else if (who === "leader") dests = (allies[0] && allies[0].alive) ? [allies[0]] : [];  // 批8: 主將限定(隊伍 index 0)
+      else if (who === "subs") dests = allies.slice(1).filter(a => a.alive);  // 批13: 副將群限定(隊伍 index 0 以外; 如鋒矢陣/箕形陣副將分化段)
       else if (who === "enemy") {
         if (CTRL_K) {                                 // 群體控制(n>1 或有 nMax)隨機挑不重複目標; 單體優先鎖定 tgt
           const n = t.n || 1;
@@ -547,6 +572,7 @@
         dst.hitFlags.add(t);
         if (TRACE) lg(`【${dst.side}】${dst.nm} 戰法【${t.nameZh}】（受擊觸發）發動`);
         if (t.coef) hit(dst, src, t.coef, t.kind, false, onHit);
+        if (t.extraHits) fireExtraHits(dst, t, src, alliesOf, foesOf, onHit);  // 批13: 受擊觸發類多段傷害(如剛烈不屈 反擊後群體額外段)
         if (t.effects.length) applyEffects(dst, src, t, alliesOf(dst), foesOf(dst));
       }
     };
@@ -608,6 +634,7 @@
           else if ((t.type === "command" || t.type === "passive") && t.coef && !(t.when && t.when.on) && roundOk(t, r)) fire = rnd() < t.rate;  // 指揮/被動: 每回合以資料 rate 擲骰(多數 rate=1 即每回合必發); when.rounds/from/until 只在符合回合才擲骰; when.on(反應式) 改由 onHit 事件點觸發, 不在此處常駐擲骰
           if (fire) {
             if (TRACE) lg(`【${u.side}】${u.nm} 發動戰法【${t.nameZh}】` + (t.when ? `（第${r}回合條件）` : ""));
+            let _mainHitTgt = null;   // 批13: 記錄主 coef 段命中的(單體)目標, 供 extraHits 同目標段(如屠几上肉 兵刃+謀略打同一人)沿用
             if (t.coef) {
               const cnt = t.nMax ? (t.n + Math.floor(rnd() * (t.nMax - t.n + 1))) : t.n;
               // 批12 ModeB: hitsRepeat —— 「隨機單體攻擊X次/重複X次,每次獨立選擇目標」= N次獨立單體
@@ -618,10 +645,11 @@
               // 批12 ModeG: lockTarget —— 單體(cnt<=1)coef傷害目標改用 resolveLockedTarget(首次發動
               // pickTarget 選定後, 之後每次發動重用同一目標); 群體(cnt>1)/hitsRepeat 不套用鎖定語意
               // (lockTarget 資料上僅用於單體戰法, 群體/多段傷害維持原邏輯)。
-              if (t.lockTarget && cnt <= 1 && !t.hitsRepeat) { const v = resolveLockedTarget(u, t, foesOf(u)); if (v) hit(u, v, t.coef, t.kind, false, onHit); }
-              else if (t.hitsRepeat) { for (let i = 0; i < cnt; i++) { const v = pickTarget(foesOf(u), u); if (v) hit(u, v, t.coef, t.kind, false, onHit); } }
-              else for (const v of pickTargets(foesOf(u), cnt)) hit(u, v, t.coef, t.kind, false, onHit);
+              if (t.lockTarget && cnt <= 1 && !t.hitsRepeat) { const v = resolveLockedTarget(u, t, foesOf(u)); if (v) { hit(u, v, t.coef, t.kind, false, onHit); _mainHitTgt = v; } }
+              else if (t.hitsRepeat) { for (let i = 0; i < cnt; i++) { const v = pickTarget(foesOf(u), u); if (v) { hit(u, v, t.coef, t.kind, false, onHit); _mainHitTgt = v; } } }
+              else { const vs = pickTargets(foesOf(u), cnt); for (const v of vs) hit(u, v, t.coef, t.kind, false, onHit); if (vs.length === 1) _mainHitTgt = vs[0]; }
             }
+            if (t.extraHits) fireExtraHits(u, t, _mainHitTgt, alliesOf, foesOf, onHit);  // 批13: 多段傷害(兵刃+謀略雙段/主傷+補刀等)
             // 批12 ModeF: 混亂下單體主動戰法目標改敵我不分(pickTargetChaos); 群體/AoE(who=enemy 全體/
             // n>1)維持 applyEffects 內部既有邏輯不變 —— 這裡傳入的 tgt 只影響「單體優先鎖定」分支,
             // 群體戰法本就走 pickTargets(enemies,...) 不受此參數影響(近似, 群體戰法混亂下仍只打敵方)。
@@ -640,7 +668,7 @@
             for (let i = 0; i < extraCount(u.addbonus("extra")); i++) { const nt = pickTargetChaos(u, alliesOf(u), foesOf(u)); if (nt) { if (TRACE) lg(`【${u.side}】${u.nm} 連擊 → ${nt.nm}`); hit(u, nt, 1.0, "phys", true, onHit); } }
             // 突擊(charge)擲骰: chargeup(突擊發動率加成, 如虎豹騎)只對真突擊戰法生效, 排除 t.proc===true 的
             // 特技偽戰法(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲proc本身無此欄)。
-            for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate + (t.proc ? 0 : u.addbonusFor("chargeup", t))) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind, false, onHit); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
+            for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate + (t.proc ? 0 : u.addbonusFor("chargeup", t))) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind, false, onHit); if (t.extraHits) fireExtraHits(u, t, tgt, alliesOf, foesOf, onHit); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
           }
         }
       }
@@ -707,7 +735,7 @@
   const API = { buildPool, simulate, trace, score, recommend, fight, teamTroop, aptPct, bestTroop, TROOPS,
     defaultBingshu, activeBonds, seasonModsFor, mainByCat: () => MAIN_BY_CAT, subByCat: () => SUB_BY_CAT, bingshu: () => BINGSHU,
     bonds: () => BONDS, equips: () => EQUIPS,
-    Unit, hit, damage, pickTarget, pickTargets, pickTargetChaos, resolveLockedTarget, applyEffects, roundOk };  // 供測試腳本直接驗證內部機制(同 sgz.py 直接測 Unit/hit)
+    Unit, hit, damage, pickTarget, pickTargets, pickTargetChaos, resolveLockedTarget, applyEffects, roundOk, fireExtraHits };  // 供測試腳本直接驗證內部機制(同 sgz.py 直接測 Unit/hit)
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   root.SGZ = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);
