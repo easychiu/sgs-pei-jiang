@@ -12,7 +12,7 @@
     "k": "heal",
     "who": "self",
     "coef": 2.68,
-    "dur": 1
+    "dur": 3
    },
    {
     "k": "stat",
@@ -47,6 +47,11 @@
     "who": "self",
     "val": 0.07,
     "dur": 99
+   },
+   {
+    "k": "insight",
+    "who": "self",
+    "dur": 99
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -58,7 +63,7 @@
   "nameZh": "一騎當千",
   "type": "charge",
   "kind": "phys",
-  "coef": 1.08,
+  "coef": 0.72,
   "rate": 0.3,
   "n": 3,
   "prep": 0,
@@ -124,7 +129,8 @@
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "_est": true
  },
  {
   "nameZh": "上兵伐謀",
@@ -184,7 +190,8 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "乘敵不虞",
@@ -217,7 +224,7 @@
   "kind": "intel",
   "coef": 0,
   "rate": 1,
-  "n": 2,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -395,7 +402,7 @@
     "k": "amp",
     "who": "enemy",
     "val": 0.15,
-    "dur": 2
+    "dur": 1
    },
    {
     "k": "stat",
@@ -416,7 +423,7 @@
   "kind": "phys",
   "coef": 0,
   "rate": 0.4,
-  "n": 2,
+  "n": 1,
   "prep": 1,
   "effects": [
    {
@@ -433,14 +440,15 @@
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "nMax": 2
  },
  {
   "nameZh": "先成其慮",
   "type": "charge",
   "kind": "intel",
   "coef": 1.45,
-  "rate": 0.5,
+  "rate": 0.45,
   "n": 1,
   "prep": 0,
   "effects": [],
@@ -515,6 +523,11 @@
     "who": "enemy",
     "val": -0.3,
     "dur": 3
+   },
+   {
+    "k": "first",
+    "who": "self",
+    "dur": 3
    }
   ],
   "quality": "S",
@@ -587,7 +600,8 @@
   "_conf": "med",
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "別具匠心",
@@ -673,7 +687,7 @@
   "type": "passive",
   "kind": "phys",
   "coef": 0.84,
-  "rate": 1,
+  "rate": 0.4,
   "n": 2,
   "prep": 0,
   "effects": [
@@ -708,7 +722,8 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "功勳克舉",
@@ -781,7 +796,8 @@
   ],
   "quality": "S",
   "cat": "BURST",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "勠力同心",
@@ -808,7 +824,8 @@
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "_est": true
  },
  {
   "nameZh": "十二奇策",
@@ -816,7 +833,7 @@
   "kind": "intel",
   "coef": 1.02,
   "rate": 0.45,
-  "n": 1,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -850,13 +867,14 @@
   "_src": " +他AI補全effectText/重解",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "十面埋伏",
   "type": "active",
   "kind": "intel",
-  "coef": 0.96,
+  "coef": 0.74,
   "rate": 0.35,
   "n": 2,
   "prep": 0,
@@ -876,7 +894,7 @@
     "k": "amp",
     "who": "enemy",
     "val": 0.96,
-    "dur": 1
+    "dur": 2
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -889,7 +907,7 @@
   "type": "passive",
   "kind": "phys",
   "coef": 2.38,
-  "rate": 1,
+  "rate": 0.7,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -898,6 +916,11 @@
     "who": "self",
     "stat": "force",
     "mult": 1.2,
+    "dur": 2
+   },
+   {
+    "k": "insight",
+    "who": "self",
     "dur": 2
    }
   ],
@@ -910,7 +933,7 @@
   "type": "command",
   "kind": "phys",
   "coef": 1.06,
-  "rate": 1,
+  "rate": 0.49,
   "n": 3,
   "prep": 0,
   "effects": [
@@ -977,7 +1000,8 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "同戰身先",
@@ -996,7 +1020,7 @@
   "nameZh": "四面楚歌",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
+  "coef": 1.44,
   "rate": 0.5,
   "n": 2,
   "prep": 1,
@@ -1023,7 +1047,8 @@
   "effects": [],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "nMax": 3
  },
  {
   "nameZh": "固若金湯",
@@ -1045,6 +1070,11 @@
     "who": "self",
     "stat": "command",
     "mult": 1.15,
+    "dur": 2
+   },
+   {
+    "k": "insight",
+    "who": "self",
     "dur": 2
    }
   ],
@@ -1080,6 +1110,11 @@
     "who": "self",
     "val": 0.2,
     "dur": 3
+   },
+   {
+    "k": "first",
+    "who": "self",
+    "dur": 3
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -1113,7 +1148,7 @@
     "k": "mitig",
     "who": "ally",
     "val": 0.39,
-    "dur": 3
+    "dur": 2
    },
    {
     "k": "dot",
@@ -1142,6 +1177,11 @@
     "stat": "speed",
     "mult": 1,
     "dur": 2
+   },
+   {
+    "k": "insight",
+    "who": "self",
+    "dur": 2
    }
   ],
   "_src": "https://sgz.ejoy.com/xuzhi/detail-4847.html",
@@ -1155,8 +1195,8 @@
   "nameZh": "垂心萬物",
   "type": "command",
   "kind": "phys",
-  "coef": 0,
-  "rate": 1,
+  "coef": 1.0,
+  "rate": 0.7,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -1203,8 +1243,8 @@
   "nameZh": "士爭先赴",
   "type": "passive",
   "kind": "phys",
-  "coef": 0,
-  "rate": 1,
+  "coef": 1.2,
+  "rate": 0.5,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -1224,7 +1264,7 @@
   "type": "command",
   "kind": "phys",
   "coef": 1.5,
-  "rate": 1,
+  "rate": 0.5,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -1244,8 +1284,8 @@
   "type": "command",
   "kind": "phys",
   "coef": 1.22,
-  "rate": 1,
-  "n": 1,
+  "rate": 0.35,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -1320,7 +1360,8 @@
   "effects": [],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "_est": true
  },
  {
   "nameZh": "奇兵間道",
@@ -1347,7 +1388,8 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "奇施經略",
@@ -1368,7 +1410,7 @@
   "kind": "phys",
   "coef": 0,
   "rate": 1,
-  "n": 1,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -1484,7 +1526,8 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "威武並昭",
@@ -1513,7 +1556,8 @@
   "_conf": "med",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "威謀靡亢",
@@ -1552,7 +1596,7 @@
     "k": "amp",
     "who": "self",
     "val": 0.36,
-    "dur": 2
+    "dur": 1
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -1578,7 +1622,7 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 0.62,
+    "coef": 0.92,
     "dur": 1
    }
   ],
@@ -1624,7 +1668,7 @@
    {
     "k": "stun",
     "who": "enemy",
-    "dur": 1
+    "dur": 2
    }
   ],
   "quality": "S",
@@ -1663,15 +1707,16 @@
   "effects": [],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "密計誅逆",
   "type": "command",
   "kind": "intel",
-  "coef": 0,
-  "rate": 1,
-  "n": 1,
+  "coef": 0.25,
+  "rate": 0.5,
+  "n": 3,
   "prep": 1,
   "effects": [
    {
@@ -1686,7 +1731,7 @@
     "base": 1,
     "per": 0.25,
     "max": 3,
-    "dur": 1,
+    "dur": 2,
     "init": 0
    }
   ],
@@ -1705,7 +1750,7 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "silence",
     "who": "enemy",
     "dur": 2
    }
@@ -1719,7 +1764,7 @@
   "nameZh": "將門虎女",
   "type": "active",
   "kind": "phys",
-  "coef": 1.28,
+  "coef": 2.56,
   "rate": 0.6,
   "n": 2,
   "prep": 0,
@@ -1763,6 +1808,11 @@
     "who": "ally",
     "val": -0.15,
     "dur": 2
+   },
+   {
+    "k": "first",
+    "who": "ally",
+    "dur": 3
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -1823,8 +1873,8 @@
   "nameZh": "引弦力戰",
   "type": "passive",
   "kind": "phys",
-  "coef": 0,
-  "rate": 1,
+  "coef": 0.52,
+  "rate": 0.45,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -1846,7 +1896,7 @@
   "kind": "phys",
   "coef": 0,
   "rate": 1,
-  "n": 2,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -1964,7 +2014,8 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "扶危定傾",
@@ -1979,7 +2030,7 @@
     "k": "mitig",
     "who": "ally",
     "val": 0.39,
-    "dur": 1
+    "dur": 2
    },
    {
     "k": "stat",
@@ -2011,7 +2062,8 @@
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "nMax": 3
  },
  {
   "nameZh": "折衝禦侮",
@@ -2094,7 +2146,8 @@
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "振軍擊營",
@@ -2109,7 +2162,7 @@
     "k": "amp",
     "who": "enemy",
     "val": 2.35,
-    "dur": 1
+    "dur": 3
    },
    {
     "k": "stun",
@@ -2147,13 +2200,14 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "掣刀斫敵",
   "type": "active",
   "kind": "phys",
-  "coef": 0,
+  "coef": 2.08,
   "rate": 0.35,
   "n": 1,
   "prep": 0,
@@ -2178,16 +2232,16 @@
   "nameZh": "揮兵謀勝",
   "type": "command",
   "kind": "phys",
-  "coef": 0,
+  "coef": 0.94,
   "rate": 1,
-  "n": 2,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
     "k": "mitig",
     "who": "ally",
     "val": 0.3,
-    "dur": 2,
+    "dur": 1,
     "_note": "前3回合每回合60%概率（主將時基礎70%）賦予全體2-3人1次抵禦"
    },
    {
@@ -2217,7 +2271,7 @@
   "nameZh": "搦戰群雄",
   "type": "active",
   "kind": "phys",
-  "coef": 2,
+  "coef": 1.92,
   "rate": 0.35,
   "n": 2,
   "prep": 1,
@@ -2262,7 +2316,8 @@
   ],
   "quality": "S",
   "cat": "BURST",
-  "src": "EVENT"
+  "src": "EVENT",
+  "_est": true
  },
  {
   "nameZh": "撫輯軍民",
@@ -2334,7 +2389,8 @@
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "nMax": 3
  },
  {
   "nameZh": "整軍經武",
@@ -2354,7 +2410,8 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "文武雙全",
@@ -2382,7 +2439,8 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "智計",
@@ -2436,7 +2494,7 @@
   "nameZh": "暗箭難防",
   "type": "active",
   "kind": "phys",
-  "coef": 5.2,
+  "coef": 2.6,
   "rate": 0.35,
   "n": 2,
   "prep": 1,
@@ -2564,7 +2622,8 @@
   "_conf": "high",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "桃園結義",
@@ -2618,7 +2677,8 @@
   "_src": " +他AI補全effectText/重解",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "槍舞如風",
@@ -2633,7 +2693,7 @@
     "k": "mitig",
     "who": "ally",
     "val": 0.4,
-    "dur": 2,
+    "dur": 1,
     "_note": "賦予自身及友軍單體2次抵禦，持續1回合（若與關興同出必定選關興）"
    },
    {
@@ -2672,7 +2732,8 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "nMax": 3
  },
  {
   "nameZh": "橫戈躍馬",
@@ -2698,7 +2759,8 @@
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "橫掃千軍",
@@ -2737,7 +2799,8 @@
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "止戈為武",
@@ -2749,7 +2812,7 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "disarm",
     "who": "enemy",
     "dur": 1
    }
@@ -2795,7 +2858,7 @@
   "type": "passive",
   "kind": "phys",
   "coef": 1.3,
-  "rate": 1,
+  "rate": 0.5,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -2821,9 +2884,9 @@
   "nameZh": "毒泉拒蜀",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
-  "rate": 0.55,
-  "n": 1,
+  "coef": 2.7,
+  "rate": 0.6,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -2848,7 +2911,7 @@
   "nameZh": "氣凌三軍",
   "type": "passive",
   "kind": "phys",
-  "coef": 0.74,
+  "coef": 0.52,
   "rate": 1,
   "n": 1,
   "prep": 0,
@@ -2861,7 +2924,7 @@
   "nameZh": "水淹七軍",
   "type": "active",
   "kind": "phys",
-  "coef": 1.08,
+  "coef": 0.96,
   "rate": 0.5,
   "n": 2,
   "prep": 0,
@@ -2876,7 +2939,7 @@
     "k": "amp",
     "who": "enemy",
     "val": 0.2,
-    "dur": 1
+    "dur": 2
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -2902,8 +2965,8 @@
   "type": "command",
   "kind": "intel",
   "coef": 1.46,
-  "rate": 1,
-  "n": 1,
+  "rate": 0.5,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -2929,7 +2992,7 @@
   "type": "passive",
   "kind": "phys",
   "coef": 1.92,
-  "rate": 1,
+  "rate": 0.5,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -2970,7 +3033,7 @@
     "k": "amp",
     "who": "enemy",
     "val": 1.26,
-    "dur": 1
+    "dur": 2
    },
    {
     "k": "redirect",
@@ -3001,13 +3064,14 @@
   "effects": [],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "nMax": 3
  },
  {
   "nameZh": "沉斷機謀",
   "type": "active",
   "kind": "intel",
-  "coef": 0.78,
+  "coef": 1.56,
   "rate": 0.4,
   "n": 2,
   "prep": 0,
@@ -3057,8 +3121,8 @@
   "nameZh": "淑懿之德",
   "type": "command",
   "kind": "intel",
-  "coef": 0,
-  "rate": 1,
+  "coef": 0.25,
+  "rate": 0.5,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -3134,7 +3198,7 @@
   "kind": "phys",
   "coef": 0,
   "rate": 1,
-  "n": 2,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -3172,7 +3236,7 @@
   "type": "passive",
   "kind": "phys",
   "coef": 0.5,
-  "rate": 1,
+  "rate": 0.6,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -3286,14 +3350,15 @@
   "nameZh": "火熾原燎",
   "type": "active",
   "kind": "intel",
-  "coef": 1.18,
+  "coef": 0.56,
   "rate": 0.5,
   "n": 2,
   "prep": 0,
   "effects": [],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "nMax": 3
  },
  {
   "nameZh": "火燒連營",
@@ -3314,12 +3379,12 @@
     "k": "amp",
     "who": "enemy",
     "val": 0.62,
-    "dur": 1
+    "dur": 3
    },
    {
     "k": "stun",
     "who": "enemy",
-    "dur": 1
+    "dur": 3
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -3332,7 +3397,7 @@
   "type": "command",
   "kind": "phys",
   "coef": 1.42,
-  "rate": 1,
+  "rate": 0.15,
   "n": 2,
   "prep": 1,
   "effects": [
@@ -3340,7 +3405,7 @@
     "k": "amp",
     "who": "enemy",
     "val": 1.42,
-    "dur": 1
+    "dur": 3
    },
    {
     "k": "stat",
@@ -3359,7 +3424,8 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "nMax": 3
  },
  {
   "nameZh": "焚輜營壘",
@@ -3380,7 +3446,7 @@
   "kind": "intel",
   "coef": 0.8,
   "rate": 1,
-  "n": 2,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -3475,7 +3541,7 @@
     "k": "amp",
     "who": "enemy",
     "val": 1.18,
-    "dur": 1
+    "dur": 2
    },
    {
     "k": "dot",
@@ -3487,7 +3553,8 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "nMax": 3
  },
  {
   "nameZh": "獨行赴鬥",
@@ -3586,10 +3653,10 @@
     "k": "amp",
     "who": "enemy",
     "val": 2.08,
-    "dur": 1
+    "dur": 2
    },
    {
-    "k": "stun",
+    "k": "disarm",
     "who": "enemy",
     "dur": 2
    }
@@ -3604,8 +3671,8 @@
   "type": "command",
   "kind": "intel",
   "coef": 1.1,
-  "rate": 1,
-  "n": 1,
+  "rate": 0.45,
+  "n": 3,
   "prep": 0,
   "effects": [],
   "quality": "S",
@@ -3625,7 +3692,7 @@
     "k": "mitig",
     "who": "ally",
     "val": 0.1,
-    "dur": 1
+    "dur": 2
    },
    {
     "k": "stun",
@@ -3635,7 +3702,7 @@
    {
     "k": "stun",
     "who": "enemy",
-    "dur": 1
+    "dur": 2
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -3649,7 +3716,7 @@
   "kind": "phys",
   "coef": 0,
   "rate": 1,
-  "n": 1,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -3658,6 +3725,11 @@
     "stat": "speed",
     "mult": 1.5,
     "dur": 99
+   },
+   {
+    "k": "first",
+    "who": "ally",
+    "dur": 2
    }
   ],
   "quality": "S",
@@ -3682,7 +3754,7 @@
   "type": "command",
   "kind": "intel",
   "coef": 1.4,
-  "rate": 1,
+  "rate": 0.75,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -3752,7 +3824,7 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "disarm",
     "who": "enemy",
     "dur": 2
    }
@@ -3767,7 +3839,7 @@
   "kind": "intel",
   "coef": 0,
   "rate": 1,
-  "n": 1,
+  "n": 2,
   "prep": 0,
   "effects": [
    {
@@ -3795,7 +3867,7 @@
   "type": "passive",
   "kind": "phys",
   "coef": 1.4,
-  "rate": 1,
+  "rate": 0.45,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -3814,15 +3886,15 @@
   "nameZh": "眾志成城",
   "type": "command",
   "kind": "intel",
-  "coef": 0,
-  "rate": 1,
+  "coef": 0.96,
+  "rate": 0.72,
   "n": 1,
   "prep": 0,
   "effects": [
    {
     "k": "heal",
     "who": "ally",
-    "coef": 1,
+    "coef": 0.96,
     "dur": 99
    }
   ],
@@ -3836,7 +3908,7 @@
   "kind": "phys",
   "coef": 0.86,
   "rate": 0.4,
-  "n": 1,
+  "n": 2,
   "prep": 0,
   "effects": [
    {
@@ -3854,7 +3926,7 @@
   "nameZh": "瞋目橫矛",
   "type": "active",
   "kind": "phys",
-  "coef": 0,
+  "coef": 0.7,
   "rate": 0.4,
   "n": 1,
   "prep": 0,
@@ -3953,7 +4025,7 @@
   "type": "command",
   "kind": "intel",
   "coef": 1,
-  "rate": 1,
+  "rate": 0.35,
   "n": 2,
   "prep": 0,
   "effects": [
@@ -3993,7 +4065,7 @@
   "type": "passive",
   "kind": "intel",
   "coef": 0.68,
-  "rate": 1,
+  "rate": 0.8,
   "n": 3,
   "prep": 0,
   "effects": [
@@ -4021,7 +4093,7 @@
   "kind": "phys",
   "coef": 0,
   "rate": 0.5,
-  "n": 1,
+  "n": 3,
   "prep": 0,
   "effects": [],
   "quality": "S",
@@ -4032,7 +4104,7 @@
   "nameZh": "竊幸乘寵",
   "type": "command",
   "kind": "intel",
-  "coef": 0,
+  "coef": 0.9,
   "rate": 1,
   "n": 2,
   "prep": 0,
@@ -4076,7 +4148,8 @@
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "竭忠盡智",
@@ -4084,7 +4157,7 @@
   "kind": "intel",
   "coef": 0,
   "rate": 0.5,
-  "n": 2,
+  "n": 1,
   "prep": 1,
   "effects": [
    {
@@ -4103,13 +4176,14 @@
     "k": "mitig",
     "who": "ally",
     "val": 0.2,
-    "dur": 1
+    "dur": 2
    }
   ],
   "_src": " +他AI補全effectText/重解",
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "nMax": 2
  },
  {
   "nameZh": "符命自立",
@@ -4132,7 +4206,8 @@
   "_conf": "med",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "箕形陣",
@@ -4158,7 +4233,8 @@
   ],
   "quality": "S",
   "cat": "FORMATION",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "精練策數",
@@ -4173,10 +4249,10 @@
     "k": "amp",
     "who": "enemy",
     "val": 2.1,
-    "dur": 1
+    "dur": 2
    },
    {
-    "k": "stun",
+    "k": "disarm",
     "who": "enemy",
     "dur": 2
    }
@@ -4184,7 +4260,8 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "nMax": 3
  },
  {
   "nameZh": "累世立名",
@@ -4234,7 +4311,8 @@
   "effects": [],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "絕其汲道",
@@ -4247,7 +4325,8 @@
   "effects": [],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "nMax": 3
  },
  {
   "nameZh": "絕地反擊",
@@ -4281,14 +4360,15 @@
   "effects": [],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "經天緯地",
   "type": "command",
   "kind": "intel",
   "coef": 1,
-  "rate": 1,
+  "rate": 0.7,
   "n": 1,
   "prep": 0,
   "effects": [],
@@ -4335,7 +4415,7 @@
   "kind": "phys",
   "coef": 1.84,
   "rate": 1,
-  "n": 1,
+  "n": 2,
   "prep": 0,
   "effects": [
    {
@@ -4411,7 +4491,8 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "胡笳十八拍",
@@ -4426,7 +4507,7 @@
     "k": "heal",
     "who": "ally",
     "coef": 0.5,
-    "dur": 1
+    "dur": 2
    },
    {
     "k": "mitig",
@@ -4446,14 +4527,14 @@
   "kind": "intel",
   "coef": 0,
   "rate": 0.5,
-  "n": 1,
+  "n": 2,
   "prep": 0,
   "effects": [
    {
     "k": "heal",
     "who": "ally",
     "coef": 1.22,
-    "dur": 1
+    "dur": 2
    },
    {
     "k": "mitig",
@@ -4509,7 +4590,8 @@
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "EVENT"
+  "src": "EVENT",
+  "_est": true
  },
  {
   "nameZh": "臨戰先登",
@@ -4529,7 +4611,7 @@
   "nameZh": "臨機制勝",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
+  "coef": 1.2,
   "rate": 0.55,
   "n": 2,
   "prep": 0,
@@ -4549,7 +4631,8 @@
   "effects": [],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "_est": true
  },
  {
   "nameZh": "至柔動剛",
@@ -4557,7 +4640,7 @@
   "kind": "intel",
   "coef": 0,
   "rate": 1,
-  "n": 1,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -4612,13 +4695,14 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "興雲佈雨",
   "type": "command",
   "kind": "intel",
-  "coef": 0,
+  "coef": 0.72,
   "rate": 1,
   "n": 3,
   "prep": 0,
@@ -4638,7 +4722,7 @@
   "nameZh": "興雲布雨",
   "type": "command",
   "kind": "intel",
-  "coef": 0,
+  "coef": 0.72,
   "rate": 1,
   "n": 3,
   "prep": 0,
@@ -4664,7 +4748,7 @@
   "kind": "intel",
   "coef": 0,
   "rate": 1,
-  "n": 1,
+  "n": 3,
   "prep": 0,
   "effects": [],
   "quality": "S",
@@ -4760,7 +4844,8 @@
   "effects": [],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "_est": true
  },
  {
   "nameZh": "萬軍奪帥",
@@ -4799,7 +4884,8 @@
   "effects": [],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "EVENT"
+  "src": "EVENT",
+  "_est": true
  },
  {
   "nameZh": "蕙質蘭心",
@@ -4865,13 +4951,14 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "藤甲兵",
   "type": "command",
   "kind": "phys",
-  "coef": 0,
+  "coef": 3.0,
   "rate": 1,
   "n": 3,
   "prep": 0,
@@ -4892,7 +4979,7 @@
   "type": "command",
   "kind": "phys",
   "coef": 0.66,
-  "rate": 1,
+  "rate": 0.45,
   "n": 3,
   "prep": 0,
   "effects": [
@@ -4907,7 +4994,7 @@
     "k": "amp",
     "who": "self",
     "val": 0.66,
-    "dur": 1
+    "dur": 2
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -4940,7 +5027,8 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "虎衛軍",
@@ -4948,7 +5036,7 @@
   "kind": "phys",
   "coef": 0.72,
   "rate": 1,
-  "n": 1,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -5002,13 +5090,14 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "_est": true
  },
  {
   "nameZh": "處茲不惑",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
+  "coef": 0.68,
   "rate": 0.35,
   "n": 2,
   "prep": 0,
@@ -5040,7 +5129,7 @@
   "kind": "intel",
   "coef": 0,
   "rate": 1,
-  "n": 2,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -5098,7 +5187,8 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "_est": true
  },
  {
   "nameZh": "裸衣血戰",
@@ -5132,7 +5222,8 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "_est": true
  },
  {
   "nameZh": "西涼鐵騎",
@@ -5158,7 +5249,7 @@
   "nameZh": "解煩衛",
   "type": "command",
   "kind": "phys",
-  "coef": 0,
+  "coef": 0.72,
   "rate": 1,
   "n": 3,
   "prep": 0,
@@ -5226,7 +5317,7 @@
     "dur": 2
    },
    {
-    "k": "stun",
+    "k": "silence",
     "who": "enemy",
     "dur": 2
    }
@@ -5240,7 +5331,7 @@
   "nameZh": "誘敵深入",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
+  "coef": 1.4,
   "rate": 0.4,
   "n": 2,
   "prep": 1,
@@ -5306,7 +5397,7 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "silence",
     "who": "enemy",
     "dur": 1
    }
@@ -5359,7 +5450,7 @@
   "nameZh": "酒池肉林",
   "type": "passive",
   "kind": "phys",
-  "coef": 0.68,
+  "coef": 0.6,
   "rate": 1,
   "n": 3,
   "prep": 0,
@@ -5396,7 +5487,7 @@
     "k": "mitig",
     "who": "ally",
     "val": 0.35,
-    "dur": 2
+    "dur": 3
    },
    {
     "k": "heal",
@@ -5449,7 +5540,7 @@
   "kind": "phys",
   "coef": 0,
   "rate": 1,
-  "n": 1,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -5475,7 +5566,7 @@
   "kind": "phys",
   "coef": 0,
   "rate": 1,
-  "n": 3,
+  "n": 2,
   "prep": 0,
   "effects": [
    {
@@ -5487,7 +5578,8 @@
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "nMax": 3
  },
  {
   "nameZh": "錦囊妙計",
@@ -5541,15 +5633,16 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "錦帆軍",
   "type": "command",
   "kind": "phys",
-  "coef": 1.1,
-  "rate": 1,
-  "n": 1,
+  "coef": 0.64,
+  "rate": 0.45,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -5602,7 +5695,7 @@
    {
     "k": "stun",
     "who": "enemy",
-    "dur": 2
+    "dur": 3
    },
    {
     "k": "stat",
@@ -5659,7 +5752,7 @@
     "share": 0.25
    },
    {
-    "k": "stun",
+    "k": "silence",
     "who": "enemy",
     "dur": 1
    }
@@ -5708,7 +5801,7 @@
   "type": "passive",
   "kind": "phys",
   "coef": 0.95,
-  "rate": 1,
+  "rate": 0.68,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -5736,7 +5829,7 @@
   "kind": "phys",
   "coef": 0,
   "rate": 1,
-  "n": 1,
+  "n": 3,
   "prep": 0,
   "effects": [],
   "quality": "S",
@@ -5756,7 +5849,7 @@
     "k": "heal",
     "who": "ally",
     "coef": 0.68,
-    "dur": 1
+    "dur": 2
    },
    {
     "k": "mitig",
@@ -5798,7 +5891,8 @@
   "_conf": "med",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "震駭四境",
@@ -5817,7 +5911,7 @@
     "note": "第一擊後施加受傷提升約30%（受武力影響），持續2回合"
    },
    {
-    "k": "stun",
+    "k": "silence",
     "who": "enemy",
     "dur": 1,
     "note": "第二擊後施加計窮1回合（禁止發動主動戰法）"
@@ -5836,12 +5930,13 @@
   "kind": "phys",
   "coef": 0,
   "rate": 0.55,
-  "n": 1,
+  "n": 2,
   "prep": 0,
   "effects": [],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "nMax": 3
  },
  {
   "nameZh": "青囊",
@@ -5877,7 +5972,7 @@
   "kind": "phys",
   "coef": 0.72,
   "rate": 1,
-  "n": 2,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -5909,7 +6004,8 @@
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "EVENT"
+  "src": "EVENT",
+  "_est": true
  },
  {
   "nameZh": "韜心惑敵",
@@ -5921,7 +6017,7 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "silence",
     "who": "enemy",
     "dur": 1
    },
@@ -5929,7 +6025,7 @@
     "k": "amp",
     "who": "enemy",
     "val": -0.3,
-    "dur": 3
+    "dur": 1
    }
   ],
   "quality": "S",
@@ -5982,7 +6078,7 @@
   "nameZh": "飛沙走石",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
+  "coef": 0.58,
   "rate": 0.5,
   "n": 2,
   "prep": 0,
@@ -5999,14 +6095,14 @@
     "k": "dot",
     "who": "enemy",
     "coef": 0.58,
-    "dur": 2,
+    "dur": 1,
     "note": "奇數回合：敵2人陷入水攻狀態，傷害率58%/回，持續2回合"
    },
    {
     "k": "dot",
     "who": "enemy",
     "coef": 1.08,
-    "dur": 2,
+    "dur": 1,
     "note": "偶數回合：敵單體武力智力互換（近似智力大幅提傷），並陷入沙暴，傷害率108%/回，持續2回合；互換效果引擎無法精確表示，以高傷DoT近似"
    },
    {
@@ -6028,7 +6124,7 @@
   "kind": "intel",
   "coef": 0,
   "rate": 1,
-  "n": 1,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -6046,8 +6142,8 @@
   "nameZh": "高櫓連營",
   "type": "command",
   "kind": "phys",
-  "coef": 0,
-  "rate": 1,
+  "coef": 0.82,
+  "rate": 0.5,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -6064,7 +6160,7 @@
     "dur": 2
    },
    {
-    "k": "stun",
+    "k": "disarm",
     "who": "enemy",
     "dur": 2
    }
@@ -6097,7 +6193,7 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "silence",
     "who": "enemy",
     "dur": 1
    }
@@ -6152,7 +6248,8 @@
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_est": true
  },
  {
   "nameZh": "鴆毒",
@@ -6222,7 +6319,7 @@
   "type": "command",
   "kind": "intel",
   "coef": 1.54,
-  "rate": 1,
+  "rate": 0.8,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -6254,7 +6351,7 @@
   "prep": 1,
   "effects": [
    {
-    "k": "stun",
+    "k": "silence",
     "who": "enemy",
     "dur": 2
    }
@@ -6357,7 +6454,7 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "disarm",
     "who": "enemy",
     "dur": 2
    }
@@ -6371,7 +6468,7 @@
   "type": "active",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.2,
+  "rate": 0.3,
   "n": 2,
   "prep": 1,
   "effects": [
@@ -6521,7 +6618,7 @@
     "dur": 99
    },
    {
-    "k": "stun",
+    "k": "disarm",
     "who": "enemy",
     "dur": 1
    }
@@ -6534,7 +6631,7 @@
   "nameZh": "妖術",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
+  "coef": 0.72,
   "rate": 0.4,
   "n": 3,
   "prep": 1,
@@ -6560,9 +6657,9 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "disarm",
     "who": "enemy",
-    "dur": 1
+    "dur": 2
    }
   ],
   "quality": "A",
@@ -6634,13 +6731,14 @@
   "type": "active",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.25,
+  "rate": 0.45,
   "n": 1,
   "prep": 0,
   "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "彎弓飲羽",
@@ -6659,7 +6757,7 @@
     "dur": 1
    },
    {
-    "k": "stun",
+    "k": "silence",
     "who": "enemy",
     "dur": 1
    }
@@ -6705,14 +6803,15 @@
   "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "挫志怒襲",
   "type": "active",
   "kind": "phys",
   "coef": 1.88,
-  "rate": 0.25,
+  "rate": 0.35,
   "n": 2,
   "prep": 1,
   "effects": [
@@ -6771,7 +6870,7 @@
   "kind": "phys",
   "coef": 1.64,
   "rate": 0.35,
-  "n": 2,
+  "n": 1,
   "prep": 0,
   "effects": [
    {
@@ -6783,7 +6882,8 @@
   ],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "nMax": 2
  },
  {
   "nameZh": "料事如神",
@@ -6816,7 +6916,8 @@
   "effects": [],
   "quality": "A",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "暗潮洶湧",
@@ -6829,13 +6930,14 @@
   "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "暗潮湧動",
   "type": "active",
   "kind": "phys",
-  "coef": 0,
+  "coef": 2.72,
   "rate": 0.35,
   "n": 1,
   "prep": 0,
@@ -6894,13 +6996,14 @@
   ],
   "quality": "A",
   "cat": "INTERNAL",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "機略縱橫",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
+  "coef": 0.58,
   "rate": 0.45,
   "n": 2,
   "prep": 1,
@@ -6921,13 +7024,14 @@
   "type": "active",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.3,
+  "rate": 0.45,
   "n": 1,
   "prep": 0,
   "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "爭分奪秒",
@@ -6940,7 +7044,8 @@
   "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "白眉",
@@ -6953,7 +7058,8 @@
   "effects": [],
   "quality": "A",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "百鍊成鋼",
@@ -6995,7 +7101,8 @@
   ],
   "quality": "A",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "矢志不移",
@@ -7057,7 +7164,8 @@
   ],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "短兵相見",
@@ -7084,7 +7192,7 @@
   "nameZh": "神上使",
   "type": "active",
   "kind": "phys",
-  "coef": 0,
+  "coef": 0.68,
   "rate": 0.5,
   "n": 3,
   "prep": 1,
@@ -7118,7 +7226,8 @@
   ],
   "quality": "A",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "縱兵劫掠",
@@ -7164,7 +7273,7 @@
   "nameZh": "腹背受敵",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
+  "coef": 1.16,
   "rate": 0.45,
   "n": 1,
   "prep": 0,
@@ -7229,7 +7338,7 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "silence",
     "who": "enemy",
     "dur": 1
    }
@@ -7263,7 +7372,7 @@
    {
     "k": "stun",
     "who": "ally",
-    "dur": 1
+    "dur": 3
    },
    {
     "k": "heal",
@@ -7369,7 +7478,8 @@
   ],
   "quality": "A",
   "cat": "COMMAND",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "風聲鶴唳",
@@ -7422,7 +7532,7 @@
   "type": "command",
   "kind": "phys",
   "coef": 0.72,
-  "rate": 1,
+  "rate": 0.35,
   "n": 2,
   "prep": 0,
   "effects": [],
@@ -7435,7 +7545,7 @@
   "type": "active",
   "kind": "intel",
   "coef": 0,
-  "rate": 0.3,
+  "rate": 0.45,
   "n": 3,
   "prep": 0,
   "effects": [
@@ -7456,12 +7566,12 @@
   "type": "active",
   "kind": "phys",
   "coef": 1.56,
-  "rate": 0.25,
+  "rate": 0.45,
   "n": 1,
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "disarm",
     "who": "enemy",
     "dur": 1
    }
@@ -7522,7 +7632,8 @@
   "effects": [],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "伐木精通",
@@ -7541,7 +7652,7 @@
   "nameZh": "刺傷",
   "type": "active",
   "kind": "phys",
-  "coef": 0,
+  "coef": 0.7,
   "rate": 0.4,
   "n": 1,
   "prep": 0,
@@ -7562,7 +7673,7 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 1.2,
+    "coef": 1.6,
     "dur": 1
    }
   ],
@@ -7613,7 +7724,7 @@
   "nameZh": "壓制",
   "type": "active",
   "kind": "phys",
-  "coef": 0,
+  "coef": 0.8,
   "rate": 0.25,
   "n": 1,
   "prep": 0,
@@ -7633,7 +7744,8 @@
   "effects": [],
   "quality": "B",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "妙書銘石",
@@ -7692,7 +7804,7 @@
   "type": "active",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.3,
+  "rate": 0.6,
   "n": 3,
   "prep": 0,
   "effects": [
@@ -7750,7 +7862,7 @@
   "nameZh": "揮砍",
   "type": "active",
   "kind": "phys",
-  "coef": 1,
+  "coef": 1.25,
   "rate": 0.5,
   "n": 1,
   "prep": 0,
@@ -7772,7 +7884,7 @@
     "k": "heal",
     "who": "ally",
     "coef": 0.75,
-    "dur": 2
+    "dur": 1
    }
   ],
   "quality": "B",
@@ -7783,8 +7895,8 @@
   "nameZh": "放火",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
-  "rate": 0.35,
+  "coef": 1.0,
+  "rate": 0.4,
   "n": 1,
   "prep": 0,
   "effects": [],
@@ -7796,7 +7908,7 @@
   "nameZh": "橫掃",
   "type": "active",
   "kind": "phys",
-  "coef": 0,
+  "coef": 0.5,
   "rate": 0.3,
   "n": 1,
   "prep": 0,
@@ -7809,8 +7921,8 @@
   "nameZh": "殿後",
   "type": "active",
   "kind": "phys",
-  "coef": 0,
-  "rate": 0.25,
+  "coef": 1.0,
+  "rate": 0.4,
   "n": 1,
   "prep": 0,
   "effects": [],
@@ -7822,7 +7934,7 @@
   "nameZh": "毒氣",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
+  "coef": 1.0,
   "rate": 0.35,
   "n": 1,
   "prep": 0,
@@ -7835,7 +7947,7 @@
   "nameZh": "火攻",
   "type": "active",
   "kind": "intel",
-  "coef": 1,
+  "coef": 1.5,
   "rate": 0.4,
   "n": 1,
   "prep": 0,
@@ -7848,7 +7960,7 @@
   "nameZh": "牽制",
   "type": "active",
   "kind": "phys",
-  "coef": 1,
+  "coef": 1.25,
   "rate": 0.35,
   "n": 1,
   "prep": 0,
@@ -7858,14 +7970,14 @@
     "who": "enemy",
     "stat": "force",
     "mult": 0.9,
-    "dur": 2
+    "dur": 1
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "intel",
     "mult": 0.9,
-    "dur": 2
+    "dur": 1
    }
   ],
   "quality": "B",
@@ -7876,7 +7988,7 @@
   "nameZh": "牽連",
   "type": "charge",
   "kind": "phys",
-  "coef": 0,
+  "coef": 1.25,
   "rate": 0.35,
   "n": 1,
   "prep": 0,
@@ -7890,13 +8002,14 @@
   "type": "charge",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.45,
+  "rate": 0.15,
   "n": 1,
   "prep": 0,
   "effects": [],
   "quality": "B",
   "cat": "BURST",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "砍伐",
@@ -7916,13 +8029,14 @@
   "type": "charge",
   "kind": "phys",
   "coef": 0,
-  "rate": 1,
+  "rate": 0.35,
   "n": 1,
   "prep": 0,
   "effects": [],
   "quality": "B",
   "cat": "BURST",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "碩果累累",
@@ -7994,13 +8108,14 @@
   "type": "active",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.23,
+  "rate": 0.25,
   "n": 1,
   "prep": 0,
   "effects": [],
   "quality": "B",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "識破",
@@ -8013,13 +8128,14 @@
   "effects": [],
   "quality": "B",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "踐踏",
   "type": "active",
   "kind": "phys",
-  "coef": 0.8,
+  "coef": 1.55,
   "rate": 0.35,
   "n": 2,
   "prep": 0,
@@ -8039,13 +8155,14 @@
   "effects": [],
   "quality": "B",
   "cat": "BURST",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "還擊",
   "type": "active",
   "kind": "phys",
-  "coef": 0,
+  "coef": 0.5,
   "rate": 0.35,
   "n": 1,
   "prep": 0,
@@ -8110,7 +8227,7 @@
   "nameZh": "鬥智",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
+  "coef": 0.77,
   "rate": 0.3,
   "n": 1,
   "prep": 0,

@@ -13,16 +13,15 @@ import random
 import re
 from itertools import combinations
 
-DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs", "data")  # docs/data 是雙引擎共用的現行資料(root data/ 為協作者的舊/暫存副本, 不可寫)
 ROUNDS = 8
 START_TROOP = 10000
 MORALE = 100                                         # ponytail: 士氣固定滿
 CITY = 20                                            # 城建滿: 武智統速各+20(每級+2×10級)
 FACTION = 1.10                                       # 陣營滿: 全屬性+10%(每級1%×10級)
-# 指揮/被動戰法的傷害多為條件觸發(敵出主動時、第N回合起…), 引擎無法判條件,
-# 用觸發折扣近似。ponytail: 全域旋鈕, 要精準得逐戰法建模條件
-CMD_TRIGGER = 0.40
-PASSIVE_TRIGGER = 0.45
+# 指揮/被動戰法: 開戰即套用其 effects(被動效果), 帶傷害 coef 的部分每回合以資料
+# 的 rate 擲骰(多數 rate=1.0 即每回合必發); rate 來自 tactics_parsed.json 的
+# activationRate 回填, 不再用發明的全域折扣常數近似。
 
 COUNTER = {"騎": "盾", "盾": "弓", "弓": "槍", "槍": "騎"}  # 騎>盾>弓>槍>騎; 器全被克
 APT_PCT = {"S": 1.20, "A": 1.00, "B": 0.85, "C": 0.70, "D": 0.55, None: 0.85}
@@ -117,7 +116,7 @@ class General:
 def team_troop(team):                                 # 一隊的建議兵種: 三人適性總和最高者
     gs = [POOL[n] for n in team]
     return max(("騎", "盾", "弓", "槍", "器"),
-               key=lambda t: sum(g.apt_pct(t) for g in gs))
+               key=lambda t: round(sum(g.apt_pct(t) for g in gs), 4))  # 抹平浮點誤差, 與 engine.js 平手取先序
 
 
 # 優先用 LLM 解析檔(tactics_parsed.json), 沒有才退回正則啟發式
@@ -234,6 +233,10 @@ def recommend(pool=None, k=3, top=8):
 class Unit:
     def __init__(self, g, ttype, bingshu=None, equip=None, add=None, inherit=None, season=None):
         self.g, self.ttype, self.troop, self.stun = g, ttype, START_TROOP, 0
+        self.silence = 0                              # 計窮: 無法發動主動戰法
+        self.disarm = 0                                # 繳械: 無法普通攻擊(含連擊/突擊)
+        self.insight = 0                               # 洞察: 免疫 stun/silence/disarm, 施加時同時解除
+        self.first = 0                                 # 先攻: 剩餘回合數, 排序時優先於速度
         self.tactics = ([g.tactic] if g.tactic else []) + \
             [TACTICS[nm] for nm in (inherit or []) if nm in TACTICS]  # 自帶 + 傳承戰法
         _bn = bingshu if isinstance(bingshu, (list, tuple)) else ([bingshu] if bingshu else [])
@@ -248,12 +251,12 @@ class Unit:
         self.intel = (g.base["intel"] + CITY + a.get("intel", 0) + flat) * apt * scm * FACTION
         self.command = (g.base["command"] + CITY + a.get("command", 0) + flat) * apt * scm * FACTION
         self.speed = (g.base["speed"] + CITY + a.get("speed", 0) + flat) * apt * scm * FACTION
-        self.mods = []                                # 乘法: [stat, mult, left]
-        self.adds = []                                # 加法: [amp|mitig|extra, val, left]
-        if a.get("amp"):                              # 進階/典藏 攻防加成: 每階+2%攻+2%防
-            self.adds.append(["amp", a["amp"], 9999])
+        self.mods = []                                # 乘法: [stat, mult, left, src]
+        self.adds = []                                # 加法: [amp|mitig|extra, val, left, src]
+        if a.get("amp"):                              # 進階/典藏 攻防加成: 每階+2%攻+2%防(無來源, 不去重)
+            self.adds.append(["amp", a["amp"], 9999, None])
         if a.get("mitig"):
-            self.adds.append(["mitig", a["mitig"], 9999])
+            self.adds.append(["mitig", a["mitig"], 9999, None])
         self.dots = []                                # 持續傷害: [每回合傷害, left]
         self.settle = None                            # 結算狀態(猛毒)
         self.guardian = None                          # 傷害轉移: 代承者
@@ -271,13 +274,13 @@ class Unit:
         if self.swap and stat in ("force", "intel"):  # 武智互換
             stat = "intel" if stat == "force" else "force"
         v = getattr(self, stat)
-        for s, m, _ in self.mods:
+        for s, m, *_ in self.mods:
             if s == stat or s == "all":               # stat="all" 套全屬性
                 v *= m
         return v
 
     def addbonus(self, kind):
-        return sum(v for k, v, _ in self.adds if k == kind)
+        return sum(v for k, v, *_ in self.adds if k == kind)
 
     def amp(self):                                    # 總增傷 = 一般+疊加層+衰減
         a = self.addbonus("amp")
@@ -287,13 +290,28 @@ class Unit:
             a += self.decay["v0"] * self.decay["left"] / self.decay["total"]
         return a
 
+    def push_add(self, kind, val, dur, src=None):
+        """同來源(戰法名)同種效果 刷新而非疊加。src=None(兵書/裝備/緣分)不去重。"""
+        if src:
+            self.adds = [a for a in self.adds if not (a[0] == kind and a[3] == src)]
+        self.adds.append([kind, val, dur, src])
+
+    def push_mod(self, stat, mult, dur, src=None):
+        if src:
+            self.mods = [m for m in self.mods if not (m[0] == stat and m[3] == src)]
+        self.mods.append([stat, mult, dur, src])
+
     def tick(self):
         for dmg, _ in self.dots:                      # 持續傷害結算
             self.troop -= dmg
         self.dots = [[d, l - 1] for d, l in self.dots if l - 1 > 0]
-        self.mods = [[s, m, l - 1] for s, m, l in self.mods if l - 1 > 0]
-        self.adds = [[k, v, l - 1] for k, v, l in self.adds if l - 1 > 0]
+        self.mods = [[s, m, l - 1, src] for s, m, l, src in self.mods if l - 1 > 0]
+        self.adds = [[k, v, l - 1, src] for k, v, l, src in self.adds if l - 1 > 0]
         self.stun = max(0, self.stun - 1)
+        self.silence = max(0, self.silence - 1)
+        self.disarm = max(0, self.disarm - 1)
+        self.insight = max(0, self.insight - 1)
+        self.first = max(0, self.first - 1)            # 先攻: 逐回合遞減(dur=N 覆蓋前 N 回合, 如「戰鬥前3回合」)
         self.swap = max(0, self.swap - 1)
         if self.decay:
             self.decay["left"] -= 1
@@ -334,12 +352,20 @@ def extra_count(ex):                                  # 連擊/追擊次數: 整
     return int(ex) + (1 if random.random() < (ex - int(ex)) else 0)
 
 
-def pick_target(units):
+def pick_target(units):                               # 普攻/單體戰法: 隨機挑一個存活敵軍(不再固定打兵力最高)
     live = [u for u in units if u.alive]
-    return max(live, key=lambda u: u.troop) if live else None
+    return random.choice(live) if live else None
+
+
+def pick_targets(units, n):                           # 群體戰法: 隨機挑 n 個不重複存活目標
+    live = [u for u in units if u.alive]
+    if len(live) <= n:
+        return live
+    return random.sample(live, n)
 
 
 def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=False):
+    src = t.get("nameZh")                              # 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → None, 不去重)
     for e in t["effects"]:
         k = e["k"]
         if heal_only and k != "heal":                 # 指揮/被動逐回合只跑治療
@@ -372,30 +398,50 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     a.guardian, a.guard_share = guardian, e.get("share", 0.3)
             continue
         who = e.get("who", "ally")
+        ctrl_k = k in ("stun", "silence", "disarm")   # 控制類: 按戰法 n/nMax 選目標數
         if who == "self":
             dests = [caster] if caster.alive else []
         elif who == "enemy":
-            dests = ([tgt] if tgt and tgt.alive else []) if k == "stun" \
-                else [x for x in enemies if x.alive]
+            if ctrl_k:                                # 群體控制隨機挑不重複目標; 單體優先鎖定 tgt
+                n = t.get("n") or 1
+                cnt = n + random.randint(0, t["nMax"] - n) if t.get("nMax") else n
+                if cnt <= 1:
+                    dests = [tgt] if tgt and tgt.alive else pick_targets(enemies, 1)
+                else:
+                    dests = pick_targets(enemies, cnt)
+            else:
+                dests = [x for x in enemies if x.alive]
         else:
             dests = [a for a in allies if a.alive]
         for u in dests:
             if k == "amp":
                 if who == "enemy" and e["val"] > 0:   # 修正: 敵方正amp(誤幫敵增傷)→ 視為敵方易傷
-                    u.adds.append(["mitig", -e["val"], e["dur"]])
+                    u.push_add("mitig", -e["val"], e["dur"], src)
                 else:
-                    u.adds.append(["amp", e["val"], e["dur"]])
+                    u.push_add("amp", e["val"], e["dur"], src)
             elif k == "mitig":
-                u.adds.append(["mitig", e["val"], e["dur"]])
+                u.push_add("mitig", e["val"], e["dur"], src)
             elif k == "stun":
-                u.stun = max(u.stun, e["dur"] + 1)
+                if not u.insight:
+                    u.stun = max(u.stun, e["dur"] + 1)
+            elif k == "silence":
+                if not u.insight:
+                    u.silence = max(u.silence, e["dur"] + 1)
+            elif k == "disarm":
+                if not u.insight:
+                    u.disarm = max(u.disarm, e["dur"] + 1)
+            elif k == "insight":                      # 洞察: 免疫控制, 施加時同時解除既有控制
+                u.insight = max(u.insight, e.get("dur", 1) + 1)
+                u.stun = u.silence = u.disarm = 0
+            elif k == "first":                        # 先攻: 本回合旗標, 優先於速度排序
+                u.first = max(u.first, e.get("dur", 1))
             elif k == "stat":
-                u.mods.append([e["stat"], e.get("mult", 1.0), e["dur"]])
+                u.push_mod(e["stat"], e.get("mult", 1.0), e["dur"], src)
             elif k == "dot":                          # 持續傷害: 套用時定格每回合傷害
                 u.dots.append([damage(caster, u, e.get("coef", 0.5),
                                       t.get("kind", "intel")), e["dur"]])
             elif k == "extra":                        # 連擊/追擊: 普攻後追加普攻的預算
-                u.adds.append(["extra", e["val"], e["dur"]])
+                u.push_add("extra", e["val"], e["dur"], src)
             elif k == "stack":                        # 疊加增益: 每回合+1層, 每層加 per 增傷
                 u.stack = {"per": e.get("per", 0.1), "max": e.get("max", 5), "n": 0}
             elif k == "decay":                        # 衰減增益: 開場 v0 增傷, rounds 內線性歸零
@@ -404,7 +450,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             elif k == "swap":                         # 武智互換
                 u.swap = max(u.swap, e.get("dur", 1) + 1)
             elif k == "pierce":                       # 看破: 無視目標 val 比例的減傷
-                u.adds.append(["pierce", e["val"], e["dur"]])
+                u.push_add("pierce", e["val"], e["dur"], src)
             elif k == "counter":                      # 反擊: 受擊時還擊
                 u.counter = {"coef": e.get("coef", 1.0), "kind": e.get("kind", "phys"),
                              "prob": e.get("prob", 1.0)}
@@ -431,13 +477,20 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
     foes_of = lambda u: B if id(u) in setA else A
     bonds = {id(A[0]) if A else 0: active_bonds(teamA), id(B[0]) if B else 1: active_bonds(teamB)}
 
-    def apply_passives(no_heal=False, heal_only=False):  # 被動/指揮/兵書/裝備/緣分 統一套用
+    CAT_ORDER = ("PASSIVE", "FORMATION", "TROOP", "COMMAND")  # 準備階段嚴格順序: 被動→陣法→兵種→指揮(與 engine.js parity)
+    cat_of = lambda t: t.get("cat") if t.get("cat") in CAT_ORDER else "COMMAND"
+
+    def apply_passives(no_heal=False, heal_only=False):  # 被動/陣法/兵種/指揮(依序) + 兵書/裝備/緣分
+        for cat in CAT_ORDER:
+            for u in A + B:
+                if not u.alive:
+                    continue
+                for t in u.tactics:                   # 同將多個同類: 戰法格順序(陣列順序)決定先後
+                    if t["type"] in ("passive", "command") and cat_of(t) == cat:
+                        apply_effects(u, None, t, allies_of(u), foes_of(u), no_heal=no_heal, heal_only=heal_only)
         for u in A + B:
             if not u.alive:
                 continue
-            for t in u.tactics:                       # 自帶 + 傳承 的被動/指揮持久效果
-                if t["type"] in ("passive", "command"):
-                    apply_effects(u, None, t, allies_of(u), foes_of(u), no_heal=no_heal, heal_only=heal_only)
             for eff in (u.bs, u.eq):
                 if eff:
                     apply_effects(u, None, {"effects": eff, "kind": "phys"}, allies_of(u), foes_of(u),
@@ -456,30 +509,32 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 u.stack["n"] = min(u.stack["max"], u.stack["n"] + 1)
         apply_passives(heal_only=True)                # 逐回合治療(含兵書/裝備/緣分)
 
+        # 行動順序: 先攻(first)優先於速度; 各組內仍按速度高到低排序
         for u in sorted([x for x in A + B if x.alive],
-                        key=lambda x: x.eff("speed"), reverse=True):
+                        key=lambda x: (x.first, x.eff("speed")), reverse=True):
             if not u.alive or u.stun:
                 continue
             if pick_target(foes_of(u)) is None:
                 break
-            for t in u.tactics:                           # 自帶 + 傳承: 各自獨立附加發動(不占普攻)
-                fire = False
-                if t["type"] == "active" and (t["coef"] or t["effects"]) \
-                        and not (t["prep"] and rnd == 1):
-                    fire = random.random() < t["rate"]
-                elif t["type"] == "command" and t["coef"]:
-                    fire = random.random() < CMD_TRIGGER
-                elif t["type"] == "passive" and t["coef"]:
-                    fire = random.random() < t["rate"] * PASSIVE_TRIGGER
-                if fire:
-                    for _ in range(t["n"]):
-                        v = pick_target(foes_of(u))
-                        if v and t["coef"]:
-                            hit(u, v, t["coef"], t["kind"])
-                    if t["type"] == "active":
-                        apply_effects(u, pick_target(foes_of(u)), t, allies_of(u), foes_of(u))
-            tgt = pick_target(foes_of(u))                 # 普攻(每回合常駐) + 連擊 + 突擊
-            if tgt:
+            if not u.silence:                             # 計窮: 跳過主動/指揮/被動(不影響普攻)
+                for t in u.tactics:                       # 自帶 + 傳承: 各自獨立附加發動(不占普攻)
+                    fire = False
+                    if t["type"] == "active" and (t["coef"] or t["effects"]) \
+                            and not (t["prep"] and rnd == 1):
+                        fire = random.random() < t["rate"]
+                    elif t["type"] in ("command", "passive") and t["coef"]:
+                        fire = random.random() < t["rate"]  # 每回合以資料 rate 擲骰
+                    if fire:
+                        if t["coef"]:
+                            cnt = t["n"]
+                            if t.get("nMax"):
+                                cnt = t["n"] + random.randint(0, t["nMax"] - t["n"])
+                            for v in pick_targets(foes_of(u), cnt):
+                                hit(u, v, t["coef"], t["kind"])
+                        if t["type"] == "active":
+                            apply_effects(u, pick_target(foes_of(u)), t, allies_of(u), foes_of(u))
+            tgt = pick_target(foes_of(u))                 # 普攻(每回合常駐) + 連擊 + 突擊(繳械時跳過)
+            if tgt and not u.disarm:
                 hit(u, tgt, 1.0, "phys")
                 for _ in range(extra_count(u.addbonus("extra"))):  # 連擊/追擊
                     nt = pick_target(foes_of(u))
@@ -537,7 +592,7 @@ def demo():
     assert Unit(lb, "騎").force > Unit(lb, "槍").force, "適性高的兵種屬性應更高"
     assert Unit(lb, "騎").force > 240
     u = Unit(lb, "騎")
-    u.adds.append(["amp", 0.2, 1])
+    u.push_add("amp", 0.2, 1)
     assert abs(u.addbonus("amp") - 0.2) < 1e-9
     u.tick()
     assert u.addbonus("amp") == 0, "增傷到期要消"
@@ -565,9 +620,9 @@ def demo():
     hit(Unit(lb, "騎"), prot, 1.5, "phys")        # 高武力攻擊者確保有傷害(避免守將過肉時0傷)
     assert grd.troop < g0 and prot.troop < p0, "代承者與被保護者各吃一部分"
     atk, df = Unit(lb, "騎"), Unit(POOL["張飛"], "盾")
-    df.adds.append(["mitig", 0.5, 9])
+    df.push_add("mitig", 0.5, 9)
     d_norm = damage(atk, df, 1.0, "phys")
-    atk.adds.append(["pierce", 1.0, 9])
+    atk.push_add("pierce", 1.0, 9)
     assert damage(atk, df, 1.0, "phys") > d_norm * 1.5, "看破應大幅提高對減傷目標的傷害"
     ca, cd = Unit(POOL["周瑜"], "弓"), Unit(lb, "騎")
     cd.counter = {"coef": 1.0, "kind": "phys", "prob": 1.0}
@@ -586,6 +641,53 @@ def demo():
         assert not active_bonds(bd["generals"][:bd["triggerCount"] - 1]), "人數不足不應觸發"
     res = simulate(["呂布", "趙雲", "關羽"], ["諸葛亮", "周瑜", "司馬懿"], n=400)
     assert 0 <= res["A勝率"] <= 1 and 1 <= res["平均回合"] <= ROUNDS
+
+    # --- 新機制驗收 ---------------------------------------------------------
+    # 1) 同名(同戰法來源)不疊加: 同一戰法對同一單位重複施加同種效果應「刷新」而非疊加
+    u5 = Unit(lb, "騎")
+    u5.push_add("amp", 0.10, 2, src="測試戰法")
+    u5.push_add("amp", 0.10, 2, src="測試戰法")           # 同來源同 kind 再次套用
+    assert abs(u5.addbonus("amp") - 0.10) < 1e-9, "同名戰法效果應刷新, 不應疊加成 0.20"
+    u5.push_add("amp", 0.05, 2, src=None)                # 無來源(兵書/裝備/緣分)不去重, 應疊加
+    assert abs(u5.addbonus("amp") - 0.15) < 1e-9, "無來源效果不應被去重邏輯影響"
+
+    # 2) 計窮(silence) 應擋主動戰法發動, 但不擋普攻
+    silence_tactic = {"nameZh": "測試計窮術", "type": "active", "kind": "phys", "coef": 0,
+                       "rate": 1.0, "n": 1, "prep": 0,
+                       "effects": [{"k": "silence", "who": "enemy", "dur": 1}]}
+    caster5, tgt5 = Unit(POOL["諸葛亮"], "弓"), Unit(lb, "騎")
+    apply_effects(caster5, tgt5, silence_tactic, [caster5], [tgt5])
+    assert tgt5.silence > 0, "計窮應成功施加(fight() 主迴圈以 `if not u.silence:` 跳過主動戰法)"
+
+    # 3) 繳械(disarm) 應擋普攻
+    disarm_tactic = {"nameZh": "測試繳械術", "type": "active", "kind": "phys", "coef": 0,
+                      "rate": 1.0, "n": 1, "prep": 0,
+                      "effects": [{"k": "disarm", "who": "enemy", "dur": 1}]}
+    tgt6 = Unit(lb, "騎")
+    apply_effects(caster5, tgt6, disarm_tactic, [caster5], [tgt6])
+    assert tgt6.disarm > 0, "繳械應成功施加"
+
+    # 4) 洞察(insight) 應免疫控制, 且施加時同時解除既有控制
+    u7 = Unit(lb, "騎")
+    u7.stun, u7.silence, u7.disarm = 1, 1, 1
+    insight_tactic = {"nameZh": "測試洞察術", "type": "passive", "kind": "phys", "coef": 0,
+                       "rate": 1.0, "n": 1, "prep": 0,
+                       "effects": [{"k": "insight", "who": "self", "dur": 2}]}
+    apply_effects(u7, None, insight_tactic, [u7], [])
+    assert u7.insight > 0 and u7.stun == 0 and u7.silence == 0 and u7.disarm == 0, \
+        "洞察應解除既有 stun/silence/disarm"
+    tgt8 = Unit(lb, "騎")
+    tgt8.insight = 3
+    apply_effects(caster5, tgt8, silence_tactic, [caster5], [tgt8])
+    assert tgt8.silence == 0, "洞察中的目標應免疫計窮"
+
+    # 5) 先攻(first) 應排序優先於速度: first 旗標高者即使速度較低也應排在前面
+    fast_no_first = Unit(POOL["呂布"], "騎")             # 呂布速度較高但無先攻
+    slow_first = Unit(POOL["諸葛亮"], "弓")               # 諸葛亮速度較低但獲得先攻
+    slow_first.first = 1
+    order5 = sorted([fast_no_first, slow_first], key=lambda x: (x.first, x.eff("speed")), reverse=True)
+    assert order5[0] is slow_first, "先攻單位應優先於速度較高但無先攻者行動"
+
     print("self-check OK")
 
 

@@ -5,7 +5,6 @@
 (function (root) {
   const ROUNDS = 8, START_TROOP = 10000, MORALE = 100;
   const CITY = 20, FACTION = 1.10;                   // 城建滿(武智統速各+20) + 陣營滿(全屬性+10%), 雙方皆有
-  let CMD_TRIGGER = 0.40, PASSIVE_TRIGGER = 0.45;
   const COUNTER = { "騎": "盾", "盾": "弓", "弓": "槍", "槍": "騎" };
   const APT_PCT = { S: 1.20, A: 1.00, B: 0.85, C: 0.70, D: 0.55 };
   const APT_RANK = { S: 4, A: 3, B: 2, C: 1, D: 0 };
@@ -47,7 +46,7 @@
   function teamTroop(POOL, team) {                 // 一隊的建議兵種: 三人對該兵種適性總和最高
     let best = "騎", bs = -1;
     for (const t of TROOPS) {
-      const s = team.reduce((a, n) => a + aptPct(POOL[n], t), 0);
+      const s = Math.round(team.reduce((a, n) => a + aptPct(POOL[n], t), 0) * 1e4) / 1e4; // 抹平浮點誤差, 平手時與 sgz.py 同取先序
       if (s > bs) { bs = s; best = t; }
     }
     return best;
@@ -94,11 +93,12 @@
   class Unit {
     constructor(g, ttype, bsName, eqName, add, inherit, season) {
       this.g = g; this.ttype = ttype; this.troop = START_TROOP; this.stun = 0;
+      this.silence = 0; this.disarm = 0; this.insight = 0; this.first = 0;  // 控制細分: 計窮/繳械/洞察(免控) + 先攻(優先行動, 剩餘回合數)
       this.tactics = (g.tactic ? [g.tactic] : []).concat((inherit || []).map(nm => TACTICS[nm]).filter(Boolean));  // 自帶 + 傳承
       const _bn = Array.isArray(bsName) ? bsName : (bsName ? [bsName] : []);
-      this.bs = _bn.flatMap(nm => (BINGSHU[nm] ? BINGSHU[nm].effects : []));  // 兵書(主+副)合併
+      this.bs = _bn.flatMap(nm => (BINGSHU[nm] && BINGSHU[nm].effects) || []);  // 兵書(主+副)合併; 缺 effects 欄降級空陣列(同 sgz.py .get)
       const _eq = Array.isArray(eqName) ? eqName : (eqName ? [eqName] : []);
-      this.eq = _eq.flatMap(nm => (EQUIPS[nm] ? EQUIPS[nm].effects : []));   // 裝備(4欄)合併
+      this.eq = _eq.flatMap(nm => (EQUIPS[nm] && EQUIPS[nm].effects) || []);   // 裝備(4欄)合併; 同上防禦
       const a = add || {}, sm = season || {};      // 養成加值 + 賽季修正
       const apt = (sm.aptS ? 1.20 : aptPct(g, ttype)) + (sm.aptAdd || 0);
       const scm = sm.mult || 1.0, flat = sm.flat || 0;  // 屬性=(基礎+養成+賽季固定)×適性×賽季乘數
@@ -118,6 +118,16 @@
       return v;
     }
     addbonus(kind) { let s = 0; for (const a of this.adds) if (a[0] === kind) s += a[1]; return s; }
+    // 同來源(戰法名)同種效果 刷新而非疊加: push 前先移除同 kind(或 stat) + 同 src 的舊項。
+    // src=null/undefined(兵書/裝備/緣分, 開戰只套一次) 不做去重, 維持原行為。
+    pushAdd(kind, val, dur, src) {
+      if (src) this.adds = this.adds.filter(a => !(a[0] === kind && a[3] === src));
+      this.adds.push([kind, val, dur, src]);
+    }
+    pushMod(stat, mult, dur, src) {
+      if (src) this.mods = this.mods.filter(m => !(m[0] === stat && m[3] === src));
+      this.mods.push([stat, mult, dur, src]);
+    }
     amp() {
       let a = this.addbonus("amp");
       if (this.stack) a += this.stack.per * this.stack.n;
@@ -130,6 +140,10 @@
       this.mods = this.mods.filter(m => --m[2] > 0);
       this.adds = this.adds.filter(a => --a[2] > 0);
       this.stun = Math.max(0, this.stun - 1);
+      this.silence = Math.max(0, this.silence - 1);
+      this.disarm = Math.max(0, this.disarm - 1);
+      this.insight = Math.max(0, this.insight - 1);
+      this.first = Math.max(0, this.first - 1);       // 先攻: 逐回合遞減(dur=N 覆蓋前 N 回合, 如「戰鬥前3回合」)
       this.swap = Math.max(0, this.swap - 1);
       if (this.decay && --this.decay.left <= 0) this.decay = null;
     }
@@ -162,10 +176,16 @@
     }
   }
   function extraCount(ex) { const i = Math.floor(ex); return i + (rnd() < ex - i ? 1 : 0); }
-  function pickTarget(units) {
-    let best = null;
-    for (const u of units) if (u.alive && (!best || u.troop > best.troop)) best = u;
-    return best;
+  function pickTarget(units) {                      // 普攻/單體戰法: 隨機挑一個存活敵軍(不再固定打兵力最高)
+    const live = units.filter(u => u.alive);
+    return live.length ? live[Math.floor(rnd() * live.length)] : null;
+  }
+  function pickTargets(units, n) {                  // 群體戰法: 隨機挑 n 個不重複存活目標
+    const live = units.filter(u => u.alive);
+    if (live.length <= n) return live;
+    const pool = live.slice(), out = [];
+    for (let i = 0; i < n && pool.length; i++) { const idx = Math.floor(rnd() * pool.length); out.push(pool[idx]); pool.splice(idx, 1); }
+    return out;
   }
 
   const STAT_ZH = { force: "武力", intel: "智力", command: "統率", speed: "速度", all: "全屬性" };
@@ -175,7 +195,11 @@
     switch (k) {
       case "amp": return e.who === "enemy" && e.val > 0 ? `易傷+${p(e.val)}${d}` : (e.val >= 0 ? `增傷+${p(e.val)}${d}` : `減傷${p(e.val)}${d}`);
       case "mitig": return e.val >= 0 ? `減傷+${p(e.val)}${d}` : `易傷+${p(e.val)}${d}`;
-      case "stun": return `暈眩${d || "(1回合)"}`;
+      case "stun": return `震懾·全禁${d || "(1回合)"}`;
+      case "silence": return `計窮·禁主動戰法${d || "(1回合)"}`;
+      case "disarm": return `繳械·禁普攻${d || "(1回合)"}`;
+      case "insight": return `洞察·免疫控制${d || "(1回合)"}`;
+      case "first": return "先攻·優先行動";
       case "stat": return `${STAT_ZH[e.stat] || e.stat} ×${e.mult}${d}`;
       case "dot": return `持續傷害${d}`;
       case "extra": return `額外攻擊+${e.val}`;
@@ -192,6 +216,7 @@
   }
   function applyEffects(caster, tgt, t, allies, enemies, opt) {
     opt = opt || {};
+    const src = t.nameZh || null;                     // 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → null, 不去重)
     for (const e of t.effects) {
       const k = e.k;
       if (opt.healOnly && k !== "heal") continue;
@@ -216,22 +241,33 @@
         continue;
       }
       const who = e.who || "ally";
+      const CTRL_K = k === "stun" || k === "silence" || k === "disarm";  // 控制類: 按戰法 n/nMax 選目標數
       let dests;
       if (who === "self") dests = caster.alive ? [caster] : [];
-      else if (who === "enemy") dests = (k === "stun") ? (tgt && tgt.alive ? [tgt] : []) : enemies.filter(x => x.alive);
+      else if (who === "enemy") {
+        if (CTRL_K) {                                 // 群體控制(n>1 或有 nMax)隨機挑不重複目標; 單體優先鎖定 tgt
+          const n = t.n || 1;
+          const cnt = t.nMax ? n + Math.floor(rnd() * (t.nMax - n + 1)) : n;
+          dests = cnt <= 1 ? (tgt && tgt.alive ? [tgt] : pickTargets(enemies, 1)) : pickTargets(enemies, cnt);
+        } else dests = enemies.filter(x => x.alive);
+      }
       else dests = allies.filter(a => a.alive);
       if (TRACE && dests.length) lg(`　▸ ${effDesc(k, e)} → ${dests.map(u => u.nm).join("、")}`);
       for (const u of dests) {
-        if (k === "amp") u.adds.push(who === "enemy" && e.val > 0 ? ["mitig", -e.val, e.dur] : ["amp", e.val, e.dur]);
-        else if (k === "mitig") u.adds.push(["mitig", e.val, e.dur]);
-        else if (k === "stun") u.stun = Math.max(u.stun, (e.dur ?? 1) + 1);
-        else if (k === "stat") u.mods.push([e.stat, e.mult ?? 1, e.dur]);
+        if (k === "amp") who === "enemy" && e.val > 0 ? u.pushAdd("mitig", -e.val, e.dur, src) : u.pushAdd("amp", e.val, e.dur, src);
+        else if (k === "mitig") u.pushAdd("mitig", e.val, e.dur, src);
+        else if (k === "stun") { if (!u.insight) { u.stun = Math.max(u.stun, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入震懾(全禁)`); } else if (TRACE) lg(`　▸ ${u.nm} 洞察免疫震懾`); }
+        else if (k === "silence") { if (!u.insight) { u.silence = Math.max(u.silence, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入計窮(禁主動戰法)`); } else if (TRACE) lg(`　▸ ${u.nm} 洞察免疫計窮`); }
+        else if (k === "disarm") { if (!u.insight) { u.disarm = Math.max(u.disarm, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入繳械(禁普攻)`); } else if (TRACE) lg(`　▸ ${u.nm} 洞察免疫繳械`); }
+        else if (k === "insight") { u.insight = Math.max(u.insight, (e.dur ?? 1) + 1); u.stun = 0; u.silence = 0; u.disarm = 0; }
+        else if (k === "first") u.first = Math.max(u.first, e.dur ?? 1);
+        else if (k === "stat") u.pushMod(e.stat, e.mult ?? 1, e.dur, src);
         else if (k === "dot") u.dots.push([damage(caster, u, e.coef ?? 0.5, t.kind || "intel"), e.dur]);
-        else if (k === "extra") u.adds.push(["extra", e.val, e.dur]);
+        else if (k === "extra") u.pushAdd("extra", e.val, e.dur, src);
         else if (k === "stack") u.stack = { per: e.per ?? 0.1, max: e.max ?? 5, n: 0 };
         else if (k === "decay") u.decay = { v0: e.v0 ?? 0.5, left: e.rounds ?? 8, total: e.rounds ?? 8 };
         else if (k === "swap") u.swap = Math.max(u.swap, (e.dur ?? 1) + 1);
-        else if (k === "pierce") u.adds.push(["pierce", e.val, e.dur]);
+        else if (k === "pierce") u.pushAdd("pierce", e.val, e.dur, src);
         else if (k === "counter") u.counter = { coef: e.coef ?? 1, kind: e.kind || "phys", prob: e.prob ?? 1 };
       }
     }
@@ -297,28 +333,35 @@
       CUR_R = r;
       for (const u of [...A, ...B]) if (u.alive && u.stack) u.stack.n = Math.min(u.stack.max, u.stack.n + 1);
       applyPassives({ healOnly: true });
-      const order = [...A, ...B].filter(u => u.alive).sort((x, y) => y.eff("speed") - x.eff("speed"));
+      // 行動順序: 先攻(first)優先於速度; 各組內仍按速度高到低排序
+      const order = [...A, ...B].filter(u => u.alive).sort((x, y) => (y.first - x.first) || (y.eff("speed") - x.eff("speed")));
       for (const u of order) {
         if (!u.alive) continue;
-        if (u.stun) { lg(`【${u.side}】${u.nm} 被控制，無法行動`); continue; }
+        if (u.stun) { lg(`【${u.side}】${u.nm} 被控制(震懾)，無法行動`); continue; }
         if (!pickTarget(foesOf(u))) break;
-        for (const t of u.tactics) {                  // 自帶 + 傳承: 各自獨立附加發動
+        if (u.silence && TRACE) lg(`【${u.side}】${u.nm} 陷入計窮，無法發動主動戰法`);
+        if (!u.silence) for (const t of u.tactics) {   // 自帶 + 傳承: 各自獨立附加發動(計窮時跳過主動/指揮/被動)
           let fire = false;
           if (t.type === "active" && (t.coef || t.effects.length) && !(t.prep && r === 1)) fire = rnd() < t.rate;
-          else if (t.type === "command" && t.coef) fire = rnd() < CMD_TRIGGER;
-          else if (t.type === "passive" && t.coef) fire = rnd() < t.rate * PASSIVE_TRIGGER;
+          else if ((t.type === "command" || t.type === "passive") && t.coef) fire = rnd() < t.rate;  // 指揮/被動: 每回合以資料 rate 擲骰(多數 rate=1 即每回合必發)
           if (fire) {
             if (TRACE) lg(`【${u.side}】${u.nm} 發動戰法【${t.nameZh}】`);
-            for (let i = 0; i < t.n; i++) { const v = pickTarget(foesOf(u)); if (v && t.coef) hit(u, v, t.coef, t.kind); }
+            if (t.coef) {
+              const cnt = t.nMax ? (t.n + Math.floor(rnd() * (t.nMax - t.n + 1))) : t.n;
+              for (const v of pickTargets(foesOf(u), cnt)) hit(u, v, t.coef, t.kind);
+            }
             if (t.type === "active") applyEffects(u, pickTarget(foesOf(u)), t, alliesOf(u), foesOf(u));
           }
         }
-        const tgt = pickTarget(foesOf(u));            // 普攻(常駐) + 連擊 + 突擊
+        const tgt = pickTarget(foesOf(u));            // 普攻(常駐) + 連擊 + 突擊(繳械時跳過)
         if (tgt) {
-          if (TRACE) lg(`【${u.side}】${u.nm} 普通攻擊 → ${tgt.nm}`);
-          hit(u, tgt, 1.0, "phys");
-          for (let i = 0; i < extraCount(u.addbonus("extra")); i++) { const nt = pickTarget(foesOf(u)); if (nt) { if (TRACE) lg(`【${u.side}】${u.nm} 連擊 → ${nt.nm}`); hit(u, nt, 1.0, "phys"); } }
-          for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
+          if (u.disarm) { if (TRACE) lg(`【${u.side}】${u.nm} 陷入繳械，無法普通攻擊`); }
+          else {
+            if (TRACE) lg(`【${u.side}】${u.nm} 普通攻擊 → ${tgt.nm}`);
+            hit(u, tgt, 1.0, "phys");
+            for (let i = 0; i < extraCount(u.addbonus("extra")); i++) { const nt = pickTarget(foesOf(u)); if (nt) { if (TRACE) lg(`【${u.side}】${u.nm} 連擊 → ${nt.nm}`); hit(u, nt, 1.0, "phys"); } }
+            for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
+          }
         }
       }
       for (const u of [...A, ...B]) {
@@ -372,8 +415,7 @@
 
   const API = { buildPool, simulate, trace, score, recommend, fight, teamTroop, aptPct, bestTroop, TROOPS,
     defaultBingshu, activeBonds, seasonModsFor, mainByCat: () => MAIN_BY_CAT, subByCat: () => SUB_BY_CAT, bingshu: () => BINGSHU,
-    bonds: () => BONDS, equips: () => EQUIPS,
-    setKnobs: (c, p) => { CMD_TRIGGER = c; PASSIVE_TRIGGER = p; } };
+    bonds: () => BONDS, equips: () => EQUIPS };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   root.SGZ = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);
