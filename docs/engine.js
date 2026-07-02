@@ -123,6 +123,7 @@
     constructor(g, ttype, bsName, eqName, add, inherit, season) {
       this.g = g; this.ttype = ttype; this.troop = START_TROOP; this.stun = 0;
       this.silence = 0; this.disarm = 0; this.insight = 0; this.first = 0;  // 控制細分: 計窮/繳械/洞察(免控) + 先攻(優先行動, 剩餘回合數)
+      this.chaos = 0;                              // 批12 ModeF: 混亂(不鎖行動, 但普攻/單體主動戰法改為敵我不分隨機選目標), 剩餘回合數
       // 自帶 + 傳承; 自帶戰法(g.tactic)淺拷貝附加 native:true 旗標(供 rateup/chargeup 的 nativeOnly
       // 修飾判斷「這是不是自帶戰法」, 如太平道法只加成張角自帶的五雷轟頂)。淺拷貝而非直接改
       // TACTICS 共享物件, 避免多個武將共用同一戰法物件時互相污染(如兩人都自帶白眉)。
@@ -166,6 +167,7 @@
       this.whenFired = new Set();                   // 條件觸發(when.rounds/from/until) 已套用效果的戰法(一次性), 依戰法物件去重; 批8: delayedEq(裝備效果級when)共用同一個 Set(效果物件本身去重, 不與戰法物件撞)
       this.hitFlags = new Set();                    // 反應式觸發(when.on) 本回合已觸發的戰法, 每回合重置(防無限鏈)
       this.onHitTacs = this.tactics.filter(t => (t.type === "passive" || t.type === "command") && t.when && t.when.on);  // 預篩: 絕大多數單位為空, hit 熱路徑 O(0)
+      this.lockedTargets = new Map();               // 批12 ModeG: lockTarget:true 戰法的鎖定目標, 鍵=戰法物件本身(同一戰法物件跨回合重用同一 Map)
     }
     get alive() { return this.troop > 0; }
     eff(stat) {
@@ -222,6 +224,7 @@
       this.stun = Math.max(0, this.stun - 1);
       this.silence = Math.max(0, this.silence - 1);
       this.disarm = Math.max(0, this.disarm - 1);
+      this.chaos = Math.max(0, this.chaos - 1);      // 批12 ModeF: 混亂 逐回合遞減
       this.insight = Math.max(0, this.insight - 1);
       this.first = Math.max(0, this.first - 1);       // 先攻: 逐回合遞減(dur=N 覆蓋前 N 回合, 如「戰鬥前3回合」)
       this.healblock = Math.max(0, this.healblock - 1);  // 批8: 禁療 逐回合遞減
@@ -304,12 +307,36 @@
     const live = units.filter(u => u.alive);
     return live.length ? live[Math.floor(rnd() * live.length)] : null;
   }
+  // 批12 ModeF: 混亂(chaos)單體選標 —— 普攻/單體主動戰法目標選擇改為「敵我不分」: 從友軍+敵軍
+  // (排除自己)中隨機挑一個存活目標, 而非只從敵方挑。非混亂狀態時退回一般 pickTarget(含嘲諷判定)。
+  // 群體/AoE 戰法在混亂下維持原邏輯不變(近似, 見呼叫端註解)。
+  function pickTargetChaos(u, allies, foes) {
+    if (!u.chaos) return pickTarget(foes, u);
+    const pool = allies.concat(foes).filter(x => x.alive && x !== u);
+    if (!pool.length) return pickTarget(foes, u);   // 保底: 沒有其他存活單位(理論上不會發生, 至少u自己還在foes/allies之外)時退回一般選標
+    const v = pool[Math.floor(rnd() * pool.length)];
+    if (TRACE && allies.includes(v)) lg(`　▸ ${u.nm} 混亂誤擊友軍 → ${v.nm}`);
+    return v;
+  }
   function pickTargets(units, n) {                  // 群體戰法: 隨機挑 n 個不重複存活目標
     const live = units.filter(u => u.alive);
     if (live.length <= n) return live;
     const pool = live.slice(), out = [];
     for (let i = 0; i < n && pool.length; i++) { const idx = Math.floor(rnd() * pool.length); out.push(pool[idx]); pool.splice(idx, 1); }
     return out;
+  }
+  // 批12 ModeG: lockTarget —— 戰法首次發動時透過 pickTarget 正常選標, 之後每次發動重用同一目標
+  // (以戰法物件本身為鍵存進 caster.lockedTargets), 而非每次重新隨機選。若鎖定目標已陣亡: 依 brief
+  // 保守決策(來源文字未說明死亡後是否重新鎖定), 視為「本次發動找不到有效目標」回傳 null, 不重新選
+  // 新目標(不做隱式重新鎖定, 避免無根據臆測遊戲行為)。
+  function resolveLockedTarget(u, t, foes) {
+    if (u.lockedTargets.has(t)) {
+      const locked = u.lockedTargets.get(t);
+      return (locked && locked.alive) ? locked : null;  // 鎖定目標已陣亡 -> 本次無有效目標(不重新選)
+    }
+    const picked = pickTarget(foes, u);
+    if (picked) u.lockedTargets.set(t, picked);
+    return picked;
   }
 
   const STAT_ZH = { force: "武力", intel: "智力", command: "統率", speed: "速度", all: "全屬性", charm: "魅力" };
@@ -325,6 +352,7 @@
       case "stun": return `震懾·全禁${d || "(1回合)"}`;
       case "silence": return `計窮·禁主動戰法${d || "(1回合)"}`;
       case "disarm": return `繳械·禁普攻${d || "(1回合)"}`;
+      case "chaos": return `混亂(敵我不分)${d || "(1回合)"}`;
       case "insight": return `洞察·免疫控制${d || "(1回合)"}`;
       case "first": return "先攻·優先行動";
       case "stat": return e.add != null ? `${STAT_ZH[e.stat] || e.stat} +${(e.scale && caster ? e.add * scaleOf(caster, e.scale) : e.add)}${d}${sfx}` : `${STAT_ZH[e.stat] || e.stat} ×${mult.toFixed(2)}${d}${sfx}`;
@@ -388,7 +416,7 @@
         continue;
       }
       const who = e.who || "ally";
-      const CTRL_K = k === "stun" || k === "silence" || k === "disarm" || k === "taunt";  // 控制/嘲諷類: 按戰法 n/nMax 選目標數(insight 不擋嘲諷, 只擋 stun/silence/disarm)
+      const CTRL_K = k === "stun" || k === "silence" || k === "disarm" || k === "taunt" || k === "chaos";  // 控制/嘲諷類: 按戰法 n/nMax 選目標數(insight 不擋嘲諷, 只擋 stun/silence/disarm/chaos)
       let dests;
       if (who === "self") dests = caster.alive ? [caster] : [];
       else if (who === "leader") dests = (allies[0] && allies[0].alive) ? [allies[0]] : [];  // 批8: 主將限定(隊伍 index 0)
@@ -413,7 +441,8 @@
         else if (k === "stun") { if (!u.insight) { u.stun = Math.max(u.stun, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入震懾(全禁)`); } else if (TRACE) lg(`　▸ ${u.nm} 洞察免疫震懾`); }
         else if (k === "silence") { if (!u.insight) { u.silence = Math.max(u.silence, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入計窮(禁主動戰法)`); } else if (TRACE) lg(`　▸ ${u.nm} 洞察免疫計窮`); }
         else if (k === "disarm") { if (!u.insight) { u.disarm = Math.max(u.disarm, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入繳械(禁普攻)`); } else if (TRACE) lg(`　▸ ${u.nm} 洞察免疫繳械`); }
-        else if (k === "insight") { u.insight = Math.max(u.insight, (e.dur ?? 1) + 1); u.stun = 0; u.silence = 0; u.disarm = 0; }
+        else if (k === "chaos") { if (!u.insight) { u.chaos = Math.max(u.chaos, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入混亂(敵我不分)`); } else if (TRACE) lg(`　▸ ${u.nm} 洞察免疫混亂`); }  // 批12 ModeF
+        else if (k === "insight") { u.insight = Math.max(u.insight, (e.dur ?? 1) + 1); u.stun = 0; u.silence = 0; u.disarm = 0; u.chaos = 0; }
         else if (k === "first") u.first = Math.max(u.first, e.dur ?? 1);
         else if (k === "stat") { if (e.add != null) u.pushStatAdd(e.stat, svAdd(e.add), e.dur, src); else u.pushMod(e.stat, svMult(e.mult ?? 1), e.dur, src); }  // 裝備平加(add)與乘算(mult)擇一; add 為戰報所示「裝備獨立平加階段」
         else if (k === "dot") u.dots.push([damage(caster, u, e.coef ?? 0.5, t.kind || "intel"), e.dur]);
@@ -581,18 +610,34 @@
             if (TRACE) lg(`【${u.side}】${u.nm} 發動戰法【${t.nameZh}】` + (t.when ? `（第${r}回合條件）` : ""));
             if (t.coef) {
               const cnt = t.nMax ? (t.n + Math.floor(rnd() * (t.nMax - t.n + 1))) : t.n;
-              for (const v of pickTargets(foesOf(u), cnt)) hit(u, v, t.coef, t.kind, false, onHit);
+              // 批12 ModeB: hitsRepeat —— 「隨機單體攻擊X次/重複X次,每次獨立選擇目標」= N次獨立單體
+              // 抽樣(可重複命中同一目標), 非 pickTargets 的 N 人不重複群攻。逐次呼叫 pickTarget
+              // (每次重新擲骰), 而非一次性呼叫 pickTargets(不重複)。維持只打敵方(不套用 ModeF 混亂
+              // 敵我不分, brief 僅明確要求普攻與單體主動戰法目標受混亂影響, hitsRepeat 屬多段傷害coef
+              // 迴圈不在明確範圍內, 維持保守foes-only)。
+              // 批12 ModeG: lockTarget —— 單體(cnt<=1)coef傷害目標改用 resolveLockedTarget(首次發動
+              // pickTarget 選定後, 之後每次發動重用同一目標); 群體(cnt>1)/hitsRepeat 不套用鎖定語意
+              // (lockTarget 資料上僅用於單體戰法, 群體/多段傷害維持原邏輯)。
+              if (t.lockTarget && cnt <= 1 && !t.hitsRepeat) { const v = resolveLockedTarget(u, t, foesOf(u)); if (v) hit(u, v, t.coef, t.kind, false, onHit); }
+              else if (t.hitsRepeat) { for (let i = 0; i < cnt; i++) { const v = pickTarget(foesOf(u), u); if (v) hit(u, v, t.coef, t.kind, false, onHit); } }
+              else for (const v of pickTargets(foesOf(u), cnt)) hit(u, v, t.coef, t.kind, false, onHit);
             }
-            if (t.type === "active") applyEffects(u, pickTarget(foesOf(u), u), t, alliesOf(u), foesOf(u));
+            // 批12 ModeF: 混亂下單體主動戰法目標改敵我不分(pickTargetChaos); 群體/AoE(who=enemy 全體/
+            // n>1)維持 applyEffects 內部既有邏輯不變 —— 這裡傳入的 tgt 只影響「單體優先鎖定」分支,
+            // 群體戰法本就走 pickTargets(enemies,...) 不受此參數影響(近似, 群體戰法混亂下仍只打敵方)。
+            // 批12 ModeG: lockTarget 的 applyEffects 目標(單體效果destination)同樣改用鎖定目標
+            // (與混亂互斥: lockTarget 戰法目前資料上未與 chaos 共存, 若未來衝突以 lockTarget 優先,
+            // 因 lockTarget 語意更明確針對特定戰法設計)。
+            if (t.type === "active") applyEffects(u, t.lockTarget ? resolveLockedTarget(u, t, foesOf(u)) : pickTargetChaos(u, alliesOf(u), foesOf(u)), t, alliesOf(u), foesOf(u));
           }
         }
-        const tgt = pickTarget(foesOf(u), u);         // 普攻(常駐) + 連擊 + 突擊(繳械時跳過); 嘲諷: 強制指向施放者
+        const tgt = pickTargetChaos(u, alliesOf(u), foesOf(u));  // 普攻(常駐) + 連擊 + 突擊(繳械時跳過); 嘲諷: 強制指向施放者; 混亂: 敵我不分(批12 ModeF)
         if (tgt) {
           if (u.disarm) { if (TRACE) lg(`【${u.side}】${u.nm} 陷入繳械，無法普通攻擊`); }
           else {
             if (TRACE) lg(`【${u.side}】${u.nm} 普通攻擊 → ${tgt.nm}`);
             hit(u, tgt, 1.0, "phys", true, onHit);
-            for (let i = 0; i < extraCount(u.addbonus("extra")); i++) { const nt = pickTarget(foesOf(u), u); if (nt) { if (TRACE) lg(`【${u.side}】${u.nm} 連擊 → ${nt.nm}`); hit(u, nt, 1.0, "phys", true, onHit); } }
+            for (let i = 0; i < extraCount(u.addbonus("extra")); i++) { const nt = pickTargetChaos(u, alliesOf(u), foesOf(u)); if (nt) { if (TRACE) lg(`【${u.side}】${u.nm} 連擊 → ${nt.nm}`); hit(u, nt, 1.0, "phys", true, onHit); } }
             // 突擊(charge)擲骰: chargeup(突擊發動率加成, 如虎豹騎)只對真突擊戰法生效, 排除 t.proc===true 的
             // 特技偽戰法(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲proc本身無此欄)。
             for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate + (t.proc ? 0 : u.addbonusFor("chargeup", t))) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind, false, onHit); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
@@ -662,7 +707,7 @@
   const API = { buildPool, simulate, trace, score, recommend, fight, teamTroop, aptPct, bestTroop, TROOPS,
     defaultBingshu, activeBonds, seasonModsFor, mainByCat: () => MAIN_BY_CAT, subByCat: () => SUB_BY_CAT, bingshu: () => BINGSHU,
     bonds: () => BONDS, equips: () => EQUIPS,
-    Unit, hit, damage, pickTarget, pickTargets, applyEffects, roundOk };  // 供測試腳本直接驗證內部機制(同 sgz.py 直接測 Unit/hit)
+    Unit, hit, damage, pickTarget, pickTargets, pickTargetChaos, resolveLockedTarget, applyEffects, roundOk };  // 供測試腳本直接驗證內部機制(同 sgz.py 直接測 Unit/hit)
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   root.SGZ = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);

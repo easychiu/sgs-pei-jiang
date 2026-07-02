@@ -19,8 +19,8 @@
     "k": "stat",
     "who": "self",
     "stat": "command",
-    "mult": 1.08,
-    "dur": 3
+    "dur": 3,
+    "add": 21
    }
   ],
   "quality": "S",
@@ -40,8 +40,8 @@
     "k": "stat",
     "who": "self",
     "stat": "all",
-    "mult": 1.12,
-    "dur": 99
+    "dur": 99,
+    "add": 40
    },
    {
     "k": "stack",
@@ -177,8 +177,8 @@
     "k": "stat",
     "who": "ally",
     "stat": "command",
-    "mult": 1.14,
-    "dur": 99
+    "dur": 99,
+    "add": 36
    },
    {
     "k": "mitig",
@@ -283,19 +283,21 @@
   "kind": "intel",
   "coef": 1.36,
   "rate": 0.45,
-  "n": 3,
+  "n": 5,
   "prep": 1,
   "effects": [
    {
     "k": "stun",
     "who": "enemy",
-    "dur": 1
+    "dur": 1,
+    "_note": "30%機率震懾未建模(stun原語無per-effect機率欄位)，維持近似必定觸發(略高估)，與橫掃千軍/暗箭難防同慣例"
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "hitsRepeat": true
  },
  {
   "nameZh": "仁德載世",
@@ -399,7 +401,7 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "chaos",
     "who": "enemy",
     "dur": 1
    }
@@ -454,7 +456,7 @@
   "prep": 1,
   "effects": [
    {
-    "k": "stun",
+    "k": "chaos",
     "who": "enemy",
     "dur": 2
    },
@@ -1005,6 +1007,14 @@
     "k": "insight",
     "who": "self",
     "dur": 2
+   },
+   {
+    "k": "counter",
+    "coef": 2.38,
+    "kind": "phys",
+    "prob": 1.0,
+    "dur": 2,
+    "_note": "反擊傷害率119%→238%, 觸發窗為洞察生效期間(2回合); counter原語原生支援prob欄位(非stun/silence/disarm家族的機率限制), 故可精確編碼機率, 但引擎counter為\"受擊時按prob擲骰\"常駐狀態而非\"僅洞察期間\"的時間窗限定——這裡仍受該效果本身dur=2回合限制, 屬合理近似"
    }
   ],
   "quality": "S",
@@ -1023,8 +1033,9 @@
    {
     "k": "amp",
     "who": "ally",
-    "val": 0.15,
-    "dur": 1
+    "val": 0.0225,
+    "dur": 1,
+    "_approx": "prob-ev: 「自身為主將時」條件+基礎15%機率(每多1名蠻族武將+15%)×15%易傷, 取基礎分支15%×15%=2.25%折算(未含隊伍蠻族數疊加, 保守; 且「自身為主將」條件無法建模, 常態近似)"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -1104,15 +1115,15 @@
   "nameZh": "四面楚歌",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
+  "coef": 1.44,
   "rate": 0.5,
   "n": 2,
   "prep": 1,
   "effects": [
    {
-    "k": "heal",
+    "k": "dot",
     "who": "enemy",
-    "coef": -1.44,
+    "coef": 1.44,
     "dur": 2
    }
   ],
@@ -1181,7 +1192,27 @@
   "rate": 1,
   "n": 3,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "mult": 1.2,
+    "dur": 99
+   },
+   {
+    "k": "lifesteal",
+    "who": "ally",
+    "val": 0.1,
+    "dur": 99
+   },
+   {
+    "k": "lifesteal",
+    "who": "self",
+    "val": 0.1,
+    "dur": 99
+   }
+  ],
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE"
@@ -1329,8 +1360,8 @@
     "k": "stat",
     "who": "self",
     "stat": "intel",
-    "mult": 1.27,
-    "dur": 99
+    "dur": 99,
+    "add": 68
    },
    {
     "k": "dodge",
@@ -1402,8 +1433,8 @@
     "k": "stat",
     "who": "ally",
     "stat": "force",
-    "mult": 1.06,
-    "dur": 99
+    "dur": 99,
+    "add": 14
    }
   ],
   "quality": "S",
@@ -1604,33 +1635,33 @@
     "k": "stat",
     "who": "enemy",
     "stat": "force",
-    "mult": 0.85,
     "dur": 2,
-    "scale": "intel"
+    "scale": "intel",
+    "add": -38
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "intel",
-    "mult": 0.85,
     "dur": 2,
-    "scale": "intel"
+    "scale": "intel",
+    "add": -38
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "speed",
-    "mult": 0.85,
     "dur": 2,
-    "scale": "intel"
+    "scale": "intel",
+    "add": -38
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "command",
-    "mult": 0.85,
     "dur": 2,
-    "scale": "intel"
+    "scale": "intel",
+    "add": -38
    },
    {
     "k": "stat",
@@ -1689,8 +1720,9 @@
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1.15,
-    "dur": 99
+    "dur": 99,
+    "add": 15,
+    "_approx": "每次普攻後+7.5→15點(滿級),轉化自敵方統率降幅;引擎無疊層機制,取單次觸發滿級值"
    },
    {
     "k": "amp",
@@ -1767,9 +1799,10 @@
   "prep": 1,
   "effects": [
    {
-    "k": "stun",
+    "k": "disarm",
     "who": "enemy",
-    "dur": 1
+    "dur": 1,
+    "_note": "原文真實機制為「50%機率繳械 + 50%機率計窮，獨立判定」(可能兩者都中、只中一個、或都不中)，非guaranteed全鎖定(stun); stun/silence/disarm原語均不支援per-effect機率欄位(house rule, 同出其不意/橫掃千軍/暗箭難防慣例)。決策: 原資料用stun(全鎖普攻+主動戰法)嚴重高估——相當於「100%繳械+100%計窮同時發生」，遠超真實50%/50%獨立機率的期望值。改用單一disarm(僅鎖普攻)，僅保留原mechanic中較常見/影響較大的控制面(禁止普攻，通常是持續輸出的主要來源)，比全鎖(stun)更貼近真實期望強度，也比「同時掛stun-like雙效果」更保守。這是「兩個獨立50%控制」到「單一控制原語」的有損折算，但方向是縮小失真(原本stun嚴重超模)，而非精確重現「或有主動戰法完全打不出」的計窮clause——已知取捨，若未來新增per-effect prob支援，威震華夏是優先重新精算對象之一。"
    },
    {
     "k": "amp",
@@ -1823,8 +1856,8 @@
     "k": "stat",
     "who": "self",
     "stat": "command",
-    "mult": 1.24,
-    "dur": 4
+    "dur": 4,
+    "add": 60
    },
    {
     "k": "taunt",
@@ -2021,7 +2054,7 @@
   "nameZh": "帷內擅權",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
+  "coef": 1.0,
   "rate": 0.7,
   "n": 3,
   "prep": 0,
@@ -2049,8 +2082,9 @@
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1,
-    "dur": 99
+    "dur": 99,
+    "add": 18,
+    "_approx": "原文最多疊加5次,單層9→18點;引擎無疊層機制,取單次觸發滿級值"
    },
    {
     "k": "stack",
@@ -2079,8 +2113,9 @@
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1.06,
-    "dur": 3
+    "dur": 3,
+    "add": 16,
+    "_approx": "原文最多疊加6次,單層8→16點;引擎無疊層機制,取單次觸發滿級值"
    }
   ],
   "quality": "S",
@@ -2290,7 +2325,7 @@
   "type": "charge",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.45,
+  "rate": 0.25,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -2298,15 +2333,15 @@
     "k": "stat",
     "who": "enemy",
     "stat": "command",
-    "mult": 0.6,
-    "dur": 2
+    "dur": 2,
+    "add": -100
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "intel",
-    "mult": 0.6,
-    "dur": 2
+    "dur": 2,
+    "add": -100
    }
   ],
   "quality": "S",
@@ -2341,8 +2376,8 @@
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1.28,
-    "dur": 3
+    "dur": 3,
+    "add": 56
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -2358,7 +2393,15 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.65,
+    "dur": 3,
+    "_approx": "prob-ev: 「造成傷害時65%機率完全無法造成傷害」引擎無「攔截傷害」原語, 以amp(己方視角=敵方易攻)近似折算為65%固定降低敵方輸出傷害(略高估: 真實為機率性歸零而非固定折減, 但期望值同量級)"
+   }
+  ],
   "quality": "S",
   "cat": "COMMAND",
   "src": "INHERITANCE",
@@ -2510,7 +2553,7 @@
   "nameZh": "摧鋒斷刃",
   "type": "charge",
   "kind": "phys",
-  "coef": 0,
+  "coef": 0.5,
   "rate": 0.45,
   "n": 3,
   "prep": 0,
@@ -2525,7 +2568,8 @@
   "quality": "S",
   "cat": "BURST",
   "src": "EVENT",
-  "_est": true
+  "_est": true,
+  "hitsRepeat": true
  },
  {
   "nameZh": "撫輯軍民",
@@ -2673,15 +2717,17 @@
     "k": "stat",
     "who": "self",
     "stat": "intel",
-    "mult": 1.12,
-    "dur": 99
+    "dur": 99,
+    "add": 30,
+    "_approx": "原文最多疊加5次,單層15→30點;引擎無疊層機制,取單次觸發滿級值"
    },
    {
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1.12,
-    "dur": 99
+    "dur": 99,
+    "add": 30,
+    "_approx": "原文最多疊加5次,單層15→30點;引擎無疊層機制,取單次觸發滿級值"
    }
   ],
   "quality": "S",
@@ -2702,17 +2748,17 @@
     "k": "stat",
     "who": "enemy",
     "stat": "force",
-    "mult": 0.85,
     "dur": 2,
-    "scale": "intel"
+    "scale": "intel",
+    "add": -38
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "intel",
-    "mult": 0.85,
     "dur": 2,
-    "scale": "intel"
+    "scale": "intel",
+    "add": -38
    },
    {
     "k": "stack",
@@ -2800,7 +2846,7 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "chaos",
     "who": "enemy",
     "dur": 1
    }
@@ -3474,9 +3520,10 @@
    {
     "k": "mitig",
     "who": "self",
-    "val": 0.2,
+    "val": 0.07,
     "dur": 1,
-    "scale": "intel"
+    "scale": "intel",
+    "_approx": "prob-ev: 35%機率×20%降傷折算為7%(house convention同傾國傾城prob-ev折算)"
    }
   ],
   "quality": "S",
@@ -3509,16 +3556,17 @@
   "type": "command",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.5,
+  "rate": 1,
   "n": 3,
   "prep": 0,
   "effects": [
    {
     "k": "amp",
     "who": "enemy",
-    "val": 0.06,
+    "val": 0.03,
     "dur": 99,
-    "scale": "command"
+    "scale": "command",
+    "_approx": "prob-ev: 25%→50%機率(自身為主將時30%→60%)×6%易傷折算為基礎值50%×6%=3%(house convention同傾國傾城, 取非主將基礎分支保守估計)"
    },
    {
     "k": "stun",
@@ -3776,15 +3824,15 @@
     "k": "stat",
     "who": "ally",
     "stat": "command",
-    "mult": 1.09,
-    "dur": 99
+    "dur": 99,
+    "add": 22
    },
    {
     "k": "stat",
     "who": "ally",
     "stat": "speed",
-    "mult": 1.09,
-    "dur": 99
+    "dur": 99,
+    "add": 22
    }
   ],
   "quality": "S",
@@ -4011,7 +4059,14 @@
   "rate": 0.45,
   "n": 3,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "lifesteal",
+    "who": "ally",
+    "val": 0.12,
+    "dur": 99
+   }
+  ],
   "quality": "S",
   "cat": "TROOP",
   "src": "INHERITANCE"
@@ -4211,8 +4266,9 @@
    {
     "k": "amp",
     "who": "enemy",
-    "val": -0.4,
-    "dur": 1
+    "val": -0.18,
+    "dur": 1,
+    "_approx": "prob-ev: 45%機率×40%降傷折算為18%(house convention同傾國傾城)"
    }
   ],
   "quality": "S",
@@ -4305,9 +4361,9 @@
     "k": "stat",
     "who": "enemy",
     "stat": "command",
-    "mult": 0.72,
     "dur": 2,
-    "scale": "force"
+    "scale": "force",
+    "add": -70
    }
   ],
   "quality": "S",
@@ -4327,17 +4383,17 @@
     "k": "stat",
     "who": "enemy",
     "stat": "command",
-    "mult": 0.68,
     "dur": 2,
-    "scale": "force"
+    "scale": "force",
+    "add": -80
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "intel",
-    "mult": 0.68,
     "dur": 2,
-    "scale": "force"
+    "scale": "force",
+    "add": -80
    }
   ],
   "quality": "S",
@@ -4363,8 +4419,9 @@
     "k": "stat",
     "who": "enemy",
     "stat": "command",
-    "mult": 0.85,
-    "dur": 2
+    "dur": 2,
+    "add": -25,
+    "_approx": "可疊加,每次普攻後-5→25點(滿級);引擎無疊層機制,取單次觸發值"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -4376,15 +4433,16 @@
   "nameZh": "神機妙算",
   "type": "command",
   "kind": "intel",
-  "coef": 1,
+  "coef": 1.28,
   "rate": 0.35,
   "n": 2,
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "silence",
     "who": "enemy",
-    "dur": 1
+    "dur": 1,
+    "_note": "原文「敵軍發動主動戰法時25%→35%機率令其發動失敗」為反應式觸發(敵方嘗試發動主動戰法瞬間), 引擎when.on僅支援attacked/damaged(受擊)事件點, 無「敵方嘗試發動主動戰法」的反應式掛鉤; 改用command型戰法既有的每回合rate擲骰機制近似(已由頂層rate=0.35代表機率), 效果本身用silence(禁主動戰法1回合)近似「令其發動失敗」的效果(方向正確: 都是讓對方無法用主動戰法, 但語意上「發動失敗」是單次瞬間, silence是接下來1回合皆禁, 略高估持續性)"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -4402,7 +4460,7 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "chaos",
     "who": "enemy",
     "dur": 2
    }
@@ -4523,7 +4581,7 @@
     "scale": "intel"
    },
    {
-    "k": "stun",
+    "k": "chaos",
     "who": "enemy",
     "dur": 2
    },
@@ -4656,7 +4714,7 @@
   "type": "active",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.55,
+  "rate": 0.45,
   "n": 1,
   "prep": 0,
   "effects": [],
@@ -4698,8 +4756,9 @@
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1.24,
-    "dur": 99
+    "dur": 99,
+    "add": 6,
+    "_approx": "每次受兵刃傷害+3→6點,最大疊加10次(滿疊60點);引擎無疊層機制,取單次觸發值(近似低估滿疊情境)"
    }
   ],
   "quality": "S",
@@ -4822,9 +4881,9 @@
     "k": "stat",
     "who": "ally",
     "stat": "command",
-    "mult": 1.12,
     "dur": 2,
-    "_approx": "奇數回合觸發，與偶數回合減傷互斥，引擎無法建條件分支，暫並存(近似高估)"
+    "_approx": "奇數回合觸發，與偶數回合減傷互斥，引擎無法建條件分支，暫並存(近似高估)",
+    "add": 68
    },
    {
     "k": "mitig",
@@ -5215,7 +5274,7 @@
     "dur": 2
    },
    {
-    "k": "stun",
+    "k": "chaos",
     "who": "enemy",
     "dur": 2
    },
@@ -5362,8 +5421,8 @@
     "k": "stat",
     "who": "ally",
     "stat": "command",
-    "mult": 1.04,
-    "dur": 99
+    "dur": 99,
+    "add": 20
    },
    {
     "k": "stack",
@@ -5461,8 +5520,9 @@
     "k": "stat",
     "who": "ally",
     "stat": "command",
-    "mult": 1.1,
-    "dur": 2
+    "dur": 2,
+    "add": 15,
+    "_approx": "原文疊加5次(單層7.5→15點,滿疊75點);引擎stat.add無疊層機制,取單次觸發滿級值15點(近似低估滿疊情境)"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -5511,8 +5571,9 @@
     "k": "stat",
     "who": "ally",
     "stat": "force",
-    "mult": 1.05,
-    "dur": 99
+    "dur": 99,
+    "add": 12,
+    "_approx": "最多提高5次,單次6→12點(滿級);引擎無疊層機制,取單次觸發值"
    }
   ],
   "quality": "S",
@@ -5767,15 +5828,15 @@
     "k": "stat",
     "who": "enemy",
     "stat": "intel",
-    "mult": 0.94,
-    "dur": 99
+    "dur": 99,
+    "add": -24
    },
    {
     "k": "stat",
     "who": "self",
     "stat": "intel",
-    "mult": 1.03,
-    "dur": 99
+    "dur": 99,
+    "add": 24
    },
    {
     "k": "heal",
@@ -6174,7 +6235,7 @@
   "type": "command",
   "kind": "intel",
   "coef": 0,
-  "rate": 0.5,
+  "rate": 1,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -6291,15 +6352,15 @@
     "k": "stat",
     "who": "ally",
     "stat": "force",
-    "mult": 1.09,
-    "dur": 99
+    "dur": 99,
+    "add": 22
    },
    {
     "k": "stat",
     "who": "ally",
     "stat": "command",
-    "mult": 1.09,
-    "dur": 99
+    "dur": 99,
+    "add": 22
    },
    {
     "k": "heal",
@@ -6490,8 +6551,8 @@
     "k": "stat",
     "who": "ally",
     "stat": "command",
-    "mult": 1.1,
-    "dur": 4
+    "dur": 4,
+    "add": 40
    },
    {
     "k": "heal",
@@ -6650,10 +6711,10 @@
     "k": "stat",
     "who": "enemy",
     "stat": "intel",
-    "mult": 0.64,
     "dur": 1,
     "note": "奇數回合：敵2人智力降低36點（受智力影響），持續1回合",
-    "scale": "intel"
+    "scale": "intel",
+    "add": -36
    },
    {
     "k": "dot",
@@ -6859,9 +6920,9 @@
     "k": "stat",
     "who": "enemy",
     "stat": "command",
-    "mult": 0.7,
     "dur": 99,
-    "scale": "intel"
+    "scale": "intel",
+    "add": -60
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -6939,10 +7000,9 @@
     "dur": 2
    },
    {
-    "k": "stun",
+    "k": "chaos",
     "who": "self",
-    "dur": 1,
-    "_approx": "以混亂近似為自身1回合行動異常(引擎無混亂原語，用stun近似代價)"
+    "dur": 1
    }
   ],
   "quality": "S",
@@ -7187,9 +7247,9 @@
   "prep": 1,
   "effects": [
    {
-    "k": "heal",
+    "k": "dot",
     "who": "enemy",
-    "coef": -0.66,
+    "coef": 0.66,
     "dur": 1,
     "scale": "intel"
    }
@@ -7230,21 +7290,21 @@
   "nameZh": "妖術",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
+  "coef": 0.72,
   "rate": 0.4,
   "n": 3,
   "prep": 1,
   "effects": [
    {
-    "k": "heal",
-    "who": "enemy",
-    "coef": -0.72,
-    "dur": 2
-   },
-   {
     "k": "shield",
     "who": "self",
     "amt": 1,
+    "dur": 2
+   },
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.72,
     "dur": 2
    }
   ],
@@ -7299,9 +7359,9 @@
   "prep": 0,
   "effects": [
    {
-    "k": "heal",
+    "k": "dot",
     "who": "enemy",
-    "coef": -0.9,
+    "coef": 0.9,
     "dur": 2,
     "scale": "force",
     "_approx": "原文僅對'騎兵'目標生效，無法區分兵種時暫按全體目標近似套用"
@@ -7373,8 +7433,8 @@
     "k": "stat",
     "who": "enemy",
     "stat": "command",
-    "mult": 0.7,
-    "dur": 1
+    "dur": 1,
+    "add": -150
    },
    {
     "k": "silence",
@@ -7459,7 +7519,7 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "chaos",
     "who": "enemy",
     "dur": 1
    }
@@ -7589,9 +7649,9 @@
   "nameZh": "暴斂四方",
   "type": "active",
   "kind": "phys",
-  "coef": 2.04,
+  "coef": 1.02,
   "rate": 0.45,
-  "n": 1,
+  "n": 2,
   "prep": 0,
   "effects": [
    {
@@ -7603,7 +7663,8 @@
   ],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "hitsRepeat": true
  },
  {
   "nameZh": "枯木逢春",
@@ -7655,7 +7716,29 @@
   "rate": 0.45,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "force",
+    "add": 24,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "intel",
+    "add": 24,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "speed",
+    "add": 24,
+    "dur": 99
+   }
+  ],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
@@ -7709,29 +7792,29 @@
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1.14,
-    "dur": 99
+    "dur": 99,
+    "add": 36
    },
    {
     "k": "stat",
     "who": "self",
     "stat": "intel",
-    "mult": 1.14,
-    "dur": 99
+    "dur": 99,
+    "add": 36
    },
    {
     "k": "stat",
     "who": "self",
     "stat": "command",
-    "mult": 1.14,
-    "dur": 99
+    "dur": 99,
+    "add": 36
    },
    {
     "k": "stat",
     "who": "self",
     "stat": "speed",
-    "mult": 1.14,
-    "dur": 99
+    "dur": 99,
+    "add": 36
    }
   ],
   "quality": "A",
@@ -7779,6 +7862,14 @@
   "effects": [
    {
     "k": "amp",
+    "who": "enemy",
+    "val": -0.1,
+    "dur": 1,
+    "_est": true,
+    "_note": "首回合降低敵我雙方傷害, 原文無具體數值(僅定性描述「首回合降低敵我雙方傷害」), 取象徵性-10%易傷(_est保守估計, 敵方減傷側); 我方自身受到傷害降低clause因引擎mitig與此amp同批次施放次序問題暫不重複編碼, 避免雙重折抵"
+   },
+   {
+    "k": "amp",
     "who": "ally",
     "val": 0.15,
     "dur": 99
@@ -7823,8 +7914,8 @@
     "k": "stat",
     "who": "enemy",
     "stat": "command",
-    "mult": 0.88,
-    "dur": 1
+    "dur": 1,
+    "add": -30
    }
   ],
   "quality": "A",
@@ -7905,8 +7996,8 @@
     "k": "stat",
     "who": "enemy",
     "stat": "speed",
-    "mult": 0.8,
-    "dur": 2
+    "dur": 2,
+    "add": -30
    }
   ],
   "quality": "A",
@@ -8008,10 +8099,9 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "chaos",
     "who": "ally",
-    "dur": 1,
-    "_note": "首回合自己混亂,無差別選擇目標"
+    "dur": 1
    },
    {
     "k": "heal",
@@ -8080,8 +8170,8 @@
     "k": "stat",
     "who": "ally",
     "stat": "intel",
-    "mult": 1.2,
-    "dur": 2
+    "dur": 2,
+    "add": 40
    },
    {
     "k": "rateup",
@@ -8120,15 +8210,15 @@
     "k": "stat",
     "who": "ally",
     "stat": "force",
-    "mult": 1.14,
-    "dur": 99
+    "dur": 99,
+    "add": 28
    },
    {
     "k": "stat",
     "who": "ally",
     "stat": "intel",
-    "mult": 1.14,
-    "dur": 99
+    "dur": 99,
+    "add": 28
    }
   ],
   "quality": "A",
@@ -8146,7 +8236,7 @@
   "prep": 1,
   "effects": [
    {
-    "k": "heal",
+    "k": "dot",
     "who": "enemy",
     "coef": 1.2,
     "dur": 1
@@ -8261,8 +8351,8 @@
     "k": "stat",
     "who": "self",
     "stat": "speed",
-    "mult": 1.27,
-    "dur": 2
+    "dur": 2,
+    "add": 40
    }
   ],
   "quality": "A",
@@ -8712,15 +8802,15 @@
     "k": "stat",
     "who": "enemy",
     "stat": "force",
-    "mult": 0.9,
-    "dur": 1
+    "dur": 1,
+    "add": -20
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "intel",
-    "mult": 0.9,
-    "dur": 1
+    "dur": 1,
+    "add": -20
    }
   ],
   "quality": "B",

@@ -278,7 +278,8 @@ class Unit:
         self.g, self.ttype, self.troop, self.stun = g, ttype, START_TROOP, 0
         self.silence = 0                              # 計窮: 無法發動主動戰法
         self.disarm = 0                                # 繳械: 無法普通攻擊(含連擊/突擊)
-        self.insight = 0                               # 洞察: 免疫 stun/silence/disarm, 施加時同時解除
+        self.chaos = 0                                 # 批12 ModeF: 混亂(不鎖行動, 但普攻/單體主動戰法改為敵我不分隨機選目標), 剩餘回合數
+        self.insight = 0                               # 洞察: 免疫 stun/silence/disarm/chaos, 施加時同時解除
         self.first = 0                                 # 先攻: 剩餘回合數, 排序時優先於速度
         # 自帶 + 傳承; 自帶戰法(g.tactic)淺拷貝附加 native:True 旗標(供 rateup/chargeup 的 nativeOnly
         # 修飾判斷「這是不是自帶戰法」, 如太平道法只加成張角自帶的五雷轟頂)。淺拷貝而非直接改
@@ -365,6 +366,7 @@ class Unit:
         self.hit_flags = set()                         # 反應式觸發(when.on) 本回合已觸發的戰法, 每回合重置(防無限鏈)
         self.on_hit_tacs = [t for t in self.tactics    # 預篩: 絕大多數單位為空, hit 熱路徑 O(0)
                             if t["type"] in ("passive", "command") and (t.get("when") or {}).get("on")]
+        self.locked_targets = {}                       # 批12 ModeG: lockTarget:true 戰法的鎖定目標, 鍵=id(戰法dict)(dict不可雜湊, 用id())
 
     @property
     def alive(self):
@@ -441,6 +443,7 @@ class Unit:
         self.stun = max(0, self.stun - 1)
         self.silence = max(0, self.silence - 1)
         self.disarm = max(0, self.disarm - 1)
+        self.chaos = max(0, self.chaos - 1)            # 批12 ModeF: 混亂 逐回合遞減
         self.insight = max(0, self.insight - 1)
         self.first = max(0, self.first - 1)            # 先攻: 逐回合遞減(dur=N 覆蓋前 N 回合, 如「戰鬥前3回合」)
         self.healblock = max(0, self.healblock - 1)    # 批8: 禁療 逐回合遞減
@@ -555,6 +558,34 @@ def pick_targets(units, n):                           # 群體戰法: 隨機挑 
     return random.sample(live, n)
 
 
+def pick_target_chaos(u, allies, foes):
+    """批12 ModeF: 混亂(chaos)單體選標 —— 普攻/單體主動戰法目標選擇改為「敵我不分」: 從友軍+敵軍
+    (排除自己)中隨機挑一個存活目標, 而非只從敵方挑。非混亂狀態時退回一般 pick_target(含嘲諷判定)。
+    群體/AoE 戰法在混亂下維持原邏輯不變(近似, 見呼叫端註解)。"""
+    if not u.chaos:
+        return pick_target(foes, u)
+    pool = [x for x in (allies + foes) if x.alive and x is not u]
+    if not pool:
+        return pick_target(foes, u)          # 保底: 沒有其他存活單位時退回一般選標
+    v = random.choice(pool)
+    return v
+
+
+def resolve_locked_target(u, t, foes):
+    """批12 ModeG: lockTarget —— 戰法首次發動時透過 pick_target 正常選標, 之後每次發動重用同一
+    目標(以 id(t) 為鍵存進 u.locked_targets, dict 不可雜湊故用 id()), 而非每次重新隨機選。若鎖定
+    目標已陣亡: 依 brief 保守決策(來源文字未說明死亡後是否重新鎖定), 視為「本次發動找不到有效
+    目標」回傳 None, 不重新選新目標(不做隱式重新鎖定, 避免無根據臆測遊戲行為)。"""
+    key = id(t)
+    if key in u.locked_targets:
+        locked = u.locked_targets[key]
+        return locked if (locked and locked.alive) else None  # 鎖定目標已陣亡 -> 本次無有效目標(不重新選)
+    picked = pick_target(foes, u)
+    if picked:
+        u.locked_targets[key] = picked
+    return picked
+
+
 def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=False):
     src = t.get("nameZh")                              # 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → None, 不去重)
     for e in t["effects"]:
@@ -594,7 +625,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     a.guard_normal_only = bool(e.get("normalOnly"))  # 只代承普攻(如 援助), 戰法傷害不轉移
             continue
         who = e.get("who", "ally")
-        ctrl_k = k in ("stun", "silence", "disarm", "taunt")  # 控制/嘲諷類: 按戰法 n/nMax 選目標數(insight 不擋嘲諷, 只擋 stun/silence/disarm)
+        ctrl_k = k in ("stun", "silence", "disarm", "taunt", "chaos")  # 控制/嘲諷類: 按戰法 n/nMax 選目標數(insight 不擋嘲諷, 只擋 stun/silence/disarm/chaos)
         if who == "self":
             dests = [caster] if caster.alive else []
         elif who == "leader":                         # 批8: 主將限定(隊伍 index 0)
@@ -645,9 +676,12 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             elif k == "disarm":
                 if not u.insight:
                     u.disarm = max(u.disarm, e["dur"] + 1)
+            elif k == "chaos":                        # 批12 ModeF: 混亂(敵我不分), 同 insight 免疫規則
+                if not u.insight:
+                    u.chaos = max(u.chaos, e.get("dur", 1) + 1)
             elif k == "insight":                      # 洞察: 免疫控制, 施加時同時解除既有控制
                 u.insight = max(u.insight, e.get("dur", 1) + 1)
-                u.stun = u.silence = u.disarm = 0
+                u.stun = u.silence = u.disarm = u.chaos = 0
             elif k == "first":                        # 先攻: 本回合旗標, 優先於速度排序
                 u.first = max(u.first, e.get("dur", 1))
             elif k == "stat":                         # 裝備平加(add)與乘算(mult)擇一; add 為戰報所示「裝備獨立平加階段」
@@ -840,15 +874,38 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                             cnt = t["n"]
                             if t.get("nMax"):
                                 cnt = t["n"] + random.randint(0, t["nMax"] - t["n"])
-                            for v in pick_targets(foes_of(u), cnt):
-                                hit(u, v, t["coef"], t["kind"], False, on_hit)
+                            # 批12 ModeB: hitsRepeat —— 「隨機單體攻擊X次/重複X次,每次獨立選擇目標」
+                            # = N次獨立單體抽樣(可重複命中同一目標), 非 pick_targets 的 N 人不重複群攻。
+                            # 逐次呼叫 pick_target(每次重新擲骰), 而非一次性呼叫 pick_targets(不重複)。
+                            # 批12 ModeG: lockTarget —— 單體(cnt<=1)coef傷害目標改用 resolve_locked_target
+                            # (首次發動 pick_target 選定後, 之後每次發動重用同一目標); 群體(cnt>1)/
+                            # hitsRepeat 不套用鎖定語意(lockTarget 資料上僅用於單體戰法)。
+                            if t.get("lockTarget") and cnt <= 1 and not t.get("hitsRepeat"):
+                                v = resolve_locked_target(u, t, foes_of(u))
+                                if v:
+                                    hit(u, v, t["coef"], t["kind"], False, on_hit)
+                            elif t.get("hitsRepeat"):
+                                for _ in range(cnt):
+                                    v = pick_target(foes_of(u), u)
+                                    if v:
+                                        hit(u, v, t["coef"], t["kind"], False, on_hit)
+                            else:
+                                for v in pick_targets(foes_of(u), cnt):
+                                    hit(u, v, t["coef"], t["kind"], False, on_hit)
                         if t["type"] == "active":
-                            apply_effects(u, pick_target(foes_of(u), u), t, allies_of(u), foes_of(u))
-            tgt = pick_target(foes_of(u), u)               # 普攻(每回合常駐) + 連擊 + 突擊(繳械時跳過); 嘲諷: 強制指向施放者
+                            # 批12 ModeF: 混亂下單體主動戰法目標改敵我不分(pick_target_chaos); 群體/AoE
+                            # (who=enemy 全體/n>1)維持 apply_effects 內部既有邏輯不變 —— 這裡傳入的 tgt
+                            # 只影響「單體優先鎖定」分支, 群體戰法本就走 pick_targets(enemies,...) 不受
+                            # 此參數影響(近似, 群體戰法混亂下仍只打敵方)。
+                            # 批12 ModeG: lockTarget 的 apply_effects 目標(單體效果destination)同樣改用
+                            # 鎖定目標(與混亂互斥: lockTarget 戰法目前資料上未與 chaos 共存)。
+                            active_dst = resolve_locked_target(u, t, foes_of(u)) if t.get("lockTarget") else pick_target_chaos(u, allies_of(u), foes_of(u))
+                            apply_effects(u, active_dst, t, allies_of(u), foes_of(u))
+            tgt = pick_target_chaos(u, allies_of(u), foes_of(u))  # 普攻(每回合常駐) + 連擊 + 突擊(繳械時跳過); 嘲諷: 強制指向施放者; 混亂: 敵我不分(批12 ModeF)
             if tgt and not u.disarm:
                 hit(u, tgt, 1.0, "phys", True, on_hit)
                 for _ in range(extra_count(u.addbonus("extra"))):  # 連擊/追擊
-                    nt = pick_target(foes_of(u), u)
+                    nt = pick_target_chaos(u, allies_of(u), foes_of(u))
                     if nt:
                         hit(u, nt, 1.0, "phys", True, on_hit)
                 # 突擊(charge)擲骰: chargeup(突擊發動率加成, 如虎豹騎)只對真突擊戰法生效, 排除
@@ -1415,7 +1472,9 @@ def demo():
     w37, r37, k37 = fight(["呂布", "趙雲", "關羽"], ["諸葛亮", "周瑜", "司馬懿"])
     assert isinstance(k37, bool), "fight() 第三個回傳值 kill 應為 bool"
     if k37:
-        assert r37 < ROUNDS, "殲滅(kill=True)應發生在 ROUNDS 回合之前(提前分勝負)"
+        # 批12: 殲滅可能發生在最後一回合(r==ROUNDS)本身 —— fight() 在每回合 tick() 後立即檢查殲滅,
+        # 第8回合結算造成一方全滅時 kill=True 且 r==8, 屬合法情況(非僅能發生在 ROUNDS 之前)。
+        assert r37 <= ROUNDS, "殲滅(kill=True)應發生在 ROUNDS 回合或之前"
     else:
         assert r37 == ROUNDS, "判定勝(kill=False)應打滿 ROUNDS 回合"
     res37 = simulate(["呂布", "趙雲", "關羽"], ["諸葛亮", "周瑜", "司馬懿"], n=500)
@@ -1423,6 +1482,77 @@ def demo():
     assert abs((res37["A殲滅"] + res37["A判定勝"]) - res37["A勝率"]) < 1e-6, "A殲滅+A判定勝 應等於 A總勝率"
     assert abs((res37["B殲滅"] + res37["B判定勝"]) - res37["B勝率"]) < 1e-6, "B殲滅+B判定勝 應等於 B總勝率"
     assert res37["殲滅率"] > 0, "500場模擬中應有相當比例在8回合內分出殲滅勝負"
+
+    # --- 批12: chaos(混亂) + hitsRepeat + lockTarget ------------------------------
+    # 38) chaos: 混亂單位的普攻/單體主動戰法目標應敵我不分(可能選中友軍)。用 pick_target_chaos
+    #     直接驗證: 構造一個「敵方全滅、只剩友軍存活」的極端池, 混亂單位仍應能選中存活友軍
+    #     (而非因 foes 池為空就選不到目標)。
+    chaos_u = Unit(POOL["呂布"], "騎")
+    chaos_u.chaos = 2
+    ally38 = Unit(POOL["張飛"], "盾")
+    v38 = pick_target_chaos(chaos_u, [chaos_u, ally38], [])  # 空的敵方池, 只能從友軍(排除自己)中選
+    assert v38 is ally38, "混亂且敵方池為空時, 應能選中存活友軍作為目標(敵我不分)"
+    # 統計驗證: 多次呼叫應偶爾選中友軍(敵我皆有目標時, 非必定選友軍, 但長期應有相當比例)
+    foe38 = Unit(POOL["諸葛亮"], "弓")
+    ally_hits = sum(1 for _ in range(500) if pick_target_chaos(chaos_u, [chaos_u, ally38], [foe38]) is ally38)
+    assert ally_hits > 0, "混亂單位在敵我皆有目標時, 500次抽樣應至少命中友軍一次(敵我不分)"
+    # 非混亂時應退回一般 pick_target(只從敵方池選, 不會選中友軍)
+    normal_u38 = Unit(POOL["呂布"], "騎")
+    v38b = pick_target_chaos(normal_u38, [normal_u38, ally38], [foe38])
+    assert v38b is foe38, "非混亂狀態應退回一般 pick_target(只選敵方), 不受混亂邏輯影響"
+
+    # 39) insight 應阻擋 chaos 套用(同 stun/silence/disarm 慣例)
+    ins_u = Unit(POOL["呂布"], "騎")
+    ins_u.insight = 3
+    chaos_tac39 = {"nameZh": "測試混亂39", "type": "active", "kind": "phys", "coef": 0,
+                   "rate": 1.0, "n": 1, "prep": 0,
+                   "effects": [{"k": "chaos", "who": "enemy", "dur": 2}]}
+    apply_effects(Unit(POOL["張飛"], "盾"), None, chaos_tac39, [], [ins_u], no_heal=True)
+    assert ins_u.chaos == 0, "insight(洞察)應免疫混亂效果套用"
+    # insight 施加時應同時解除既有混亂(同 stun/silence/disarm 慣例)
+    chaos_u2 = Unit(POOL["呂布"], "騎")
+    chaos_u2.chaos = 3
+    insight_tac39 = {"nameZh": "測試洞察39", "type": "active", "kind": "phys", "coef": 0,
+                      "rate": 1.0, "n": 1, "prep": 0,
+                      "effects": [{"k": "insight", "who": "self", "dur": 2}]}
+    apply_effects(chaos_u2, None, insight_tac39, [chaos_u2], [], no_heal=True)
+    assert chaos_u2.chaos == 0, "施加洞察應同時解除既有混亂"
+
+    # 40) hitsRepeat: 只剩一個存活敵人時, N次獨立抽樣應全部命中該唯一存活者(不因「找不到N個
+    #     不重複目標」而提前跳過, 證明是逐次重新選標而非一次性選N個不重複)
+    hr_src = Unit(POOL["張角"], "弓")
+    hr_only_survivor = Unit(POOL["諸葛亮"], "弓")
+    hr_dead = Unit(POOL["周瑜"], "弓")
+    hr_dead.troop = 0                                  # 已陣亡, 不應被選中
+    hr_tac = {"nameZh": "測試hitsRepeat40", "type": "active", "kind": "intel", "coef": 0.3,
+              "rate": 1.0, "n": 5, "prep": 0, "hitsRepeat": True, "effects": []}
+    # 直接模擬 fight() 內的 hitsRepeat 迴圈邏輯(5次獨立 pick_target, 唯一存活目標應全部命中)
+    troop_before_40 = hr_only_survivor.troop
+    for _ in range(hr_tac["n"]):
+        v = pick_target([hr_only_survivor, hr_dead], hr_src)
+        assert v is hr_only_survivor, "hitsRepeat: 唯一存活目標應每次都被選中(不因僅剩1個目標而跳過)"
+        hit(hr_src, v, hr_tac["coef"], hr_tac["kind"], False, None)
+    assert hr_only_survivor.troop < troop_before_40, "hitsRepeat 5次獨立命中應對唯一存活目標造成累積傷害"
+
+    # 41) lockTarget: 同一戰法物件兩次發動應鎖定並重用同一目標(不重新隨機選)
+    lt_tac = {"nameZh": "測試lockTarget41", "type": "active", "kind": "phys", "coef": 0,
+              "rate": 1.0, "n": 1, "prep": 0, "lockTarget": True, "effects": []}
+    lt_caster = Unit(POOL["呂布"], "騎")
+    lt_pool = [Unit(POOL["諸葛亮"], "弓"), Unit(POOL["周瑜"], "弓"), Unit(POOL["司馬懿"], "弓")]
+    t1 = resolve_locked_target(lt_caster, lt_tac, lt_pool)
+    t2 = resolve_locked_target(lt_caster, lt_tac, lt_pool)
+    t3 = resolve_locked_target(lt_caster, lt_tac, lt_pool)
+    assert t1 is t2 is t3, "lockTarget: 同一戰法物件多次發動應重用同一鎖定目標"
+    # 目標陣亡後, lockTarget 應回傳 None(不重新選新目標) —— 保守設計, 見程式碼註解
+    t1.troop = 0
+    t4 = resolve_locked_target(lt_caster, lt_tac, lt_pool)
+    assert t4 is None, "lockTarget: 鎖定目標已陣亡時應回傳None(不重新選新目標, 視為本回合無有效目標)"
+    # 不同戰法物件(即使同名)應各自獨立鎖定, 不共用鎖定目標
+    lt_tac_other = {"nameZh": "測試lockTarget41", "type": "active", "kind": "phys", "coef": 0,
+                     "rate": 1.0, "n": 1, "prep": 0, "lockTarget": True, "effects": []}
+    lt_pool2 = [Unit(POOL["諸葛亮"], "弓"), Unit(POOL["周瑜"], "弓")]
+    t5 = resolve_locked_target(lt_caster, lt_tac_other, lt_pool2)
+    assert id(lt_tac_other) in lt_caster.locked_targets, "不同戰法物件應各自在 locked_targets 建立獨立鎖定項"
 
     print("self-check OK")
 
