@@ -14,7 +14,7 @@ const bsel = { A: [null, null, null], B: [null, null, null] };  // 各將兵書(
 const eqsel = { A: [{}, {}, {}], B: [{}, {}, {}] };            // 各將裝備 {type:[特技,...]} 每欄最多2(雙特技)→全身最多8
 const EQUIP_SLOTS = [{ t: "武器", l: "武器" }, { t: "防具", l: "護甲" }, { t: "坐騎", l: "馬匹" }, { t: "寶物", l: "寶物" }];
 const eqSlot = (cfg, t) => { const v = cfg && cfg[t]; return Array.isArray(v) ? v.filter(Boolean) : (v ? [v] : []); };  // 容錯: 舊字串/新陣列
-const eqNames = cfg => EQUIP_SLOTS.flatMap(s => eqSlot(cfg, s.t));   // 攤平成名單(最多8)→引擎合併effects
+const eqNames = cfg => EQUIP_SLOTS.flatMap(s => eqSlot(cfg, s.t).map(n => s.t + "·" + n));   // 攤平成複合鍵"type·name"名單(最多8)→引擎合併effects(同名跨欄位如"無畏"靠複合鍵不互蓋, 引擎按基底名稱去重只生效一件)
 function eqByType(g, type) {
   const opts = (TECH_OPTIONS[type] || []).slice();           // 權威通用特技名單
   for (const e of Object.values(SGZ.equips())) {              // 加上該將專屬特技(專屬不在通用名單)

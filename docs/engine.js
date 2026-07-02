@@ -6,6 +6,7 @@
 (function (root) {
   const ROUNDS = 8, START_TROOP = 10000, MORALE = 100;
   const CITY = 20, FACTION = 1.10;                   // 城建滿(武智統速各+20) + 陣營滿(全屬性+10%), 雙方皆有
+  const CAMP = 4;                                     // 兵種營: 戰報「弓兵營全屬性提升了4」→ 全屬性平加(獨立階段, 在陣營乘算之後), 雙方皆有
   // 「受X影響」屬性縮放旋鈕。輸入為戰鬥內即時素質 caster.eff(stat)(已含城建/陣營/適性/
   // 加點/賽季/戰鬥中buff, 典型值 250~400, 而非卡面裸值)。公式取社群拆解(巴哈姆特高等陣容
   // 戰法論/NGA數據貼): 屬性100=面板基準值(SCALE=1.0), 每+350點效果翻倍(v=450時SCALE=2.0)。
@@ -38,7 +39,7 @@
   }
   const rnd = () => Math.random();
 
-  const moraleMult = m => 0.007 * m + 0.30;
+  const moraleMult = m => 0.007 * Math.min(m, 100) + 0.30;  // 士氣上限100(戰報: 士氣110.4傷害不變, 超過100按100算)
   function counterMult(a, b) {
     if (a === "器" || b === "器") return b === "器" ? 1.15 : 0.85;
     if (COUNTER[a] === b) return 1.15;
@@ -81,7 +82,10 @@
       const m = b.type === "主兵書" ? MAIN_BY_CAT : SUB_BY_CAT;
       (m[b.category] = m[b.category] || []).push(key);
     }
-    for (const e of (equips || [])) EQUIPS[e.name] = e;
+    for (const e of (equips || [])) {
+      EQUIPS[e.type + "·" + e.name] = e;             // 複合鍵(同名跨欄位不撞, 同兵書precedent)
+      if (!(e.name in EQUIPS)) EQUIPS[e.name] = e;    // 純名稱 fallback(向後相容; 同名跨type時保留先出現者, 呼叫端應改用複合鍵)
+    }
     const POOL = {};
     for (const raw of generals) {
       if (!raw.stats) continue;
@@ -107,17 +111,26 @@
       const _bn = Array.isArray(bsName) ? bsName : (bsName ? [bsName] : []);
       this.bs = _bn.flatMap(nm => (BINGSHU[nm] && BINGSHU[nm].effects) || []);  // 兵書(主+副)合併; 缺 effects 欄降級空陣列(同 sgz.py .get)
       const _eq = Array.isArray(eqName) ? eqName : (eqName ? [eqName] : []);
-      this.eq = _eq.flatMap(nm => (EQUIPS[nm] && EQUIPS[nm].effects) || []);   // 裝備(4欄)合併; 同上防禦
+      const _eqSeen = new Set();                      // 同名特技(跨type, 如四欄皆有的"無畏")遊戲規則只生效一件: 依基底名稱去重, 先出現者為準
+      const _eqObjs = _eq.map(nm => EQUIPS[nm]).filter(Boolean).filter(e => !_eqSeen.has(e.name) && (_eqSeen.add(e.name), true));
+      this.eq = _eqObjs.flatMap(e => e.effects || []);   // 裝備(4欄)合併(已去重); nm 可為複合鍵"type·name"或純名稱(向後相容, 見 buildPool 註記)
+      // 裝備 proc(普攻後觸發, 如 昭烈12%繳械/踩踏額外傷): 包成偽突擊(charge)戰法附加, 走既有 charge 觸發路徑(普攻後 rate 擲骰)。
+      // 偽戰法不在戰法庫, 不參與同名戰法去重與 NONEQUIP 過濾; nameZh 預設「特技·名」供 TRACE 辨識。
+      // proc:true 旗標 → 標記為「特技偽戰法」, 非真突擊戰法: 日後若加 chargeup(突擊發動率加成)原語, 必須排除 t.proc===true(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲)。
+      for (const e of _eqObjs) if (e.proc) this.tactics.push({ type: e.proc.type || "charge", rate: e.proc.rate ?? 1, coef: e.proc.coef || 0, kind: e.proc.kind || "phys", n: e.proc.n || 1, nMax: e.proc.nMax || 0, effects: e.proc.effects || [], nameZh: e.proc.nameZh || ("特技·" + e.name), prep: 0, when: null, proc: true });
       const a = add || {}, sm = season || {};      // 養成加值 + 賽季修正
       const apt = (sm.aptS ? 1.20 : aptPct(g, ttype)) + (sm.aptAdd || 0);
-      const scm = sm.mult || 1.0, flat = sm.flat || 0;  // 屬性=(基礎+養成+賽季固定)×適性×賽季乘數
-      this.force = (g.base.force + CITY + (a.force || 0) + flat) * apt * scm * FACTION; this.intel = (g.base.intel + CITY + (a.intel || 0) + flat) * apt * scm * FACTION;
-      this.command = (g.base.command + CITY + (a.command || 0) + flat) * apt * scm * FACTION; this.speed = (g.base.speed + CITY + (a.speed || 0) + flat) * apt * scm * FACTION;
+      const scm = sm.mult || 1.0, flat = sm.flat || 0;
+      // 屬性管線(戰報結算順序 準備→士氣→適性→建築→裝備→戰法): (基礎+加點+賽季flat)×適性×賽季乘 → +城建CITY → ×陣營FACTION → +兵種營CAMP
+      // (裝備 stat "add" 平加效果由 applyEffects/prep 於本管線之後套用, 見 eff() 的 statAdds; 戰法 mult buff 又在其後, 見 eff() 的 mods)
+      const pipe = (base, alloc) => ((base + (alloc || 0) + flat) * apt * scm + CITY) * FACTION + CAMP;
+      this.force = pipe(g.base.force, a.force); this.intel = pipe(g.base.intel, a.intel);
+      this.command = pipe(g.base.command, a.command); this.speed = pipe(g.base.speed, a.speed);
       this.charm = g.charm || 60;                  // 魅力: 城建/陣營是否加成不明, 保守用裸值不縮放(供 scale:"charm" 查表)
-      this.mods = []; this.adds = []; this.dots = [];
+      this.mods = []; this.adds = []; this.dots = []; this.statAdds = [];  // statAdds: 屬性平加(裝備 stat.add, [stat, add, dur, src]); 在 eff() 中於 mods 乘算前先加
       if (a.amp) this.adds.push(["amp", a.amp, 9999]);    // 進階/典藏 攻防加成
       if (a.mitig) this.adds.push(["mitig", a.mitig, 9999]);
-      this.settle = null; this.guardian = null; this.guardShare = 0;
+      this.settle = null; this.guardian = null; this.guardShare = 0; this.guardDur = 0; this.guardNormalOnly = false;  // guardDur: 代承剩餘回合, 歸零清 guardian; guardNormalOnly: 只代承普攻傷害(如 援助), 戰法傷害不轉移
       this.stack = null; this.decay = null; this.swap = 0; this.counter = null;
       this.tauntBy = null; this.tauntDur = 0;      // 嘲諷: 被嘲諷時強制普攻/單體戰法指向 tauntBy, 剩餘回合
       this.shield = null;                          // 護盾: {amt, dur} 吸收固定量傷害, 先於兵力扣減
@@ -131,6 +144,7 @@
     eff(stat) {
       if (this.swap && (stat === "force" || stat === "intel")) stat = stat === "force" ? "intel" : "force";
       let v = this[stat];
+      for (const [s, add] of this.statAdds) if (s === stat || s === "all") v += add;  // 裝備平加(獨立階段, 在陣營/兵種營後、戰法乘算前)
       for (const [s, m] of this.mods) if (s === stat || s === "all") v *= m;
       return v;
     }
@@ -145,6 +159,10 @@
       if (src) this.mods = this.mods.filter(m => !(m[0] === stat && m[3] === src));
       this.mods.push([stat, mult, dur, src]);
     }
+    pushStatAdd(stat, add, dur, src) {                 // 屬性平加(裝備 stat.add): 同 pushMod 慣例, 同來源刷新不疊
+      if (src) this.statAdds = this.statAdds.filter(a => !(a[0] === stat && a[3] === src));
+      this.statAdds.push([stat, add, dur, src]);
+    }
     amp() {
       let a = this.addbonus("amp");
       if (this.stack) a += this.stack.per * this.stack.n;
@@ -156,6 +174,7 @@
       this.dots = this.dots.filter(d => --d[1] > 0);
       this.mods = this.mods.filter(m => --m[2] > 0);
       this.adds = this.adds.filter(a => --a[2] > 0);
+      this.statAdds = this.statAdds.filter(a => --a[2] > 0);   // 裝備平加到期移除(如 疾馳 speed+25 dur:2)
       this.stun = Math.max(0, this.stun - 1);
       this.silence = Math.max(0, this.silence - 1);
       this.disarm = Math.max(0, this.disarm - 1);
@@ -165,6 +184,7 @@
       if (this.decay && --this.decay.left <= 0) this.decay = null;
       this.tauntDur = Math.max(0, this.tauntDur - 1);
       if (this.tauntDur <= 0) this.tauntBy = null;
+      if (this.guardDur) { this.guardDur = Math.max(0, this.guardDur - 1); if (this.guardDur <= 0) { this.guardian = null; this.guardShare = 0; this.guardNormalOnly = false; } }  // 代承到期: 清 guardian(如 援助 首回合援護 dur:1)
       this.dodgeDur = Math.max(0, this.dodgeDur - 1);
       if (this.dodgeDur <= 0) this.dodgeProb = 0;
       this.surehitDur = Math.max(0, this.surehitDur - 1);
@@ -208,7 +228,7 @@
       if (dst.shield.amt <= 0) dst.shield = null;
     }
     const g = dst.guardian;
-    if (g && g.alive && g !== dst) { g.troop -= dmg * dst.guardShare; dst.troop -= dmg * (1 - dst.guardShare); }
+    if (g && g.alive && g !== dst && !(dst.guardNormalOnly && !isNormal)) { g.troop -= dmg * dst.guardShare; dst.troop -= dmg * (1 - dst.guardShare); }  // normalOnly 援護: 戰法傷害(isNormal=false)不轉移
     else dst.troop -= dmg;
     if (TRACE) lg(`　→ ${dst.nm} 損兵 ${Math.round(dmg)}，剩餘 ${Math.max(0, Math.round(dst.troop))}` + (dst.troop <= 0 ? " 【擊破】" : ""));
     if (dst.settle) dst.settle.layers = Math.min(dst.settle.max, dst.settle.layers + 1);
@@ -256,7 +276,7 @@
       case "disarm": return `繳械·禁普攻${d || "(1回合)"}`;
       case "insight": return `洞察·免疫控制${d || "(1回合)"}`;
       case "first": return "先攻·優先行動";
-      case "stat": return `${STAT_ZH[e.stat] || e.stat} ×${mult.toFixed(2)}${d}${sfx}`;
+      case "stat": return e.add != null ? `${STAT_ZH[e.stat] || e.stat} +${(e.scale && caster ? e.add * scaleOf(caster, e.scale) : e.add)}${d}${sfx}` : `${STAT_ZH[e.stat] || e.stat} ×${mult.toFixed(2)}${d}${sfx}`;
       case "dot": return `持續傷害${d}`;
       case "extra": return `額外攻擊+${e.val}`;
       case "stack": return "疊加增傷";
@@ -302,8 +322,8 @@
       if (k === "redirect") {
         let guard = caster;
         if (e.guard === "max_force") { for (const a of allies) if (a.alive && (guard === caster || a.eff("force") > guard.eff("force"))) guard = a; }
-        for (const a of allies) if (a.alive && a !== guard) { a.guardian = guard; a.guardShare = e.share ?? 0.3; }
-        if (TRACE) lg(`　▸ ${guard.nm} 代承友軍傷害(分擔${Math.round((e.share ?? 0.3) * 100)}%)`);
+        for (const a of allies) if (a.alive && a !== guard) { a.guardian = guard; a.guardShare = e.share ?? 0.3; a.guardDur = e.dur ?? 99; a.guardNormalOnly = !!e.normalOnly; }  // 讀 e.dur(預設99=近似全程, 向後相容) + e.normalOnly(只代承普攻); 到期由 tick 清除
+        if (TRACE) lg(`　▸ ${guard.nm} 代承友軍傷害(分擔${Math.round((e.share ?? 0.3) * 100)}%${e.dur && e.dur < 90 ? `, ${e.dur}回合` : ""})`);
         continue;
       }
       const who = e.who || "ally";
@@ -324,6 +344,7 @@
       // 1.0 的偏移量(增益/削弱幅度)乘 SCALE, 1.0 本身(無效果)不受縮放影響。
       const svVal = v => e.scale ? Math.max(-SCALE_CLAMP, Math.min(SCALE_CLAMP, v * scaleOf(caster, e.scale))) : v;
       const svMult = m => e.scale ? 1 + (m - 1) * scaleOf(caster, e.scale) : m;
+      const svAdd = a => e.scale ? a * scaleOf(caster, e.scale) : a;  // 屬性平加縮放(如未來 scale 平加); 一般裝備平加無 scale 直接用原值
       for (const u of dests) {
         if (k === "amp") { const v = svVal(e.val); who === "enemy" && v > 0 ? u.pushAdd("mitig", -v, e.dur, src) : u.pushAdd("amp", v, e.dur, src); }
         else if (k === "mitig") u.pushAdd("mitig", svVal(e.val), e.dur, src);
@@ -332,7 +353,7 @@
         else if (k === "disarm") { if (!u.insight) { u.disarm = Math.max(u.disarm, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入繳械(禁普攻)`); } else if (TRACE) lg(`　▸ ${u.nm} 洞察免疫繳械`); }
         else if (k === "insight") { u.insight = Math.max(u.insight, (e.dur ?? 1) + 1); u.stun = 0; u.silence = 0; u.disarm = 0; }
         else if (k === "first") u.first = Math.max(u.first, e.dur ?? 1);
-        else if (k === "stat") u.pushMod(e.stat, svMult(e.mult ?? 1), e.dur, src);
+        else if (k === "stat") { if (e.add != null) u.pushStatAdd(e.stat, svAdd(e.add), e.dur, src); else u.pushMod(e.stat, svMult(e.mult ?? 1), e.dur, src); }  // 裝備平加(add)與乘算(mult)擇一; add 為戰報所示「裝備獨立平加階段」
         else if (k === "dot") u.dots.push([damage(caster, u, e.coef ?? 0.5, t.kind || "intel"), e.dur]);
         else if (k === "extra") u.pushAdd("extra", e.val, e.dur, src);
         else if (k === "stack") u.stack = { per: e.per ?? 0.1, max: e.max ?? 5, n: 0 };
@@ -463,6 +484,7 @@
             if (TRACE) lg(`【${u.side}】${u.nm} 普通攻擊 → ${tgt.nm}`);
             hit(u, tgt, 1.0, "phys", true, onHit);
             for (let i = 0; i < extraCount(u.addbonus("extra")); i++) { const nt = pickTarget(foesOf(u), u); if (nt) { if (TRACE) lg(`【${u.side}】${u.nm} 連擊 → ${nt.nm}`); hit(u, nt, 1.0, "phys", true, onHit); } }
+            // 突擊(charge)擲骰: 未來若加 chargeup(突擊發動率加成)原語, 必須排除 t.proc===true 的特技偽戰法(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲)。
             for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind, false, onHit); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
           }
         }

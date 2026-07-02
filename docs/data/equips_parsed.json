@@ -1,54 +1,48 @@
 [
   {
-    "name": "援助",
-    "type": "防具",
-    "exclusive": null,
-    "effects": [
-      {"k": "redirect", "who": "ally", "guard": "self", "share": 1.0}
-    ]
-  },
-  {
-    "name": "靈動",
-    "type": "防具",
-    "exclusive": null,
-    "effects": [
-      {"k": "mitig", "who": "self", "val": 0.12, "dur": 99}
-    ]
-  },
-  {
-    "name": "踐踏",
-    "type": "坐騎",
-    "exclusive": null,
-    "effects": [
-      {"k": "dot", "who": "enemy", "coef": 0.35, "dur": 1}
-    ]
-  },
-  {
-    "name": "妖氣",
-    "type": "武器",
-    "exclusive": null,
-    "effects": [
-      {"k": "heal", "who": "self", "coef": 0.1, "dur": 1}
-    ]
-  },
-  {
-    "name": "好學",
-    "type": "寶物",
-    "exclusive": null,
-    "effects": []
-  },
-  {
     "name": "奸雄",
     "type": "武器",
     "exclusive": "曹操",
-    "effects": []
+    "effects": [
+      {
+        "k": "insight",
+        "who": "ally",
+        "dur": 1
+      }
+    ]
   },
   {
-    "name": "王道",
-    "type": "寶物",
-    "exclusive": null,
+    "name": "無懼",
+    "type": "武器",
+    "exclusive": "張遼",
+    "effects": [],
+    "_todo": "戰鬥前2回合自身免疫繳械狀態; 引擎唯一'免疫控制'原語是insight(同時免疫stun/silence/disarm三種,範圍過大於'僅免疫繳械'),套用insight會意外連帶免疫震懾與計窮,失真過大,故不落地,留待引擎新增細分免疫原語"
+  },
+  {
+    "name": "雄烈",
+    "type": "武器",
+    "exclusive": "張飛",
     "effects": [
-      {"k": "amp", "who": "self", "val": 0.2, "dur": 2}
+      {
+        "k": "pierce",
+        "who": "self",
+        "val": 1,
+        "dur": 2
+      }
+    ]
+  },
+  {
+    "name": "武聖",
+    "type": "武器",
+    "exclusive": "關羽",
+    "effects": [
+      {
+        "k": "rateup",
+        "who": "self",
+        "val": 0.05,
+        "dur": 99,
+        "_note": "自帶戰法發動率+5%(rateup 對自帶戰法生效)"
+      }
     ]
   },
   {
@@ -56,184 +50,12 @@
     "type": "武器",
     "exclusive": "呂布",
     "effects": [
-      {"k": "extra", "who": "self", "val": 1.0, "dur": 99}
-    ]
-  },
-  {
-    "name": "雄才",
-    "type": "武器",
-    "exclusive": "孫堅、孫策、孫權",
-    "effects": [
-      {"k": "amp", "who": "self", "val": 0.5, "dur": 99}
-    ]
-  },
-  {
-    "name": "天機",
-    "type": "寶物",
-    "exclusive": "諸葛亮",
-    "effects": []
-  },
-  {
-    "name": "武聖",
-    "type": "武器",
-    "exclusive": "關羽",
-    "effects": []
-  },
-  {
-    "name": "雄烈",
-    "type": "武器",
-    "exclusive": "張飛",
-    "effects": [
-      {"k": "pierce", "who": "self", "val": 1.0, "dur": 2}
-    ]
-  },
-  {
-    "name": "昭烈",
-    "type": "武器",
-    "exclusive": "劉備",
-    "effects": [
-      {"k": "stun", "who": "enemy", "dur": 1}
-    ]
-  },
-  {
-    "name": "弓神",
-    "type": "武器",
-    "exclusive": "黃忠",
-    "effects": []
-  },
-  {
-    "name": "膽略",
-    "type": "武器",
-    "exclusive": "趙雲",
-    "effects": []
-  },
-  {
-    "name": "佳人",
-    "type": "防具",
-    "exclusive": "貂蟬",
-    "effects": [
-      {"k": "mitig", "who": "self", "val": 0.04, "dur": 99}
-    ]
-  },
-  {
-    "name": "華服",
-    "type": "防具",
-    "exclusive": "甘寧",
-    "effects": [
-      {"k": "amp", "who": "self", "val": 0.12, "dur": 99}
-    ]
-  },
-  {
-    "name": "長建",
-    "type": "寶物",
-    "exclusive": null,
-    "effects": [
-      {"k": "heal", "who": "self", "coef": 0.1, "dur": 99}
-    ]
-  },
-  {
-    "name": "奇兆",
-    "type": "寶物",
-    "exclusive": "左慈",
-    "effects": []
-  },
-  {
-    "name": "擐甲",
-    "type": "防具",
-    "exclusive": "司馬懿",
-    "effects": [
-      {"k": "mitig", "who": "self", "val": 0.04, "dur": 4}
-    ]
-  },
-  {
-    "name": "暴躁",
-    "type": "寶物",
-    "exclusive": null,
-    "effects": [
-      {"k": "amp", "who": "self", "val": 0.03, "dur": 99}
-    ]
-  },
-  {
-    "name": "祈禱",
-    "type": "寶物",
-    "exclusive": null,
-    "effects": [
-      {"k": "mitig", "who": "self", "val": 0.03, "dur": 99}
-    ]
-  },
-  {
-    "name": "剛體",
-    "type": "防具",
-    "exclusive": null,
-    "effects": [
-      {"k": "mitig", "who": "self", "val": 0.05, "dur": 99}
-    ]
-  },
-  {
-    "name": "精神",
-    "type": "防具",
-    "exclusive": null,
-    "effects": [
-      {"k": "mitig", "who": "self", "val": 0.05, "dur": 99}
-    ]
-  },
-  {
-    "name": "沉重",
-    "type": "防具",
-    "exclusive": null,
-    "effects": [
-      {"k": "stat", "who": "self", "stat": "command", "mult": 1.15, "dur": 99},
-      {"k": "stat", "who": "self", "stat": "speed", "mult": 0.95, "dur": 99}
-    ]
-  },
-  {
-    "name": "凝神",
-    "type": "武器",
-    "exclusive": null,
-    "effects": []
-  },
-  {
-    "name": "迴響",
-    "type": "武器",
-    "exclusive": null,
-    "effects": []
-  },
-  {
-    "name": "幽影",
-    "type": "武器",
-    "exclusive": null,
-    "effects": []
-  },
-  {
-    "name": "護主",
-    "type": "坐騎",
-    "exclusive": null,
-    "effects": [
-      {"k": "stat", "who": "self", "stat": "command", "mult": 1.12, "dur": 99}
-    ]
-  },
-  {
-    "name": "躍馬",
-    "type": "坐騎",
-    "exclusive": null,
-    "effects": [
-      {"k": "stat", "who": "self", "stat": "force", "mult": 1.12, "dur": 99}
-    ]
-  },
-  {
-    "name": "疾馳",
-    "type": "坐騎",
-    "exclusive": "呂布",
-    "effects": [
-      {"k": "stat", "who": "self", "stat": "speed", "mult": 1.25, "dur": 2}
-    ]
-  },
-  {
-    "name": "出奇",
-    "type": "坐騎",
-    "exclusive": null,
-    "effects": [
-      {"k": "stat", "who": "self", "stat": "intel", "mult": 1.15, "dur": 1}
+      {
+        "k": "extra",
+        "who": "self",
+        "val": 1,
+        "dur": 1
+      }
     ]
   },
   {
@@ -241,21 +63,862 @@
     "type": "武器",
     "exclusive": "張角",
     "effects": [
-      {"k": "dot", "who": "enemy", "coef": 0.6, "dur": 1}
+      {
+        "k": "extra",
+        "who": "self",
+        "val": 0.7,
+        "dur": 99,
+        "kind": "intel",
+        "_note": "自帶戰法70%機率額外一次謀略攻擊; extra 無獨立kind/rate欄, 用val=期望值0.7近似"
+      }
     ]
   },
   {
-    "name": "無懼",
+    "name": "弓神",
     "type": "武器",
-    "exclusive": "張遼",
-    "effects": []
+    "exclusive": "黃忠",
+    "effects": [
+      {
+        "k": "surehit",
+        "who": "self",
+        "dur": 2
+      }
+    ]
+  },
+  {
+    "name": "神算",
+    "type": "武器",
+    "exclusive": "諸葛亮",
+    "effects": [
+      {
+        "k": "mitig",
+        "who": "ally",
+        "val": 0.07,
+        "dur": 1,
+        "scale": "intel"
+      }
+    ]
+  },
+  {
+    "name": "昭烈",
+    "type": "武器",
+    "exclusive": "劉備",
+    "effects": [],
+    "proc": {
+      "type": "charge",
+      "rate": 0.12,
+      "effects": [
+        {
+          "k": "disarm",
+          "who": "enemy",
+          "dur": 1
+        }
+      ]
+    }
+  },
+  {
+    "name": "雄才",
+    "type": "武器",
+    "exclusive": "孫堅、孫策、孫權",
+    "effects": [
+      {
+        "k": "extra",
+        "who": "self",
+        "val": 0.7,
+        "dur": 1,
+        "_note": "戰鬥首回合獲得70%群攻效果; extra 近似群攻"
+      }
+    ]
+  },
+  {
+    "name": "興師",
+    "type": "武器",
+    "exclusive": "姜維",
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "force",
+        "mult": 1.1,
+        "dur": 99,
+        "scale": "intel",
+        "_note": "武力+智力10%; stat無跨屬性加算, 用固定mult 1.10近似, scale標註來源智力"
+      }
+    ]
+  },
+  {
+    "name": "膽略",
+    "type": "武器",
+    "exclusive": "趙雲",
+    "effects": [
+      {
+        "k": "amp",
+        "who": "self",
+        "val": 0.05,
+        "dur": 99,
+        "_approx": "crit-ev",
+        "_note": "會心5%(觸發+100%傷害) 期望值折算: amp += 0.05*1.00"
+      }
+    ]
+  },
+  {
+    "name": "神威",
+    "type": "武器",
+    "exclusive": "馬超",
+    "effects": [
+      {
+        "k": "extra",
+        "who": "self",
+        "val": 0.2,
+        "dur": 1,
+        "_note": "戰鬥首回合獲得群攻(傷害率20%); extra近似群攻"
+      }
+    ]
+  },
+  {
+    "name": "樂奏",
+    "type": "武器",
+    "exclusive": "周瑜",
+    "effects": [
+      {
+        "k": "rateup",
+        "who": "self",
+        "val": 0.03,
+        "dur": 99
+      }
+    ]
+  },
+  {
+    "name": "龍驤",
+    "type": "武器",
+    "exclusive": "關興",
+    "effects": [],
+    "_todo": "標記首次對我軍主將造成傷害的目標,自身對該目標傷害+10%(需標記/追蹤特定目標機制,引擎無此原語)"
+  },
+  {
+    "name": "虎峙",
+    "type": "武器",
+    "exclusive": "張苞",
+    "effects": [
+      {
+        "k": "rateup",
+        "who": "self",
+        "val": 0.15,
+        "dur": 1
+      }
+    ]
+  },
+  {
+    "name": "明略",
+    "type": "武器",
+    "exclusive": "司馬懿",
+    "effects": [
+      {
+        "k": "amp",
+        "who": "self",
+        "val": 0.07,
+        "dur": 99,
+        "_approx": "crit-ev",
+        "_note": "source為『第4回合起獲得7%攻心或奇謀直到戰鬥結束』; 引擎equip效果無when.rounds/from回合窗(僅tactic層級when有效, equip合併效果不帶when), 故改為全程生效(dur:99), 較原效果提前3回合生效(第1~3回合本不應有), 為寬鬆近似(非機率折算, 且時點偏早)"
+      }
+    ]
+  },
+  {
+    "name": "奇襲",
+    "type": "武器",
+    "exclusive": "夏侯淵",
+    "effects": [],
+    "_todo": "自帶戰法對已有計窮狀態敵軍額外造成一次兵刃傷害(傷害率30%); 需條件判定目標狀態,引擎extra/dot無法附加'僅對計窮目標'條件"
+  },
+  {
+    "name": "威名",
+    "type": "武器",
+    "exclusive": "袁紹",
+    "effects": [],
+    "_todo": "與同陣營我軍造成傷害提升2.5%(陣營連動增傷,需按陣營篩選友軍,引擎無此原語)"
+  },
+  {
+    "name": "回響",
+    "type": "武器",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "rateup",
+        "who": "self",
+        "val": 0.015,
+        "dur": 99
+      }
+    ]
+  },
+  {
+    "name": "妖氣",
+    "type": "武器",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "heal",
+        "who": "self",
+        "coef": 0.1,
+        "dur": 99,
+        "_approx": "heal-self≈heal-weakest",
+        "_note": "source為『普攻後回復自身兵力』; heal原語固定補我方最殘者(不區分self), 且為prep單次套用而非每次普攻後觸發, 屬雙重近似(治療對象與時點皆非精確)"
+      }
+    ]
+  },
+  {
+    "name": "凝神",
+    "type": "武器",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "amp",
+        "who": "self",
+        "val": 0.02,
+        "dur": 99,
+        "_approx": "crit-ev"
+      }
+    ]
+  },
+  {
+    "name": "援助",
+    "type": "防具",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "redirect",
+        "who": "ally",
+        "guard": "self",
+        "share": 1,
+        "dur": 1,
+        "normalOnly": true
+      }
+    ]
   },
   {
     "name": "灼裂",
     "type": "防具",
     "exclusive": null,
     "effects": [
-      {"k": "amp", "who": "self", "val": 1.0, "dur": 99}
+      {
+        "k": "counter",
+        "who": "self",
+        "coef": 1.25,
+        "kind": "phys",
+        "prob": 1,
+        "_note": "戰鬥首回合反擊(傷害率125%),最多2次; counter原語無次數上限欄,以prob=1近似(引擎counter為條件觸發,受擊即反擊,無額外次數控制)"
+      }
     ]
+  },
+  {
+    "name": "靈動",
+    "type": "防具",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "dodge",
+        "who": "self",
+        "prob": 1,
+        "dur": 1,
+        "_approx": "block-1x≈dodge-1round",
+        "_note": "source為『獲得1次抵禦(格擋單次傷害)』; 引擎無單次格擋計數原語, 用 dodge prob:1 dur:1 近似 → 實為『首回合內全程必定規避每次來襲』, 較原『僅擋1次』略強(首回合多段攻擊會全躲)"
+      }
+    ]
+  },
+  {
+    "name": "長慮",
+    "type": "防具",
+    "exclusive": "司馬懿",
+    "effects": [
+      {
+        "k": "amp",
+        "who": "self",
+        "val": 0.1,
+        "dur": 99,
+        "_note": "奇謀傷害+10%,並使攻心效果+30%; 引擎無區分謀略會心(奇謀)/治療會心(攻心)的獨立倍率,僅取奇謀部分用amp近似"
+      }
+    ]
+  },
+  {
+    "name": "擐甲",
+    "type": "防具",
+    "exclusive": "司馬懿",
+    "effects": [
+      {
+        "k": "mitig",
+        "who": "self",
+        "val": 0.04,
+        "dur": 4
+      }
+    ]
+  },
+  {
+    "name": "喬裝",
+    "type": "防具",
+    "exclusive": "呂蒙",
+    "effects": [
+      {
+        "k": "rateup",
+        "who": "self",
+        "val": 0.06,
+        "dur": 99
+      }
+    ],
+    "_todo": "自帶戰法造成控制機率+6%(rateup近似採用,已寫入); 第2回合使敵軍群體處於'遇襲'狀態(新狀態機制,引擎無對應原語,未落地)"
+  },
+  {
+    "name": "梟姬",
+    "type": "防具",
+    "exclusive": "孫尚香",
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "command",
+        "mult": 1.15,
+        "dur": 99,
+        "scale": "charm"
+      },
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "speed",
+        "mult": 1.15,
+        "dur": 99,
+        "scale": "charm"
+      }
+    ]
+  },
+  {
+    "name": "玄妙",
+    "type": "防具",
+    "exclusive": "左慈",
+    "effects": [],
+    "_todo": "自身規避成功後60%機率治療我軍單體(治療率50%); 需'規避成功'觸發事件,引擎onHit僅支援attacked/damaged,無dodge-success觸發點"
+  },
+  {
+    "name": "華服",
+    "type": "防具",
+    "exclusive": "甘寧",
+    "effects": [
+      {
+        "k": "amp",
+        "who": "self",
+        "val": 0.12,
+        "dur": 99,
+        "_approx": "crit-ev",
+        "_note": "會心傷害+12%(非會心機率,而是觸發後傷害加成的加成); 用amp直接體現期望增量"
+      }
+    ]
+  },
+  {
+    "name": "佳人",
+    "type": "防具",
+    "exclusive": "貂蟬",
+    "effects": [
+      {
+        "k": "heal",
+        "who": "self",
+        "coef": 0.25,
+        "dur": 99,
+        "_note": "每回合25%機率恢復兵力(回復率100%); heal原語每回合套用一次(prep階段),用期望值0.25*1.0=0.25近似"
+      }
+    ]
+  },
+  {
+    "name": "風聲",
+    "type": "防具",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "silence",
+        "who": "enemy",
+        "dur": 1,
+        "_approx": "no-禁療-primitive",
+        "_note": "source為『首回合普攻後使隨機敵單體禁療1回合(無法被治療)』; 引擎無『禁療』原語, 借 silence(禁主動戰法)近似——語意不同(禁療針對治療, silence針對主動戰法), 僅為最接近的控制類替代, 且以prep套用近似『首回合普攻後』觸發時點"
+      }
+    ]
+  },
+  {
+    "name": "周旋",
+    "type": "防具",
+    "exclusive": null,
+    "effects": [],
+    "_todo": "自身兵力首次低於70%時獲得9%倒戈,持續2回合(倒戈=陣營反轉機制,引擎無此原語,且需兵力閾值觸發條件)"
+  },
+  {
+    "name": "榮光",
+    "type": "防具",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "mitig",
+        "who": "self",
+        "val": 0.0016,
+        "dur": 99,
+        "scale": "intel",
+        "_note": "受謀略傷害4%機率完全免疫; 無'完全免疫'原語,用期望值折算mitig≈4%*100%但因mitig只對mitig類傷害籠統生效(不分兵刃/謀略),故大幅降權避免誤傷兵刃減傷;此為極粗略近似"
+      }
+    ]
+  },
+  {
+    "name": "逆鱗",
+    "type": "防具",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "amp",
+        "who": "self",
+        "val": 0.006,
+        "dur": 99,
+        "_approx": "crit-ev",
+        "_note": "受傷時3%機率獲得10%會心,持續2回合,可疊加2次; 期望值≈3%*10%*2(可疊２)≈0.6%,近似"
+      }
+    ]
+  },
+  {
+    "name": "活力",
+    "type": "防具",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "command",
+        "mult": 1.05,
+        "dur": 99,
+        "_note": "統率+5%; source原文為百分比, 保留mult(非flat)"
+      }
+    ]
+  },
+  {
+    "name": "沉重",
+    "type": "防具",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "command",
+        "add": 15,
+        "dur": 99
+      },
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "speed",
+        "add": -5,
+        "dur": 99
+      }
+    ]
+  },
+  {
+    "name": "精神",
+    "type": "防具",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "mitig",
+        "who": "self",
+        "val": 0.05,
+        "dur": 99
+      }
+    ]
+  },
+  {
+    "name": "荊棘",
+    "type": "防具",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "counter",
+        "who": "self",
+        "coef": 0.05,
+        "kind": "phys",
+        "prob": 1,
+        "_note": "受普攻時反彈5%傷害; counter用固定coef近似(非傷害的5%,而是固定係數傷害,粗略近似)"
+      }
+    ]
+  },
+  {
+    "name": "精銳",
+    "type": "防具",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "mitig",
+        "who": "self",
+        "val": 0.05,
+        "dur": 99,
+        "_note": "降低受到兵刃傷害5%; mitig不分兵刃/謀略,用整體mitig近似(略寬)"
+      }
+    ]
+  },
+  {
+    "name": "踩踏",
+    "type": "坐騎",
+    "exclusive": null,
+    "effects": [],
+    "proc": {
+      "type": "charge",
+      "rate": 1,
+      "coef": 0.35,
+      "kind": "phys",
+      "_est": "coef 0.35 為估算(源『額外兵刃傷害受速度影響』; charge 走 hit()/damage() 無 scale 欄, 速度縮放掛不上, 故取固定值近似, 未含速度加成)"
+    }
+  },
+  {
+    "name": "衝陣",
+    "type": "坐騎",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "dot",
+        "who": "enemy",
+        "coef": 0.3,
+        "dur": 1,
+        "_approx": "first-hit≈round1-dot",
+        "_note": "source為『首回合首次造成傷害時附加一次額外兵刃傷害』; 引擎無『首次傷害』觸發點, 用首回合 dot(dur:1)近似單次額外傷害; 未改 charge proc 因 charge 會每回合每次普攻觸發, 過量"
+      }
+    ]
+  },
+  {
+    "name": "疾馳",
+    "type": "坐騎",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "speed",
+        "add": 25,
+        "dur": 2
+      }
+    ]
+  },
+  {
+    "name": "破勢",
+    "type": "坐騎",
+    "exclusive": "關羽、呂布",
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "command",
+        "mult": 1.15,
+        "dur": 2
+      }
+    ]
+  },
+  {
+    "name": "赳螑",
+    "type": "坐騎",
+    "exclusive": "張飛",
+    "effects": [],
+    "_todo": "第4回合行動前50%機率使敵軍群體繳械1回合; 引擎equip效果無when.rounds窗控制(僅tactic層級when有效),機率+群體+特定回合組合超出equip效果表達能力"
+  },
+  {
+    "name": "天機",
+    "type": "坐騎",
+    "exclusive": "諸葛亮",
+    "effects": [
+      {
+        "k": "rateup",
+        "who": "self",
+        "val": 0.04,
+        "dur": 99,
+        "_note": "自帶戰法發動機率35%→39%(+4%); rateup 僅套用於自帶戰法發動判定(引擎 t.type==='active' 分支)"
+      }
+    ]
+  },
+  {
+    "name": "王道",
+    "type": "寶物",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "amp",
+        "who": "self",
+        "val": 0.2,
+        "dur": 2,
+        "_approx": "crit-ev",
+        "_note": "會心+奇謀機率各20%期望值折算為統一amp; dur:2 為裝備效果套用後的『存續回合數』, 非真實『戰鬥前2回合』的回合窗(裝備效果於prep一次性套用, 無 when.rounds 回合窗控制; 此處因 source 恰為前2回合、dur:2 存續2回合而數值巧合吻合, 但機制上是存續時長非回合窗)"
+      }
+    ]
+  },
+  {
+    "name": "長健",
+    "type": "寶物",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "heal",
+        "who": "ally",
+        "coef": 0.1,
+        "dur": 1
+      }
+    ]
+  },
+  {
+    "name": "謀攻",
+    "type": "寶物",
+    "exclusive": null,
+    "effects": [],
+    "_todo": "第3回合開始時對敵軍單體造成計窮1回合; 引擎equip效果無when.rounds窗控制(僅tactic層級when有效),第3回合條件觸發無法在equip效果表達"
+  },
+  {
+    "name": "反間",
+    "type": "寶物",
+    "exclusive": null,
+    "effects": [],
+    "_todo": "第3回合開始時對敵軍單體造成混亂1回合; 同謀攻,equip無when.rounds支援"
+  },
+  {
+    "name": "奇門",
+    "type": "寶物",
+    "exclusive": "左慈",
+    "effects": [],
+    "_todo": "我方仙人獲得金丹秘術規避時額外+10%規避機率(限定'仙人'職業+特定戰法連動,引擎無角色職業/戰法連動判定)"
+  },
+  {
+    "name": "行雨",
+    "type": "寶物",
+    "exclusive": "于吉",
+    "effects": [],
+    "_todo": "興雲布雨的水攻持續回合+1-2回合(特定戰法'興雲布雨'的持續時間延長,需綁定戰法名,引擎無跨戰法聯動機制)"
+  },
+  {
+    "name": "機巧",
+    "type": "寶物",
+    "exclusive": "黃月英",
+    "effects": [],
+    "_todo": "工神第4回合傷害降低效果改為僅作用於我軍單體(修改特定戰法'工神'的效果範圍,引擎無跨戰法聯動機制)"
+  },
+  {
+    "name": "暴躁",
+    "type": "寶物",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "amp",
+        "who": "self",
+        "val": 0.03,
+        "dur": 99
+      }
+    ]
+  },
+  {
+    "name": "剛體",
+    "type": "寶物",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "mitig",
+        "who": "self",
+        "val": 0.03,
+        "dur": 99
+      }
+    ]
+  },
+  {
+    "name": "祈禱",
+    "type": "寶物",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "heal",
+        "who": "self",
+        "coef": 0.08,
+        "dur": 99,
+        "_note": "治療效果提升8%; 用heal係數近似體現(嚴格說應為對他人治療量的加成,而非自身治療行為)"
+      }
+    ]
+  },
+  {
+    "name": "好學",
+    "type": "寶物",
+    "exclusive": null,
+    "effects": [],
+    "_noncombat": true
+  },
+  {
+    "name": "蠻力",
+    "type": "武器",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "force",
+        "add": 8,
+        "dur": 99
+      }
+    ]
+  },
+  {
+    "name": "符咒",
+    "type": "武器",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "intel",
+        "add": 8,
+        "dur": 99
+      }
+    ]
+  },
+  {
+    "name": "石膚",
+    "type": "武器",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "command",
+        "add": 8,
+        "dur": 99
+      }
+    ]
+  },
+  {
+    "name": "幽影",
+    "type": "武器",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "speed",
+        "add": 8,
+        "dur": 99
+      }
+    ]
+  },
+  {
+    "name": "平衡",
+    "type": "武器",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "all",
+        "add": 3,
+        "dur": 99
+      }
+    ]
+  },
+  {
+    "name": "堅定",
+    "type": "防具",
+    "exclusive": null,
+    "effects": [],
+    "_noncombat": true
+  },
+  {
+    "name": "嘶風",
+    "type": "坐騎",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "force",
+        "add": 8,
+        "dur": 99,
+        "_note": "三修裁決: 武力+8(覆蓋source文字'提升速度屬性')"
+      }
+    ]
+  },
+  {
+    "name": "學識",
+    "type": "寶物",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "charm",
+        "mult": 1.1,
+        "dur": 99
+      }
+    ],
+    "_todo": "提升政治與魅力屬性; 引擎5維(force/intel/command/speed/charm)無政治(politics)欄位,僅能體現魅力部分,政治部分無法落地"
+  },
+  {
+    "name": "無畏",
+    "type": "武器",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "command",
+        "add": 5,
+        "dur": 99,
+        "_note": "統率+5(user 裁定值, 阻塞3 flat平加); 四欄(武器/防具/坐騎/寶物)同名同效, 遊戲內同名特技只生效一件, 由引擎按基底名稱去重"
+      }
+    ]
+  },
+  {
+    "name": "無畏",
+    "type": "防具",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "command",
+        "add": 5,
+        "dur": 99,
+        "_note": "統率+5(user 裁定值, 阻塞3 flat平加); 四欄(武器/防具/坐騎/寶物)同名同效, 遊戲內同名特技只生效一件, 由引擎按基底名稱去重"
+      }
+    ]
+  },
+  {
+    "name": "無畏",
+    "type": "坐騎",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "command",
+        "add": 5,
+        "dur": 99,
+        "_note": "統率+5(user 裁定值, 阻塞3 flat平加); 四欄(武器/防具/坐騎/寶物)同名同效, 遊戲內同名特技只生效一件, 由引擎按基底名稱去重"
+      }
+    ]
+  },
+  {
+    "name": "無畏",
+    "type": "寶物",
+    "exclusive": null,
+    "effects": [
+      {
+        "k": "stat",
+        "who": "self",
+        "stat": "command",
+        "add": 5,
+        "dur": 99,
+        "_note": "統率+5(user 裁定值, 阻塞3 flat平加); 四欄(武器/防具/坐騎/寶物)同名同效, 遊戲內同名特技只生效一件, 由引擎按基底名稱去重"
+      }
+    ]
+  },
+  {
+    "name": "應變",
+    "type": "武器",
+    "exclusive": null,
+    "effects": [],
+    "_todo": "第3回合開始時對敵軍單體造成繳械1回合; 引擎equip效果無when.rounds窗控制(僅tactic層級when有效),第3回合條件觸發無法在equip效果表達。app原樣同時見於武器/寶物兩欄, 兩欄同名同效(未落地), 遊戲內同名特技只生效一件。"
+  },
+  {
+    "name": "應變",
+    "type": "寶物",
+    "exclusive": null,
+    "effects": [],
+    "_todo": "第3回合開始時對敵軍單體造成繳械1回合; 引擎equip效果無when.rounds窗控制(僅tactic層級when有效),第3回合條件觸發無法在equip效果表達。app原樣同時見於武器/寶物兩欄, 兩欄同名同效(未落地), 遊戲內同名特技只生效一件。"
   }
 ]
