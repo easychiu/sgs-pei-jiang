@@ -57,6 +57,7 @@ button{cursor:pointer;font-family:inherit}
   border:1px solid var(--line);border-radius:8px;padding:10px}
 .logln{color:#cdbf9c;white-space:pre-wrap}
 .brow{margin:10px 0;font-size:15px}
+.eqdesc{margin:2px 0 0;min-height:14px}
 .balloc{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}
 .balloc label{display:flex;flex-direction:column;gap:4px;color:var(--gold2);text-align:center}
 .balloc input{background:#2a2018;color:var(--ink);border:1px solid var(--line);border-radius:6px;
@@ -145,11 +146,12 @@ select{background:#2a2018;color:var(--ink);border:1px solid var(--line);
 .modal-box{background:var(--bg2);border:2px solid var(--gold);border-radius:12px;
   max-width:680px;width:100%;max-height:90vh;overflow:auto;padding:20px}
 .hidden{display:none!important}
-.pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));
+.pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));
   gap:8px;margin-top:12px}
 .pick{background:#1b140e;border:1px solid var(--line);border-radius:6px;padding:8px;
   text-align:center;cursor:pointer;font-size:14px}
 .pick:hover{border-color:var(--gold);color:var(--gold2)}
+.pick .sub{font-size:11px;color:#9a8b6a;margin-top:3px;line-height:1.35;white-space:normal}
 .detail{display:flex;gap:18px;flex-wrap:wrap}
 .detail img{width:240px;border-radius:8px;border:1px solid var(--gold)}
 .detail .meta{flex:1;min-width:220px}
