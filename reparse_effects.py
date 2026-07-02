@@ -342,6 +342,38 @@ TAIPING_EFFECTS = [
 # 發動率子句本身標註「受X影響」, 故本白名單暫為空(保留供未來新落地戰法核對時使用)。
 RATE_SCALE_PLAN = {}
 
+# --- 批7補(user 釐清): nativeOnly 適用範圍 — 嚴格按原文措辭二分 ------------------
+# 規則(user 明確指示):
+# - 原文明寫「自帶(主動)戰法發動率|機率」→ nativeOnly:True(如 太平道法; 裝備特技 武聖/
+#   天機/虎峙/喬裝 —— equips_parsed.json 既有的 nativeOnly 旗標與本規則一致, 本批引擎
+#   落地 addbonus_for 後開始實際生效)。
+# - 原文寫「自身|自己主動戰法」→ 不加 nativeOnly, 全部主動戰法都吃(含傳承), 也不分準備
+#   與否(user 明確指出白眉不分自帶或準備)。
+# - 拿不準的不加旗標, 只回報。
+#
+# 全庫掃描分類結果(發動率提升類子句, 2026-07-02):
+# 【nativeOnly 組(原文「自帶」)】
+# - 已落地: 太平道法(tactics, 本批)。裝備側(equips_parsed.json, 非本批可改檔, 旗標既有已
+#   合規): 武聖「自帶戰法發動率增加5%」/ 天機「增加自帶戰法發動機率35%→39%」/ 虎峙「戰鬥
+#   首回合提高自帶戰法15%發動率」/ 喬裝「自帶戰法造成控制機率提高6%」(rateup近似, 見其_todo)。
+# - 未落地(各有無法表達的缺口, 跳過): 三勢陣(主將概念, 批6已記錄) / 振軍擊營(「有負面狀態
+#   的友軍單體」條件無原語) / 藏器待時(「第三回合起」是效果級窗口, when.from 為戰法級,
+#   前2回合另有效果會被誤延) / 虛實奇謀(主將+適性S條件) / 錦囊妙計(每回合機率觸發+跳過準備
+#   的複合機制) / 兵書·百戰「提高自帶戰法的發動率」(原文無數值, 且 bingshu_parsed.json
+#   非本批可改檔)。
+# 【全主動組(「自身/自己/友軍…主動戰法」, 不加 nativeOnly)】
+# - 已落地: 白眉 / 先成其慮 / 獅子奮迅 / 進言(皆無旗標, 合規)。裝備側: 樂奏「提高3%主動
+#   戰法發動幾率」/ 回響「提高1.5%主動戰法發動幾率」(皆無旗標, 合規)。
+# - 未落地(跳過): 十二奇策(「提高我軍全體1回合3%→6%主動戰法發動機率(受智力影響)」rateup
+#   子句本身乾淨, 但後半 proc-on-cast 謀略攻擊無原語, 且 RATEUP_RE 不匹配「值在前」句型,
+#   整條戰法留待後續批次) / 舌戰群儒(反應式觸發「敵軍嘗試發動主動戰法時」) / 符命自立
+#   (主將條件+逐回合衰減) / 兵書·示敵以弱(原文無數值)。
+# 【拿不準, 不加旗標, 回報】
+# - 竭力佐謀「使自身本回合非自帶主動戰法發動率提高100%」: 「非自帶」是 nativeOnly 的反向
+#   (inheritedOnly), 現無此旗標概念, 硬套 nativeOnly 會弄反語意, 跳過。
+# 【非 rateup 語意(不相關)】 南蠻渠魁/大戟士/結盟(自身戰法內部發動率機制, 非給其他戰法的
+# buff) / 天公(發動自帶戰法後 proc 額外攻擊, 非發動率提升)。
+
 
 def extract_dmg_pct(txt):
     """取滿級傷害率(取範圍上限), 找不到回傳 None。"""
@@ -909,6 +941,10 @@ def main():
                        "——詳見 RATE_SCALE_PLAN 註解")
     print(f"rateup/chargeup 已落地條目全庫掃描補 scale: {n_rate_scale_backfilled} 處"
           f"（{', '.join(rate_scale_backfilled_names) if rate_scale_backfilled_names else _rsb_skip_note}）")
+    print("nativeOnly 適用範圍(user 釐清, 嚴格按原文措辭二分——詳見 RATE_SCALE_PLAN 下方註解): "
+          "nativeOnly組=太平道法(戰法)+武聖/天機/虎峙/喬裝(裝備, 旗標既有已合規)；"
+          "全主動組=白眉/先成其慮/獅子奮迅/進言(戰法)+樂奏/回響(裝備), 皆無旗標合規；"
+          "拿不準跳過=竭力佐謀(「非自帶」為反向旗標, 無原語)")
     print(f"overrides(查證資料整合) 套用 effectText/type: {len(overrides_applied)} 筆"
           f"（{', '.join(sorted(overrides_applied)) if overrides_applied else '無'}）")
     print(f"overrides invalid(幽靈條目→type:none): {n_overrides_invalid} 筆"

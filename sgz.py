@@ -1262,6 +1262,33 @@ def demo():
     assert total_inherited == 0, \
         f"nativeOnly=True 的加成不應套用到傳承(非自帶)戰法, got={total_inherited:.4f}"
 
+    # 31) nativeOnly 適用範圍(user 釐清, 嚴格按原文措辭二分, 見 reparse_effects.py 的
+    #     RATE_SCALE_PLAN 下方註解): 「自帶」→ nativeOnly; 「自身主動戰法」→ 無旗標(全主動都吃,
+    #     含傳承, 不分準備)。鎖定已落地條目合規:
+    # 31a) 白眉「自身主動戰法的發動機率提高6%→12%」: 不得有 nativeOnly/prepOnly(user 明確指出
+    #      白眉不分自帶或準備)。先成其慮/獅子奮迅/進言 同措辭同規則。
+    for _nm in ("白眉", "先成其慮", "獅子奮迅", "進言"):
+        _ru = next(e for e in TACTICS[_nm]["effects"] if e["k"] == "rateup")
+        assert not _ru.get("nativeOnly") and not _ru.get("prepOnly"), \
+            f"{_nm}(「自身/自己/友軍主動戰法」措辭)的 rateup 不得帶 nativeOnly/prepOnly 旗標"
+    # 31b) 裝備側 nativeOnly(武聖「自帶戰法發動率增加5%」, equips_parsed.json 既有旗標)經本批
+    #      addbonus_for 落地後應實際生效: 只加自帶戰法, 不加傳承戰法。裝備效果經 fight() 的
+    #      pt() 包裝(無 nameZh → src=None)套用, 這裡直接複製該路徑。
+    ws_u = Unit(POOL["關羽"], "騎", equip=["武器·武聖"])
+    assert any(e.get("k") == "rateup" and e.get("nativeOnly") for e in ws_u.eq), \
+        "武聖裝備應帶 nativeOnly rateup 效果(equips_parsed.json)"
+    apply_effects(ws_u, None, {"effects": ws_u.eq, "kind": "phys"}, [ws_u], [], no_heal=True)
+    native_tac_ws = {"type": "active", "rate": 0.5, "prep": 0, "native": True, "effects": [], "coef": 0}
+    inherit_tac_ws = {"type": "active", "rate": 0.5, "prep": 0, "effects": [], "coef": 0}  # 無 native 鍵 = 傳承
+    assert abs(ws_u.addbonus_for("rateup", native_tac_ws) - 0.05) < 1e-9, \
+        "武聖(自帶戰法發動率+5%)應加成自帶戰法"
+    assert ws_u.addbonus_for("rateup", inherit_tac_ws) == 0, \
+        "武聖 nativeOnly 不應加成傳承戰法"
+    # 31c) Unit 建構時自帶戰法應帶 native=True, 傳承戰法不帶(供 31a/31b 的旗標篩選用)
+    n_unit = Unit(POOL["關羽"], "騎", inherit=["白眉"])
+    assert n_unit.tactics[0].get("native") is True and not n_unit.tactics[1].get("native"), \
+        "Unit.tactics[0](自帶)應標 native=True, 傳承戰法不標"
+
     print("self-check OK")
 
 
