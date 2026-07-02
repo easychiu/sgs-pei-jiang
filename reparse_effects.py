@@ -38,6 +38,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 RAW_PATH = os.path.join(ROOT, "data", "tactics.json")
 PARSED_PATH = os.path.join(ROOT, "docs", "data", "tactics_parsed.json")
 OVERRIDES_PATH = os.path.join(ROOT, "docs", "data", "tactics_overrides.json")
+CORRECTIONS_PATH = os.path.join(ROOT, "docs", "data", "tactic_corrections.json")
 
 DMG_RANGE = re.compile(r"傷害率\s*(\d+(?:\.\d+)?)\s*%?\s*(?:→|~|-)\s*(\d+(?:\.\d+)?)\s*%?")
 DMG_SINGLE = re.compile(r"傷害率\s*(\d+(?:\.\d+)?)\s*%")
@@ -698,6 +699,52 @@ def apply_overrides_to_raw(raw_by_name, overrides):
     return applied
 
 
+def load_corrections():
+    """讀 docs/data/tactic_corrections.json(批10: 全庫驗證findings仲裁修正覆蓋層)。
+    缺檔時回傳空 dict(corrections 為選配層, 供 reparse 冪等重跑時不報錯)。"""
+    if not os.path.exists(CORRECTIONS_PATH):
+        return {}
+    with open(CORRECTIONS_PATH, encoding="utf-8") as f:
+        doc = json.load(f)
+    return doc.get("corrections", {})
+
+
+def apply_corrections(parsed, corrections):
+    """批10: 在所有既有步驟之後(最末)套用 corrections —— 全庫驗證findings仲裁的最終結果。
+    宣告式覆寫(讀檔, 非增量 patch): 每個戰法的 correction 物件可含:
+      - "set": {欄位: 目標值} 的 sparse dict, 只覆寫列出的頂層欄位(coef/rate/n/nMax/prep等),
+        不觸碰其餘欄位。
+      - "effects": 完整替換的效果陣列(宣告式最終狀態, 非 add-only); 提供時整組覆寫該戰法的
+        effects, 不提供則 effects 維持不動(由前面各步驟或既有資料決定)。
+    與既有白名單(SCALE_PLAN/BATCH8_TACTIC_EFFECTS/BATCH9_TACTIC_EFFECTS等)衝突時, corrections
+    優先(它是批10最新仲裁結果, 已核對過原文與既有白名單的落地是否正確)。天然冪等: 每次重跑
+    都是「讀取同一份 corrections.json 覆寫成同一個目標值」, 不會累積變動。
+    回傳: (n_set_changed, n_effects_changed, applied_names) 供報告統計。"""
+    n_set_changed = 0
+    n_effects_changed = 0
+    applied_names = []
+    by_name = {p["nameZh"]: p for p in parsed}
+    for name, corr in corrections.items():
+        p = by_name.get(name)
+        if p is None:
+            continue                                  # corrections 提到但 parsed 沒有此戰法(不應發生, 保守跳過不報錯)
+        changed_this = False
+        for fld, val in (corr.get("set") or {}).items():
+            if p.get(fld) != val:
+                p[fld] = val
+                n_set_changed += 1
+                changed_this = True
+        if "effects" in corr:
+            want_effects = corr["effects"]
+            if p.get("effects") != want_effects:
+                p["effects"] = [dict(e) for e in want_effects]
+                n_effects_changed += 1
+                changed_this = True
+        if changed_this:
+            applied_names.append(name)
+    return n_set_changed, n_effects_changed, applied_names
+
+
 def main():
     with open(RAW_PATH, encoding="utf-8") as f:
         raw_list = json.load(f)
@@ -1121,6 +1168,12 @@ def main():
             p["_est"] = True
             n_est += 1
 
+    # --- 批10: 全庫驗證findings仲裁修正覆蓋層(corrections) —— 在所有既有步驟之後(最末)套用 ---
+    # 見 apply_corrections() 說明。corrections 是 212 筆 findings 仲裁後的宣告式最終結果, 優先
+    # 於前面任何白名單(SCALE_PLAN/BATCH8/BATCH9等)的落地值。
+    corrections = load_corrections()
+    n_corr_set, n_corr_effects, corrections_applied = apply_corrections(parsed, corrections)
+
     noop_after = sum(1 for p in parsed if p.get("type") != "none"
                       and not p.get("coef") and not p.get("effects"))
 
@@ -1183,6 +1236,14 @@ def main():
           f"（{', '.join(sorted(MANUAL_FILL))}）")
     print(f"no-op 戰法: {noop_before} -> {noop_after}（口徑: before 在 overrides type:none 生效前計, 與 HEAD 直接比較一致）")
     print(f"抽不到數字, 標記 _est=true 的戰法數: {n_est}")
+    print(f"--- 批10: 全庫驗證findings仲裁修正覆蓋層(tactic_corrections.json) ---")
+    print(f"corrections 套用: {len(corrections)} 筆定義, {len(corrections_applied)} 個戰法本輪套用時值有異動"
+          f"（set欄位變動 {n_corr_set} 處, effects整組替換 {n_corr_effects} 個戰法）"
+          f"（{', '.join(sorted(corrections_applied)) if corrections_applied else '無變動'}）"
+          f"（注意: 此計數為「套用前(經前述步驟1-20處理後的中間值) vs 套用後」的差異, corrections 對某些"
+          f"戰法會覆寫掉前面步驟依 raw effectText/effectTarget 重新推導的中間值(如 3), 最終落地成仲裁值"
+          f"(如 2); 這是設計上每輪都會發生的正常覆寫, 不代表輸出檔案不穩定——實際冪等性以輸出檔案 byte-diff"
+          f"是否為空為準(已驗證兩輪 diff 皆空), 不是以此計數是否為0為準）")
 
 
 if __name__ == "__main__":

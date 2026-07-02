@@ -1,0 +1,3149 @@
+{
+ "_note": "批10: 全庫驗證findings仲裁與修正覆蓋層(6份驗證報告212筆findings, 6桶: active1/active2/command1/command2/passive/misc)。reparse_effects.py 在所有既有步驟之後(最末)套用本檔, 宣告式覆寫(讀檔, 天然冪等)。與既有白名單(SCALE_PLAN/BATCH8_TACTIC_EFFECTS/BATCH9_TACTIC_EFFECTS等)衝突時本檔優先(最新仲裁結果, 已核對原文覆核)。每個戰法的 correction 物件: set(sparse頂層欄位覆寫)/effects(完整替換的效果陣列, 宣告式最終狀態)/_evidence(原文關鍵句摘錄)/_bucket(仲裁來源桶)。仲裁除212筆findings本身外, 另包含批10全庫掃描時額外發現的3筆同型系統性bug(江東猛虎/神上使 coef重複灌入; 用武通神 when.rounds修正), 標記 _bucket:\"full_sweep\"。仲裁流程: 6個sub-agent各自核對原文後裁決accept/reject/obsolete, 主控角色複核關鍵schema問題(如stun/healblock/dot等原語不支援per-effect機率欄位, 對應7筆修正移除誤用的rate/prob欄位改用_approx/_note誠實標註近似性質; 18個多筆findings戰法檢查合併一致性, 修正2筆合併時取劣版本的案例: 槍舞如風/處茲不惑)。",
+ "_stats": {
+  "total_findings": 212,
+  "by_bucket": {
+   "active1": {
+    "checked": 80,
+    "ok": 28,
+    "findings": 57,
+    "accept": 53,
+    "reject": 4,
+    "obsolete": 0
+   },
+   "active2": {
+    "checked": 79,
+    "ok": 17,
+    "findings": 65,
+    "accept": 59,
+    "reject": 6,
+    "obsolete": 0
+   },
+   "command1": {
+    "checked": 38,
+    "ok": 18,
+    "findings": 23,
+    "accept": 18,
+    "reject": 4,
+    "obsolete": 1
+   },
+   "command2": {
+    "checked": 38,
+    "ok": 19,
+    "findings": 19,
+    "accept": 19,
+    "reject": 0,
+    "obsolete": 0
+   },
+   "passive": {
+    "checked": 56,
+    "ok": 27,
+    "findings": 30,
+    "accept": 26,
+    "reject": 3,
+    "obsolete": 1
+   },
+   "misc": {
+    "checked": 47,
+    "ok": 29,
+    "findings": 18,
+    "accept": 16,
+    "reject": 2,
+    "obsolete": 0
+   }
+  },
+  "total_accept": 191,
+  "total_reject": 19,
+  "total_obsolete": 2,
+  "full_sweep_extra_fixes": 3,
+  "corrections_count": 173
+ },
+ "_db_issues": [
+  "五雷轟頂 effectText 內含兩個版本文案('2020-11-04更新'+'原始版本')，機率/係數不一致(震懾機率30% vs 50%)，建議root data僅保留最新版文案，避免解析時誤取舊版數值。",
+  "刀出如霆 raw data/tactics.json 的 effectText 與 overrides.json 差異巨大(raw僅一句籠統描述'獲得倒戈與掠陣狀態，疊加後可大幅提升敵軍受傷'，缺乏具體數值)，應以overrides為準並考慮回寫更新raw effectText。",
+  "槍舞如風 raw effectText 完全未提及'掠陣'或'武力+40'機制，但parsed資料的_real欄位卻描述了掠陣疊加機制，疑似源自外部連結(ali213.net)資料與官方文案不一致，建議查證來源可信度。",
+  "搦戰群雄 raw effectText 與 parsed 的 _real 欄位(標示_conf:high)矛盾：raw僅描述減傷20%→40%，_real卻聲稱另有'自身兵刃增傷25%'，且與raw的'20%→40%'數字都對不上(_real用25%)，建議查核來源https://m.ali213.net/wiki/sgzzlb/zf64.html 是否為舊版數據。",
+  "威謀靡亢/挫志怒襲 兩戰法均為'先致虛弱狀態(本身無傷害)，若目標已虛弱則產生實際傷害'的相同套路，但raw effectText未清楚說明'虛弱'與後續傷害是否同回合生效或需等到下一次施放才判定'已虛弱'，語意存在歧義，建議向原始資料源二次確認觸發時序。",
+  "十面埋伏 raw effectText 內含'2024-06-25更新'與'原始版本'兩段文案，兩段對禁療叛逃/謀略傷害的先後順序描述不同，數值本身一致但敘事順序反了，可能造成解析時序理解偏差。",
+  "水淹七軍 raw effectText 描述了'第二次及之後施放'、'第三次及之後施放'、'第四次施放後'的多階段疊加機制(共4個階段)，現行parsed完全無法表達這種'施放次數計數器'語意，屬引擎能力邊界問題，非單純解析錯誤，建議未來評估是否需要新增stack-based原語。",
+  "「鳩毒」與「鴆毒」為疑似重複條目(同名異字，nameZh分別為'鳩毒'/'鴆毒')，raw中「鳩毒」effectText僅有更新註記(待補充)且需靠overrides才能還原完整效果，「鴆毒」則有完整effectText；兩者activationRate/coef完全相同(0.7/2.26)，高度疑似同一戰法的重複資料，建議root data比對後合併或刪除其一。",
+  "「橫掃」raw effectText與effectTarget均未标明目標人數為單體/群體/全體，僅由_parsed的n=1/quality=B間接推測，難以確認finding所稱『n應為3』是否指目標人數或攻擊次數，建議root data補充effectTarget欄位以消歧義。",
+  "「絕計折謀」raw effectText僅「對敵方隨機武將造成高額謀略傷害」無具體coef數值，需外部資料查證滿級傷害率才能填入coef，目前coef=0與_est標記合理但長期仍待補值。",
+  "「移花接木」raw effectText完全無數值(無百分比)，「將部分治療效果轉移給自身」的轉移比例無從得知，需要root data或wiki補充。",
+  "「累世立名」raw effectText本體標記「待補充」，完整效果需依賴overrides；overrides本身效果文字（一次性兵刃傷害+灼燒DoT+主將時全隊統率增益）與現行_real註記存在出入(_real稱mult近似非固定加點)，建議以overrides為準重新整批解析而非依賴_real的舊估算。",
+  "垂心萬物(command): effects同時用頂層coef/rate與effects裡的extra(who=ally,val=0.35,dur=99)表達同一個『奇數回合35-70%機率額外攻擊』機制,造成雙重觸發路徑,且heal(治療)理應只在攻擊未發動時的else分支才觸發,現行dur=1的heal沒有條件限制,需要Gemini重新設計這條戰法的effects結構(建議:頂層coef/rate負責攻擊本體,刪除extra,heal加when.on或機率互斥處理)。",
+  "江天長焰(command): stack原語在engine.js中恆定套用於施放者自身的amp()(this.stack.per*this.stack.n 加進 caster 自己的攻擊加成),與effect.who欄位無關;現行資料把stack的who設為enemy,實際執行效果是誤把疊加加成套到敵方自己的攻擊力上(方向相反於原文『使敵軍受到的傷害提高』),屬於原語與語意不匹配的系統性風險,建議排查所有stack who=enemy的戰法是否有同樣問題,並考慮讓stack原語支援作用在『對方受到傷害』方向(需engine.js改動)或改用其他原語表達。",
+  "承天靖世(command): 原文『無視防禦』對應的pierce效果目前完全缺漏,且『受統帥影響』的傷害縮放無法用現有kind:phys/intel二選一的schema表達,需另外評估是否新增kind:command或改用effect-level scale覆寫damage()的atk/def選取邏輯。",
+  "用武通神(command): 原文是4個不同回合(2/4/6/8)各自不同傷害率的遞增攻擊,現行單一coef+單一n的schema無法精確表達逐回合遞增值,只能用平均值近似,精度有損,若want更精確表達需要engine支援『per-when多組coef』的新機制。",
+  "data/tactics.json 對『鷹視狼顧』存在兩筆不同id的條目(INNATE cmnzy57zt 與 INHERITANCE cmnzuqc7y),而 tactics_parsed.json 另外多出一條獨立的『鷹視』(_est=true,無對應raw),疑似是INHERITANCE條目在早期抽取時名稱被截斷/複製成新條目,建議協作者於root data層核實兩者關係(是否應合併或刪除'鷹視'這個多餘名稱)。",
+  "藏器待時: 現行effects[1]用amp val=0.2表達「造成傷害時有15%→30%機率附帶10%→20%破陣」,語意應是對敵方施加pierce debuff(有機率觸發)而非自身泛用增傷amp,此為既有(非本次finding提交)的可疑誤判,建議後續批次覆核。",
+  "義膽雄心: raw effectText中「自身為主將時,降低屬性效果受自身對應屬性影響」暗示stat debuff應加scale欄位,目前修正未處理scale部分,留待後續補強。",
+  "奮突/一身是膽/乘勝長驅: 三者原文皆為「每次觸發/每回合疊加」型態,但引擎stack原語語意是「每回合固定+1層」,與「每次普攻觸發/每次免疫控制後機率觸發」的疊加條件不完全吻合,可能造成疊層速度與原文機率不符,建議評估是否需要新增per-event疊層原語。",
+  "先登死士 raw effectText 含兩段版本(2024更新版與原始版本)以 ' /  / ' 分隔,更新版多了'若麴義統領則可疊加5次'的額外條件,parsed未區分取用哪一版本,建議統一取最新更新版本內容再抽取。",
+  "丹陽兵/象兵/解煩衛/潛龍陣 等多筆raw effectText同樣含新舊兩版本併存(以'2024→XX→XX 更新'與'原始版本'分段),數值不同(如丹陽兵謀略抵擋18%→36% vs 陶謙統領20%→40%),抽取腳本應明確只取最新版本區塊,避免版本混淆導致取值錯誤。",
+  "飛熊軍 effectText 完全無任何百分比/點數數值,屬於原始資料本身描述不完整(可能被截斷或原始文案本就模糊),非parsed抽取錯誤,建議請Gemini協作查證app內是否有更完整數值文案。",
+  "奇計良謀(全庫掃描時發現,非212筆findings原始範圍): effects陣列內有兩個完全相同的amp(who=enemy,val=-0.32,dur=3,scale=speed)效果重複,疑似抽取時誤將「武力最高」與「智力最高」兩個目標子句解析成同一個效果兩次,應拆分成分別作用於不同目標選取邏輯(現有engine無「屬性最高單體」目標選取原語,重複儲存至少應去重為一筆,不建議這次批10動,留給後續批次)"
+ ],
+ "corrections": {
+  "一舉殲滅": {
+   "effects": [],
+   "_evidence": "若目標處於沙暴狀態，則額外使目標進入混亂（攻擊和戰法無差別選擇目標）狀態，持續2回合",
+   "_bucket": "active1"
+  },
+  "不辱使命": {
+   "effects": [
+    {
+     "k": "stun",
+     "who": "enemy",
+     "dur": 1,
+     "_note": "30%機率震懾未建模(stun原語無per-effect機率欄位)，維持近似必定觸發(略高估)，與橫掃千軍/暗箭難防同慣例"
+    }
+   ],
+   "_evidence": "并有15% → 30%概率施加震懾狀態（無法行動），持續1回合",
+   "_bucket": "active1"
+  },
+  "五雷轟頂": {
+   "effects": [
+    {
+     "k": "stun",
+     "who": "enemy",
+     "dur": 1
+    }
+   ],
+   "_evidence": "傷害率 68%→136%…並 30% 機率使其進入震懾狀態",
+   "_bucket": "active1"
+  },
+  "以逸待勞": {
+   "effects": [
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 1.54,
+     "dur": 1,
+     "scale": "intel"
+    },
+    {
+     "k": "mitig",
+     "who": "ally",
+     "val": 0.375,
+     "dur": 2,
+     "scale": "intel",
+     "_approx": "decay-avg: 3段遞減(50%/37.5%/25%)取均值37.5%，dur近似延長為2回合覆蓋後續傷害"
+    }
+   ],
+   "_evidence": "並使其下 3 次受到傷害分別降低（25%→50%、18.8%→37.5%、12.5%→25%）",
+   "_bucket": "active1"
+  },
+  "傾國傾城": {
+   "effects": [
+    {
+     "k": "stun",
+     "who": "enemy",
+     "dur": 2
+    },
+    {
+     "k": "mitig",
+     "who": "ally",
+     "val": 0.08,
+     "dur": 2,
+     "_approx": "prob-ev: 50%機率×16%折半為8%"
+    }
+   ],
+   "_evidence": "並有50%機率使我軍群體（2人）受到的兵刃傷害和謀略傷害降低8%→16%，持續2回合",
+   "_bucket": "active2"
+  },
+  "兵鋒": {
+   "effects": [
+    {
+     "k": "extra",
+     "who": "self",
+     "val": 1,
+     "dur": 1
+    },
+    {
+     "k": "extra",
+     "who": "ally",
+     "val": 1,
+     "dur": 1
+    }
+   ],
+   "_evidence": "使自己及友軍單體進入連擊（每回合可以普通攻擊 2 次）狀態，持續 1 回合",
+   "_bucket": "active1"
+  },
+  "出其不意": {
+   "effects": [
+    {
+     "k": "silence",
+     "who": "enemy",
+     "dur": 1,
+     "_note": "計窮或繳械擇一，簡化以silence近似；30%機率延長至2回合未建模，取基礎1回合"
+    }
+   ],
+   "_evidence": "隨機造成計窮（無法發動主動戰法）或繳械（無法進行普通攻擊），持續1→2回合（有30%概率持續2回合）",
+   "_bucket": "active1"
+  },
+  "刺傷": {
+   "set": {
+    "coef": 0
+   },
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 0.7,
+     "dur": 3
+    }
+   ],
+   "_evidence": "每回合持續造成兵刃傷害（傷害率35% → 70%），持續3回合",
+   "_bucket": "active1"
+  },
+  "十二奇策": {
+   "effects": [
+    {
+     "k": "rateup",
+     "who": "ally",
+     "val": 0.06,
+     "dur": 1,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "提高我軍全體 1 回合 3%→6% 主動戰法發動機率（受智力影響）",
+   "_bucket": "active1"
+  },
+  "十面埋伏": {
+   "set": {
+    "coef": 0.96
+   },
+   "_evidence": "施加 2 回合禁療及叛逃狀態（傷害率 37%→74%…），隨後對有負面狀態的敵軍造成謀略傷害（傷害率 48%→96%…）",
+   "_bucket": "active1",
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 0.74,
+     "dur": 2
+    },
+    {
+     "k": "healblock",
+     "who": "enemy",
+     "dur": 2
+    }
+   ]
+  },
+  "千里馳援": {
+   "effects": [
+    {
+     "k": "redirect",
+     "who": "ally",
+     "guard": "self",
+     "share": 1.0,
+     "dur": 1,
+     "_note": "援護我軍全體分擔普攻"
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "command",
+     "add": 40,
+     "dur": 1
+    }
+   ],
+   "_evidence": "援護我軍全體(分擔普攻)並提升自身40統率，持續1回合。",
+   "_bucket": "active1"
+  },
+  "同戰身先": {
+   "effects": [
+    {
+     "k": "shield",
+     "who": "ally",
+     "amt": 1,
+     "dur": 1
+    }
+   ],
+   "_evidence": "使我軍全體獲得 1 次抵禦",
+   "_bucket": "active1"
+  },
+  "唇槍舌戰": {
+   "effects": [
+    {
+     "k": "taunt",
+     "who": "enemy",
+     "dur": 1
+    }
+   ],
+   "_evidence": "對敵軍全體造成謀略攻擊（傷害率30% → 60%，受智力影響）及嘲諷（强迫目標普通攻擊自己），持續1回合",
+   "_bucket": "active1"
+  },
+  "四面楚歌": {
+   "set": {
+    "coef": 0
+   },
+   "effects": [
+    {
+     "k": "heal",
+     "who": "enemy",
+     "coef": -1.44,
+     "dur": 2
+    }
+   ],
+   "_evidence": "對敵軍群體（2 人）施加中毒狀態，每回合持續造成傷害（傷害率 72%→144%，受智力影響），持續 2 回合",
+   "_bucket": "active1"
+  },
+  "包紮": {
+   "set": {
+    "n": 1
+   },
+   "_evidence": "為我軍單體恢復兵力（治療率80% → 160%，受智力影響）",
+   "_bucket": "active1"
+  },
+  "固若金湯": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "command",
+     "add": 150,
+     "dur": 2
+    },
+    {
+     "k": "insight",
+     "who": "self",
+     "dur": 2
+    },
+    {
+     "k": "taunt",
+     "who": "enemy",
+     "dur": 2
+    }
+   ],
+   "_evidence": "使自己獲得洞察狀態（免疫所有控制效果）並嘲諷敵軍全體（強迫目標普通攻擊自己），同時提高自身 75→150 統率，持續 2 回合。",
+   "_bucket": "active1"
+  },
+  "壓制": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "command",
+     "add": -20,
+     "dur": 2
+    }
+   ],
+   "_evidence": "並使其統率降低10→20點，持續2回合",
+   "_bucket": "active2"
+  },
+  "天降火雨": {
+   "effects": [
+    {
+     "k": "heal",
+     "who": "enemy",
+     "coef": -0.66,
+     "dur": 1,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "并附加灼燒狀態，每回合持續造成傷害（傷害率33% → 66%，受智力影響），持續1回合",
+   "_bucket": "active1"
+  },
+  "妖術": {
+   "set": {
+    "coef": 0
+   },
+   "effects": [
+    {
+     "k": "heal",
+     "who": "enemy",
+     "coef": -0.72,
+     "dur": 2
+    },
+    {
+     "k": "shield",
+     "who": "self",
+     "amt": 1,
+     "dur": 2
+    }
+   ],
+   "_evidence": "對敵軍全體施加沙暴狀態，每回合持續造成傷害（傷害率36% → 72%，受智力影響）并使自己獲得1次抵禦，可以免疫傷害，持續2回合",
+   "_bucket": "active1"
+  },
+  "威謀靡亢": {
+   "set": {
+    "coef": 0
+   },
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 0.632,
+     "dur": 2,
+     "_approx": "prob-ev: 條件'目標已虛弱'簡化為必定滿足(本戰法自身先致虛弱)，疊加40%觸發機率折算158%×0.4=63.2%"
+    }
+   ],
+   "_evidence": "如果目標已處於虛弱狀態則使其陷入叛逃狀態，每回合持續造成傷害（傷害率 79%→158%…），持續 2 回合（發動機率 25%→40%）",
+   "_bucket": "active1"
+  },
+  "威震華夏": {
+   "effects": [
+    {
+     "k": "stun",
+     "who": "enemy",
+     "dur": 1
+    },
+    {
+     "k": "amp",
+     "who": "self",
+     "val": 0.36,
+     "dur": 2
+    }
+   ],
+   "_evidence": "並使自己造成的兵刃傷害提升 18%→36%，持續 2 回合",
+   "_bucket": "active1"
+  },
+  "威風凜凜": {
+   "set": {
+    "prep": 1
+   },
+   "_evidence": "準備1回合，對敵軍單體造成嘲諷（強迫目標普通攻擊自己）或繳械（無法進行普通攻擊）狀態，持續2回合",
+   "_bucket": "active1"
+  },
+  "嬰城自守": {
+   "effects": [
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 0.92,
+     "dur": 1,
+     "scale": "intel"
+    },
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 0.62,
+     "dur": 1
+    }
+   ],
+   "_evidence": "並使其獲得休整狀態（每回合恢復一次兵力，治療率31%→62%），持續1回合",
+   "_bucket": "active2"
+  },
+  "定謀貴決": {
+   "effects": [
+    {
+     "k": "taunt",
+     "who": "self",
+     "dur": 2,
+     "_note": "敵軍兵力最高者被迫攻擊我方全體，簡化以taunt(反向)近似"
+    },
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": 0.2,
+     "dur": 2
+    }
+   ],
+   "_evidence": "使敵軍兵力最高的武將嘲諷我軍全體，並使其受到的傷害提高 10%→20%（可疊加），持續 2 回合",
+   "_bucket": "active1"
+  },
+  "屠几上肉": {
+   "set": {
+    "coef": 3.0
+   },
+   "_evidence": "對敵軍單體造成一次兵刃攻擊（傷害率75%→150%）及謀略攻擊（傷害率75%→150%，受智力影響）",
+   "_bucket": "active1"
+  },
+  "左右開弓": {
+   "effects": [
+    {
+     "k": "heal",
+     "who": "enemy",
+     "coef": -0.9,
+     "dur": 2,
+     "scale": "force",
+     "_approx": "原文僅對'騎兵'目標生效，無法區分兵種時暫按全體目標近似套用"
+    }
+   ],
+   "_evidence": "如果目標為騎兵則額外造成潰逃狀態，每回合持續造成傷害（傷害率45% → 90%，受武力影響），持續2回合",
+   "_bucket": "active1"
+  },
+  "強攻": {
+   "effects": [
+    {
+     "k": "extra",
+     "who": "self",
+     "val": 1,
+     "dur": 1
+    }
+   ],
+   "_evidence": "使自己進入連擊（每回合可以普通攻擊2次）狀態，持續1回合",
+   "_bucket": "active1"
+  },
+  "才器過人": {
+   "set": {
+    "n": 2
+   },
+   "effects": [
+    {
+     "k": "amp",
+     "who": "ally",
+     "val": 0.27,
+     "dur": 2
+    }
+   ],
+   "_evidence": "使我軍群體（2人）造成的謀略傷害提高13.5%→27%，持續2回合",
+   "_bucket": "active1"
+  },
+  "形機軍略": {
+   "set": {
+    "coef": 3.9
+   },
+   "_evidence": "對敵軍單體造成一次兵刃攻擊（傷害率 105%→210%）及謀略攻擊（傷害率 90%→180%，受智力影響）",
+   "_bucket": "active1"
+  },
+  "抬棺決戰": {
+   "set": {
+    "nMax": 3
+   },
+   "_evidence": "移除敵軍群體（2-3 人）的增益效果，並對其造成兵刃傷害（傷害率 127.5%→255%）（發動機率 50%）",
+   "_bucket": "active1"
+  },
+  "挑釁": {
+   "effects": [
+    {
+     "k": "taunt",
+     "who": "enemy",
+     "dur": 1
+    }
+   ],
+   "_evidence": "嘲諷敵軍全體（強迫目標普通攻擊自己），持續1回合。",
+   "_bucket": "active1"
+  },
+  "挫志怒襲": {
+   "set": {
+    "coef": 1.88
+   },
+   "effects": [],
+   "_evidence": "對敵軍群體（2人）施加虛弱（無法造成傷害）狀態，持續1回合；如果目標已處於虛弱狀態則改爲造成一次猛擊（傷害率188%）",
+   "_bucket": "active1"
+  },
+  "振軍擊營": {
+   "effects": [
+    {
+     "k": "healblock",
+     "who": "enemy",
+     "dur": 3
+    },
+    {
+     "k": "rateup",
+     "who": "ally",
+     "val": 0.1,
+     "dur": 1,
+     "nativeOnly": true,
+     "_note": "僅對已處於負面狀態的友軍生效，簡化為全友軍近似"
+    }
+   ],
+   "_evidence": "及禁療（無法恢復兵力）狀態，持續3回合，並使有負面狀態的友軍單體自帶戰法發動幾率提高5% → 10%，持續1回合",
+   "_bucket": "active1"
+  },
+  "搦戰群雄": {
+   "effects": [
+    {
+     "k": "mitig",
+     "who": "self",
+     "val": 0.4,
+     "dur": 2,
+     "scale": "force"
+    }
+   ],
+   "_evidence": "並使自己受到的兵刃傷害降低20%→40%（受武力影響），持續2回合",
+   "_bucket": "active2"
+  },
+  "擊其惰歸": {
+   "effects": [
+    {
+     "k": "heal",
+     "who": "self",
+     "coef": 2.96,
+     "dur": 1,
+     "scale": "command",
+     "_approx": "條件「若下回合前受到>20%最大兵力傷害」與群體傷害互斥，引擎無法建條件分支，暫維持兩效果並存(近似同時觸發，實際強度被高估)"
+    },
+    {
+     "k": "mitig",
+     "who": "self",
+     "val": 0.25,
+     "dur": 1,
+     "scale": "command"
+    }
+   ],
+   "_evidence": "若受到超過最大兵力20%的傷害，則恢復自身兵力……並降低……受到謀略傷害，持續1回合，否則對敵軍全體造成兵刃傷害",
+   "_bucket": "active2"
+  },
+  "據水斷橋": {
+   "set": {
+    "coef": 0
+   },
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 0.78,
+     "dur": 2,
+     "scale": "force"
+    },
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": -0.08,
+     "dur": 2
+    },
+    {
+     "k": "lifesteal",
+     "who": "self",
+     "val": 0.16,
+     "dur": 2
+    }
+   ],
+   "_evidence": "對敵軍群體（2-3人）造成潰逃狀態，每回合持續造成傷害（傷害率39%→78%，受武力影響），並使其造成傷害降低4%→8%……同時使自身獲得8%→16%倒戈……持續2回合",
+   "_bucket": "active2"
+  },
+  "放火": {
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 1.0,
+     "dur": 1,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "並使其陷入灼燒狀態，每回合持續造成傷害（傷害率50% → 100%，受智力影響），持續1回合。",
+   "_bucket": "active1"
+  },
+  "斂眾而擊": {
+   "effects": [
+    {
+     "k": "heal",
+     "who": "self",
+     "coef": 0.4,
+     "dur": 1,
+     "scale": "force",
+     "_approx": "prob-ev: 45%機率×88%折算約0.40"
+    }
+   ],
+   "_evidence": "並有45%的機率治療自身（治療率44%→88%，受武力影響）",
+   "_bucket": "active2"
+  },
+  "暗潮湧動": {
+   "set": {
+    "prep": 1
+   },
+   "_evidence": "準備1回合，對敵軍主將造成一次兵刃攻擊（傷害率136%→272%）",
+   "_bucket": "active2"
+  },
+  "暗箭難防": {
+   "effects": [
+    {
+     "k": "stun",
+     "who": "enemy",
+     "dur": 2,
+     "scale": "force",
+     "_approx": "60%機率捕獲，機率未折算，維持近似必定觸發（略高估）；受武力影響非速度，修正note屬性誤記",
+     "_note": "60%概率（受武力影響）捕獲單體敵將2回合：無法行動且禁用指揮/被動，無法被淨化"
+    }
+   ],
+   "_evidence": "並有30%→60%機率（受武力影響）捕獲敵軍單體（無法行動且禁用指揮和被動戰法），持續2回合",
+   "_bucket": "active2"
+  },
+  "暴斂四方": {
+   "set": {
+    "coef": 2.04,
+    "n": 1
+   },
+   "_evidence": "對敵軍單體造成2次兵刃攻擊（傷害率51%→102%），如果目標處於震懾狀態，對其造成禁療效果，持續2回合，2次攻擊目標獨立判定",
+   "_bucket": "active2",
+   "effects": [
+    {
+     "k": "healblock",
+     "who": "enemy",
+     "dur": 2,
+     "_approx": "原文為條件「若目標已處於震懾狀態」才禁療，無條件機制近似為必定禁療"
+    }
+   ]
+  },
+  "梳妝擲戟": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": 0.15,
+     "dur": 1,
+     "_note": "僅對敵軍主將生效"
+    },
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "intel",
+     "add": -100,
+     "dur": 1,
+     "_note": "僅對武力最高的副將生效"
+    }
+   ],
+   "_evidence": "使敵軍主將受到兵刃傷害提高 7.5%→15%、武力最高的副將智力降低 50→100 點（自身為女性時，受魅力影響），持續 1 回合",
+   "_bucket": "active1"
+  },
+  "槍舞如風": {
+   "effects": [
+    {
+     "k": "shield",
+     "who": "self",
+     "amt": 2,
+     "dur": 1
+    },
+    {
+     "k": "shield",
+     "who": "ally",
+     "amt": 2,
+     "dur": 1,
+     "_note": "賦予自身及友軍單體各2次抵禦,持續1回合(若與關興同出必定選關興作為受益友軍,引擎無法表達特定隊友綁定,近似為隨機/固定友軍)"
+    }
+   ],
+   "_evidence": "使自身及友軍單體獲得2次抵禦，持續1回合，並使自身本回合發動普攻後，對敵軍單體造成一次兵刃傷害（傷害率120%→240%）；若與關興同時出戰，則友軍單體必定選擇關興",
+   "_bucket": "active1+active2人工複核",
+   "_note_self": "批10人工複核: 原文「使自身及友軍單體獲得2次抵禦」是雙方都拿盾, active2版本只給ally漏掉self, active1版本(self+ally各一個shield)更完整, 採用active1版effects, 補上active2的關興綁定備註"
+  },
+  "機略縱橫": {
+   "set": {
+    "coef": 0
+   },
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 0.58,
+     "dur": 2,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "對敵軍群體（2人）造成灼燒，中毒狀態，每回合持續造成傷害（傷害率29%→58%，受智力影響），持續2回合",
+   "_bucket": "active2"
+  },
+  "橫掃": {
+   "set": {
+    "n": 3
+   },
+   "_evidence": "對敵軍全體造成兵刃攻擊（傷害率25% → 50%）。",
+   "_bucket": "active1"
+  },
+  "橫掃千軍": {
+   "effects": [
+    {
+     "k": "stun",
+     "who": "enemy",
+     "dur": 1,
+     "_approx": "prob-ev: 條件(已繳械/計窮)×30%機率，因引擎無法建條件觸發，以30%機率折算為降級近似(仍標記為near-guaranteed weak case，實際應更低)"
+    }
+   ],
+   "_evidence": "若目標已處於繳械或計窮狀態則有20%→30%機率使目標處於震懾狀態（無法行動），持續1回合",
+   "_bucket": "active2"
+  },
+  "毒氣": {
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 1.0,
+     "dur": 1,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "並使其陷入中毒狀態，每回合持續造成傷害（傷害率50% → 100%，受智力影響），持續1回合。",
+   "_bucket": "active1"
+  },
+  "殿後": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "force",
+     "add": -20,
+     "dur": 1
+    }
+   ],
+   "_evidence": "並使其武力降低10→20點，持續1回合",
+   "_bucket": "active2"
+  },
+  "水淹七軍": {
+   "set": {
+    "coef": 0
+   },
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 0.96,
+     "dur": 2
+    },
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": 0.2,
+     "dur": 1,
+     "scale": "force"
+    }
+   ],
+   "_evidence": "對敵軍群體（2 人）施加水攻效果（傷害率 48%→96%，受武力影響，自身為主將時，傷害率提升至 54%→108%），持續 2 回合；第二次及之後施放前，使敵軍群體（2-3 人）受到兵刃傷害提升 10%→20%（受武力影響），持續 1 回合",
+   "_bucket": "active1"
+  },
+  "登鋒陷陣": {
+   "effects": [
+    {
+     "k": "disarm",
+     "who": "enemy",
+     "dur": 2
+    }
+   ],
+   "_evidence": "對目標單體造成兵刃攻擊（傷害率104%→208%）並繳械（無法普通攻擊），持續2回合",
+   "_bucket": "active2"
+  },
+  "精練策數": {
+   "effects": [
+    {
+     "k": "disarm",
+     "who": "enemy",
+     "dur": 2
+    }
+   ],
+   "_evidence": "對敵軍群體造成謀略攻擊（傷害率105%→210%，受智力影響），並繳械（無法進行普通攻擊），持續2回合",
+   "_bucket": "active2"
+  },
+  "獅子奮迅": {
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 0.51,
+     "dur": 2,
+     "scale": "force",
+     "_approx": "prob-ev: 50%機率×102%傷害率折半為51%"
+    },
+    {
+     "k": "rateup",
+     "who": "self",
+     "val": 0.1,
+     "dur": 2
+    }
+   ],
+   "_evidence": "並使自身主動戰法發動機率提高5%→10%，持續2回合；且有50%機率使目標陷入2回合叛逃狀態（每回合持續造成傷害，傷害率51%→102%，受武力影響，無視防禦）",
+   "_bucket": "active2"
+  },
+  "落雷": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": 0.18,
+     "dur": 2
+    }
+   ],
+   "_evidence": "并使其受到的謀略傷害提高9%→18%，持續2回合",
+   "_bucket": "active2"
+  },
+  "結盟": {
+   "set": {
+    "rate": 0.55
+   },
+   "_evidence": "註：發動機率由 30%→45% 提升為 30%→55%",
+   "_bucket": "active2"
+  },
+  "腹背受敵": {
+   "set": {
+    "coef": 2.32
+   },
+   "effects": [],
+   "_evidence": "對敵軍單體造成謀略傷害（傷害率58%→116%），並使其智力最高的武將對目標再造成一次謀略傷害（傷害率58%→116%）",
+   "_bucket": "active2"
+  },
+  "誓守無降": {
+   "effects": [
+    {
+     "k": "insight",
+     "who": "ally",
+     "dur": 2
+    },
+    {
+     "k": "silence",
+     "who": "enemy",
+     "dur": 2,
+     "_approx": "簡化為對敵軍主將必定計窮，原文條件為「自身2回合內受到下一次謀略傷害時」才觸發"
+    }
+   ],
+   "_evidence": "使我軍群體（2人）進入洞察（免疫所有控制效果）狀態，持續2回合，並使自身2回合內受到下一次謀略傷害時，計窮（無法發動主動戰法）敵軍主將，持續2回合",
+   "_bucket": "active2"
+  },
+  "輕勇飛燕": {
+   "set": {
+    "coef": 0.84,
+    "n": 1
+   },
+   "effects": [
+    {
+     "k": "extra",
+     "who": "self",
+     "val": 2,
+     "dur": 1,
+     "_approx": "隨機2~4次攻擊，以期望值3次近似為額外2次連擊(共3次)"
+    }
+   ],
+   "_evidence": "對敵軍單體造成兵刃攻擊（傷害率42%→84%），隨機釋放2→4次",
+   "_bucket": "active2"
+  },
+  "魯莽": {
+   "effects": [
+    {
+     "k": "insight",
+     "who": "self",
+     "dur": 2
+    },
+    {
+     "k": "lifesteal",
+     "who": "self",
+     "val": 0.42,
+     "dur": 2
+    }
+   ],
+   "_evidence": "使自己獲得洞察（免疫所有控制效果）及21%→42%倒戈（造成兵刃傷害時，恢復自身基於傷害量的一定兵力），持續2回合",
+   "_bucket": "active2"
+  },
+  "獨行赴鬥": {
+   "effects": [
+    {
+     "k": "taunt",
+     "who": "enemy",
+     "dur": 2
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "command",
+     "mult": 1.4,
+     "dur": 2
+    }
+   ],
+   "_evidence": "嘲諷（強迫目標普通攻擊自己）敵軍全體，同時提高自身20%→40%統率，持續2回合",
+   "_bucket": "active2"
+  },
+  "靈機一動": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "ally",
+     "stat": "intel",
+     "add": 15,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "stat",
+     "who": "ally",
+     "stat": "command",
+     "add": 15,
+     "dur": 2,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "使我軍群體（2-3人）的智力、統率提升7.5→15點（受智力影響），持續2-3回合，可疊加",
+   "_bucket": "active2"
+  },
+  "焚輜營壘": {
+   "effects": [
+    {
+     "k": "healblock",
+     "who": "enemy",
+     "dur": 1
+    }
+   ],
+   "_evidence": "並使其進入禁療（無法恢復兵力）狀態，持續1回合",
+   "_bucket": "active2"
+  },
+  "絕其汲道": {
+   "effects": [
+    {
+     "k": "healblock",
+     "who": "enemy",
+     "dur": 1
+    }
+   ],
+   "_evidence": "使其進入禁療狀態（無法恢復兵力），持續1回合",
+   "_bucket": "active2"
+  },
+  "短兵相見": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "command",
+     "mult": 0.88,
+     "dur": 1
+    }
+   ],
+   "_evidence": "使敵軍單體降低15→30點統率，持續1回合",
+   "_bucket": "active2"
+  },
+  "黃天泰平": {
+   "effects": [
+    {
+     "k": "silence",
+     "who": "enemy",
+     "dur": 2
+    },
+    {
+     "k": "stun",
+     "who": "self",
+     "dur": 1,
+     "_approx": "以混亂近似為自身1回合行動異常(引擎無混亂原語，用stun近似代價)"
+    }
+   ],
+   "_evidence": "準備1回合，以自己進入混亂（攻擊和戰法無差別選擇目標）狀態為代價，使敵軍群體（2人）進入計窮（無法發動主動戰法）狀態，持續2回合",
+   "_bucket": "active2"
+  },
+  "踐踏": {
+   "set": {
+    "prep": 1
+   },
+   "_evidence": "準備1回合，對敵軍群體（2人）造成兵刃攻擊（傷害率77.5%→155%）",
+   "_bucket": "active2"
+  },
+  "萬軍奪帥": {
+   "effects": [
+    {
+     "k": "stun",
+     "who": "enemy",
+     "dur": 2,
+     "_approx": "22.5%→45%機率使其進入遇襲/破壞/禁療/計窮/繳械，以stun近似綜合控制效果，機率未折算(維持既有近似)"
+    },
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "speed",
+     "mult": 0.15,
+     "dur": 2
+    }
+   ],
+   "_evidence": "使敵軍速度最快的武將速度降低42.5%→85%，並有22.5%→45%機率使其進入遇襲、破壞、禁療、計窮、繳械狀態……持續2回合",
+   "_bucket": "active2"
+  },
+  "萬箭齊發": {
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 0.6,
+     "dur": 1,
+     "scale": "force",
+     "_approx": "prob-ev: 50%機率×120%折半為60%"
+    }
+   ],
+   "_evidence": "並有25%→50%機率造成潰逃狀態，每回合持續造成傷害（傷害率60%→120%，受武力影響），持續1回合",
+   "_bucket": "active2"
+  },
+  "奪魂挾魄": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "force",
+     "mult": 0.85,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "intel",
+     "mult": 0.85,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "speed",
+     "mult": 0.85,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "command",
+     "mult": 0.85,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "force",
+     "add": 38,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "intel",
+     "add": 38,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "speed",
+     "add": 38,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "command",
+     "add": 38,
+     "dur": 2,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "偷取敵軍單體19→38點武力、智力、速度、統率（受智力影響），持續2回合，可疊加2次",
+   "_bucket": "active2"
+  },
+  "誘敵深入": {
+   "set": {
+    "coef": 0
+   },
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 1.4,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": 0.25,
+     "dur": 2,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "對敵軍群體（2人）施加沙暴狀態，每回合持續造成傷害（傷害率70%→140%，受智力影響），並使其受到的兵刃傷害提高25%（受智力影響），持續2回合",
+   "_bucket": "active2"
+  },
+  "熯天熾地": {
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 0.72,
+     "dur": 2,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "並施加灼燒狀態，每回合持續造成傷害（傷害率36%→72%，受智力影響），持續2回合",
+   "_bucket": "active2"
+  },
+  "震駭四境": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": 0.3,
+     "dur": 2,
+     "scale": "force",
+     "note": "第一擊後施加受傷提升約30%（受武力影響），持續2回合"
+    },
+    {
+     "k": "silence",
+     "who": "enemy",
+     "dur": 1,
+     "note": "第二擊後施加計窮1回合（禁止發動主動戰法）"
+    }
+   ],
+   "_evidence": "分別造成受傷提升與計窮效果（_real註明受傷提升約30%）",
+   "_bucket": "active2"
+  },
+  "臨戰先登": {
+   "effects": [
+    {
+     "k": "silence",
+     "who": "self",
+     "dur": 1,
+     "_approx": "虛弱(無法造成傷害)引擎無對應原語，以自身silence(禁主動)近似代價效果，非完全等價"
+    }
+   ],
+   "_evidence": "之後自己進入虛弱狀態（無法造成傷害），持續1回合",
+   "_bucket": "active2"
+  },
+  "臨機制勝": {
+   "set": {
+    "coef": 0
+   },
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 1.2,
+     "dur": 2,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "對敵軍群體（2人）施加中毒狀態，每回合持續造成傷害（傷害率60%→120%，受智力影響），持續2回合",
+   "_bucket": "active2"
+  },
+  "還擊": {
+   "set": {
+    "coef": 0
+   },
+   "effects": [
+    {
+     "k": "counter",
+     "who": "self",
+     "coef": 0.5,
+     "kind": "phys",
+     "prob": 1,
+     "dur": 1
+    }
+   ],
+   "_evidence": "使自己獲得反擊狀態（傷害率25%→50%），持續1回合",
+   "_bucket": "active2"
+  },
+  "廬江上甲": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "command",
+     "mult": 1.18,
+     "dur": 2
+    },
+    {
+     "k": "redirect",
+     "who": "ally",
+     "guard": "self",
+     "share": 0.4,
+     "dur": 2
+    }
+   ],
+   "_evidence": "并為友軍單體分擔20%→40%傷害，持續2回合",
+   "_bucket": "active2"
+  },
+  "顧盼生姿": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "intel",
+     "mult": 0.82,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "force",
+     "mult": 0.82,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "intel",
+     "add": 18,
+     "dur": 2,
+     "scale": "intel",
+     "_approx": "偷取36點平均分配給自己與隨機友軍各半(18點)"
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "force",
+     "add": 18,
+     "dur": 2,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "偷取敵軍單體18→36點智力及武力（受智力影響），持續2回合，並將偷取的屬性平均分配給自己和隨機友軍單體",
+   "_bucket": "active2"
+  },
+  "驅散": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "intel",
+     "add": 28,
+     "dur": 3
+    }
+   ],
+   "_evidence": "解除敵軍全體身上的增益效果，并提高自己14→28點智力，持續3回合",
+   "_bucket": "active2"
+  },
+  "驍健神行": {
+   "set": {
+    "coef": 1.56
+   },
+   "effects": [
+    {
+     "k": "disarm",
+     "who": "enemy",
+     "dur": 1
+    },
+    {
+     "k": "surehit",
+     "who": "self",
+     "dur": 2,
+     "scale": "speed"
+    }
+   ],
+   "_evidence": "如果目標已經被繳械（無法進行普通攻擊）則造成兵刃攻擊（傷害率156%，受速度影響）",
+   "_bucket": "active2"
+  },
+  "眾望所歸": {
+   "effects": [
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 0.72,
+     "dur": 1,
+     "scale": "command"
+    }
+   ],
+   "_evidence": "我軍群體2人恢復一定兵力(治療率36→72%，統率影響)",
+   "_bucket": "active2"
+  },
+  "處茲不惑": {
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 0.68,
+     "dur": 2,
+     "_note": "灼燒/中毒/潰逃三狀態各獨立60%判定,每狀態每回合傷害率68%,持續2回合;最多3狀態疊加,引擎以單DoT近似(略高估,三狀態非必定同時觸發)"
+    }
+   ],
+   "_evidence": "使敵軍群體(2人)中有30%→60%機率依次進入灼燒(受智力影響)、中毒(受智力影響)、潰逃(受武力影響)狀態,每回合持續造成傷害(傷害率34%→68%),每種狀態獨立判定,持續2回合",
+   "_bucket": "active2",
+   "set": {
+    "coef": 0
+   },
+   "_note_self": "批10人工複核: 原文無獨立直傷子句,純為條件DoT;移除頂層coef重複計算(pattern①)與錯誤的stun控制效果(原文無震懾/控制語意,潰逃是DoT狀態非全禁,pattern②)"
+  },
+  "連環計": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": 0.15,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "heal",
+     "who": "self",
+     "coef": 0.05,
+     "dur": 2,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "使其任一目標受到傷害時會回饋7.5%→15%（受智力影響）傷害給其他敵軍、相當於傷害值2.5%→5%的治療（受智力影響）給龐統自身",
+   "_bucket": "active2"
+  },
+  "閉月": {
+   "effects": [
+    {
+     "k": "redirect",
+     "who": "enemy",
+     "guard": "self",
+     "share": 0.25,
+     "scale": "intel"
+    },
+    {
+     "k": "silence",
+     "who": "enemy",
+     "dur": 1
+    }
+   ],
+   "_evidence": "選擇一名敵軍為自身分擔12.5%→25%（受智力影響）傷害",
+   "_bucket": "active2"
+  },
+  "焰逐風飛": {
+   "effects": [
+    {
+     "k": "stun",
+     "who": "enemy",
+     "dur": 1
+    },
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": 0.048,
+     "dur": 1,
+     "scale": "intel",
+     "_approx": "prob-ev: 40%機率×12%折算為4.8%"
+    }
+   ],
+   "_evidence": "有40%機率使其受到謀略傷害提高6%→12%（受智力影響）",
+   "_bucket": "active2"
+  },
+  "絕計折謀": {
+   "effects": [
+    {
+     "k": "silence",
+     "who": "enemy",
+     "dur": 1
+    }
+   ],
+   "_evidence": "並對目標施加計窮狀態（無法發動主動戰法），持續1回合",
+   "_bucket": "active2"
+  },
+  "智計": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "force",
+     "mult": 0.85,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "intel",
+     "mult": 0.85,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "stack",
+     "per": 1,
+     "max": 2
+    }
+   ],
+   "_evidence": "持續2回合，最多疊加2次",
+   "_bucket": "active2"
+  },
+  "萬軍取將": {
+   "effects": [
+    {
+     "k": "surehit",
+     "who": "self",
+     "dur": 1
+    },
+    {
+     "k": "pierce",
+     "who": "self",
+     "val": 0.2,
+     "dur": 1,
+     "_approx": "破陣(無視部分減傷)，原文無具體數值，暫以20%近似"
+    }
+   ],
+   "_evidence": "鎖定敵方最弱目標並使其陷入降傷狀態，自身獲得必中及破陣",
+   "_bucket": "active2"
+  },
+  "鳩毒": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "force",
+     "mult": 0.4,
+     "dur": 1,
+     "scale": "intel"
+    },
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "command",
+     "add": -60,
+     "dur": 99,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "使其武力降低60%（受智力影響），持續1回合……並降低其60點統率（可無限疊加），持續至戰鬥結束",
+   "_bucket": "active2"
+  },
+  "竭忠盡智": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "speed",
+     "mult": 0.7,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "stun",
+     "who": "enemy",
+     "dur": 2
+    },
+    {
+     "k": "shield",
+     "who": "ally",
+     "amt": 1,
+     "dur": 1
+    }
+   ],
+   "_evidence": "速度降低15%→30%（受智力影響）……並使友方單體獲得1次抵禦，持續1回合",
+   "_bucket": "active2"
+  },
+  "聚石成金": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "ally",
+     "stat": "command",
+     "mult": 1.12,
+     "dur": 2,
+     "_approx": "奇數回合觸發，與偶數回合減傷互斥，引擎無法建條件分支，暫並存(近似高估)"
+    },
+    {
+     "k": "mitig",
+     "who": "ally",
+     "val": 0.24,
+     "dur": 2,
+     "_approx": "偶數回合觸發，與奇數回合統率增益互斥"
+    },
+    {
+     "k": "healblock",
+     "who": "enemy",
+     "dur": 2,
+     "_approx": "條件「敵軍魅力低於我軍主將」才禁療，無條件機制近似為必定禁療"
+    }
+   ],
+   "_evidence": "奇數回合發動時，我軍全體統率提升34→68點……並使敵軍魅力低於我軍主將的武將陷入禁療狀態，持續2回合。偶數回合發動，我軍受到的主動以及突擊戰法傷害降低12→24%",
+   "_bucket": "active2"
+  },
+  "瞋目橫矛": {
+   "set": {
+    "coef": 0
+   },
+   "effects": [
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "force",
+     "add": 50,
+     "dur": 2
+    },
+    {
+     "k": "extra",
+     "who": "self",
+     "val": 0.7,
+     "dur": 2,
+     "_approx": "群攻(普攻時對同部隊其他武將濺射70%傷害)，引擎無濺射原語，以extra額外傷害輸出近似"
+    }
+   ],
+   "_evidence": "並獲得群攻（普通攻擊時對目標同部隊其他武將造成傷害）效果（傷害率35%→70%），持續2回合",
+   "_bucket": "active2"
+  },
+  "談心": {
+   "effects": [
+    {
+     "k": "insight",
+     "who": "ally",
+     "dur": 2,
+     "_approx": "原文僅免疫混亂單一狀態，insight為免疫全部控制的近似(略高估)"
+    }
+   ],
+   "_evidence": "使我軍單體免疫混亂狀態，持續2回合",
+   "_bucket": "active2"
+  },
+  "鴆毒": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "force",
+     "mult": 0.4,
+     "dur": 1,
+     "scale": "intel"
+    },
+    {
+     "k": "settle",
+     "who": "enemy",
+     "base": 2.26,
+     "per": 0,
+     "max": 99,
+     "dur": 99,
+     "init": 0,
+     "scale": "intel"
+    },
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "command",
+     "mult": 0.7,
+     "dur": 99,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "降低其30%→60%武力（受智力影響）……同時降低其30→60點統率（受智力影響）",
+   "_bucket": "active2"
+  },
+  "臨鋒決敵": {
+   "effects": [
+    {
+     "k": "extra",
+     "who": "self",
+     "val": 1,
+     "dur": 1
+    },
+    {
+     "k": "insight",
+     "who": "self",
+     "dur": 1,
+     "_approx": "原文僅免疫繳械單一控制，insight為免疫全部控制的近似(略高估)"
+    }
+   ],
+   "_evidence": "自身獲得連擊狀態並免疫繳械效果，持續1回合",
+   "_bucket": "active2"
+  },
+  "累世立名": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "command",
+     "add": -24,
+     "dur": 2,
+     "scale": "force"
+    },
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 0.6,
+     "dur": 2
+    },
+    {
+     "k": "stat",
+     "who": "ally",
+     "stat": "command",
+     "add": 80,
+     "dur": 3,
+     "_approx": "限自身為主將時觸發，引擎無條件判斷，暫維持為全隊常態增益(略高估)"
+    }
+   ],
+   "_evidence": "並施加灼燒狀態（傷害率60%，受智力影響），持續2回合。自身為主將時，提高我軍全體（3人）40點->80點統率（可疊加），持續3回合",
+   "_bucket": "active2"
+  },
+  "火神英風": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "ally",
+     "stat": "force",
+     "mult": 1.1,
+     "dur": 99
+    },
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 1.58,
+     "dur": 3,
+     "scale": "force"
+    }
+   ],
+   "_evidence": "發動兵刃攻擊（傷害率 71%→142%）",
+   "_bucket": "command1"
+  },
+  "古之惡來": {
+   "effects": [
+    {
+     "k": "redirect",
+     "who": "ally",
+     "guard": "self",
+     "share": 1
+    },
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": -0.18,
+     "dur": 1
+    }
+   ],
+   "_evidence": "自身會對攻擊者進行一次猛擊（傷害率 40%→80%）並使其造成兵刃傷害降低 9%→18%",
+   "_bucket": "command1"
+  },
+  "虎侯": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "ally",
+     "stat": "command",
+     "mult": 1.1,
+     "dur": 2
+    }
+   ],
+   "_evidence": "並對敵軍單體造成兵刃傷害(傷害率33%→66%)",
+   "_bucket": "command1"
+  },
+  "金城湯池": {
+   "effects": [
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 0.98,
+     "dur": 1,
+     "scale": "intel"
+    },
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 0.72,
+     "dur": 1
+    }
+   ],
+   "_evidence": "造成兵刃傷害（傷害率 51%→102%）及灼燒狀態（傷害率 36%→72%）",
+   "_bucket": "command1"
+  },
+  "百計多謀": {
+   "effects": [
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 0.4,
+     "dur": 1,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "每回合75%機率產生逃兵（傷害率70%→140%）",
+   "_bucket": "command1"
+  },
+  "守而必固": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "command",
+     "mult": 1.24,
+     "dur": 4
+    },
+    {
+     "k": "taunt",
+     "who": "enemy",
+     "dur": 4
+    }
+   ],
+   "_evidence": "嘲諷敵軍主將（強迫目標攻擊自己），並使自己的統率提高 30→60 點，持續 4 回合",
+   "_bucket": "command1"
+  },
+  "白衣渡江": {
+   "effects": [
+    {
+     "k": "disarm",
+     "who": "enemy",
+     "dur": 2
+    },
+    {
+     "k": "silence",
+     "who": "enemy",
+     "dur": 1
+    },
+    {
+     "k": "shield",
+     "who": "ally",
+     "pct": 0.2,
+     "dur": 1,
+     "_approx": "1次抵禦=擋一次攻擊,無對應原語,用約1次普攻傷害量的護盾近似"
+    }
+   ],
+   "_evidence": "自身造成兵刃傷害時有 25%→50% 機率使敵軍單體繳械…持續 2 回合，造成謀略傷害時有 25%→50% 機率使敵軍單體計窮…持續 1 回合",
+   "_bucket": "command1"
+  },
+  "扶危定傾": {
+   "effects": [
+    {
+     "k": "mitig",
+     "who": "ally",
+     "val": 0.39,
+     "dur": 1
+    },
+    {
+     "k": "stat",
+     "who": "ally",
+     "stat": "all",
+     "mult": 1.03,
+     "dur": 2
+    }
+   ],
+   "_evidence": "戰鬥首回合，使我軍全體受到的傷害降低19.5→39%",
+   "_bucket": "command1"
+  },
+  "金丹秘術": {
+   "effects": [
+    {
+     "k": "dodge",
+     "who": "ally",
+     "dur": 2,
+     "prob": 0.35
+    },
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 0.58,
+     "dur": 3,
+     "when": {
+      "from": 3
+     }
+    }
+   ],
+   "_evidence": "戰鬥前 2 回合，使我軍全體獲得 17.5%→35% 規避…並在戰鬥第 3 回合開始，獲得休整狀態…持續 3 回合",
+   "_bucket": "command1"
+  },
+  "青囊": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "ally",
+     "stat": "command",
+     "mult": 1.1,
+     "dur": 4
+    },
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 0.96,
+     "dur": 1,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "戰鬥前 4 回合，使我軍群體（2 人）獲得 20→40 統率（受智力影響）及急救效果",
+   "_bucket": "command1"
+  },
+  "工神": {
+   "effects": [
+    {
+     "k": "decay",
+     "who": "self",
+     "v0": 0.3,
+     "rounds": 3
+    },
+    {
+     "k": "amp",
+     "who": "ally",
+     "val": -0.15,
+     "dur": 2,
+     "when": {
+      "from": 4
+     }
+    },
+    {
+     "k": "first",
+     "who": "ally",
+     "dur": 3
+    }
+   ],
+   "_evidence": "第四回合開始，我軍全體造成傷害降低15%，持續2回合",
+   "_bucket": "command1"
+  },
+  "用武通神": {
+   "set": {
+    "coef": 1.2,
+    "when": {
+     "rounds": [
+      2,
+      4,
+      6,
+      8
+     ]
+    }
+   },
+   "_evidence": "第 2、4、6、8 回合…逐漸造成 37.5%→75%，52.5%→105%，67.5%→135%，82.5%→165% 謀略傷害",
+   "_bucket": "command1",
+   "_note": "4次遞增值(75/105/135/165%)取平均1.2近似, 用when.rounds限定僅第2/4/6/8回合觸發(engine.js roundOk/sgz.py 同機制原生支援top-level when.rounds於command型戰法)"
+  },
+  "舌戰群儒": {
+   "effects": [
+    {
+     "k": "rateup",
+     "who": "enemy",
+     "val": -0.0125,
+     "dur": 99,
+     "_approx": "prob-ev: 25%機率×5%降幅折算成持續期望值(引擎無『敵方嘗試發動主動戰法時』的反應式觸發點)"
+    },
+    {
+     "k": "rateup",
+     "who": "ally",
+     "val": 0.01,
+     "dur": 99,
+     "_approx": "prob-ev: 25%機率×4%增幅折算成持續期望值"
+    }
+   ],
+   "_evidence": "敵軍嘗試發動主動戰法時，有 15%→25% 機率令其發動機率降低 5%，並提高自己及隨機友軍主動戰法 2%→4% 發動機率",
+   "_bucket": "command1"
+  },
+  "挫銳": {
+   "effects": [],
+   "_evidence": "造成傷害時有 32.5%→65% 機率無法造成傷害",
+   "_bucket": "command1"
+  },
+  "非攻制勝": {
+   "effects": [
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 0.5,
+     "dur": 99,
+     "when": {
+      "from": 3
+     }
+    }
+   ],
+   "_evidence": "3回合起，武力最高者造成傷害時，同時治療兵力最低的隊友",
+   "_bucket": "command1"
+  },
+  "密計誅逆": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": -0.15,
+     "dur": 2,
+     "scale": "command"
+    },
+    {
+     "k": "settle",
+     "who": "enemy",
+     "base": 1,
+     "per": 0.25,
+     "max": 3,
+     "dur": 2,
+     "init": 0,
+     "when": {
+      "rounds": [
+       6
+      ]
+     }
+    }
+   ],
+   "_evidence": "戰鬥第6回合，自身對敵軍單體造成一次斬殺傷害（傷害率100%+25%×最終降傷施加次數）",
+   "_bucket": "command1"
+  },
+  "鷹視狼顧": {
+   "set": {
+    "n": 2
+   },
+   "effects": [
+    {
+     "k": "lifesteal",
+     "who": "ally",
+     "val": 0.8,
+     "dur": 1,
+     "_note": "前4回合自身發動主動戰法時50%→100%機率使我軍全體獲得1次1回合80%攻心"
+    },
+    {
+     "k": "extra",
+     "who": "self",
+     "val": 0.16,
+     "dur": 99,
+     "_note": "自身為主將時+16%奇謀機率(取滿級)"
+    }
+   ],
+   "_evidence": "raw: 戰鬥前4回合，自身發動主動戰法時，有50%→100%概率使我軍全體獲得1次1回合80%攻心；第5回合起，每回合有80%概率對1→2個敵軍單體造成謀略傷害（傷害率77%→154%）；自身為主將時，獲得8%→16%奇謀幾率",
+   "_bucket": "command2"
+  },
+  "夢中弒臣": {
+   "set": {
+    "coef": 1.5,
+    "rate": 0.5
+   },
+   "effects": [
+    {
+     "k": "mitig",
+     "who": "ally",
+     "val": 0.1,
+     "dur": 2,
+     "_note": "2024-12-11更新版: 戰鬥前2回合我軍副將受到的傷害降低5%→10%"
+    }
+   ],
+   "_evidence": "raw(最新版): 戰鬥前2回合，我軍副將受到的傷害降低5%→10%。戰鬥第3回合起，自身獲得25%→50%機率反擊狀態（傷害率150%）",
+   "_bucket": "command2"
+  },
+  "盛氣凌敵": {
+   "set": {
+    "rate": 0.9
+   },
+   "_evidence": "raw: 每回合都有45%→90%的機率陷入繳械狀態",
+   "_bucket": "command2"
+  },
+  "淵然難測": {
+   "set": {
+    "rate": 0.5
+   },
+   "_evidence": "raw: 受到普通攻擊時，有25%→50%機率(主將時基礎機率提升至30%→60%)使傷害來源受到傷害提升",
+   "_bucket": "command2"
+  },
+  "錦囊妙計": {
+   "set": {
+    "rate": 0.535
+   },
+   "effects": [
+    {
+     "k": "rateup",
+     "who": "ally",
+     "val": 1.0,
+     "dur": 1,
+     "nativeOnly": true,
+     "_note": "使友軍單體自帶主動戰法發動率+100%"
+    },
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 1,
+     "dur": 1,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "raw: 奇數回合有16%→32%機率，偶數回合有37.5%→75%機率使友軍單體的自帶主動戰法發動率提高100%",
+   "_bucket": "command2"
+  },
+  "淑懿之德": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "ally",
+     "stat": "intel",
+     "mult": 1.03,
+     "dur": 99,
+     "scale": "intel"
+    },
+    {
+     "k": "stat",
+     "who": "ally",
+     "stat": "command",
+     "mult": 1.03,
+     "dur": 99,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "raw: 我軍主將每擁有1種功能性狀態，使其智力、統率提升1.5%→3%",
+   "_bucket": "command2"
+  },
+  "鎮扼防拒": {
+   "set": {
+    "rate": 0.5
+   },
+   "_evidence": "raw: 每回合有25%→50%機率(受智力影響)使我軍單體副將援護所有友軍並獲得休整狀態",
+   "_bucket": "command2"
+  },
+  "揮兵謀勝": {
+   "set": {
+    "rate": 0.7
+   },
+   "effects": [
+    {
+     "k": "mitig",
+     "who": "ally",
+     "val": 0.3,
+     "dur": 1,
+     "_note": "前3回合每回合70%概率賦予全體2-3人1次抵禦(取滿級,raw無主將分支)"
+    },
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 0.94,
+     "dur": 1,
+     "_note": "抵禦被消耗時觸發：治療單體，治療率94%（受智力影響）",
+     "scale": "intel"
+    },
+    {
+     "k": "counter",
+     "who": "ally",
+     "coef": 0.94,
+     "kind": "phys",
+     "prob": 0.5,
+     "_note": "抵禦到期未消耗時觸發：武力最高友軍對敵隨機發起兵刃攻擊，傷害率94%"
+    }
+   ],
+   "_evidence": "raw: 每回合有35%→70%機率（受智力影響）使我軍群體（2-3人）獲得1次抵禦",
+   "_bucket": "command2"
+  },
+  "韜心惑敵": {
+   "effects": [
+    {
+     "k": "silence",
+     "who": "enemy",
+     "dur": 1
+    },
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": -0.3,
+     "dur": 3
+    }
+   ],
+   "_evidence": "raw: 戰鬥第2回合，使敵軍智力低於自身的武將造成主動戰法傷害降低15%→30%（受雙方智力差影響），持續3回合",
+   "_bucket": "command2"
+  },
+  "鐵騎驅馳": {
+   "effects": [
+    {
+     "k": "stun",
+     "who": "enemy",
+     "dur": 2
+    },
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "command",
+     "mult": 0.85,
+     "dur": 3
+    }
+   ],
+   "_evidence": "raw: 戰鬥前2回合，使敵軍全體處於遇襲狀態（行動滯後）...降低其7.5%→15%統率，持續3回合",
+   "_bucket": "command2"
+  },
+  "詐降": {
+   "effects": [
+    {
+     "k": "stun",
+     "who": "ally",
+     "dur": 1,
+     "_note": "首回合自己混亂,無差別選擇目標"
+    },
+    {
+     "k": "heal",
+     "who": "self",
+     "coef": 1.6,
+     "dur": 3,
+     "scale": "intel"
+    }
+   ],
+   "_evidence": "raw: 戰鬥開始後首回合，自己獲得混亂狀態，第2回合起獲得休整狀態...持續3回合",
+   "_bucket": "command2"
+  },
+  "傲睨王侯": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "all",
+     "mult": 0.97,
+     "dur": 99
+    },
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": 0.15,
+     "dur": 2,
+     "scale": "intel"
+    },
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "all",
+     "mult": 0.8,
+     "dur": 99
+    }
+   ],
+   "_evidence": "raw: 使其進入虛弱狀態，持續1回合，且受到的傷害提高7.5%→15%（受智力影響），持續2回合",
+   "_bucket": "command2"
+  },
+  "興雲佈雨": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": 0.1,
+     "dur": 5
+    }
+   ],
+   "_evidence": "raw: 使敵軍全體進入水攻狀態...並使其受到傷害增加5%→10%，持續5回合",
+   "_bucket": "command2"
+  },
+  "亂世奸雄": {
+   "set": {
+    "n": 2
+   },
+   "_evidence": "raw effectText: 使友軍群體（2人）造成的兵刃傷害和謀略傷害提高8%→16%",
+   "_bucket": "command2"
+  },
+  "撫輯軍民": {
+   "effects": [
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 1.26,
+     "dur": 1,
+     "scale": "intel"
+    },
+    {
+     "k": "mitig",
+     "who": "ally",
+     "val": 0.24,
+     "dur": 3,
+     "scale": "command"
+    },
+    {
+     "k": "amp",
+     "who": "ally",
+     "val": -0.24,
+     "dur": 3,
+     "_note": "代價面:前3回合我軍群體造成的兵刃和謀略傷害降低12%→24%"
+    }
+   ],
+   "_evidence": "raw(2021-06-09最新版): 戰鬥前3回合，使我軍群體（2人）造成的兵刃傷害和謀略傷害降低12%→24%，受到的兵刃傷害和謀略傷害降低12%→24%",
+   "_bucket": "command2"
+  },
+  "騎虎難下": {
+   "effects": [
+    {
+     "k": "healblock",
+     "who": "ally",
+     "dur": 1,
+     "_note": "對被攻擊的友軍造成當回合禁療"
+    }
+   ],
+   "_evidence": "raw: 有20%→35%概率對該友軍造成當回合禁療（無法恢復兵力）并對敵軍群體造成兵刃攻擊",
+   "_bucket": "command2"
+  },
+  "鷹視": {
+   "set": {
+    "rate": 0.8
+   },
+   "effects": [
+    {
+     "k": "lifesteal",
+     "who": "ally",
+     "val": 0.8,
+     "dur": 1,
+     "_note": "前4回合自身發動主動戰法時50%→100%機率使我軍全體獲得1次1回合80%攻心"
+    },
+    {
+     "k": "extra",
+     "who": "self",
+     "val": 0.16,
+     "dur": 99,
+     "_note": "自身為主將時+16%奇謀機率(取滿級)"
+    }
+   ],
+   "_evidence": "借用鷹視狼顧(INHERITANCE,cmnzuqc7y)原文補全: 戰鬥前4回合...50%→100%概率使我軍全體獲得1次1回合80%攻心；第5回合起，每回合有80%概率對1→2個敵軍單體造成謀略傷害（傷害率77%→154%）；自身為主將時，獲得8%→16%奇謀幾率。coef=1.54/n=2已於parsed中正確,故corrections只需補rate與effects",
+   "_bucket": "command2"
+  },
+  "權僭九鼎": {
+   "set": {
+    "_est": false
+   },
+   "effects": [
+    {
+     "k": "heal",
+     "who": "self",
+     "coef": 0.06,
+     "dur": 99,
+     "_approx": "prob-ev",
+     "_note": "敵軍受治療時50%機率偷取其中12%轉移到自身,期望值折算0.12*0.5=0.06"
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "command",
+     "add": 5,
+     "dur": 99,
+     "_approx": "prob-ev",
+     "_note": "自身受治療時50%機率+5點統率,可疊加99次,以單次期望近似,實際應逐次觸發疊加(引擎無疊加計數器,近似為持續加成)"
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "intel",
+     "add": 5,
+     "dur": 99,
+     "_approx": "prob-ev",
+     "_note": "自身受治療時50%機率+5點智力,可疊加99次,近似同上"
+    }
+   ],
+   "_evidence": "raw: 敵軍受到治療時，有25%→50%機率將其中6%→12%轉移到自身；自身受到治療時，有25%→50%機率提升2.5→5點統率和智力，可疊加99次",
+   "_bucket": "command2"
+  },
+  "橫戈躍馬": {
+   "set": {
+    "_est": false
+   },
+   "effects": [
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": -0.3,
+     "dur": 3
+    },
+    {
+     "k": "amp",
+     "who": "ally",
+     "val": -0.3,
+     "dur": 3,
+     "_note": "雙方全體同受影響:我軍造成的謀略傷害亦降低15%→30%,前3回合"
+    },
+    {
+     "k": "amp",
+     "who": "ally",
+     "val": 0.2,
+     "dur": 99
+    }
+   ],
+   "_evidence": "raw: 戰鬥前3回合，使雙方全體造成的謀略傷害降低15%→30%，第3回合起，使我軍全體造成的兵刃傷害提升20%，持續到戰鬥結束",
+   "_bucket": "command2"
+  },
+  "江東小霸王": {
+   "effects": [
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 0.56,
+     "dur": 1,
+     "scale": "force"
+    },
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": 0.3,
+     "dur": 2
+    }
+   ],
+   "_evidence": "自身每回合有25%→50%機率...對敵軍單體造成兵刃傷害(傷害率96%→192%)並治療我軍兵力最低的武將(治療率28%→56%);自身為主將時,戰鬥前2回合,使敵軍單體受到傷害提高15%→30%",
+   "_bucket": "passive"
+  },
+  "神火計": {
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 0.34,
+     "dur": 1
+    }
+   ],
+   "_evidence": "有40%→80%機率對敵軍全體發動謀略攻擊(傷害率34%→68%),若目標有灼燒狀態則對其造成謀略傷害(傷害率34%);自身為主將時,造成謀略傷害後有25%→50%機率對目標施加灼燒狀態",
+   "_bucket": "passive"
+  },
+  "鴟苕鳳姿": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "self",
+     "val": 0.8,
+     "dur": 99
+    },
+    {
+     "k": "healblock",
+     "who": "enemy",
+     "dur": 1,
+     "_note": "70%機率禁療未建模(healblock原語無per-effect機率欄位)，維持近似必定觸發(略高估)，與橫掃千軍/暗箭難防同慣例"
+    }
+   ],
+   "_evidence": "普通攻擊時有35%→70%機率使目標進入禁療狀態,持續1回合",
+   "_bucket": "passive"
+  },
+  "勇烈持重": {
+   "set": {
+    "rate": 0.35
+   },
+   "effects": [
+    {
+     "k": "stun",
+     "who": "enemy",
+     "dur": 1
+    }
+   ],
+   "_evidence": "受到傷害時,有20%→35%機率淨化自己負面效果,同時使隨機敵軍單體進入震懾(無法行動)狀態,持續1回合,該效果每回合最多觸發一次",
+   "_bucket": "passive"
+  },
+  "忠勇義烈": {
+   "set": {
+    "rate": 0.6
+   },
+   "effects": [
+    {
+     "k": "rateup",
+     "who": "self",
+     "val": 0.06,
+     "dur": 1,
+     "scale": "force"
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "force",
+     "add": 45,
+     "dur": 1
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "command",
+     "add": 45,
+     "dur": 1
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "intel",
+     "add": 45,
+     "dur": 1
+    },
+    {
+     "k": "lifesteal",
+     "who": "self",
+     "val": 0.28,
+     "dur": 1
+    }
+   ],
+   "_evidence": "自身每回合有30%→60%機率獲得以下效果;主動戰法發動率提升3%→6%(受武力影響);武力、統率、智力提升22.5→45;14%→28%倒戈,持續1回合,每種效果獨立判定",
+   "_bucket": "passive"
+  },
+  "以寡敵眾": {
+   "effects": [
+    {
+     "k": "heal",
+     "who": "self",
+     "coef": 2.88,
+     "dur": 1,
+     "scale": "force"
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "force",
+     "mult": 1.1,
+     "dur": 99
+    }
+   ],
+   "_evidence": "戰鬥第2、4、6回合,恢復自身兵力並提高自身5%→10%武力",
+   "_bucket": "passive"
+  },
+  "士爭先赴": {
+   "set": {
+    "n": 2
+   },
+   "effects": [
+    {
+     "k": "amp",
+     "who": "self",
+     "val": 0.2,
+     "dur": 99
+    }
+   ],
+   "_evidence": "成功發動自帶主動戰法前,有50%機率對敵軍群體(2人)造成兵刃傷害(傷害率60%→120%)",
+   "_bucket": "passive"
+  },
+  "矢志不移": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "force",
+     "add": 15,
+     "dur": 99
+    },
+    {
+     "k": "extra",
+     "who": "self",
+     "val": 1,
+     "dur": 2,
+     "_approx": "prob-ev",
+     "_note": "前2回合50%機率群攻(普攻時對敵同部隊其他武將造成傷害),引擎extra無機率欄位,以dur=2近似限定回合範圍,未做50%折算(extra為布林式加成非可折算數值)"
+    }
+   ],
+   "_evidence": "前2回合獲得群攻(傷害率50%→100%)狀態但只有50%概率發動群攻...第3回合起每回合提高7.5→15武力",
+   "_bucket": "passive"
+  },
+  "溯江搖櫓": {
+   "set": {
+    "rate": 0.35
+   },
+   "effects": [
+    {
+     "k": "stun",
+     "who": "enemy",
+     "dur": 1
+    },
+    {
+     "k": "counter",
+     "who": "self",
+     "coef": 0.5,
+     "kind": "phys",
+     "prob": 0.6
+    }
+   ],
+   "_evidence": "自身造成傷害時,有17.5%→35%機率使隨機敵軍單體進入計窮或震懾狀態...受到傷害時,有30%→60%機率對敵軍單體造成對應類型的傷害",
+   "_bucket": "passive"
+  },
+  "奮突": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "self",
+     "val": 0.36,
+     "dur": 99,
+     "_approx": "stack-max",
+     "_note": "6%→12%每次普攻疊加,最多3次,以滿疊值0.36近似(引擎無per-attack疊加原語)"
+    },
+    {
+     "k": "disarm",
+     "who": "enemy",
+     "dur": 1,
+     "_note": "原文35%機率觸發,但disarm原語無獨立prob欄位,沿用頂層rate=1(暫時高估,已知限制)"
+    }
+   ],
+   "_evidence": "普通攻擊之後,使自己造成兵刃傷害提高6%→12%,最多疊加3次,並且有35%概率使目標繳械(無法進行普通攻擊),持續1回合",
+   "_bucket": "passive"
+  },
+  "義膽雄心": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "force",
+     "add": -64,
+     "dur": 2
+    },
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "intel",
+     "add": -34,
+     "dur": 2
+    },
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 0.76,
+     "dur": 1,
+     "_note": "偶數回合對敵軍群體(2人)謀略傷害,以dot粗略表示週期性群體傷害(n應設2)"
+    }
+   ],
+   "_evidence": "奇數回合...造成92%→184%兵刃傷害並降低武力32→64點;偶數回合會對敵軍群體(2人)造成38%→76%謀略傷害(受智力影響)並降低智力17→34點",
+   "_bucket": "passive"
+  },
+  "士別三日": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "intel",
+     "mult": 1.27,
+     "dur": 99
+    },
+    {
+     "k": "dodge",
+     "who": "self",
+     "prob": 0.3,
+     "dur": 3
+    },
+    {
+     "k": "disarm",
+     "who": "self",
+     "dur": 3
+    }
+   ],
+   "_evidence": "戰鬥前3回合,無法進行普通攻擊但獲得15%→30%機率規避效果",
+   "_bucket": "passive"
+  },
+  "陷陣突襲": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "self",
+     "val": 0.06,
+     "dur": 99,
+     "_note": "誤合併; 原文為主將倒戈非泛用增傷,見lifesteal"
+    },
+    {
+     "k": "chargeup",
+     "who": "self",
+     "val": 0.15,
+     "dur": 99
+    }
+   ],
+   "_evidence": "自身突擊戰法發動機率提高7.5%→15%且自身成功發動突擊戰法後,對目標額外發動一次兵刃攻擊(傷害率47.5%→95%);自身為主將時,獲得3%→6%倒戈",
+   "_bucket": "passive"
+  },
+  "死戰不退": {
+   "effects": [
+    {
+     "k": "stack",
+     "who": "self",
+     "per": 1.3,
+     "max": 20
+    },
+    {
+     "k": "extra",
+     "who": "self",
+     "val": 1,
+     "dur": 99,
+     "_approx": "prob-ev",
+     "_note": "原文為80%機率獲得蓄威層,消耗蓄威後50%起遞減8%連續判定最多5次,期望額外攻擊次數約1-2次,以val=1保守折算(原val=5等於保證5次嚴重高估)"
+    }
+   ],
+   "_evidence": "普攻後,有50%機率(受武力影響)消耗一層蓄威對敵軍單體造成一次兵刃傷害,觸發後可繼續判定,每次觸發後機率降低8%,每次普攻後最多觸發5次",
+   "_bucket": "passive"
+  },
+  "才辯機捷": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "self",
+     "val": 0.15,
+     "dur": 99,
+     "_approx": "scope-est",
+     "_note": "原文90%僅限灼燒/水攻/中毒等dot類傷害加成,非全面增傷;引擎amp無dot專屬範圍欄位,以dot傷害通常占總輸出比例粗略折算下修,維持_est"
+    }
+   ],
+   "_evidence": "自身施加的灼燒、水攻、中毒、潰逃、沙暴、叛逃狀態造成的傷害提升90%;自身施加的休整、急救狀態恢復兵力時,恢復量提升30%",
+   "_bucket": "passive"
+  },
+  "乘勝長驅": {
+   "effects": [
+    {
+     "k": "stack",
+     "who": "self",
+     "per": 0.11,
+     "max": 8,
+     "_approx": "stack-cap",
+     "_note": "原文可疊加至戰鬥結束無上限,以典型戰鬥長度8回合作為近似上限"
+    }
+   ],
+   "_evidence": "每回合使自身造成傷害提高5.5%→11%,可疊加,直到戰鬥結束",
+   "_bucket": "passive"
+  },
+  "奇兵間道": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "self",
+     "val": 0.3,
+     "dur": 4,
+     "scale": "force"
+    },
+    {
+     "k": "lifesteal",
+     "who": "self",
+     "val": 0.45,
+     "dur": 99
+    }
+   ],
+   "_evidence": "第5回合時,若自身兵力低於50%,獲得45%倒戈,直到戰鬥結束",
+   "_bucket": "passive"
+  },
+  "奮發": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "force",
+     "add": 25,
+     "dur": 99
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "speed",
+     "add": 25,
+     "dur": 99
+    }
+   ],
+   "_evidence": "使自身武力、速度提升12.5 → 25點",
+   "_bucket": "passive"
+  },
+  "一身是膽": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "all",
+     "mult": 1.12,
+     "dur": 99
+    },
+    {
+     "k": "stack",
+     "who": "self",
+     "per": 0.07,
+     "max": 7,
+     "_approx": "stack-cap",
+     "_note": "3.5%→7%會心,每次免疫控制後有機率(20%→40%)獲得一層,最多7層;引擎無事件觸發式疊層,以stack原語per=0.07/max=7近似(未對疊層機率做折算,略高估)"
+    },
+    {
+     "k": "insight",
+     "who": "self",
+     "dur": 99
+    }
+   ],
+   "_evidence": "每次免疫控制狀態後,有20%→40%機率獲得3.5%→7%會心,持續到戰鬥結束,最多觸發7次",
+   "_bucket": "passive"
+  },
+  "剛勇無前": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "self",
+     "val": 0.85,
+     "dur": 1,
+     "_approx": "crit-ev",
+     "_note": "下一攻擊傷害提高65% + 20%會心機率期望折算(20%×約100%會心傷害基準略估),原0.65只含前者,現併入會心期望"
+    }
+   ],
+   "_evidence": "下回合行動時,提高10%→20%會心並使下一個攻擊的傷害提高32.5%→65%,持續1回合",
+   "_bucket": "passive"
+  },
+  "剛烈不屈": {
+   "set": {
+    "when": {
+     "on": "damaged"
+    }
+   },
+   "effects": [
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "command",
+     "add": 38,
+     "dur": 99
+    }
+   ],
+   "_evidence": "受到兵刃傷害時有40%幾率對敵軍群體(2人)造成兵刃傷害(傷害率42% → 84%)",
+   "_bucket": "passive"
+  },
+  "功不唐捐": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "self",
+     "val": 0.3,
+     "dur": 99,
+     "_est": true,
+     "_note": "原文限定僅自帶主動戰法傷害,引擎amp無nativeOnly範圍限制,維持泛用近似(可能高估非自帶戰法輸出時的增傷)"
+    },
+    {
+     "k": "lifesteal",
+     "who": "self",
+     "val": 0.3,
+     "dur": 99
+    }
+   ],
+   "_evidence": "自身自帶主動戰法傷害提升15%→30%,並獲得15%→30%攻心",
+   "_bucket": "passive"
+  },
+  "整軍經武": {
+   "effects": [
+    {
+     "k": "mitig",
+     "who": "self",
+     "val": 0.25,
+     "dur": 1
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "command",
+     "add": 30,
+     "dur": 1
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "intel",
+     "add": 30,
+     "dur": 1
+    }
+   ],
+   "_evidence": "戰鬥中奇數回合使自身受到傷害降低12.5→25%(自身最高屬性影響),偶數回合,自身統率智力提升15→30點",
+   "_bucket": "passive"
+  },
+  "酒池肉林": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "ally",
+     "stat": "force",
+     "add": 10,
+     "dur": 99
+    },
+    {
+     "k": "lifesteal",
+     "who": "ally",
+     "val": 0.04,
+     "dur": 99
+    }
+   ],
+   "_evidence": "每回合使我軍男性武將獲得2%→4%倒戈(造成兵刃傷害時,恢復自身基於傷害量的一定兵力)及10點武力,可疊加,持續到戰鬥結束",
+   "_bucket": "passive"
+  },
+  "裸衣血戰": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "self",
+     "val": 0.9,
+     "dur": 3
+    },
+    {
+     "k": "lifesteal",
+     "who": "self",
+     "val": 0.1,
+     "dur": 3
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "command",
+     "mult": 0.6,
+     "dur": 3
+    },
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "command",
+     "mult": 0.6,
+     "dur": 3
+    }
+   ],
+   "_evidence": "戰鬥前3回合,獲得45%→90%連擊及5%→10%倒戈,並使自身及敵軍單體統率降低40%",
+   "_bucket": "passive"
+  },
+  "藏器待時": {
+   "effects": [
+    {
+     "k": "mitig",
+     "who": "self",
+     "val": 0.2,
+     "dur": 2,
+     "scale": "command"
+    },
+    {
+     "k": "amp",
+     "who": "self",
+     "val": 0.2,
+     "dur": 99
+    },
+    {
+     "k": "rateup",
+     "who": "self",
+     "val": 0.08,
+     "dur": 99,
+     "nativeOnly": true,
+     "scale": "force"
+    }
+   ],
+   "_evidence": "第三回合起,自身自帶主動戰法發動率提升4%→8%(受武力影響)且造成傷害時有15%→30%機率(受武力影響)附帶10%→20%破陣(受武力影響)",
+   "_bucket": "passive"
+  },
+  "先登死士": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "command",
+     "add": -9,
+     "dur": 2,
+     "_approx": "prob-ev",
+     "_note": "受擊時30%-60%機率(取45%均值)偷取攻擊者10.5-21點統率或降其1.5%-3%發動率,兩分支擇一觸發;engine無偷取/降發動率原語,以enemy統率debuff近似其中一分支並用EV折算(21×0.45≈9.5,取整9),原資料誤把效果套用在ally自身導致方向完全相反"
+    }
+   ],
+   "_evidence": "受到傷害時有 30%→60% 機率...若兵力百分比低於攻擊者則偷取其 10.5→21 點統率...否則降低其 1.5%→3% 主動戰法發動率",
+   "_bucket": "misc"
+  },
+  "折衝禦侮": {
+   "set": {
+    "rate": 0.45
+   },
+   "_evidence": "發動機率 25%→45%",
+   "_bucket": "misc"
+  },
+  "象兵": {
+   "effects": [
+    {
+     "k": "mitig",
+     "who": "ally",
+     "val": 0.1,
+     "dur": 99,
+     "_approx": "settle-ev",
+     "_note": "受傷時25%-50%傷害延後3回合結算並減傷10%-20%,取50%×20%≈10%整體期望減傷近似(engine settle原語僅支援攻擊向延遲傷害,無法表達防禦向延後受傷機制)"
+    }
+   ],
+   "_evidence": "受到傷害時，將傷害的 25%→50% 延後於 3 回合內逐步結算，並使結算傷害降低 10%→20%",
+   "_bucket": "misc"
+  },
+  "雁行陣": {
+   "set": {
+    "_est": true
+   },
+   "_evidence": "每回合有17.5%→35%機率（受統率影響）將敵軍隨機武將的減傷效果轉移至我軍隨機武將，或將我軍群體的隨機1-2種負面狀態轉移給敵軍，或使我軍統率最低的單體偷取敵軍全體的部分統率",
+   "_bucket": "misc"
+  },
+  "摧鋒斷刃": {
+   "set": {
+    "n": 3
+   },
+   "effects": [
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": -0.2,
+     "dur": 2
+    }
+   ],
+   "_evidence": "普攻後發動三次隨機打擊；若自身武力較高，則會顯著降低目標造成的傷害",
+   "_bucket": "misc"
+  },
+  "白馬義從": {
+   "effects": [
+    {
+     "k": "first",
+     "who": "ally",
+     "dur": 2
+    },
+    {
+     "k": "rateup",
+     "who": "ally",
+     "val": 0.1,
+     "dur": 2
+    }
+   ],
+   "_evidence": "部隊行軍速度提高 25%→50%（非戰鬥移動速度,與戰鬥speed無關,不建模）,我軍全體戰鬥前 2 回合獲得先攻（優先行動）並提高 5%→10% 主動戰法發動率",
+   "_bucket": "misc"
+  },
+  "勇者得前": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "self",
+     "val": 0.8,
+     "dur": 1
+    },
+    {
+     "k": "mitig",
+     "who": "self",
+     "val": 1.0,
+     "dur": 1,
+     "_approx": "shield-as-mitig",
+     "_note": "'1次抵禦(可免疫傷害)'以單回合100%減傷近似單次全免傷"
+    }
+   ],
+   "_evidence": "普通攻擊之後使自己獲得 1 次抵禦（可免疫傷害），並使下一個主動戰法的傷害提升 40%→80%",
+   "_bucket": "misc"
+  },
+  "猛擊": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "self",
+     "val": 0.3,
+     "dur": 1,
+     "_approx": "crit-ev",
+     "_note": "會心30%(取滿級)×傷害+100%期望值折算=0.3"
+    }
+   ],
+   "_evidence": "使自己增加15% → 30%會心幾率（觸發時兵刃傷害提高100%），持續1回合",
+   "_bucket": "misc"
+  },
+  "破甲": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "enemy",
+     "stat": "command",
+     "add": -14,
+     "dur": 2
+    }
+   ],
+   "_evidence": "使目標統率降低7 → 14點，持續2回合",
+   "_bucket": "misc"
+  },
+  "追傷": {
+   "effects": [
+    {
+     "k": "healblock",
+     "who": "enemy",
+     "dur": 1
+    }
+   ],
+   "_evidence": "使目標陷入禁療狀態（無法恢復兵力），持續1回合",
+   "_bucket": "misc"
+  },
+  "克敵制勝": {
+   "effects": [],
+   "_evidence": "若目標處於潰逃或中毒狀態，則有 70% 機率使目標進入虛弱狀態，持續 1 回合",
+   "_bucket": "misc"
+  },
+  "八門金鎖陣": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "enemy",
+     "val": -0.3,
+     "dur": 3,
+     "scale": "intel"
+    },
+    {
+     "k": "first",
+     "who": "leader",
+     "dur": 3
+    }
+   ],
+   "_evidence": "並使我軍主將獲得先攻狀態（優先行動）",
+   "_bucket": "misc"
+  },
+  "丹陽兵": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "ally",
+     "stat": "command",
+     "mult": 1.14,
+     "dur": 99
+    },
+    {
+     "k": "mitig",
+     "who": "ally",
+     "val": 0.18,
+     "dur": 99,
+     "_approx": "decay-avg",
+     "_note": "僅抵擋謀略傷害(非全類型)且為消耗性資源(依上回合兵刃輸出動態補充,每回合衰減10%),以36%上限打對折(限定謀略傷害類型+穩態資源量)保守折算為18%常駐;engine mitig無傷害類型過濾與動態資源機制"
+    }
+   ],
+   "_evidence": "我軍受到謀略傷害時，將消耗丹陽兵可抵擋其中 18%→36% 謀略傷害，丹陽兵數量每回合衰減 10%",
+   "_bucket": "misc"
+  },
+  "鋒矢陣": {
+   "effects": [
+    {
+     "k": "amp",
+     "who": "leader",
+     "val": 0.3,
+     "dur": 99
+    },
+    {
+     "k": "mitig",
+     "who": "leader",
+     "val": -0.2,
+     "dur": 99,
+     "_note": "主將受到的兵刃/謀略傷害提高20%(負面,非減傷)"
+    }
+   ],
+   "_evidence": "使我軍主將造成的兵刃傷害和謀略傷害提高 15%→30%，受到的兵刃傷害和謀略傷害提高 20%；我軍副將造成的兵刃傷害和謀略傷害降低 15%，受到的兵刃傷害和謀略傷害降低 12.5%→25%（副將專屬懲罰/減傷因engine who=ally會連主將一併套用而無法精確排除，暫略去，僅修正主將部分的方向與對象錯誤）",
+   "_bucket": "misc"
+  },
+  "潛龍陣": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "force",
+     "mult": 1.15,
+     "dur": 99
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "intel",
+     "mult": 1.15,
+     "dur": 99
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "speed",
+     "mult": 1.15,
+     "dur": 99
+    },
+    {
+     "k": "stat",
+     "who": "self",
+     "stat": "command",
+     "mult": 1.15,
+     "dur": 99
+    },
+    {
+     "k": "amp",
+     "who": "self",
+     "val": -0.15,
+     "dur": 99,
+     "_note": "主將造成傷害降低15%(取最新版本數值,非舊版30%)"
+    },
+    {
+     "k": "amp",
+     "who": "ally",
+     "val": 0.15,
+     "dur": 99
+    },
+    {
+     "k": "mitig",
+     "who": "ally",
+     "val": 0.15,
+     "dur": 99
+    }
+   ],
+   "_evidence": "主將提升 7.5%→15% 武力、智力、速度、統率，造成傷害降低 15%，副將造成傷害提高 7.5%→15%，受到傷害降低 7.5%→15%",
+   "_bucket": "misc"
+  },
+  "解煩衛": {
+   "effects": [
+    {
+     "k": "stat",
+     "who": "ally",
+     "stat": "speed",
+     "add": 36,
+     "dur": 99
+    },
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 0.432,
+     "dur": 99,
+     "scale": "force",
+     "_approx": "prob-ev",
+     "_note": "60%機率(取滿級)×治療率72%期望值折算=0.432;scale取武力或智力最高一項,近似用force"
+    }
+   ],
+   "_evidence": "我軍全體速度提升 18→36 點；...並有 30%→60% 機率為我軍單體恢復兵力（治療率 36%→72%，受武力或智力最高一項影響）",
+   "_bucket": "misc"
+  },
+  "江東猛虎": {
+   "effects": [
+    {
+     "k": "taunt",
+     "who": "enemy",
+     "dur": 2
+    },
+    {
+     "k": "mitig",
+     "who": "self",
+     "val": 0.2,
+     "dur": 2,
+     "scale": "force",
+     "_approx": "限自身為主將時觸發,引擎無條件判斷,暫維持為恆定生效(略高估)"
+    }
+   ],
+   "_evidence": "對敵軍群體(2人)造成63%→126%兵刃傷害,並嘲諷目標(強迫目標普通攻擊自己),持續2回合;自身為主將時,使自身受到普通攻擊傷害降低10%→20%(受武力影響),持續2回合",
+   "_bucket": "full_sweep",
+   "_note_self": "批10人工複核(非212筆findings原始範圍, 全庫掃描時額外發現同型bug): 移除amp(who=enemy val=1.26)重複計算coef(pattern①); 移除redirect(who=self,guard=self,share=1)——查engine.js/sgz.py, redirect完全忽略e.who, 恆定以caster為guardian為其餘友軍擋100%傷害且dur預設99, 與原文完全無關的幻覺效果, 原文並無任何分擔/代承機制"
+  },
+  "神上使": {
+   "set": {
+    "coef": 0
+   },
+   "effects": [
+    {
+     "k": "dot",
+     "who": "enemy",
+     "coef": 0.68,
+     "dur": 2,
+     "scale": "force"
+    }
+   ],
+   "_evidence": "準備1回合,對敵軍全體造成潰逃狀態,每回合持續造成傷害(傷害率34%→68%,受武力影響),持續2回合",
+   "_bucket": "full_sweep",
+   "_note_self": "批10人工複核(非212筆findings原始範圍, 全庫掃描時額外發現同型bug): heal(who=enemy,coef=-0.68)是機略縱橫類誤用(DoT誤標heal負值,engine.js/sgz.py heal不看who且負coef若無衛生防禦會誤扣己方最殘者兵力,本批已在引擎層加負heal防禦但仍應在資料層修正為正確原語); 原文純DoT無獨立直傷子句, 頂層coef=0.68與dot重複計算(pattern①), 一併歸零; 原文明寫受武力影響, 補scale:force"
+  }
+ }
+}

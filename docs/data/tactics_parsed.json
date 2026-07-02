@@ -44,10 +44,12 @@
     "dur": 99
    },
    {
-    "k": "amp",
+    "k": "stack",
     "who": "self",
-    "val": 0.07,
-    "dur": 99
+    "per": 0.07,
+    "max": 7,
+    "_approx": "stack-cap",
+    "_note": "3.5%→7%會心,每次免疫控制後有機率(20%→40%)獲得一層,最多7層;引擎無事件觸發式疊層,以stack原語per=0.07/max=7近似(未對疊層機率做折算,略高估)"
    },
    {
     "k": "insight",
@@ -181,8 +183,10 @@
    {
     "k": "mitig",
     "who": "ally",
-    "val": 0.36,
-    "dur": 99
+    "val": 0.18,
+    "dur": 99,
+    "_approx": "decay-avg",
+    "_note": "僅抵擋謀略傷害(非全類型)且為消耗性資源(依上回合兵刃輸出動態補充,每回合衰減10%),以36%上限打對折(限定謀略傷害類型+穩態資源量)保守折算為18%常駐;engine mitig無傷害類型過濾與動態資源機制"
    }
   ],
   "quality": "S",
@@ -199,10 +203,12 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "stack",
     "who": "self",
-    "val": 0.11,
-    "dur": 99
+    "per": 0.11,
+    "max": 8,
+    "_approx": "stack-cap",
+    "_note": "原文可疊加至戰鬥結束無上限,以典型戰鬥長度8回合作為近似上限"
    }
   ],
   "quality": "S",
@@ -242,7 +248,7 @@
   "kind": "intel",
   "coef": 0,
   "rate": 1,
-  "n": 3,
+  "n": 2,
   "prep": 0,
   "effects": [
    {
@@ -280,12 +286,6 @@
   "n": 3,
   "prep": 1,
   "effects": [
-   {
-    "k": "amp",
-    "who": "enemy",
-    "val": 1.36,
-    "dur": 1
-   },
    {
     "k": "stun",
     "who": "enemy",
@@ -351,7 +351,7 @@
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1.04,
+    "mult": 1.1,
     "dur": 99
    }
   ],
@@ -378,9 +378,10 @@
    {
     "k": "mitig",
     "who": "ally",
-    "val": 0.5,
-    "dur": 1,
-    "scale": "intel"
+    "val": 0.375,
+    "dur": 2,
+    "scale": "intel",
+    "_approx": "decay-avg: 3段遞減(50%/37.5%/25%)取均值37.5%，dur近似延長為2回合覆蓋後續傷害"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -427,7 +428,7 @@
     "k": "amp",
     "who": "enemy",
     "val": 0.15,
-    "dur": 1,
+    "dur": 2,
     "scale": "intel"
    },
    {
@@ -460,8 +461,9 @@
    {
     "k": "mitig",
     "who": "ally",
-    "val": 0.16,
-    "dur": 2
+    "val": 0.08,
+    "dur": 2,
+    "_approx": "prob-ev: 50%機率×16%折半為8%"
    }
   ],
   "quality": "S",
@@ -500,10 +502,12 @@
   "effects": [
    {
     "k": "stat",
-    "who": "ally",
+    "who": "enemy",
     "stat": "command",
-    "mult": 0.92,
-    "dur": 99
+    "add": -9,
+    "dur": 2,
+    "_approx": "prob-ev",
+    "_note": "受擊時30%-60%機率(取45%均值)偷取攻擊者10.5-21點統率或降其1.5%-3%發動率,兩分支擇一觸發;engine無偷取/降發動率原語,以enemy統率debuff近似其中一分支並用EV折算(21×0.45≈9.5,取整9),原資料誤把效果套用在ally自身導致方向完全相反"
    }
   ],
   "quality": "S",
@@ -518,13 +522,7 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": [
-   {
-    "k": "stun",
-    "who": "enemy",
-    "dur": 1
-   }
-  ],
+  "effects": [],
   "quality": "S",
   "cat": "BURST",
   "src": "INHERITANCE"
@@ -560,7 +558,7 @@
    },
    {
     "k": "first",
-    "who": "self",
+    "who": "leader",
     "dur": 3
    }
   ],
@@ -597,7 +595,20 @@
   "rate": 0.35,
   "n": 2,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "extra",
+    "who": "self",
+    "val": 1,
+    "dur": 1
+   },
+   {
+    "k": "extra",
+    "who": "ally",
+    "val": 1,
+    "dur": 1
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INHERITANCE"
@@ -697,8 +708,10 @@
    {
     "k": "amp",
     "who": "self",
-    "val": 0.65,
-    "dur": 1
+    "val": 0.85,
+    "dur": 1,
+    "_approx": "crit-ev",
+    "_note": "下一攻擊傷害提高65% + 20%會心機率期望折算(20%×約100%會心傷害基準略估),原0.65只含前者,現併入會心期望"
    }
   ],
   "quality": "S",
@@ -747,14 +760,17 @@
     "k": "stat",
     "who": "self",
     "stat": "command",
-    "mult": 1.19,
+    "add": 38,
     "dur": 99
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "when": {
+   "on": "damaged"
+  }
  },
  {
   "nameZh": "功不唐捐",
@@ -767,6 +783,14 @@
   "effects": [
    {
     "k": "amp",
+    "who": "self",
+    "val": 0.3,
+    "dur": 99,
+    "_est": true,
+    "_note": "原文限定僅自帶主動戰法傷害,引擎amp無nativeOnly範圍限制,維持泛用近似(可能高估非自帶戰法輸出時的增傷)"
+   },
+   {
+    "k": "lifesteal",
     "who": "self",
     "val": 0.3,
     "dur": 99
@@ -815,7 +839,7 @@
   "type": "passive",
   "kind": "phys",
   "coef": 0,
-  "rate": 1,
+  "rate": 0.35,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -844,6 +868,14 @@
     "who": "self",
     "val": 0.8,
     "dur": 1
+   },
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 1.0,
+    "dur": 1,
+    "_approx": "shield-as-mitig",
+    "_note": "'1次抵禦(可免疫傷害)'以單回合100%減傷近似單次全免傷"
    }
   ],
   "quality": "S",
@@ -889,10 +921,11 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "rateup",
     "who": "ally",
     "val": 0.06,
-    "dur": 1
+    "dur": 1,
+    "scale": "intel"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -930,7 +963,7 @@
   "nameZh": "十面埋伏",
   "type": "active",
   "kind": "intel",
-  "coef": 0.74,
+  "coef": 0.96,
   "rate": 0.35,
   "n": 2,
   "prep": 0,
@@ -942,14 +975,8 @@
     "dur": 2
    },
    {
-    "k": "stun",
+    "k": "healblock",
     "who": "enemy",
-    "dur": 2
-   },
-   {
-    "k": "amp",
-    "who": "enemy",
-    "val": 0.96,
     "dur": 2
    }
   ],
@@ -1025,12 +1052,6 @@
     "who": "enemy",
     "val": -0.18,
     "dur": 1
-   },
-   {
-    "k": "amp",
-    "who": "self",
-    "val": 0.8,
-    "dur": 1
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -1067,7 +1088,14 @@
   "rate": 0.7,
   "n": 3,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "shield",
+    "who": "ally",
+    "amt": 1,
+    "dur": 1
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INNATE"
@@ -1076,7 +1104,7 @@
   "nameZh": "四面楚歌",
   "type": "active",
   "kind": "intel",
-  "coef": 1.44,
+  "coef": 0,
   "rate": 0.5,
   "n": 2,
   "prep": 1,
@@ -1123,16 +1151,10 @@
   "prep": 0,
   "effects": [
    {
-    "k": "redirect",
-    "who": "ally",
-    "guard": "self",
-    "share": 0.8
-   },
-   {
     "k": "stat",
     "who": "self",
     "stat": "command",
-    "mult": 1.15,
+    "add": 150,
     "dur": 2
    },
    {
@@ -1315,6 +1337,11 @@
     "who": "self",
     "prob": 0.3,
     "dur": 3
+   },
+   {
+    "k": "disarm",
+    "who": "self",
+    "dur": 3
    }
   ],
   "quality": "S",
@@ -1327,7 +1354,7 @@
   "kind": "phys",
   "coef": 1.2,
   "rate": 0.5,
-  "n": 1,
+  "n": 2,
   "prep": 0,
   "effects": [
    {
@@ -1352,9 +1379,10 @@
   "effects": [
    {
     "k": "mitig",
-    "who": "self",
-    "val": 0.4,
-    "dur": 2
+    "who": "ally",
+    "val": 0.1,
+    "dur": 2,
+    "_note": "2024-12-11更新版: 戰鬥前2回合我軍副將受到的傷害降低5%→10%"
    }
   ],
   "quality": "S",
@@ -1489,7 +1517,7 @@
     "scale": "force"
    },
    {
-    "k": "amp",
+    "k": "lifesteal",
     "who": "self",
     "val": 0.45,
     "dur": 99
@@ -1603,6 +1631,38 @@
     "mult": 0.85,
     "dur": 2,
     "scale": "intel"
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "add": 38,
+    "dur": 2,
+    "scale": "intel"
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "intel",
+    "add": 38,
+    "dur": 2,
+    "scale": "intel"
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "speed",
+    "add": 38,
+    "dur": 2,
+    "scale": "intel"
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "add": 38,
+    "dur": 2,
+    "scale": "intel"
    }
   ],
   "quality": "S",
@@ -1680,15 +1740,17 @@
   "nameZh": "威謀靡亢",
   "type": "active",
   "kind": "phys",
-  "coef": 1.58,
+  "coef": 0,
   "rate": 0.4,
   "n": 2,
   "prep": 1,
   "effects": [
    {
-    "k": "stun",
+    "k": "dot",
     "who": "enemy",
-    "dur": 2
+    "coef": 0.632,
+    "dur": 2,
+    "_approx": "prob-ev: 條件'目標已虛弱'簡化為必定滿足(本戰法自身先致虛弱)，疊加40%觸發機率折算158%×0.4=63.2%"
    }
   ],
   "quality": "S",
@@ -1713,7 +1775,7 @@
     "k": "amp",
     "who": "self",
     "val": 0.36,
-    "dur": 1
+    "dur": 2
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -1740,7 +1802,7 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 0.92,
+    "coef": 0.62,
     "dur": 1
    }
   ],
@@ -1757,11 +1819,6 @@
   "n": 1,
   "prep": 0,
   "effects": [
-   {
-    "k": "stun",
-    "who": "enemy",
-    "dur": 4
-   },
    {
     "k": "stat",
     "who": "self",
@@ -1789,8 +1846,15 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "taunt",
+    "who": "self",
+    "dur": 2,
+    "_note": "敵軍兵力最高者被迫攻擊我方全體，簡化以taunt(反向)近似"
+   },
+   {
+    "k": "amp",
     "who": "enemy",
+    "val": 0.2,
     "dur": 2
    }
   ],
@@ -1857,7 +1921,12 @@
     "per": 0.25,
     "max": 3,
     "dur": 2,
-    "init": 0
+    "init": 0,
+    "when": {
+     "rounds": [
+      6
+     ]
+    }
    }
   ],
   "_src": " +他AI補全effectText/重解",
@@ -1932,7 +2001,10 @@
     "k": "amp",
     "who": "ally",
     "val": -0.15,
-    "dur": 2
+    "dur": 2,
+    "when": {
+     "from": 4
+    }
    },
    {
     "k": "first",
@@ -2045,7 +2117,7 @@
   "nameZh": "形機軍略",
   "type": "active",
   "kind": "phys",
-  "coef": 2.1,
+  "coef": 3.9,
   "rate": 0.4,
   "n": 1,
   "prep": 0,
@@ -2059,15 +2131,42 @@
   "type": "passive",
   "kind": "phys",
   "coef": 0,
-  "rate": 1,
+  "rate": 0.6,
   "n": 1,
   "prep": 0,
   "effects": [
    {
+    "k": "rateup",
+    "who": "self",
+    "val": 0.06,
+    "dur": 1,
+    "scale": "force"
+   },
+   {
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1.18,
+    "add": 45,
+    "dur": 1
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "add": 45,
+    "dur": 1
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "intel",
+    "add": 45,
+    "dur": 1
+   },
+   {
+    "k": "lifesteal",
+    "who": "self",
+    "val": 0.28,
     "dur": 1
    }
   ],
@@ -2126,8 +2225,10 @@
    {
     "k": "amp",
     "who": "self",
-    "val": 0.9,
-    "dur": 99
+    "val": 0.15,
+    "dur": 99,
+    "_approx": "scope-est",
+    "_note": "原文90%僅限灼燒/水攻/中毒等dot類傷害加成,非全面增傷;引擎amp無dot專屬範圍欄位,以dot傷害通常占總輸出比例粗略折算下修,維持_est"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -2149,7 +2250,7 @@
     "k": "mitig",
     "who": "ally",
     "val": 0.39,
-    "dur": 2
+    "dur": 1
    },
    {
     "k": "stat",
@@ -2189,7 +2290,7 @@
   "type": "charge",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.25,
+  "rate": 0.45,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -2224,7 +2325,8 @@
   "_src": " +他AI補全effectText/重解",
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "nMax": 3
  },
  {
   "nameZh": "持軍毅重",
@@ -2256,13 +2358,7 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": [
-   {
-    "k": "stun",
-    "who": "enemy",
-    "dur": 3
-   }
-  ],
+  "effects": [],
   "quality": "S",
   "cat": "COMMAND",
   "src": "INHERITANCE",
@@ -2278,15 +2374,17 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "healblock",
     "who": "enemy",
-    "val": 2.35,
     "dur": 3
    },
    {
-    "k": "stun",
-    "who": "enemy",
-    "dur": 3
+    "k": "rateup",
+    "who": "ally",
+    "val": 0.1,
+    "dur": 1,
+    "nativeOnly": true,
+    "_note": "僅對已處於負面狀態的友軍生效，簡化為全友軍近似"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -2349,7 +2447,7 @@
   "type": "command",
   "kind": "phys",
   "coef": 0.94,
-  "rate": 1,
+  "rate": 0.7,
   "n": 3,
   "prep": 0,
   "effects": [
@@ -2358,7 +2456,7 @@
     "who": "ally",
     "val": 0.3,
     "dur": 1,
-    "_note": "前3回合每回合60%概率（主將時基礎70%）賦予全體2-3人1次抵禦"
+    "_note": "前3回合每回合70%概率賦予全體2-3人1次抵禦(取滿級,raw無主將分支)"
    },
    {
     "k": "heal",
@@ -2394,18 +2492,10 @@
   "prep": 1,
   "effects": [
    {
-    "k": "amp",
-    "who": "self",
-    "val": 0.25,
-    "dur": 2,
-    "_note": "自身兵刃增傷25%，持續2回合"
-   },
-   {
     "k": "mitig",
     "who": "self",
-    "val": 0.25,
+    "val": 0.4,
     "dur": 2,
-    "_note": "自身受兵刃傷害降低25%（受武力影響），持續2回合",
     "scale": "force"
    }
   ],
@@ -2422,7 +2512,7 @@
   "kind": "phys",
   "coef": 0,
   "rate": 0.45,
-  "n": 1,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -2459,6 +2549,13 @@
     "val": 0.24,
     "dur": 3,
     "scale": "command"
+   },
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": -0.24,
+    "dur": 3,
+    "_note": "代價面:前3回合我軍群體造成的兵刃和謀略傷害降低12%→24%"
    }
   ],
   "quality": "S",
@@ -2479,7 +2576,8 @@
     "who": "self",
     "coef": 2.96,
     "dur": 1,
-    "scale": "command"
+    "scale": "command",
+    "_approx": "條件「若下回合前受到>20%最大兵力傷害」與群體傷害互斥，引擎無法建條件分支，暫維持兩效果並存(近似同時觸發，實際強度被高估)"
    },
    {
     "k": "mitig",
@@ -2497,15 +2595,28 @@
   "nameZh": "據水斷橋",
   "type": "active",
   "kind": "phys",
-  "coef": 0.78,
+  "coef": 0,
   "rate": 0.4,
   "n": 2,
   "prep": 0,
   "effects": [
    {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.78,
+    "dur": 2,
+    "scale": "force"
+   },
+   {
     "k": "amp",
     "who": "enemy",
     "val": -0.08,
+    "dur": 2
+   },
+   {
+    "k": "lifesteal",
+    "who": "self",
+    "val": 0.16,
     "dur": 2
    }
   ],
@@ -2527,6 +2638,20 @@
     "k": "mitig",
     "who": "self",
     "val": 0.25,
+    "dur": 1
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "add": 30,
+    "dur": 1
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "intel",
+    "add": 30,
     "dur": 1
    }
   ],
@@ -2588,6 +2713,11 @@
     "mult": 0.85,
     "dur": 2,
     "scale": "intel"
+   },
+   {
+    "k": "stack",
+    "per": 1,
+    "max": 2
    }
   ],
   "quality": "S",
@@ -2627,7 +2757,9 @@
     "k": "stun",
     "who": "enemy",
     "dur": 2,
-    "_note": "60%概率（受速度影響最高~80%）捕獲單體敵將2回合：無法行動且禁用指揮/被動，無法被淨化"
+    "scale": "force",
+    "_approx": "60%機率捕獲，機率未折算，維持近似必定觸發（略高估）；受武力影響非速度，修正note屬性誤記",
+    "_note": "60%概率（受武力影響）捕獲單體敵將2回合：無法行動且禁用指揮/被動，無法被淨化"
    }
   ],
   "_src": "https://www.gamersky.com/handbooksy/202305/1594508.shtml",
@@ -2782,7 +2914,23 @@
   "rate": 0.5,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": 0.15,
+    "dur": 1,
+    "_note": "僅對敵軍主將生效"
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "intel",
+    "add": -100,
+    "dur": 1,
+    "_note": "僅對武力最高的副將生效"
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "EVENT"
@@ -2825,20 +2973,17 @@
   "prep": 0,
   "effects": [
    {
-    "k": "mitig",
-    "who": "ally",
-    "val": 0.4,
-    "dur": 1,
-    "_note": "賦予自身及友軍單體2次抵禦，持續1回合（若與關興同出必定選關興）"
+    "k": "shield",
+    "who": "self",
+    "amt": 2,
+    "dur": 1
    },
    {
-    "k": "stat",
-    "who": "self",
-    "stat": "force",
-    "mult": 1,
-    "val": 40,
-    "dur": 99,
-    "_note": "掠陣疊2次後移除並使自身武力+40點，可無限疊加（每次觸發槍舞如風+普攻均可疊掠陣）"
+    "k": "shield",
+    "who": "ally",
+    "amt": 2,
+    "dur": 1,
+    "_note": "賦予自身及友軍單體各2次抵禦,持續1回合(若與關興同出必定選關興作為受益友軍,引擎無法表達特定隊友綁定,近似為隨機/固定友軍)"
    }
   ],
   "_src": "https://m.ali213.net/news/gl2111/721697.html",
@@ -2889,6 +3034,13 @@
    {
     "k": "amp",
     "who": "ally",
+    "val": -0.3,
+    "dur": 3,
+    "_note": "雙方全體同受影響:我軍造成的謀略傷害亦降低15%→30%,前3回合"
+   },
+   {
+    "k": "amp",
+    "who": "ally",
     "val": 0.2,
     "dur": 99
    }
@@ -2896,7 +3048,7 @@
   "quality": "S",
   "cat": "COMMAND",
   "src": "INHERITANCE",
-  "_est": true
+  "_est": false
  },
  {
   "nameZh": "橫掃千軍",
@@ -2910,7 +3062,8 @@
    {
     "k": "stun",
     "who": "enemy",
-    "dur": 1
+    "dur": 1,
+    "_approx": "prob-ev: 條件(已繳械/計窮)×30%機率，因引擎無法建條件觸發，以30%機率折算為降級近似(仍標記為near-guaranteed weak case，實際應更低)"
    }
   ],
   "quality": "S",
@@ -2929,14 +3082,34 @@
    {
     "k": "heal",
     "who": "self",
-    "coef": 0.12,
-    "dur": 99
+    "coef": 0.06,
+    "dur": 99,
+    "_approx": "prob-ev",
+    "_note": "敵軍受治療時50%機率偷取其中12%轉移到自身,期望值折算0.12*0.5=0.06"
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "add": 5,
+    "dur": 99,
+    "_approx": "prob-ev",
+    "_note": "自身受治療時50%機率+5點統率,可疊加99次,以單次期望近似,實際應逐次觸發疊加(引擎無疊加計數器,近似為持續加成)"
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "intel",
+    "add": 5,
+    "dur": 99,
+    "_approx": "prob-ev",
+    "_note": "自身受治療時50%機率+5點智力,可疊加99次,近似同上"
    }
   ],
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "_est": true
+  "_est": false
  },
  {
   "nameZh": "止戈為武",
@@ -3007,8 +3180,10 @@
    {
     "k": "extra",
     "who": "self",
-    "val": 5,
-    "dur": 99
+    "val": 1,
+    "dur": 99,
+    "_approx": "prob-ev",
+    "_note": "原文為80%機率獲得蓄威層,消耗蓄威後50%起遞減8%連續判定最多5次,期望額外攻擊次數約1-2次,以val=1保守折算(原val=5等於保證5次嚴重高估)"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -3063,7 +3238,7 @@
   "nameZh": "水淹七軍",
   "type": "active",
   "kind": "phys",
-  "coef": 0.96,
+  "coef": 0,
   "rate": 0.5,
   "n": 2,
   "prep": 0,
@@ -3071,14 +3246,14 @@
    {
     "k": "dot",
     "who": "enemy",
-    "coef": 1.08,
+    "coef": 0.96,
     "dur": 2
    },
    {
     "k": "amp",
     "who": "enemy",
     "val": 0.2,
-    "dur": 2,
+    "dur": 1,
     "scale": "force"
    }
   ],
@@ -3138,12 +3313,6 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
-    "who": "enemy",
-    "val": 1.92,
-    "dur": 1
-   },
-   {
     "k": "heal",
     "who": "ally",
     "coef": 0.56,
@@ -3172,28 +3341,17 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "taunt",
     "who": "enemy",
-    "val": 1.26,
     "dur": 2
-   },
-   {
-    "k": "redirect",
-    "who": "self",
-    "guard": "self",
-    "share": 1
    },
    {
     "k": "mitig",
     "who": "self",
     "val": 0.2,
     "dur": 2,
-    "scale": "force"
-   },
-   {
-    "k": "taunt",
-    "who": "enemy",
-    "dur": 2
+    "scale": "force",
+    "_approx": "限自身為主將時觸發,引擎無條件判斷,暫維持為恆定生效(略高估)"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -3279,7 +3437,7 @@
     "k": "stat",
     "who": "ally",
     "stat": "intel",
-    "mult": 1.06,
+    "mult": 1.03,
     "dur": 99,
     "scale": "intel"
    },
@@ -3287,7 +3445,7 @@
     "k": "stat",
     "who": "ally",
     "stat": "command",
-    "mult": 1.06,
+    "mult": 1.03,
     "dur": 99,
     "scale": "intel"
    }
@@ -3351,7 +3509,7 @@
   "type": "command",
   "kind": "phys",
   "coef": 0,
-  "rate": 1,
+  "rate": 0.5,
   "n": 3,
   "prep": 0,
   "effects": [
@@ -3391,7 +3549,7 @@
   "type": "passive",
   "kind": "phys",
   "coef": 0.5,
-  "rate": 0.6,
+  "rate": 0.35,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -3449,6 +3607,13 @@
     "stat": "command",
     "mult": 1.15,
     "dur": 99
+   },
+   {
+    "k": "amp",
+    "who": "self",
+    "val": -0.15,
+    "dur": 99,
+    "_note": "主將造成傷害降低15%(取最新版本數值,非舊版30%)"
    },
    {
     "k": "amp",
@@ -3559,12 +3724,6 @@
   "prep": 1,
   "effects": [
    {
-    "k": "amp",
-    "who": "enemy",
-    "val": 1.42,
-    "dur": 3
-   },
-   {
     "k": "stat",
     "who": "ally",
     "stat": "force",
@@ -3593,7 +3752,13 @@
   "rate": 0.4,
   "n": 2,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "healblock",
+    "who": "enemy",
+    "dur": 1
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "EVENT"
@@ -3643,9 +3808,10 @@
    {
     "k": "amp",
     "who": "enemy",
-    "val": 0.12,
+    "val": 0.048,
     "dur": 1,
-    "scale": "intel"
+    "scale": "intel",
+    "_approx": "prob-ev: 40%機率×12%折算為4.8%"
    }
   ],
   "quality": "S",
@@ -3660,7 +3826,15 @@
   "rate": 0.35,
   "n": 3,
   "prep": 1,
-  "effects": [],
+  "effects": [
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.72,
+    "dur": 2,
+    "scale": "intel"
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INHERITANCE"
@@ -3697,16 +3871,12 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
-    "who": "enemy",
-    "val": 1.18,
-    "dur": 2
-   },
-   {
     "k": "dot",
     "who": "enemy",
-    "coef": 1.02,
-    "dur": 2
+    "coef": 0.51,
+    "dur": 2,
+    "scale": "force",
+    "_approx": "prob-ev: 50%機率×102%傷害率折半為51%"
    },
    {
     "k": "rateup",
@@ -3731,7 +3901,7 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "taunt",
     "who": "enemy",
     "dur": 2
    },
@@ -3740,11 +3910,6 @@
     "who": "self",
     "stat": "command",
     "mult": 1.4,
-    "dur": 2
-   },
-   {
-    "k": "taunt",
-    "who": "enemy",
     "dur": 2
    }
   ],
@@ -3769,14 +3934,22 @@
   "nameZh": "用武通神",
   "type": "command",
   "kind": "intel",
-  "coef": 1.65,
+  "coef": 1.2,
   "rate": 1,
   "n": 2,
   "prep": 0,
   "effects": [],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "when": {
+   "rounds": [
+    2,
+    4,
+    6,
+    8
+   ]
+  }
  },
  {
   "nameZh": "當鋒摧決",
@@ -3820,12 +3993,6 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
-    "who": "enemy",
-    "val": 2.08,
-    "dur": 2
-   },
-   {
     "k": "disarm",
     "who": "enemy",
     "dur": 2
@@ -3859,20 +4026,21 @@
   "prep": 0,
   "effects": [
    {
-    "k": "mitig",
+    "k": "disarm",
+    "who": "enemy",
+    "dur": 2
+   },
+   {
+    "k": "silence",
+    "who": "enemy",
+    "dur": 1
+   },
+   {
+    "k": "shield",
     "who": "ally",
-    "val": 0.1,
-    "dur": 2
-   },
-   {
-    "k": "stun",
-    "who": "enemy",
-    "dur": 2
-   },
-   {
-    "k": "stun",
-    "who": "enemy",
-    "dur": 2
+    "pct": 0.2,
+    "dur": 1,
+    "_approx": "1次抵禦=擋一次攻擊,無對應原語,用約1次普攻傷害量的護盾近似"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -3890,15 +4058,14 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stat",
-    "who": "ally",
-    "stat": "speed",
-    "mult": 1.5,
-    "dur": 99
-   },
-   {
     "k": "first",
     "who": "ally",
+    "dur": 2
+   },
+   {
+    "k": "rateup",
+    "who": "ally",
+    "val": 0.1,
     "dur": 2
    }
   ],
@@ -3928,12 +4095,6 @@
   "n": 1,
   "prep": 0,
   "effects": [
-   {
-    "k": "dot",
-    "who": "enemy",
-    "coef": 1.4,
-    "dur": 99
-   },
    {
     "k": "heal",
     "who": "ally",
@@ -3995,7 +4156,7 @@
   "type": "command",
   "kind": "phys",
   "coef": 0,
-  "rate": 1,
+  "rate": 0.9,
   "n": 2,
   "prep": 0,
   "effects": [
@@ -4095,7 +4256,8 @@
     "k": "heal",
     "who": "ally",
     "coef": 0.72,
-    "dur": 1
+    "dur": 1,
+    "scale": "command"
    }
   ],
   "quality": "S",
@@ -4106,7 +4268,7 @@
   "nameZh": "瞋目橫矛",
   "type": "active",
   "kind": "phys",
-  "coef": 0.7,
+  "coef": 0,
   "rate": 0.4,
   "n": 1,
   "prep": 0,
@@ -4115,8 +4277,15 @@
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1.2,
+    "add": 50,
     "dur": 2
+   },
+   {
+    "k": "extra",
+    "who": "self",
+    "val": 0.7,
+    "dur": 2,
+    "_approx": "群攻(普攻時對同部隊其他武將濺射70%傷害)，引擎無濺射原語，以extra額外傷害輸出近似"
    }
   ],
   "quality": "S",
@@ -4253,12 +4422,6 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
-    "who": "enemy",
-    "val": 0.68,
-    "dur": 1
-   },
-   {
     "k": "dot",
     "who": "enemy",
     "coef": 0.34,
@@ -4356,7 +4519,8 @@
     "who": "enemy",
     "stat": "speed",
     "mult": 0.7,
-    "dur": 2
+    "dur": 2,
+    "scale": "intel"
    },
    {
     "k": "stun",
@@ -4364,10 +4528,10 @@
     "dur": 2
    },
    {
-    "k": "mitig",
+    "k": "shield",
     "who": "ally",
-    "val": 0.2,
-    "dur": 2
+    "amt": 1,
+    "dur": 1
    }
   ],
   "_src": " +他AI補全effectText/重解",
@@ -4437,12 +4601,6 @@
   "prep": 1,
   "effects": [
    {
-    "k": "amp",
-    "who": "enemy",
-    "val": 2.1,
-    "dur": 2
-   },
-   {
     "k": "disarm",
     "who": "enemy",
     "dur": 2
@@ -4467,21 +4625,23 @@
     "k": "stat",
     "who": "enemy",
     "stat": "command",
-    "mult": 0.88,
-    "dur": 2
+    "add": -24,
+    "dur": 2,
+    "scale": "force"
    },
    {
-    "k": "amp",
+    "k": "dot",
     "who": "enemy",
-    "val": -0.6,
+    "coef": 0.6,
     "dur": 2
    },
    {
     "k": "stat",
     "who": "ally",
     "stat": "command",
-    "mult": 1.1,
-    "dur": 2
+    "add": 80,
+    "dur": 3,
+    "_approx": "限自身為主將時觸發，引擎無條件判斷，暫維持為全隊常態增益(略高估)"
    }
   ],
   "_src": "https://app.ali213.net/wiki/sgzzlb/zf56.html",
@@ -4496,7 +4656,7 @@
   "type": "active",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.45,
+  "rate": 0.55,
   "n": 1,
   "prep": 0,
   "effects": [],
@@ -4513,7 +4673,13 @@
   "rate": 0.5,
   "n": 2,
   "prep": 1,
-  "effects": [],
+  "effects": [
+   {
+    "k": "healblock",
+    "who": "enemy",
+    "dur": 1
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "EVENT",
@@ -4548,7 +4714,13 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "silence",
+    "who": "enemy",
+    "dur": 1
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
@@ -4614,15 +4786,22 @@
     "k": "stat",
     "who": "enemy",
     "stat": "force",
-    "mult": 0.84,
+    "add": -64,
     "dur": 2
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "intel",
-    "mult": 0.83,
+    "add": -34,
     "dur": 2
+   },
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.76,
+    "dur": 1,
+    "_note": "偶數回合對敵軍群體(2人)謀略傷害,以dot粗略表示週期性群體傷害(n應設2)"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -4644,13 +4823,21 @@
     "who": "ally",
     "stat": "command",
     "mult": 1.12,
-    "dur": 2
+    "dur": 2,
+    "_approx": "奇數回合觸發，與偶數回合減傷互斥，引擎無法建條件分支，暫並存(近似高估)"
    },
    {
     "k": "mitig",
     "who": "ally",
     "val": 0.24,
-    "dur": 2
+    "dur": 2,
+    "_approx": "偶數回合觸發，與奇數回合統率增益互斥"
+   },
+   {
+    "k": "healblock",
+    "who": "enemy",
+    "dur": 2,
+    "_approx": "條件「敵軍魅力低於我軍主將」才禁療，無條件機制近似為必定禁療"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -4796,7 +4983,14 @@
   "rate": 1,
   "n": 2,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "silence",
+    "who": "self",
+    "dur": 1,
+    "_approx": "虛弱(無法造成傷害)引擎無對應原語，以自身silence(禁主動)近似代價效果，非完全等價"
+   }
+  ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "ACTIVE",
@@ -4806,11 +5000,19 @@
   "nameZh": "臨機制勝",
   "type": "active",
   "kind": "intel",
-  "coef": 1.2,
+  "coef": 0,
   "rate": 0.55,
   "n": 2,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 1.2,
+    "dur": 2,
+    "scale": "intel"
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INHERITANCE"
@@ -4823,7 +5025,20 @@
   "rate": 0.55,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "extra",
+    "who": "self",
+    "val": 1,
+    "dur": 1
+   },
+   {
+    "k": "insight",
+    "who": "self",
+    "dur": 1,
+    "_approx": "原文僅免疫繳械單一控制，insight為免疫全部控制的近似(略高估)"
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "EVENT",
@@ -4905,7 +5120,7 @@
    {
     "k": "amp",
     "who": "enemy",
-    "val": -0.1,
+    "val": 0.1,
     "dur": 5
    }
   ],
@@ -4951,7 +5166,22 @@
   "rate": 1,
   "n": 3,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "rateup",
+    "who": "enemy",
+    "val": -0.0125,
+    "dur": 99,
+    "_approx": "prob-ev: 25%機率×5%降幅折算成持續期望值(引擎無『敵方嘗試發動主動戰法時』的反應式觸發點)"
+   },
+   {
+    "k": "rateup",
+    "who": "ally",
+    "val": 0.01,
+    "dur": 99,
+    "_approx": "prob-ev: 25%機率×4%增幅折算成持續期望值"
+   }
+  ],
   "quality": "S",
   "cat": "COMMAND",
   "src": "INHERITANCE"
@@ -5030,7 +5260,16 @@
   "rate": 0.4,
   "n": 3,
   "prep": 1,
-  "effects": [],
+  "effects": [
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.6,
+    "dur": 1,
+    "scale": "force",
+    "_approx": "prob-ev: 50%機率×120%折半為60%"
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INHERITANCE"
@@ -5048,6 +5287,13 @@
     "k": "surehit",
     "who": "self",
     "dur": 1
+   },
+   {
+    "k": "pierce",
+    "who": "self",
+    "val": 0.2,
+    "dur": 1,
+    "_approx": "破陣(無視部分減傷)，原文無具體數值，暫以20%近似"
    }
   ],
   "quality": "S",
@@ -5067,14 +5313,15 @@
    {
     "k": "stun",
     "who": "enemy",
-    "dur": 2
+    "dur": 2,
+    "_approx": "22.5%→45%機率使其進入遇襲/破壞/禁療/計窮/繳械，以stun近似綜合控制效果，機率未折算(維持既有近似)"
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "speed",
     "mult": 0.15,
-    "dur": 99
+    "dur": 2
    }
   ],
   "quality": "S",
@@ -5165,6 +5412,14 @@
     "who": "self",
     "val": 0.2,
     "dur": 99
+   },
+   {
+    "k": "rateup",
+    "who": "self",
+    "val": 0.08,
+    "dur": 99,
+    "nativeOnly": true,
+    "scale": "force"
    }
   ],
   "quality": "S",
@@ -5207,12 +5462,6 @@
     "who": "ally",
     "stat": "command",
     "mult": 1.1,
-    "dur": 2
-   },
-   {
-    "k": "amp",
-    "who": "self",
-    "val": 0.66,
     "dur": 2
    }
   ],
@@ -5327,7 +5576,7 @@
   "nameZh": "處茲不惑",
   "type": "active",
   "kind": "intel",
-  "coef": 0.68,
+  "coef": 0,
   "rate": 0.35,
   "n": 2,
   "prep": 0,
@@ -5335,15 +5584,9 @@
    {
     "k": "dot",
     "who": "enemy",
-    "coef": 0.7,
+    "coef": 0.68,
     "dur": 2,
-    "note": "灼燒/中毒/溃逃三狀態各獨立60%判定，每狀態每回合傷害率70%，持續2回合；最多3狀態疊加，引擎以單DoT近似"
-   },
-   {
-    "k": "stun",
-    "who": "enemy",
-    "dur": 2,
-    "note": "潰逃狀態近似控制（實際為每回合持續傷害狀態，非行動禁止）"
+    "_note": "灼燒/中毒/潰逃三狀態各獨立60%判定,每狀態每回合傷害率68%,持續2回合;最多3狀態疊加,引擎以單DoT近似(略高估,三狀態非必定同時觸發)"
    }
   ],
   "_src": "https://www.gamedog.cn/games/a/2760730.html",
@@ -5436,6 +5679,12 @@
     "dur": 3
    },
    {
+    "k": "lifesteal",
+    "who": "self",
+    "val": 0.1,
+    "dur": 3
+   },
+   {
     "k": "stat",
     "who": "self",
     "stat": "command",
@@ -5488,8 +5737,17 @@
     "k": "stat",
     "who": "ally",
     "stat": "speed",
-    "mult": 1.1,
+    "add": 36,
     "dur": 99
+   },
+   {
+    "k": "heal",
+    "who": "ally",
+    "coef": 0.432,
+    "dur": 99,
+    "scale": "force",
+    "_approx": "prob-ev",
+    "_note": "60%機率(取滿級)×治療率72%期望值折算=0.432;scale取武力或智力最高一項,近似用force"
    }
   ],
   "quality": "S",
@@ -5542,15 +5800,15 @@
   "prep": 1,
   "effects": [
    {
-    "k": "mitig",
+    "k": "insight",
     "who": "ally",
-    "val": 0.3,
     "dur": 2
    },
    {
     "k": "silence",
     "who": "enemy",
-    "dur": 2
+    "dur": 2,
+    "_approx": "簡化為對敵軍主將必定計窮，原文條件為「自身2回合內受到下一次謀略傷害時」才觸發"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -5562,14 +5820,21 @@
   "nameZh": "誘敵深入",
   "type": "active",
   "kind": "intel",
-  "coef": 1.4,
+  "coef": 0,
   "rate": 0.4,
   "n": 2,
   "prep": 1,
   "effects": [
    {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 1.4,
+    "dur": 2,
+    "scale": "intel"
+   },
+   {
     "k": "amp",
-    "who": "ally",
+    "who": "enemy",
     "val": 0.25,
     "dur": 2,
     "scale": "intel"
@@ -5591,8 +5856,10 @@
    {
     "k": "mitig",
     "who": "ally",
-    "val": 0.2,
-    "dur": 99
+    "val": 0.1,
+    "dur": 99,
+    "_approx": "settle-ev",
+    "_note": "受傷時25%-50%傷害延後3回合結算並減傷10%-20%,取50%×20%≈10%整體期望減傷近似(engine settle原語僅支援攻擊向延遲傷害,無法表達防禦向延後受傷機制)"
    }
   ],
   "quality": "S",
@@ -5651,13 +5918,15 @@
     "k": "amp",
     "who": "enemy",
     "val": 0.15,
-    "dur": 2
+    "dur": 2,
+    "scale": "intel"
    },
    {
     "k": "heal",
     "who": "self",
     "coef": 0.05,
-    "dur": 2
+    "dur": 2,
+    "scale": "intel"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -5691,11 +5960,11 @@
     "k": "stat",
     "who": "ally",
     "stat": "force",
-    "mult": 1.1,
+    "add": 10,
     "dur": 99
    },
    {
-    "k": "amp",
+    "k": "lifesteal",
     "who": "ally",
     "val": 0.04,
     "dur": 99
@@ -5718,7 +5987,7 @@
    {
     "k": "dodge",
     "who": "ally",
-    "dur": 3,
+    "dur": 2,
     "prob": 0.35
    },
    {
@@ -5726,7 +5995,9 @@
     "who": "ally",
     "coef": 0.58,
     "dur": 3,
-    "scale": "intel"
+    "when": {
+     "from": 3
+    }
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -5751,12 +6022,6 @@
     "scale": "intel"
    },
    {
-    "k": "amp",
-    "who": "enemy",
-    "val": 1.02,
-    "dur": 1
-   },
-   {
     "k": "dot",
     "who": "enemy",
     "coef": 0.72,
@@ -5779,15 +6044,16 @@
   "effects": [
    {
     "k": "amp",
-    "who": "ally",
+    "who": "leader",
     "val": 0.3,
     "dur": 99
    },
    {
     "k": "mitig",
-    "who": "ally",
-    "val": 0.25,
-    "dur": 99
+    "who": "leader",
+    "val": -0.2,
+    "dur": 99,
+    "_note": "主將受到的兵刃/謀略傷害提高20%(負面,非減傷)"
    }
   ],
   "quality": "S",
@@ -5820,15 +6086,17 @@
   "type": "command",
   "kind": "intel",
   "coef": 0,
-  "rate": 1,
+  "rate": 0.535,
   "n": 1,
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "rateup",
     "who": "ally",
-    "val": 1,
-    "dur": 1
+    "val": 1.0,
+    "dur": 1,
+    "nativeOnly": true,
+    "_note": "使友軍單體自帶主動戰法發動率+100%"
    },
    {
     "k": "heal",
@@ -5906,7 +6174,7 @@
   "type": "command",
   "kind": "intel",
   "coef": 0,
-  "rate": 1,
+  "rate": 0.5,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -5941,7 +6209,7 @@
    {
     "k": "stun",
     "who": "enemy",
-    "dur": 3
+    "dur": 2
    },
    {
     "k": "stat",
@@ -5996,7 +6264,8 @@
     "k": "redirect",
     "who": "enemy",
     "guard": "self",
-    "share": 0.25
+    "share": 0.25,
+    "scale": "intel"
    },
    {
     "k": "silence",
@@ -6054,16 +6323,11 @@
   "prep": 0,
   "effects": [
    {
-    "k": "extra",
-    "who": "self",
-    "val": 1,
-    "dur": 99
-   },
-   {
     "k": "amp",
     "who": "self",
     "val": 0.06,
-    "dur": 99
+    "dur": 99,
+    "_note": "誤合併; 原文為主將倒戈非泛用增傷,見lifesteal"
    },
    {
     "k": "chargeup",
@@ -6088,7 +6352,8 @@
   "effects": [],
   "quality": "S",
   "cat": "FORMATION",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_est": true
  },
  {
   "nameZh": "離月",
@@ -6162,8 +6427,9 @@
    {
     "k": "amp",
     "who": "enemy",
-    "val": -0.3,
+    "val": 0.3,
     "dur": 2,
+    "scale": "force",
     "note": "第一擊後施加受傷提升約30%（受武力影響），持續2回合"
    },
    {
@@ -6188,7 +6454,24 @@
   "rate": 0.55,
   "n": 2,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "intel",
+    "add": 15,
+    "dur": 2,
+    "scale": "intel"
+   },
+   {
+    "k": "stat",
+    "who": "ally",
+    "stat": "command",
+    "add": 15,
+    "dur": 2,
+    "scale": "intel"
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "EVENT",
@@ -6208,7 +6491,7 @@
     "who": "ally",
     "stat": "command",
     "mult": 1.1,
-    "dur": 99
+    "dur": 4
    },
    {
     "k": "heal",
@@ -6257,7 +6540,10 @@
     "k": "heal",
     "who": "ally",
     "coef": 0.5,
-    "dur": 99
+    "dur": 99,
+    "when": {
+     "from": 3
+    }
    }
   ],
   "quality": "S",
@@ -6283,7 +6569,7 @@
     "k": "amp",
     "who": "enemy",
     "val": -0.3,
-    "dur": 1
+    "dur": 3
    }
   ],
   "quality": "S",
@@ -6302,16 +6588,33 @@
    {
     "k": "stat",
     "who": "enemy",
-    "stat": "all",
-    "mult": 0.94,
+    "stat": "intel",
+    "mult": 0.82,
+    "dur": 2,
+    "scale": "intel"
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "force",
+    "mult": 0.82,
     "dur": 2,
     "scale": "intel"
    },
    {
     "k": "stat",
     "who": "self",
-    "stat": "all",
-    "mult": 1.03,
+    "stat": "intel",
+    "add": 18,
+    "dur": 2,
+    "scale": "intel",
+    "_approx": "偷取36點平均分配給自己與隨機友軍各半(18點)"
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "add": 18,
     "dur": 2,
     "scale": "intel"
    }
@@ -6507,8 +6810,17 @@
     "k": "stat",
     "who": "enemy",
     "stat": "force",
-    "mult": 0.7,
-    "dur": 1
+    "mult": 0.4,
+    "dur": 1,
+    "scale": "intel"
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "add": -60,
+    "dur": 99,
+    "scale": "intel"
    }
   ],
   "quality": "S",
@@ -6530,7 +6842,8 @@
     "who": "enemy",
     "stat": "force",
     "mult": 0.4,
-    "dur": 1
+    "dur": 1,
+    "scale": "intel"
    },
    {
     "k": "settle",
@@ -6539,14 +6852,16 @@
     "per": 0,
     "max": 99,
     "dur": 99,
-    "init": 0
+    "init": 0,
+    "scale": "intel"
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "command",
     "mult": 0.7,
-    "dur": 99
+    "dur": 99,
+    "scale": "intel"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -6570,9 +6885,10 @@
     "dur": 99
    },
    {
-    "k": "stun",
+    "k": "healblock",
     "who": "enemy",
-    "dur": 1
+    "dur": 1,
+    "_note": "70%機率禁療未建模(healblock原語無per-effect機率欄位)，維持近似必定觸發(略高估)，與橫掃千軍/暗箭難防同慣例"
    }
   ],
   "quality": "S",
@@ -6585,20 +6901,22 @@
   "kind": "intel",
   "coef": 1.54,
   "rate": 0.8,
-  "n": 1,
+  "n": 2,
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "lifesteal",
     "who": "ally",
     "val": 0.8,
-    "dur": 1
+    "dur": 1,
+    "_note": "前4回合自身發動主動戰法時50%→100%機率使我軍全體獲得1次1回合80%攻心"
    },
    {
     "k": "extra",
     "who": "self",
-    "val": 0.08,
-    "dur": 99
+    "val": 0.16,
+    "dur": 99,
+    "_note": "自身為主將時+16%奇謀機率(取滿級)"
    }
   ],
   "_src": " +他AI補全effectText/重解",
@@ -6619,6 +6937,12 @@
     "k": "silence",
     "who": "enemy",
     "dur": 2
+   },
+   {
+    "k": "stun",
+    "who": "self",
+    "dur": 1,
+    "_approx": "以混亂近似為自身1回合行動異常(引擎無混亂原語，用stun近似代價)"
    }
   ],
   "quality": "S",
@@ -6633,13 +6957,7 @@
   "rate": 0.4,
   "n": 1,
   "prep": 1,
-  "effects": [
-   {
-    "k": "stun",
-    "who": "enemy",
-    "dur": 2
-   }
-  ],
+  "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE"
@@ -6656,7 +6974,8 @@
    {
     "k": "stun",
     "who": "enemy",
-    "dur": 1
+    "dur": 1,
+    "_note": "30%機率震懾未建模(stun原語無per-effect機率欄位)，維持近似必定觸發(略高估)，與橫掃千軍/暗箭難防同慣例"
    }
   ],
   "quality": "A",
@@ -6738,9 +7057,10 @@
   "prep": 1,
   "effects": [
    {
-    "k": "stun",
+    "k": "silence",
     "who": "enemy",
-    "dur": 2
+    "dur": 1,
+    "_note": "計窮或繳械擇一，簡化以silence近似；30%機率延長至2回合未建模，取基礎1回合"
    }
   ],
   "quality": "A",
@@ -6798,10 +7118,18 @@
   "prep": 0,
   "effects": [
    {
+    "k": "redirect",
+    "who": "ally",
+    "guard": "self",
+    "share": 1.0,
+    "dur": 1,
+    "_note": "援護我軍全體分擔普攻"
+   },
+   {
     "k": "stat",
     "who": "self",
     "stat": "command",
-    "mult": 1.16,
+    "add": 40,
     "dur": 1
    }
   ],
@@ -6818,11 +7146,6 @@
   "n": 3,
   "prep": 0,
   "effects": [
-   {
-    "k": "stun",
-    "who": "enemy",
-    "dur": 1
-   },
    {
     "k": "taunt",
     "who": "enemy",
@@ -6867,7 +7190,8 @@
     "k": "heal",
     "who": "enemy",
     "coef": -0.66,
-    "dur": 1
+    "dur": 1,
+    "scale": "intel"
    }
   ],
   "quality": "A",
@@ -6886,13 +7210,16 @@
    {
     "k": "amp",
     "who": "self",
-    "val": 0.12,
-    "dur": 99
+    "val": 0.36,
+    "dur": 99,
+    "_approx": "stack-max",
+    "_note": "6%→12%每次普攻疊加,最多3次,以滿疊值0.36近似(引擎無per-attack疊加原語)"
    },
    {
     "k": "disarm",
     "who": "enemy",
-    "dur": 1
+    "dur": 1,
+    "_note": "原文35%機率觸發,但disarm原語無獨立prob欄位,沿用頂層rate=1(暫時高估,已知限制)"
    }
   ],
   "quality": "A",
@@ -6903,7 +7230,7 @@
   "nameZh": "妖術",
   "type": "active",
   "kind": "intel",
-  "coef": 0.72,
+  "coef": 0,
   "rate": 0.4,
   "n": 3,
   "prep": 1,
@@ -6912,6 +7239,12 @@
     "k": "heal",
     "who": "enemy",
     "coef": -0.72,
+    "dur": 2
+   },
+   {
+    "k": "shield",
+    "who": "self",
+    "amt": 1,
     "dur": 2
    }
   ],
@@ -6926,7 +7259,7 @@
   "coef": 0,
   "rate": 0.45,
   "n": 1,
-  "prep": 0,
+  "prep": 1,
   "effects": [
    {
     "k": "disarm",
@@ -6947,7 +7280,7 @@
   "nameZh": "屠几上肉",
   "type": "active",
   "kind": "phys",
-  "coef": 1.5,
+  "coef": 3.0,
   "rate": 0.35,
   "n": 1,
   "prep": 0,
@@ -6969,7 +7302,9 @@
     "k": "heal",
     "who": "enemy",
     "coef": -0.9,
-    "dur": 2
+    "dur": 2,
+    "scale": "force",
+    "_approx": "原文僅對'騎兵'目標生效，無法區分兵種時暫按全體目標近似套用"
    }
   ],
   "quality": "A",
@@ -6993,9 +7328,10 @@
     "dur": 2
    },
    {
-    "k": "mitig",
+    "k": "redirect",
     "who": "ally",
-    "val": 0.4,
+    "guard": "self",
+    "share": 0.4,
     "dur": 2
    }
   ],
@@ -7011,7 +7347,14 @@
   "rate": 0.45,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "extra",
+    "who": "self",
+    "val": 1,
+    "dur": 1
+   }
+  ],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
@@ -7078,9 +7421,16 @@
   "kind": "phys",
   "coef": 0,
   "rate": 0.4,
-  "n": 1,
+  "n": 2,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.27,
+    "dur": 2
+   }
+  ],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
@@ -7094,13 +7444,7 @@
   "rate": 0.35,
   "n": 2,
   "prep": 1,
-  "effects": [
-   {
-    "k": "stun",
-    "who": "enemy",
-    "dur": 1
-   }
-  ],
+  "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE"
@@ -7156,9 +7500,10 @@
    {
     "k": "heal",
     "who": "self",
-    "coef": 0.88,
+    "coef": 0.4,
     "dur": 1,
-    "scale": "force"
+    "scale": "force",
+    "_approx": "prob-ev: 45%機率×88%折算約0.40"
    }
   ],
   "quality": "A",
@@ -7221,7 +7566,7 @@
   "coef": 2.72,
   "rate": 0.35,
   "n": 1,
-  "prep": 0,
+  "prep": 1,
   "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
@@ -7244,15 +7589,16 @@
   "nameZh": "暴斂四方",
   "type": "active",
   "kind": "phys",
-  "coef": 1.02,
+  "coef": 2.04,
   "rate": 0.45,
   "n": 1,
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
+    "k": "healblock",
     "who": "enemy",
-    "dur": 2
+    "dur": 2,
+    "_approx": "原文為條件「若目標已處於震懾狀態」才禁療，無條件機制近似為必定禁療"
    }
   ],
   "quality": "A",
@@ -7284,16 +7630,17 @@
   "nameZh": "機略縱橫",
   "type": "active",
   "kind": "intel",
-  "coef": 0.58,
+  "coef": 0,
   "rate": 0.45,
   "n": 2,
   "prep": 1,
   "effects": [
    {
-    "k": "heal",
+    "k": "dot",
     "who": "enemy",
-    "coef": -0.58,
-    "dur": 2
+    "coef": 0.58,
+    "dur": 2,
+    "scale": "intel"
    }
   ],
   "quality": "A",
@@ -7405,8 +7752,16 @@
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1.06,
+    "add": 15,
     "dur": 99
+   },
+   {
+    "k": "extra",
+    "who": "self",
+    "val": 1,
+    "dur": 2,
+    "_approx": "prob-ev",
+    "_note": "前2回合50%機率群攻(普攻時對敵同部隊其他武將造成傷害),引擎extra無機率欄位,以dur=2近似限定回合範圍,未做50%折算(extra為布林式加成非可折算數值)"
    }
   ],
   "quality": "A",
@@ -7469,7 +7824,7 @@
     "who": "enemy",
     "stat": "command",
     "mult": 0.88,
-    "dur": 99
+    "dur": 1
    }
   ],
   "quality": "A",
@@ -7480,16 +7835,17 @@
   "nameZh": "神上使",
   "type": "active",
   "kind": "phys",
-  "coef": 0.68,
+  "coef": 0,
   "rate": 0.5,
   "n": 3,
   "prep": 1,
   "effects": [
    {
-    "k": "heal",
+    "k": "dot",
     "who": "enemy",
-    "coef": -0.68,
-    "dur": 2
+    "coef": 0.68,
+    "dur": 2,
+    "scale": "force"
    }
   ],
   "quality": "A",
@@ -7561,17 +7917,11 @@
   "nameZh": "腹背受敵",
   "type": "active",
   "kind": "intel",
-  "coef": 1.16,
+  "coef": 2.32,
   "rate": 0.45,
   "n": 1,
   "prep": 0,
-  "effects": [
-   {
-    "k": "stun",
-    "who": "enemy",
-    "dur": 1
-   }
-  ],
+  "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE"
@@ -7608,7 +7958,7 @@
    {
     "k": "amp",
     "who": "enemy",
-    "val": -0.18,
+    "val": 0.18,
     "dur": 2
    }
   ],
@@ -7660,7 +8010,8 @@
    {
     "k": "stun",
     "who": "ally",
-    "dur": 3
+    "dur": 1,
+    "_note": "首回合自己混亂,無差別選擇目標"
    },
    {
     "k": "heal",
@@ -7703,7 +8054,15 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "extra",
+    "who": "self",
+    "val": 2,
+    "dur": 1,
+    "_approx": "隨機2~4次攻擊，以期望值3次近似為額外2次連擊(共3次)"
+   }
+  ],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE"
@@ -7831,7 +8190,14 @@
   "rate": 0.35,
   "n": 2,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "healblock",
+    "who": "ally",
+    "dur": 1,
+    "_note": "對被攻擊的友軍造成當回合禁療"
+   }
+  ],
   "quality": "A",
   "cat": "COMMAND",
   "src": "INHERITANCE"
@@ -7849,7 +8215,7 @@
     "k": "stat",
     "who": "self",
     "stat": "intel",
-    "mult": 1.14,
+    "add": 28,
     "dur": 3
    }
   ],
@@ -7874,7 +8240,8 @@
    {
     "k": "surehit",
     "who": "self",
-    "dur": 2
+    "dur": 2,
+    "scale": "speed"
    }
   ],
   "quality": "A",
@@ -7912,9 +8279,14 @@
   "prep": 0,
   "effects": [
    {
-    "k": "heal",
+    "k": "insight",
     "who": "self",
-    "coef": 0.42,
+    "dur": 2
+   },
+   {
+    "k": "lifesteal",
+    "who": "self",
+    "val": 0.42,
     "dur": 2
    }
   ],
@@ -7927,10 +8299,25 @@
   "type": "command",
   "kind": "intel",
   "coef": 1.54,
-  "rate": 1,
+  "rate": 0.8,
   "n": 2,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "lifesteal",
+    "who": "ally",
+    "val": 0.8,
+    "dur": 1,
+    "_note": "前4回合自身發動主動戰法時50%→100%機率使我軍全體獲得1次1回合80%攻心"
+   },
+   {
+    "k": "extra",
+    "who": "self",
+    "val": 0.16,
+    "dur": 99,
+    "_note": "自身為主將時+16%奇謀機率(取滿級)"
+   }
+  ],
   "quality": "S",
   "cat": "COMMAND",
   "src": "INHERITANCE",
@@ -7953,11 +8340,18 @@
   "nameZh": "刺傷",
   "type": "active",
   "kind": "phys",
-  "coef": 0.7,
+  "coef": 0,
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.7,
+    "dur": 3
+   }
+  ],
   "quality": "B",
   "cat": "ACTIVE",
   "src": "INHERITANCE"
@@ -7968,7 +8362,7 @@
   "kind": "intel",
   "coef": 0,
   "rate": 0.3,
-  "n": 2,
+  "n": 1,
   "prep": 0,
   "effects": [
    {
@@ -8030,7 +8424,15 @@
   "rate": 0.25,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "add": -20,
+    "dur": 2
+   }
+  ],
   "quality": "B",
   "cat": "ACTIVE",
   "src": "INHERITANCE"
@@ -8043,7 +8445,22 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "add": 25,
+    "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "speed",
+    "add": 25,
+    "dur": 99
+   }
+  ],
   "quality": "B",
   "cat": "PASSIVE",
   "src": "INHERITANCE",
@@ -8110,12 +8527,6 @@
   "n": 3,
   "prep": 0,
   "effects": [
-   {
-    "k": "mitig",
-    "who": "self",
-    "val": 0.2,
-    "dur": 1
-   },
    {
     "k": "taunt",
     "who": "enemy",
@@ -8207,7 +8618,15 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 1.0,
+    "dur": 1,
+    "scale": "intel"
+   }
+  ],
   "quality": "B",
   "cat": "ACTIVE",
   "src": "INHERITANCE"
@@ -8218,7 +8637,7 @@
   "kind": "phys",
   "coef": 0.5,
   "rate": 0.3,
-  "n": 1,
+  "n": 3,
   "prep": 0,
   "effects": [],
   "quality": "B",
@@ -8233,7 +8652,15 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "force",
+    "add": -20,
+    "dur": 1
+   }
+  ],
   "quality": "B",
   "cat": "ACTIVE",
   "src": "INHERITANCE"
@@ -8246,7 +8673,15 @@
   "rate": 0.35,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 1.0,
+    "dur": 1,
+    "scale": "intel"
+   }
+  ],
   "quality": "B",
   "cat": "ACTIVE",
   "src": "INHERITANCE"
@@ -8313,7 +8748,16 @@
   "rate": 0.15,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.3,
+    "dur": 1,
+    "_approx": "crit-ev",
+    "_note": "會心30%(取滿級)×傷害+100%期望值折算=0.3"
+   }
+  ],
   "quality": "B",
   "cat": "BURST",
   "src": "INHERITANCE",
@@ -8340,7 +8784,15 @@
   "rate": 0.35,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "command",
+    "add": -14,
+    "dur": 2
+   }
+  ],
   "quality": "B",
   "cat": "BURST",
   "src": "INHERITANCE",
@@ -8419,7 +8871,14 @@
   "rate": 0.25,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "insight",
+    "who": "ally",
+    "dur": 2,
+    "_approx": "原文僅免疫混亂單一狀態，insight為免疫全部控制的近似(略高估)"
+   }
+  ],
   "quality": "B",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
@@ -8446,7 +8905,7 @@
   "coef": 1.55,
   "rate": 0.35,
   "n": 2,
-  "prep": 0,
+  "prep": 1,
   "effects": [],
   "quality": "B",
   "cat": "ACTIVE",
@@ -8460,7 +8919,13 @@
   "rate": 0.25,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "healblock",
+    "who": "enemy",
+    "dur": 1
+   }
+  ],
   "quality": "B",
   "cat": "BURST",
   "src": "INHERITANCE",
@@ -8470,11 +8935,20 @@
   "nameZh": "還擊",
   "type": "active",
   "kind": "phys",
-  "coef": 0.5,
+  "coef": 0,
   "rate": 0.35,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "counter",
+    "who": "self",
+    "coef": 0.5,
+    "kind": "phys",
+    "prob": 1,
+    "dur": 1
+   }
+  ],
   "quality": "B",
   "cat": "ACTIVE",
   "src": "INHERITANCE"

@@ -81,6 +81,16 @@
     const TAC = {};
     for (const t of tactics) if (t.type !== "none") TAC[t.nameZh] = t;
     TACTICS = TAC;
+    // 批10: 資料衛生防禦 —— 載入時掃描 |amp.val| > 3 的極端值並印警告(不擋), 供資料層儘早
+    // 發現如「coef 誤重複灌入 amp.val」這類系統性錯誤(見批10 corrections 仲裁)。只警告,
+    // 不修改資料本身(修正應在 tactics_parsed.json/corrections 層完成)。
+    for (const t of tactics) {
+      for (const e of (t.effects || [])) {
+        if (e.k === "amp" && typeof e.val === "number" && Math.abs(e.val) > 3) {
+          console.warn(`[tactics data] ${t.nameZh || "?"}: amp.val=${e.val} 超過 |3| 常見範圍, 疑似資料異常(如 coef 誤灌入 amp.val)`);
+        }
+      }
+    }
     BINGSHU = {}; MAIN_BY_CAT = {}; SUB_BY_CAT = {}; BONDS = bonds || []; EQUIPS = {};
     for (const b of (bingshu || [])) {
       const key = b.category + "·" + b.name;        // 複合鍵(同名跨類別不撞)
@@ -353,6 +363,7 @@
       if (opt.healOnly && k !== "heal") continue;
       if (k === "heal") {
         if (opt.noHeal) continue;
+        if ((e.coef ?? 0.8) < 0) continue;              // 批10: 資料衛生防禦 —— 負 heal coef(如機略縱橫類 dot 誤標成 heal 負值)一律視為0並跳過, 避免資料錯誤反而扣友軍血
         let hurt = null;
         for (const a of allies) if (a.alive && !a.healblock && (!hurt || a.troop < hurt.troop)) hurt = a;  // 批8: 禁療(healblock) 中的目標跳過, 不參與「最殘一人」篩選
         if (hurt) {
