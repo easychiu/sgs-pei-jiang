@@ -1,0 +1,37 @@
+{
+  "_note": "實測校準錨點集。來源: user 遊戲實測 / 社群拆解。引擎旋鈕以此為準, 新增實測往這裡記。",
+  "damage_formula": {
+    "source": "櫻謀詭計實測+菜頭模型 (agy研究 2026-07-02)",
+    "anchors": [
+      {"troop": 10000, "diff": 0, "coef": 1.0, "morale": 100, "dmg": 476},
+      {"troop": 10000, "diff": 200, "coef": 1.0, "morale": 100, "dmg": 764},
+      {"troop": 10000, "diff": "大負值", "coef": 1.0, "morale": 100, "dmg": 90},
+      {"troop": 10000, "diff": 0, "coef": 1.0, "morale": 90, "dmg": 430}
+    ],
+    "fitted": {"DMG_A": 4.76, "DMG_B": 1.44, "DMG_FLOOR": 0.9}
+  },
+  "morale": {
+    "source": "user 實戰報截圖 2026-07-02",
+    "anchors": [
+      {"morale": 99.20, "dmg_mod": "-0.56%"},
+      {"morale": 110.40, "dmg_mod": "不變(>100封頂)"}
+    ],
+    "fitted": "0.007×(100-m), m clamp 100 — 與引擎 moraleMult 分毫不差"
+  },
+  "stat_scale": {
+    "source": "巴哈/NGA 社群拆解 (agy研究)",
+    "anchors": [{"stat": 300, "base": "40%", "actual": "62.86%", "tactic": "暫避其鋒"}],
+    "fitted": "SCALE(v)=1+(v-100)/350"
+  },
+  "hubaoqi_caochun": {
+    "source": "user 遊戲實測 2026-07-02",
+    "desc": "虎豹騎: 曹純統領時, 突擊發動率額外提升, 受武力影響",
+    "anchors": [
+      {"force": 373.83, "extra": "4.46%"},
+      {"force": 145.78, "extra": "0.63%"},
+      {"force": 123.78, "extra": "0.53%"}
+    ],
+    "fitted": "二次曲線 extra% ≈ force² × 3.2e-5 (高點誤差0.3%, 低點±8%, _est 待更多樣本)",
+    "rejected_fits": "線性過原點(高點差2.8x)/線性(v-100)(不一致)"
+  }
+}

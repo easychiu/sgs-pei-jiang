@@ -615,6 +615,18 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 u.surehit_dur = max(u.surehit_dur, e.get("dur", 1) + 1)
             elif k == "rateup":                        # 提高(自身或對象)主動戰法發動機率
                 u.push_add("rateup", e["val"], e["dur"], src)
+            elif k == "chargeup":                      # 提高(自身或對象)突擊戰法發動機率; 排除 proc=True 特技偽戰法見突擊擲骰處註解
+                u.push_add("chargeup", e["val"], e["dur"], src)
+                # 曹純特例(虎豹騎): 若隊伍主將(index 0, allies[0])===本效果指定 general 且恰為本 u,
+                # 額外發動機率受武力影響。二次曲線 extra% = force^2 * k(注意 k 擬合的是「%數值」本身,
+                # 如 force=373.83 時 force^2*k≈4.47, 代表 4.47%, 需 /100 換算成 addbonus 用的小數比例),
+                # 錨點見 docs/data/calibration_anchors.json → hubaoqi_caochun(user 實測: 武力373.83→額外
+                # 4.46%, 145.78→0.63%, 123.78→0.53%)。src 另加尾碼避免 push_add 同 kind+src 去重把兩筆效果互相蓋掉。
+                lb = e.get("leaderBonus")
+                if lb and allies and allies[0] is u and u.g.name == lb["general"]:
+                    extra = (u.eff("force") ** 2) * lb["k"] / 100
+                    lb_src = (src + ":leaderBonus") if src else "leaderBonus"
+                    u.push_add("chargeup", extra, e["dur"], lb_src)
 
 
 def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, eqB=None,
@@ -730,9 +742,11 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     nt = pick_target(foes_of(u), u)
                     if nt:
                         hit(u, nt, 1.0, "phys", True, on_hit)
-                # 突擊(charge)擲骰: 未來若加 chargeup(突擊發動率加成)原語, 必須排除 t.get("proc") is True 的特技偽戰法(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲)。
+                # 突擊(charge)擲骰: chargeup(突擊發動率加成, 如虎豹騎)只對真突擊戰法生效, 排除
+                # t.get("proc") is True 的特技偽戰法(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲)。
                 for t in u.tactics:
-                    if t["type"] == "charge" and random.random() < t["rate"]:
+                    up = 0 if t.get("proc") else u.addbonus("chargeup")
+                    if t["type"] == "charge" and random.random() < t["rate"] + up:
                         if t["coef"]:
                             hit(u, tgt, t["coef"], t["kind"], False, on_hit)
                         apply_effects(u, tgt, t, allies_of(u), foes_of(u))
@@ -1088,6 +1102,73 @@ def demo():
     assert prot23.guardian is not None and prot23.guard_dur == 1, "redirect dur:1 套用後應有 guardian 且 guard_dur=1"
     prot23.tick()
     assert prot23.guardian is None and prot23.guard_dur == 0, "redirect dur:1 過1回合(tick)後 guardian 應清除(失效)"
+
+    # --- 批6: chargeup(突擊戰法發動機率加成) + 虎豹騎曹純特例 ---------------------
+    # 24) chargeup 資料落地: 虎豹騎(who=ally,val=0.10,dur=3,帶leaderBonus)/陷陣突襲(who=self,val=0.15)
+    assert "虎豹騎" in TACTICS and any(e["k"] == "chargeup" for e in TACTICS["虎豹騎"]["effects"]), \
+        "虎豹騎應由 reparse 標記 chargeup 效果"
+    hbq_ce = next(e for e in TACTICS["虎豹騎"]["effects"] if e["k"] == "chargeup")
+    assert abs(hbq_ce["val"] - 0.10) < 1e-9 and hbq_ce["dur"] == 3 and hbq_ce["who"] == "ally", \
+        "虎豹騎 chargeup 應為 who=ally, val=0.10(5%→10%取滿級), dur=3(戰鬥前3回合)"
+    assert hbq_ce.get("leaderBonus", {}).get("general") == "曹純", "虎豹騎 chargeup 應帶曹純 leaderBonus"
+    assert "陷陣突襲" in TACTICS and any(e["k"] == "chargeup" for e in TACTICS["陷陣突襲"]["effects"]), \
+        "陷陣突襲應由 reparse 標記 chargeup 效果"
+    xzts_ce = next(e for e in TACTICS["陷陣突襲"]["effects"] if e["k"] == "chargeup")
+    assert abs(xzts_ce["val"] - 0.15) < 1e-9 and xzts_ce["who"] == "self", \
+        "陷陣突襲 chargeup 應為 who=self, val=0.15(7.5%→15%取滿級)"
+
+    # 25) chargeup 提高 addbonus('chargeup'), 突擊擲骰門檻 rate+addbonus('chargeup') 因而提高
+    plain_c = Unit(lb, "騎")
+    charge_u = Unit(lb, "騎")
+    charge_u.push_add("chargeup", 0.10, 3)
+    assert abs(charge_u.addbonus("chargeup") - 0.10) < 1e-9 and plain_c.addbonus("chargeup") == 0, \
+        "chargeup 應提高 addbonus('chargeup')"
+
+    # 26) 鐵律: chargeup 只影響真突擊戰法, 不影響 proc:True 特技偽戰法(user 明確指示,
+    # 昭烈/踩踏不吃虎豹騎加成)。以 fight() 內同樣的擲骰算式驗證: 真突擊 rate 提升, proc rate 不變。
+    real_charge_rate = 0.10
+    proc_rate = 0.10
+    cu = Unit(lb, "騎")
+    cu.push_add("chargeup", 0.10, 9)
+    real_t = {"type": "charge", "rate": real_charge_rate, "proc": False}
+    proc_t = {"type": "charge", "rate": proc_rate, "proc": True}
+    real_threshold = real_t["rate"] + (0 if real_t.get("proc") else cu.addbonus("chargeup"))
+    proc_threshold = proc_t["rate"] + (0 if proc_t.get("proc") else cu.addbonus("chargeup"))
+    assert abs(real_threshold - 0.20) < 1e-9, "真突擊戰法擲骰門檻應吃到 chargeup 加成(0.10+0.10=0.20)"
+    assert abs(proc_threshold - proc_rate) < 1e-9, "proc:True 特技偽戰法擲骰門檻不應吃 chargeup 加成(維持原rate)"
+
+    # 27) 虎豹騎曹純特例: 隊伍主將(index 0)===曹純 時, 額外發動機率 = 主將戰鬥內武力^2 × 3.2e-5
+    #     (二次曲線, 錨點見 docs/data/calibration_anchors.json → hubaoqi_caochun: 武力373.83→額外4.46%)。
+    #     用 push_mod 頂高武力到約373 驗算數值, 容差±10%(_est 曲線, 樣本少)。
+    # 錨點的「武力373.83」是遊戲內實測顯示值, 即虎豹騎自身「全體+16%武力」buff 已套用後的戰鬥內
+    # eff("force")(同一 apply_effects 呼叫內, stat 效果排在 chargeup 之前先套用)。故先估算裸值倍率
+    # 使套用虎豹騎(force×1.16)後精確落在 373.83, 再驗算 leaderBonus 額外值。
+    hbq_tac = TACTICS["虎豹騎"]
+    cc_leader = Unit(POOL["曹純"], "騎")
+    cc_leader.push_mod("force", (373.83 / 1.16) / cc_leader.eff("force"), 9)
+    team_cc = [cc_leader, Unit(lb, "騎"), Unit(lb, "騎")]   # 曹純在 index 0 = 主將
+    apply_effects(cc_leader, None, hbq_tac, team_cc, [], no_heal=True)
+    force_373 = cc_leader.eff("force")                      # 套用虎豹騎+16%武力後的戰鬥內武力(應≈373.83)
+    expect_extra = (force_373 ** 2) * 3.2e-5 / 100          # k 擬合的是「%數值」, /100 換算成小數比例
+    got_extra = cc_leader.addbonus("chargeup") - 0.10       # 扣掉基礎虎豹騎10%, 剩下即曹純特例額外值
+    assert abs(got_extra - expect_extra) / expect_extra < 0.15, \
+        f"曹純統領虎豹騎額外發動機率應≈武力^2×3.2e-5, got={got_extra:.4f} expect={expect_extra:.4f}(武力{force_373:.1f})"
+    assert abs(force_373 - 373.83) < 5, f"測試前置條件: 武力應落在錨點373.83附近, got={force_373:.1f}"
+    assert abs(got_extra - 0.0446) / 0.0446 < 0.10, \
+        f"武力≈373時, 曹純特例額外發動機率應≈0.0446(±10%), got={got_extra:.4f}"
+
+    # 28) 曹純特例只在「曹純且為主將(index 0)」時觸發: 非曹純主將 不應有額外加成, 只有基礎10%
+    other_leader = Unit(POOL["呂布"], "騎")
+    team_other = [other_leader, Unit(POOL["曹純"], "騎"), Unit(lb, "騎")]  # 曹純在隊但非主將(index 1)
+    apply_effects(other_leader, None, hbq_tac, team_other, [], no_heal=True)
+    assert abs(team_other[0].addbonus("chargeup") - 0.10) < 1e-6, \
+        "非曹純主將時, chargeup 應只有虎豹騎基礎10%, 無曹純特例額外加成"
+    caochun_non_leader = team_other[1]
+    assert abs(caochun_non_leader.addbonus("chargeup") - 0.10) < 1e-6, \
+        "曹純若不是主將(index 0), 即使在隊上也不應觸發特例額外加成"
+    # 方向性比較: 曹純當主將(index 0) 的 chargeup 加成應高於非曹純主將隊伍
+    assert cc_leader.addbonus("chargeup") > team_other[0].addbonus("chargeup"), \
+        "曹純當主將 vs 非曹純主將: 前者 chargeup 加成應較高(曹純特例額外值>0)"
 
     print("self-check OK")
 

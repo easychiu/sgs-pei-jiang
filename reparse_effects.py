@@ -263,6 +263,37 @@ MANUAL_FILL = {
     },
 }
 
+# --- 批6: chargeup(突擊戰法發動機率提升) 白名單 -------------------------------
+# 「突擊戰法發動率|機率提高X%→Y%」句型: 取升滿值 val=Y/100。who/dur 逐條人工核對原文
+# (與 rateup 同樣保守原則: 全庫只白名單標記語意 100% 明確的案例, 其餘跳過)。
+#
+# 落地(2個戰法):
+# - 虎豹騎(data/tactics.json「將騎兵進階為天下驍銳的虎豹騎」2020-04-01重做版): 「戰鬥前3回合,
+#   我軍全體突擊戰法發動率提高5%→10%」→ who=ally, val=0.10, dur=3。另「若曹純統領時, 提升的
+#   發動機率額外受武力影響」→ leaderBonus(見 engine.js/sgz.py 的 chargeup 特例, 二次曲線錨點
+#   docs/data/calibration_anchors.json → hubaoqi_caochun)。
+# - 陷陣突襲: 「自身突擊戰法發動機率提高7.5%→15%」→ who=self, val=0.15, 無持續字樣(「戰鬥中,
+#   自己普通攻擊…」整段常駐句型, 比照 rateup 白眉的常駐慣例) dur=99。
+#
+# 跳過(2個戰法, 拿不準):
+# - 三勢陣: 「主將提高8%→16%自帶主動、突擊戰法發動機率」——只加給「主將」這個目標概念,
+#   引擎完全沒有「隊伍主將」的通用戰法施放/受益者機制(user 只要求虎豹騎+曹純這一組窄範圍
+#   特例, 不建通用主將機制); 且同句混合 rateup(主動)與 chargeup(突擊)兩種原語、外加三方陣營
+#   都不同的條件句(現有 mitig/amp 兩效果本身也未建模此條件), 勉強套用 who=self 或 who=ally
+#   都會誤述原文語意(self 誤含非主將施放者, ally 誤及全隊而非僅主將)。跳過, 待「主將」概念
+#   或條件觸發原語擴充後再處理。
+# - 經天緯地: 「我軍全體發動主動戰法及突擊戰法時, 自身有35%→70%機率…對敵軍單體發動謀略攻擊」
+#   ——這不是「提高突擊發動率」, 是「發動主動/突擊戰法後觸發一次額外謀略攻擊」的 proc-on-cast
+#   觸發鏈, 語意上與 chargeup(直接墊高擲骰門檻)完全不同原語, 現有 15+2 原語都無法表達
+#   「戰法命中後觸發另一次攻擊」的鏈式反應, 跳過。
+CHARGEUP_ADD = {
+    "虎豹騎": {
+        "who": "ally", "val": 0.10, "dur": 3,
+        "leaderBonus": {"general": "曹純", "curve": "quad", "k": 3.2e-5},
+    },
+    "陷陣突襲": {"who": "self", "val": 0.15, "dur": 99},
+}
+
 
 def extract_dmg_pct(txt):
     """取滿級傷害率(取範圍上限), 找不到回傳 None。"""
@@ -457,6 +488,8 @@ def main():
     n_rateup_tagged = 0
     n_manual_filled = 0
     rateup_tagged_names = []
+    n_chargeup_tagged = 0
+    chargeup_tagged_names = []
 
     for p in parsed:
         if p.get("type") == "none":
@@ -529,7 +562,11 @@ def main():
                 # taunt/dodge/surehit 的 dur 來自批2白名單(9~11)的專屬子句解析, 全文首個
                 # 「持續N回合」常屬於同段落裡的另一個效果(如 驍健神行 的「持續1回合」屬於
                 # disarm, 不該覆寫「持續2回合」的 surehit), 故排除, 避免非冪等覆寫。
-                if e.get("k") in ("first", "taunt", "dodge", "surehit"):
+                # chargeup 的 dur 來自批6白名單(見 CHARGEUP_ADD, 逐條核對「戰鬥前N回合」子句)——
+                # 虎豹騎 effectText 混雜多版本歷史文案, 全文首個「持續N回合」屬於另一版本的
+                # 45%→90%機率繳械子句(持續1回合), 與 chargeup 子句(戰鬥前3回合)無關, 同樣排除,
+                # 否則每輪被降覆成 dur=1、再被 item16 修回 dur=3, 造成非冪等 churn。
+                if e.get("k") in ("first", "taunt", "dodge", "surehit", "chargeup"):
                     continue
                 cur = e.get("dur")
                 if cur is not None and cur >= 90:      # 永久型(99) 不動: 語意是"戰鬥全程"
@@ -694,6 +731,24 @@ def main():
                 rateup_tagged_names.append(f"{name}(val={val},dur={dur},更新)")
             touched_meaningful = True
 
+        # --- 16) chargeup(突擊戰法發動機率提升): 白名單新增, 見 CHARGEUP_ADD 註解 --------
+        if name in CHARGEUP_ADD:
+            spec = CHARGEUP_ADD[name]
+            existing_chargeup = next((eft for eft in p.get("effects", []) if eft.get("k") == "chargeup"), None)
+            want = {"k": "chargeup", "who": spec["who"], "val": spec["val"], "dur": spec["dur"]}
+            if "leaderBonus" in spec:
+                want["leaderBonus"] = dict(spec["leaderBonus"])
+            if existing_chargeup is None:
+                p.setdefault("effects", []).append(want)
+                n_chargeup_tagged += 1
+                chargeup_tagged_names.append(f"{name}(val={spec['val']},dur={spec['dur']})")
+            elif existing_chargeup != want:
+                existing_chargeup.clear()
+                existing_chargeup.update(want)
+                n_chargeup_tagged += 1
+                chargeup_tagged_names.append(f"{name}(val={spec['val']},dur={spec['dur']},更新)")
+            touched_meaningful = True
+
         # --- 15) overrides 落地手動白名單(桃園結義等概數措辭 regex 抽不到的), 見 MANUAL_FILL --
         if name in MANUAL_FILL:
             spec = MANUAL_FILL[name]
@@ -744,6 +799,11 @@ def main():
     print(f"scale(受屬性影響縮放) 標記: {n_scale_tagged} 處效果, 涵蓋 {len(SCALE_PLAN)} 個戰法")
     print(f"rateup(主動戰法發動機率提升) 標記: {n_rateup_tagged} 個戰法"
           f"（{', '.join(rateup_tagged_names) if rateup_tagged_names else '無'}）")
+    print(f"--- 批6: chargeup(突擊戰法發動機率提升) + 曹純特例 ---")
+    print(f"chargeup(突擊戰法發動機率提升) 標記: {n_chargeup_tagged} 個戰法"
+          f"（{', '.join(chargeup_tagged_names) if chargeup_tagged_names else '無'}）"
+          f"；跳過: 三勢陣(僅限「主將」概念, 引擎無通用主將機制)"
+          f"、經天緯地(proc-on-cast觸發鏈, 非chargeup原語)——詳見 CHARGEUP_ADD 註解")
     print(f"overrides(查證資料整合) 套用 effectText/type: {len(overrides_applied)} 筆"
           f"（{', '.join(sorted(overrides_applied)) if overrides_applied else '無'}）")
     print(f"overrides invalid(幽靈條目→type:none): {n_overrides_invalid} 筆"

@@ -292,6 +292,7 @@
       case "dodge": return `規避${p(e.prob ?? 0)}${d}`;
       case "surehit": return `必中·無視規避${d}`;
       case "rateup": return `主動戰法發動機率+${p(e.val)}${d}`;
+      case "chargeup": return `突擊發動機率+${p(e.val)}${d}`;
       default: return k;
     }
   }
@@ -369,6 +370,20 @@
         else if (k === "dodge") { u.dodgeProb = e.prob ?? 0.2; u.dodgeDur = Math.max(u.dodgeDur, (e.dur ?? 1) + 1); }
         else if (k === "surehit") u.surehitDur = Math.max(u.surehitDur, (e.dur ?? 1) + 1);
         else if (k === "rateup") u.pushAdd("rateup", e.val, e.dur, src);   // 提高(自身或對象)主動戰法發動機率
+        else if (k === "chargeup") {                    // 提高(自身或對象)突擊戰法發動機率; 排除 t.proc===true 特技偽戰法見突擊擲骰處註解
+          u.pushAdd("chargeup", e.val, e.dur, src);
+          // 曹純特例(虎豹騎): 若隊伍主將(index 0, allies[0])===本效果指定 general 且恰為本 u,
+          // 額外發動機率受武力影響。二次曲線 extra% = force^2 * k(注意 k 擬合的是「%數值」本身,
+          // 如 force=373.83 時 force^2*k≈4.47, 代表 4.47%, 需 /100 換算成 addbonus 用的小數比例),
+          // 錨點見 docs/data/calibration_anchors.json → hubaoqi_caochun(user 實測: 武力373.83→額外
+          // 4.46%, 145.78→0.63%, 123.78→0.53%)。src 另加尾碼避免 pushAdd 同 kind+src 去重把兩筆效果互相蓋掉。
+          if (e.leaderBonus && allies[0] === u && u.g.name === e.leaderBonus.general) {
+            const lb = e.leaderBonus;
+            const extra = Math.pow(u.eff("force"), 2) * lb.k / 100;
+            u.pushAdd("chargeup", extra, e.dur, src ? src + ":leaderBonus" : "leaderBonus");
+            if (TRACE) lg(`　▸ ${u.nm}〔${lb.general}統領〕突擊發動機率額外+${Math.round(extra * 1000) / 10}%〔受武力影響, 武${Math.round(u.eff("force"))}〕`);
+          }
+        }
       }
     }
   }
@@ -484,8 +499,9 @@
             if (TRACE) lg(`【${u.side}】${u.nm} 普通攻擊 → ${tgt.nm}`);
             hit(u, tgt, 1.0, "phys", true, onHit);
             for (let i = 0; i < extraCount(u.addbonus("extra")); i++) { const nt = pickTarget(foesOf(u), u); if (nt) { if (TRACE) lg(`【${u.side}】${u.nm} 連擊 → ${nt.nm}`); hit(u, nt, 1.0, "phys", true, onHit); } }
-            // 突擊(charge)擲骰: 未來若加 chargeup(突擊發動率加成)原語, 必須排除 t.proc===true 的特技偽戰法(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲)。
-            for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind, false, onHit); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
+            // 突擊(charge)擲骰: chargeup(突擊發動率加成, 如虎豹騎)只對真突擊戰法生效, 排除 t.proc===true 的
+            // 特技偽戰法(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲proc本身無此欄)。
+            for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate + (t.proc ? 0 : u.addbonus("chargeup"))) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind, false, onHit); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
           }
         }
       }

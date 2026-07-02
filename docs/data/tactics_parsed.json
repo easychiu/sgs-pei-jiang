@@ -5229,6 +5229,17 @@
     "stat": "force",
     "mult": 1.16,
     "dur": 99
+   },
+   {
+    "k": "chargeup",
+    "who": "ally",
+    "val": 0.1,
+    "dur": 3,
+    "leaderBonus": {
+     "general": "曹純",
+     "curve": "quad",
+     "k": 3.2e-05
+    }
    }
   ],
   "quality": "S",
@@ -5986,6 +5997,12 @@
     "k": "amp",
     "who": "self",
     "val": 0.06,
+    "dur": 99
+   },
+   {
+    "k": "chargeup",
+    "who": "self",
+    "val": 0.15,
     "dur": 99
    }
   ],
