@@ -52,6 +52,83 @@ FIRST_GRANT_RE = re.compile(
     r"|使自己及友軍單體獲得先攻|使自己獲得先攻|自身獲得先攻")
 FIRST_DUR_RE = re.compile(r"戰鬥前\s*(\d+)\s*回合")
 
+# ---------------------------------------------------------------------------
+# 批2: 條件觸發(when) + 新原語(taunt/shield/dodge/surehit)
+#
+# 條件觸發/新原語語意在 384 條 effectText 裡幾乎每條都夾雜多個子句(不同回合窗口、
+# 不同觸發條件混在同一段話裡), 通用 regex 容易對到錯的子句(把「always-on」的效果
+# 錯套上某個無關子句的回合窗口, 或把「必中/規避」拿來描述另一個效果的說明文字誤標)。
+# 沿用本檔一貫的保守原則: 逐條人工核對 effectText 後, 只用「白名單」方式標記語意
+# 100%明確、且該戰法的 coef/effects 整體恰好對應同一子句(不會誤套到不相關子句)的
+# 案例; 其餘一律跳過, 保留給後續 LLM 精解。跳過清單見腳本輸出。
+# ---------------------------------------------------------------------------
+
+# --- when.rounds/from/until: coef+effects 整體只對應同一個回合窗口子句 --------
+# 「戰鬥第2回合開始」dot/群體傷害才開始生效(prep 時的 dur 只能表示「維持多久」,
+# 無法表示「延後開始」, 是既有 15 原語表達不到的缺口, 需要新的 when.from)。
+WHEN_FROM = {
+    "興雲佈雨": 2, "興雲布雨": 2,          # 戰鬥第2回合開始, 使敵軍全體進入水攻狀態(dot/amp 皆對應此子句)
+}
+# 「戰鬥前N回合」的 until 語意多數已由既有 dur=N (prep 時套用一次, N 回合後到期) 天然覆蓋,
+# 不需要額外 when; WHEN_UNTIL 僅保留給未來若需要嚴格重跑驗證用, 目前無新增案例。
+WHEN_UNTIL = {}
+
+# --- when.on: 反應式觸發, coef+effects 整體只對應「受到普通攻擊時/受到傷害後」子句 ---
+ON_ATTACKED = {
+    "氣凌三軍": "受到普通攻擊時對攻擊者進行一次反擊",
+    "後發制人": "受到普通攻擊時對攻擊者進行一次反擊",
+    "眾動萬計": "受到普通攻擊時,45%機率對攻擊來源造成兵刃傷害並使其下次傷害降低",
+    "魅惑": "自身受到普通攻擊時,機率使攻擊者進入計窮等狀態的一種",
+}
+ON_DAMAGED = {
+    "剛勇無前": "受到兵刃傷害後,下回合行動時提高會心並使下一擊傷害提高",
+}
+
+# --- rate 白名單覆寫: on 觸發類戰法的內文機率(activationRate=1 但實際觸發率藏在
+# effectText, 且 coef=0 走不到既有 item 2 的 inline rate 抽取路徑)。
+# 魅惑「有 22.5%→45% 機率使攻擊者進入…」滿級 0.45; 不覆寫的話 rate=1 =
+# 每次被普攻 100% 觸發控制, 嚴重高估(比照 眾動萬計 rate=0.45 的既有處理)。
+RATE_OVERRIDE = {"魅惑": 0.45}
+
+# --- taunt(嘲諷): 中招敵軍強制普攻/單體戰法指向施放者。只認「嘲諷」關鍵字;
+# 「偽報」在本庫實際語意因戰法而異(當鋒摧決定義成「禁用被動/指揮戰法」, 並非目標
+# 改向), 與任務描述的「隨機目標」假設不符, 保守全部跳過偽報, 只標「嘲諷」。
+# 威風凜凜「嘲諷…或繳械…持續2回合」擇一施加: disarm 那半既已標記, taunt 那半
+# 同句同確定性一併補標(引擎近似為兩者皆施加, 略強於實際擇一, 可接受)。
+# 定謀貴決 保守跳過: 原文「使敵軍兵力最高的武將嘲諷我軍全體」是反向嘲諷——我方
+# 全體被迫集火該敵將(=標記/集火語意), 與 taunt 原語(中招者攻擊施放者)方向恰好
+# 相反, 硬標會把集火目標弄反; 等未來加「標記集火」原語再處理。
+# ADD(不取代既有 stun/redirect 等效果, 避免動到既有平衡/回歸): 額外附加 taunt 效果。
+TAUNT_DUR = {
+    "固若金湯": 2, "守而必固": 4, "江東猛虎": 2, "威風凜凜": 2,
+    "獨行赴鬥": 2, "益其金鼓": 1, "唇槍舌戰": 1, "挑釁": 1,
+}
+
+# --- dodge(規避): 語意明確標出「機率規避」且無其他子句混雜共用同一效果格。
+# 金丹秘術: 既有 mitig(val=0.35) 其實是誤將「規避可免疫傷害」近似成部分減傷,
+# 數值(0.35)恰好對應規避機率, 這裡連 k 一併改正(mitig -> dodge)較準確;
+# 因利制權: 「獲得12.5%→25%規避…持續1回合」effects=[] 空的, 純新增, prob 從原文抽;
+# 士別三日: 「戰鬥前3回合…獲得15%→30%機率規避效果」prob 從原文抽, dur=3(前3回合);
+# 蓄勢待發: 「每回合機率賦予我軍群體規避狀態」語意明確但原文無數值(概要式文本),
+#   prob 用引擎預設 0.2 並記錄假設, dur=1(每回合重新賦予的近似)。
+DODGE_ADD = {
+    "因利制權": {"prob_kw": "規避", "dur": 1, "who": "ally"},
+    "士別三日": {"prob_kw": "規避", "dur": 3, "who": "self"},
+    "蓄勢待發": {"prob": 0.2, "dur": 1, "who": "ally"},   # 原文無數值, 取引擎預設 0.2(_假設_)
+}
+DODGE_FIX_MITIG = ("金丹秘術",)                            # 既有 mitig 誤用, 改標成 dodge(沿用原 val/dur)
+
+# --- surehit(必中): 語意為施放者(或指定我方單體)明確獲得必中, 且不是「必中/洞察/
+# 先攻/連擊隨機一種」這類多選一的模糊描述(坐斷東南等跳過)。
+# 驍健神行: 「使自身獲得必中…持續2回合」;
+# 國士將風: 「戰鬥前3回合, 使自己及友軍單體獲得先攻…和必中…」同句 first 已標 dur=3, 必中比照;
+# 萬軍取將: 「自身獲得必中及破陣」概要式文本無持續回合, dur=1 保守假設(單回合)。
+SUREHIT_ADD = {"驍健神行": 2, "國士將風": 3, "萬軍取將": 1}
+
+# --- shield(護盾): 需要可解析的具體吸收量(固定值或兵力%), 全庫僅「赴湯蹈火」提及
+# 護盾但敘述是「多層抵禦疊加機制」, 無具體數字可抽, 保守跳過(見報告)。
+SHIELD_ADD = {}
+
 
 def extract_dmg_pct(txt):
     """取滿級傷害率(取範圍上限), 找不到回傳 None。"""
@@ -62,6 +139,25 @@ def extract_dmg_pct(txt):
     if m:
         return float(m.group(1))
     return None
+
+
+def _maxval(txt, kw):
+    """抓 'kw...A→B' 或 'kw...A%→B%', 回傳升滿值 B(取範圍上限); 找不到回傳 None。
+    與 sgz.py 內同名函式邏輯一致, 這裡獨立一份供 reparse 的白名單數值抽取用。"""
+    m = re.search(re.escape(kw) + r"[^0-9]{0,10}(\d+(?:\.\d+)?)\s*%?\s*(?:→|~|-)\s*(\d+(?:\.\d+)?)", txt)
+    if m:
+        return float(m.group(2))
+    m = re.search(re.escape(kw) + r"[^0-9]{0,10}(\d+(?:\.\d+)?)", txt)
+    return float(m.group(1)) if m else None
+
+
+def _maxval_before(txt, kw):
+    """抓 'A→B%kw' 或 'A%→B%kw'(數值在關鍵字之前, 如「12.5%→25%規避」), 回傳升滿值 B; 找不到回傳 None。"""
+    m = re.search(r"(\d+(?:\.\d+)?)\s*%?\s*(?:→|~|-)\s*(\d+(?:\.\d+)?)\s*%?" + r"[^0-9]{0,4}" + re.escape(kw), txt)
+    if m:
+        return float(m.group(2))
+    m = re.search(r"(\d+(?:\.\d+)?)\s*%" + r"[^0-9]{0,4}" + re.escape(kw), txt)
+    return float(m.group(1)) if m else None
 
 
 def extract_heal_pct(txt):
@@ -165,6 +261,11 @@ def main():
     n_new_ctrl_tags = 0
     first_tagged = []
     n_est = 0
+    n_when_filled = 0
+    n_taunt_tagged = 0
+    n_dodge_tagged = 0
+    n_surehit_tagged = 0
+    n_shield_tagged = 0
     noop_before = sum(1 for p in parsed if p.get("type") != "none"
                        and not p.get("coef") and not p.get("effects"))
 
@@ -206,6 +307,10 @@ def main():
             inline_rate = extract_inline_rate(txt)
             if inline_rate is not None:
                 target_rate = inline_rate
+        # 批2 白名單覆寫: coef=0 的 on 觸發類走不到上面的 inline 抽取(它只認有 coef 的),
+        # 內文機率需白名單指定(如 魅惑 0.45), 在寫入前覆寫確保單次寫入、計數冪等。
+        if p["nameZh"] in RATE_OVERRIDE:
+            target_rate = RATE_OVERRIDE[p["nameZh"]]
         if target_rate is not None:
             if p.get("rate") is None or abs((p.get("rate") or 0) - target_rate) > 1e-9:
                 p["rate"] = target_rate
@@ -229,7 +334,11 @@ def main():
             for e in p.get("effects", []):
                 if "dur" not in e:
                     continue
-                if e.get("k") == "first":              # first 的 dur 來自「戰鬥前N回合」(6c), 非「持續N回合」
+                # first 的 dur 來自「戰鬥前N回合」(6c), 非「持續N回合」;
+                # taunt/dodge/surehit 的 dur 來自批2白名單(9~11)的專屬子句解析, 全文首個
+                # 「持續N回合」常屬於同段落裡的另一個效果(如 驍健神行 的「持續1回合」屬於
+                # disarm, 不該覆寫「持續2回合」的 surehit), 故排除, 避免非冪等覆寫。
+                if e.get("k") in ("first", "taunt", "dodge", "surehit"):
                     continue
                 cur = e.get("dur")
                 if cur is not None and cur >= 90:      # 永久型(99) 不動: 語意是"戰鬥全程"
@@ -290,6 +399,80 @@ def main():
                 first_tagged.append(p["nameZh"])
             touched_meaningful = True
 
+        # --- 7) when.rounds/from/until: 條件觸發回合窗口(白名單, 見 WHEN_FROM 註解) ---
+        name = p["nameZh"]
+        if name in WHEN_FROM:
+            w = p.setdefault("when", {})
+            if w.get("from") != WHEN_FROM[name]:
+                w["from"] = WHEN_FROM[name]
+                n_when_filled += 1
+            touched_meaningful = True
+        if name in WHEN_UNTIL:
+            w = p.setdefault("when", {})
+            if w.get("until") != WHEN_UNTIL[name]:
+                w["until"] = WHEN_UNTIL[name]
+                n_when_filled += 1
+            touched_meaningful = True
+
+        # --- 8) when.on: 反應式觸發(受到普通攻擊時/受到傷害後), 見 ON_ATTACKED/ON_DAMAGED --
+        if name in ON_ATTACKED:
+            w = p.setdefault("when", {})
+            if w.get("on") != "attacked":
+                w["on"] = "attacked"
+                n_when_filled += 1
+            touched_meaningful = True
+        if name in ON_DAMAGED:
+            w = p.setdefault("when", {})
+            if w.get("on") != "damaged":
+                w["on"] = "damaged"
+                n_when_filled += 1
+            touched_meaningful = True
+
+        # --- 9) taunt(嘲諷): 白名單新增(不取代既有效果), 見 TAUNT_DUR 註解 -------------
+        if name in TAUNT_DUR:
+            if "taunt" not in existing_ks:
+                p["effects"].append({"k": "taunt", "who": "enemy", "dur": TAUNT_DUR[name]})
+                n_taunt_tagged += 1
+            touched_meaningful = True
+
+        # --- 10) dodge(規避): 純新增 或 修正既有誤標的 mitig, 見 DODGE_ADD/DODGE_FIX_MITIG ---
+        if name in DODGE_ADD and "dodge" not in existing_ks:
+            spec = DODGE_ADD[name]
+            if "prob" in spec:                        # 白名單直接給定(原文無數值的概要式文本)
+                v100 = spec["prob"] * 100
+            else:
+                # 規避的主流句型是「12.5%→25%規避」(數值在關鍵字之前), 先試 before;
+                # 若先試 after(_maxval) 會誤抓關鍵字後面無關子句的數字(如 士別三日
+                # 「…機率規避效果，第 4 回合…」會錯抓到 4)。
+                v100 = _maxval_before(txt, spec["prob_kw"])
+                if v100 is None:
+                    v100 = _maxval(txt, spec["prob_kw"])
+            if v100 is not None:
+                p["effects"].append({"k": "dodge", "who": spec.get("who", "ally"),
+                                     "prob": round(v100 / 100, 4), "dur": spec["dur"]})
+                n_dodge_tagged += 1
+                touched_meaningful = True
+        if name in DODGE_FIX_MITIG:
+            for e in p.get("effects", []):
+                if e.get("k") == "mitig":
+                    e["k"] = "dodge"
+                    e["prob"] = e.pop("val", 0.2)
+                    n_dodge_tagged += 1
+                    touched_meaningful = True
+
+        # --- 11) surehit(必中): 白名單新增, 見 SUREHIT_ADD 註解 -----------------------
+        if name in SUREHIT_ADD and "surehit" not in existing_ks:
+            p["effects"].append({"k": "surehit", "who": "self", "dur": SUREHIT_ADD[name]})
+            n_surehit_tagged += 1
+            touched_meaningful = True
+
+        # --- 12) shield(護盾): 白名單新增, 目前無可解析的具體吸收量案例(見 SHIELD_ADD 註解) ---
+        if name in SHIELD_ADD and "shield" not in existing_ks:
+            spec = SHIELD_ADD[name]
+            p["effects"].append({"k": "shield", "who": spec.get("who", "ally"), **spec["amt_kw"], "dur": spec["dur"]})
+            n_shield_tagged += 1
+            touched_meaningful = True
+
         if not touched_meaningful:
             p["_est"] = True
             n_est += 1
@@ -309,6 +492,17 @@ def main():
     print(f"heal coef 回填: {n_heal_filled}")
     print(f"新增控制/先攻原語標記(silence/disarm/insight/first): {n_new_ctrl_tags}")
     print(f"先攻(first) 標記戰法: {', '.join(first_tagged) if first_tagged else '無'}")
+    print(f"--- 批2: 條件觸發 + 新原語 ---")
+    print(f"when(條件觸發回合窗口/反應式) 回填: {n_when_filled} 個戰法"
+          f"（from: {sorted(WHEN_FROM)}；until: {sorted(WHEN_UNTIL)}；"
+          f"on=attacked: {sorted(ON_ATTACKED)}；on=damaged: {sorted(ON_DAMAGED)}）")
+    print(f"rate 白名單覆寫: {sorted(RATE_OVERRIDE.items())}")
+    print(f"taunt(嘲諷) 標記: {n_taunt_tagged} 個戰法（{sorted(TAUNT_DUR)}）"
+          f"（定謀貴決 跳過: 反向嘲諷/集火語意, 與 taunt 方向相反）")
+    print(f"dodge(規避) 標記: {n_dodge_tagged} 個戰法（新增: {sorted(DODGE_ADD)}；"
+          f"修正mitig誤標: {sorted(DODGE_FIX_MITIG)}）")
+    print(f"surehit(必中) 標記: {n_surehit_tagged} 個戰法（{sorted(SUREHIT_ADD)}）")
+    print(f"shield(護盾) 標記: {n_shield_tagged} 個戰法（{sorted(SHIELD_ADD) if SHIELD_ADD else '無, 全庫僅赴湯蹈火提及但無具體吸收量數字可抽, 保守跳過'}）")
     print(f"no-op 戰法: {noop_before} -> {noop_after}")
     print(f"抽不到數字, 標記 _est=true 的戰法數: {n_est}")
 

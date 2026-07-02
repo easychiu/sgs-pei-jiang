@@ -109,6 +109,13 @@
       if (a.mitig) this.adds.push(["mitig", a.mitig, 9999]);
       this.settle = null; this.guardian = null; this.guardShare = 0;
       this.stack = null; this.decay = null; this.swap = 0; this.counter = null;
+      this.tauntBy = null; this.tauntDur = 0;      // 嘲諷: 被嘲諷時強制普攻/單體戰法指向 tauntBy, 剩餘回合
+      this.shield = null;                          // 護盾: {amt, dur} 吸收固定量傷害, 先於兵力扣減
+      this.dodgeProb = 0; this.dodgeDur = 0;        // 規避: 機率完全迴避一次傷害
+      this.surehitDur = 0;                          // 必中: 無視對方 dodge
+      this.whenFired = new Set();                   // 條件觸發(when.rounds/from/until) 已套用效果的戰法(一次性), 依戰法物件去重
+      this.hitFlags = new Set();                    // 反應式觸發(when.on) 本回合已觸發的戰法, 每回合重置(防無限鏈)
+      this.onHitTacs = this.tactics.filter(t => (t.type === "passive" || t.type === "command") && t.when && t.when.on);  // 預篩: 絕大多數單位為空, hit 熱路徑 O(0)
     }
     get alive() { return this.troop > 0; }
     eff(stat) {
@@ -146,6 +153,13 @@
       this.first = Math.max(0, this.first - 1);       // 先攻: 逐回合遞減(dur=N 覆蓋前 N 回合, 如「戰鬥前3回合」)
       this.swap = Math.max(0, this.swap - 1);
       if (this.decay && --this.decay.left <= 0) this.decay = null;
+      this.tauntDur = Math.max(0, this.tauntDur - 1);
+      if (this.tauntDur <= 0) this.tauntBy = null;
+      this.dodgeDur = Math.max(0, this.dodgeDur - 1);
+      if (this.dodgeDur <= 0) this.dodgeProb = 0;
+      this.surehitDur = Math.max(0, this.surehitDur - 1);
+      if (this.shield && --this.shield.dur <= 0) this.shield = null;
+      this.hitFlags.clear();                           // 受擊觸發(when.on) 每回合各戰法重置一次觸發額度
     }
   }
 
@@ -162,21 +176,42 @@
     base *= 0.96 + rnd() * 0.08;
     return Math.max(0, base);
   }
-  function hit(src, dst, coef, kind) {
-    const dmg = damage(src, dst, coef, kind);
+  function hit(src, dst, coef, kind, isNormal, onEvent) {
+    if (!src.surehitDur && dst.dodgeDur && rnd() < dst.dodgeProb) {  // 規避: 完全迴避一次傷害(必中無視)
+      if (TRACE) lg(`　→ ${dst.nm} 規避了攻擊`);
+      if (onEvent) onEvent(dst, src, isNormal);
+      return;
+    }
+    let dmg = damage(src, dst, coef, kind);
+    if (dst.shield && dst.shield.amt > 0) {                        // 護盾: 先於兵力扣減吸收傷害
+      const absorb = Math.min(dst.shield.amt, dmg);
+      dst.shield.amt -= absorb; dmg -= absorb;
+      if (TRACE && absorb > 0) lg(`　▸ ${dst.nm} 護盾吸收 ${Math.round(absorb)}` + (dst.shield.amt <= 0 ? "（已破盾）" : ""));
+      if (dst.shield.amt <= 0) dst.shield = null;
+    }
     const g = dst.guardian;
     if (g && g.alive && g !== dst) { g.troop -= dmg * dst.guardShare; dst.troop -= dmg * (1 - dst.guardShare); }
     else dst.troop -= dmg;
     if (TRACE) lg(`　→ ${dst.nm} 損兵 ${Math.round(dmg)}，剩餘 ${Math.max(0, Math.round(dst.troop))}` + (dst.troop <= 0 ? " 【擊破】" : ""));
     if (dst.settle) dst.settle.layers = Math.min(dst.settle.max, dst.settle.layers + 1);
+    if (onEvent) onEvent(dst, src, isNormal);
     const c = dst.counter;
     if (c && dst.alive && src.alive && rnd() < (c.prob ?? 1)) {
       const cd = damage(dst, src, c.coef ?? 1, c.kind || "phys"); src.troop -= cd;
       if (TRACE) lg(`　↩ ${dst.nm} 反擊 ${src.nm} 損兵 ${Math.round(cd)}，剩餘 ${Math.max(0, Math.round(src.troop))}`);
     }
   }
+  function roundOk(t, r) {                          // 條件觸發(when): 回合是否符合戰法的發動窗口
+    const w = t.when;
+    if (!w) return true;
+    if (w.rounds) return w.rounds.includes(r);
+    if (w.from != null && r < w.from) return false;
+    if (w.until != null && r > w.until) return false;
+    return true;
+  }
   function extraCount(ex) { const i = Math.floor(ex); return i + (rnd() < ex - i ? 1 : 0); }
-  function pickTarget(units) {                      // 普攻/單體戰法: 隨機挑一個存活敵軍(不再固定打兵力最高)
+  function pickTarget(units, attacker) {            // 普攻/單體戰法: 隨機挑一個存活敵軍(不再固定打兵力最高); 嘲諷: 攻擊者身上有 tauntBy 時強制指向該目標
+    if (attacker && attacker.tauntDur && attacker.tauntBy && attacker.tauntBy.alive && units.includes(attacker.tauntBy)) return attacker.tauntBy;
     const live = units.filter(u => u.alive);
     return live.length ? live[Math.floor(rnd() * live.length)] : null;
   }
@@ -211,6 +246,10 @@
       case "redirect": return `代承傷害(分擔${Math.round((e.share ?? 0.3) * 100)}%)`;
       case "settle": return "猛毒·結算傷害";
       case "heal": return "治療";
+      case "taunt": return `嘲諷·強制指向施放者${d || "(1回合)"}`;
+      case "shield": return `護盾${e.amt ? "+" + Math.round(e.amt) : ""}${e.pct ? "(相當於" + p(e.pct) + "兵力)" : ""}${d}`;
+      case "dodge": return `規避${p(e.prob ?? 0)}${d}`;
+      case "surehit": return `必中·無視規避${d}`;
       default: return k;
     }
   }
@@ -241,7 +280,7 @@
         continue;
       }
       const who = e.who || "ally";
-      const CTRL_K = k === "stun" || k === "silence" || k === "disarm";  // 控制類: 按戰法 n/nMax 選目標數
+      const CTRL_K = k === "stun" || k === "silence" || k === "disarm" || k === "taunt";  // 控制/嘲諷類: 按戰法 n/nMax 選目標數(insight 不擋嘲諷, 只擋 stun/silence/disarm)
       let dests;
       if (who === "self") dests = caster.alive ? [caster] : [];
       else if (who === "enemy") {
@@ -269,6 +308,13 @@
         else if (k === "swap") u.swap = Math.max(u.swap, (e.dur ?? 1) + 1);
         else if (k === "pierce") u.pushAdd("pierce", e.val, e.dur, src);
         else if (k === "counter") u.counter = { coef: e.coef ?? 1, kind: e.kind || "phys", prob: e.prob ?? 1 };
+        else if (k === "taunt") { u.tauntBy = caster; u.tauntDur = Math.max(u.tauntDur, (e.dur ?? 1) + 1); }
+        else if (k === "shield") {
+          const amt = (e.amt ?? 0) + (e.pct ? e.pct * caster.troop : 0);
+          u.shield = { amt: (u.shield ? u.shield.amt : 0) + amt, dur: (e.dur ?? 99) + 1 };  // +1 補償: tick 施加當回合末即扣1, 與 taunt/dodge/surehit 慣例一致
+        }
+        else if (k === "dodge") { u.dodgeProb = e.prob ?? 0.2; u.dodgeDur = Math.max(u.dodgeDur, (e.dur ?? 1) + 1); }
+        else if (k === "surehit") u.surehitDur = Math.max(u.surehitDur, (e.dur ?? 1) + 1);
       }
     }
   }
@@ -299,6 +345,7 @@
           if (!u.alive) continue;
           for (const t of u.tactics)            // 同將多個同類: 戰法格順序(陣列順序)決定先後
             if ((t.type === "passive" || t.type === "command") && catOf(t) === cat) {
+              if (t.when && !opt.healOnly) continue;  // 條件觸發(when): 不在準備階段套用, 改由回合迴圈的 applyWhenTactics 在符合回合時套用
               if (TRACE && opt.prep) lg(`【${u.side}】${u.nm}〔${CAT_LABEL[cat]}〕${t.nameZh}`);
               applyEffects(u, null, t, alliesOf(u), foesOf(u), opt);
             }
@@ -313,6 +360,18 @@
           if (TRACE && opt.prep) lg(`【${team[0].side}】〔緣分〕${bd.name}`);
           applyEffects(team[0], null, pt(bd.effects), team, foesOf(team[0]), opt);
         }
+    };
+    const onHit = (dst, src, isNormal) => {          // 反應式觸發(when.on): 被普攻(attacked)/受任意傷害(damaged) 時掛到 hit() 事件點
+      if (!dst.alive || !dst.onHitTacs.length) return;
+      for (const t of dst.onHitTacs) {
+        if (t.when.on === "attacked" && !isNormal) continue;   // attacked: 限普通攻擊觸發; damaged: 任意傷害都觸發
+        if (dst.hitFlags.has(t)) continue;             // 同回合每單位每戰法最多觸發1次(防無限鏈)
+        if (rnd() >= t.rate) continue;
+        dst.hitFlags.add(t);
+        if (TRACE) lg(`【${dst.side}】${dst.nm} 戰法【${t.nameZh}】（受擊觸發）發動`);
+        if (t.coef) hit(dst, src, t.coef, t.kind, false, onHit);
+        if (t.effects.length) applyEffects(dst, src, t, alliesOf(dst), foesOf(dst));
+      }
     };
     if (TRACE) {                                    // 準備階段標頭: 兵種 + 城建/陣營
       CUR_R = 0;
@@ -333,6 +392,15 @@
       CUR_R = r;
       for (const u of [...A, ...B]) if (u.alive && u.stack) u.stack.n = Math.min(u.stack.max, u.stack.n + 1);
       applyPassives({ healOnly: true });
+      for (const u of [...A, ...B]) {                 // 條件觸發(when.rounds/from/until): 窗口首次開啟時套用一次非傷害效果(dot/amp/…); when.on 為反應式, 不走此處
+        if (!u.alive) continue;
+        for (const t of u.tactics)
+          if ((t.type === "passive" || t.type === "command") && t.when && !t.when.on && roundOk(t, r) && !u.whenFired.has(t)) {
+            u.whenFired.add(t);
+            if (TRACE) lg(`【${u.side}】${u.nm}（第${r}回合條件）發動【${t.nameZh}】`);
+            applyEffects(u, null, t, alliesOf(u), foesOf(u), { noHeal: false });
+          }
+      }
       // 行動順序: 先攻(first)優先於速度; 各組內仍按速度高到低排序
       const order = [...A, ...B].filter(u => u.alive).sort((x, y) => (y.first - x.first) || (y.eff("speed") - x.eff("speed")));
       for (const u of order) {
@@ -343,24 +411,24 @@
         if (!u.silence) for (const t of u.tactics) {   // 自帶 + 傳承: 各自獨立附加發動(計窮時跳過主動/指揮/被動)
           let fire = false;
           if (t.type === "active" && (t.coef || t.effects.length) && !(t.prep && r === 1)) fire = rnd() < t.rate;
-          else if ((t.type === "command" || t.type === "passive") && t.coef) fire = rnd() < t.rate;  // 指揮/被動: 每回合以資料 rate 擲骰(多數 rate=1 即每回合必發)
+          else if ((t.type === "command" || t.type === "passive") && t.coef && !(t.when && t.when.on) && roundOk(t, r)) fire = rnd() < t.rate;  // 指揮/被動: 每回合以資料 rate 擲骰(多數 rate=1 即每回合必發); when.rounds/from/until 只在符合回合才擲骰; when.on(反應式) 改由 onHit 事件點觸發, 不在此處常駐擲骰
           if (fire) {
-            if (TRACE) lg(`【${u.side}】${u.nm} 發動戰法【${t.nameZh}】`);
+            if (TRACE) lg(`【${u.side}】${u.nm} 發動戰法【${t.nameZh}】` + (t.when ? `（第${r}回合條件）` : ""));
             if (t.coef) {
               const cnt = t.nMax ? (t.n + Math.floor(rnd() * (t.nMax - t.n + 1))) : t.n;
-              for (const v of pickTargets(foesOf(u), cnt)) hit(u, v, t.coef, t.kind);
+              for (const v of pickTargets(foesOf(u), cnt)) hit(u, v, t.coef, t.kind, false, onHit);
             }
-            if (t.type === "active") applyEffects(u, pickTarget(foesOf(u)), t, alliesOf(u), foesOf(u));
+            if (t.type === "active") applyEffects(u, pickTarget(foesOf(u), u), t, alliesOf(u), foesOf(u));
           }
         }
-        const tgt = pickTarget(foesOf(u));            // 普攻(常駐) + 連擊 + 突擊(繳械時跳過)
+        const tgt = pickTarget(foesOf(u), u);         // 普攻(常駐) + 連擊 + 突擊(繳械時跳過); 嘲諷: 強制指向施放者
         if (tgt) {
           if (u.disarm) { if (TRACE) lg(`【${u.side}】${u.nm} 陷入繳械，無法普通攻擊`); }
           else {
             if (TRACE) lg(`【${u.side}】${u.nm} 普通攻擊 → ${tgt.nm}`);
-            hit(u, tgt, 1.0, "phys");
-            for (let i = 0; i < extraCount(u.addbonus("extra")); i++) { const nt = pickTarget(foesOf(u)); if (nt) { if (TRACE) lg(`【${u.side}】${u.nm} 連擊 → ${nt.nm}`); hit(u, nt, 1.0, "phys"); } }
-            for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
+            hit(u, tgt, 1.0, "phys", true, onHit);
+            for (let i = 0; i < extraCount(u.addbonus("extra")); i++) { const nt = pickTarget(foesOf(u), u); if (nt) { if (TRACE) lg(`【${u.side}】${u.nm} 連擊 → ${nt.nm}`); hit(u, nt, 1.0, "phys", true, onHit); } }
+            for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind, false, onHit); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
           }
         }
       }
@@ -415,7 +483,8 @@
 
   const API = { buildPool, simulate, trace, score, recommend, fight, teamTroop, aptPct, bestTroop, TROOPS,
     defaultBingshu, activeBonds, seasonModsFor, mainByCat: () => MAIN_BY_CAT, subByCat: () => SUB_BY_CAT, bingshu: () => BINGSHU,
-    bonds: () => BONDS, equips: () => EQUIPS };
+    bonds: () => BONDS, equips: () => EQUIPS,
+    Unit, hit, damage, pickTarget, pickTargets, applyEffects, roundOk };  // 供測試腳本直接驗證內部機制(同 sgz.py 直接測 Unit/hit)
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   root.SGZ = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -654,7 +654,10 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "when": {
+   "on": "damaged"
+  }
  },
  {
   "nameZh": "剛柔並濟",
@@ -1044,7 +1047,14 @@
   "rate": 0.55,
   "n": 2,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "dodge",
+    "who": "ally",
+    "prob": 0.25,
+    "dur": 1
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
@@ -1075,6 +1085,11 @@
    {
     "k": "insight",
     "who": "self",
+    "dur": 2
+   },
+   {
+    "k": "taunt",
+    "who": "enemy",
     "dur": 2
    }
   ],
@@ -1113,6 +1128,11 @@
    },
    {
     "k": "first",
+    "who": "self",
+    "dur": 3
+   },
+   {
+    "k": "surehit",
     "who": "self",
     "dur": 3
    }
@@ -1233,6 +1253,12 @@
     "stat": "intel",
     "mult": 1.27,
     "dur": 99
+   },
+   {
+    "k": "dodge",
+    "who": "self",
+    "prob": 0.3,
+    "dur": 3
    }
   ],
   "quality": "S",
@@ -1649,6 +1675,11 @@
     "who": "self",
     "stat": "command",
     "mult": 1.24,
+    "dur": 4
+   },
+   {
+    "k": "taunt",
+    "who": "enemy",
     "dur": 4
    }
   ],
@@ -2918,7 +2949,10 @@
   "effects": [],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "when": {
+   "on": "attacked"
+  }
  },
  {
   "nameZh": "水淹七軍",
@@ -3045,6 +3079,11 @@
     "k": "mitig",
     "who": "self",
     "val": 0.2,
+    "dur": 2
+   },
+   {
+    "k": "taunt",
+    "who": "enemy",
     "dur": 2
    }
   ],
@@ -3576,6 +3615,11 @@
     "stat": "command",
     "mult": 1.4,
     "dur": 2
+   },
+   {
+    "k": "taunt",
+    "who": "enemy",
+    "dur": 2
    }
   ],
   "quality": "S",
@@ -3808,6 +3852,11 @@
     "who": "ally",
     "coef": 0.75,
     "dur": 1
+   },
+   {
+    "k": "taunt",
+    "who": "enemy",
+    "dur": 1
    }
   ],
   "quality": "S",
@@ -3880,7 +3929,10 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "when": {
+   "on": "attacked"
+  }
  },
  {
   "nameZh": "眾志成城",
@@ -4716,7 +4768,10 @@
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "when": {
+   "from": 2
+  }
  },
  {
   "nameZh": "興雲布雨",
@@ -4740,7 +4795,10 @@
   "_conf": "high",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "when": {
+   "from": 2
+  }
  },
  {
   "nameZh": "舌戰群儒",
@@ -4841,7 +4899,13 @@
   "rate": 0.4,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "surehit",
+    "who": "self",
+    "dur": 1
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "EVENT",
@@ -4881,7 +4945,14 @@
   "rate": 1,
   "n": 3,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "dodge",
+    "who": "ally",
+    "prob": 0.2,
+    "dur": 1
+   }
+  ],
   "quality": "S",
   "cat": "COMMAND",
   "src": "EVENT",
@@ -5484,10 +5555,10 @@
   "prep": 0,
   "effects": [
    {
-    "k": "mitig",
+    "k": "dodge",
     "who": "ally",
-    "val": 0.35,
-    "dur": 3
+    "dur": 3,
+    "prob": 0.35
    },
    {
     "k": "heal",
@@ -6188,7 +6259,7 @@
   "type": "passive",
   "kind": "phys",
   "coef": 0,
-  "rate": 1,
+  "rate": 0.45,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -6200,7 +6271,10 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "when": {
+   "on": "attacked"
+  }
  },
  {
   "nameZh": "魚鱗陣",
@@ -6556,6 +6630,11 @@
     "k": "stun",
     "who": "enemy",
     "dur": 1
+   },
+   {
+    "k": "taunt",
+    "who": "enemy",
+    "dur": 1
    }
   ],
   "quality": "A",
@@ -6658,6 +6737,11 @@
   "effects": [
    {
     "k": "disarm",
+    "who": "enemy",
+    "dur": 2
+   },
+   {
+    "k": "taunt",
     "who": "enemy",
     "dur": 2
    }
@@ -6777,7 +6861,10 @@
   "effects": [],
   "quality": "A",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "when": {
+   "on": "attacked"
+  }
  },
  {
   "nameZh": "手起刀落",
@@ -7574,6 +7661,11 @@
     "k": "disarm",
     "who": "enemy",
     "dur": 1
+   },
+   {
+    "k": "surehit",
+    "who": "self",
+    "dur": 2
    }
   ],
   "quality": "A",
@@ -7812,6 +7904,11 @@
     "k": "mitig",
     "who": "self",
     "val": 0.2,
+    "dur": 1
+   },
+   {
+    "k": "taunt",
+    "who": "enemy",
     "dur": 1
    }
   ],
