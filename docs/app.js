@@ -288,6 +288,7 @@ function runSim() {
     <div class="bar"><div class="a" style="width:${r.winA * 100}%">${pct(r.winA)}%</div>
     <div class="b" style="width:${r.winB * 100}%">${pct(r.winB)}%</div></div>
     <div>我方[${ta}兵] <b class="gold">${pct(r.winA)}%</b> 勝　·　敵方[${tb}兵] <b class="gold">${pct(r.winB)}%</b> 勝　·　平均 ${r.rounds} 回合</div>
+    ${r.killA != null ? `<div style="font-size:13px;color:#b8a987;margin-top:4px">我方 殲滅${pct(r.killA)}%＋判定${pct(r.judgeA)}%　·　敵方 殲滅${pct(r.killB)}%＋判定${pct(r.judgeB)}%　<span style="color:#8a7c5c">(判定=8回合打滿按剩餘兵力)</span></div>` : ""}
     <div style="font-size:13px;color:#9a8b6a;margin-top:6px">${A.join("／")}　vs　${B.join("／")}</div>`;
 }
 

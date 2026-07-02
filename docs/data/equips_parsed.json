@@ -220,8 +220,11 @@
     "who": "self",
     "val": 0.07,
     "dur": 99,
+    "when": {
+     "from": 4
+    },
     "_approx": "crit-ev",
-    "_note": "source為『第4回合起獲得7%攻心或奇謀直到戰鬥結束』; 引擎equip效果無when.rounds/from回合窗(僅tactic層級when有效, equip合併效果不帶when), 故改為全程生效(dur:99), 較原效果提前3回合生效(第1~3回合本不應有), 為寬鬆近似(非機率折算, 且時點偏早)"
+    "_note": "第4回合起 7%攻心/奇謀 期望值折算; when.from=4 效果級回合窗(批8轉正, 不再全程近似)"
    }
   ]
  },
@@ -616,8 +619,22 @@
   "name": "赳螑",
   "type": "坐騎",
   "exclusive": "張飛",
-  "effects": [],
-  "_todo": "第4回合行動前50%機率使敵軍群體繳械1回合; 引擎equip效果無when.rounds窗控制(僅tactic層級when有效),機率+群體+特定回合組合超出equip效果表達能力"
+  "effects": [
+   {
+    "k": "disarm",
+    "who": "enemy",
+    "dur": 1,
+    "rate": 0.5,
+    "n": 2,
+    "nMax": 3,
+    "when": {
+     "rounds": [
+      4
+     ]
+    },
+    "_note": "第4回合行動前50%機率 敵軍群體(2~3)繳械1回合"
+   }
+  ]
  },
  {
   "name": "天機",
@@ -666,15 +683,37 @@
   "name": "謀攻",
   "type": "寶物",
   "exclusive": null,
-  "effects": [],
-  "_todo": "第3回合開始時對敵軍單體造成計窮1回合; 引擎equip效果無when.rounds窗控制(僅tactic層級when有效),第3回合條件觸發無法在equip效果表達"
+  "effects": [
+   {
+    "k": "silence",
+    "who": "enemy",
+    "dur": 1,
+    "when": {
+     "rounds": [
+      3
+     ]
+    },
+    "_note": "第3回合開始時 敵軍單體計窮1回合"
+   }
+  ]
  },
  {
   "name": "反間",
   "type": "寶物",
   "exclusive": null,
-  "effects": [],
-  "_todo": "第3回合開始時對敵軍單體造成混亂1回合; 同謀攻,equip無when.rounds支援"
+  "effects": [
+   {
+    "k": "stun",
+    "who": "enemy",
+    "dur": 1,
+    "when": {
+     "rounds": [
+      3
+     ]
+    },
+    "_note": "第3回合開始時 敵軍單體混亂1回合(混亂以震懾近似)"
+   }
+  ]
  },
  {
   "name": "奇門",
@@ -915,14 +954,36 @@
   "name": "應變",
   "type": "武器",
   "exclusive": null,
-  "effects": [],
-  "_todo": "第3回合開始時對敵軍單體造成繳械1回合; 引擎equip效果無when.rounds窗控制(僅tactic層級when有效),第3回合條件觸發無法在equip效果表達。app原樣同時見於武器/寶物兩欄, 兩欄同名同效(未落地), 遊戲內同名特技只生效一件。"
+  "effects": [
+   {
+    "k": "disarm",
+    "who": "enemy",
+    "dur": 1,
+    "when": {
+     "rounds": [
+      3
+     ]
+    },
+    "_note": "第3回合開始時 敵軍單體繳械1回合"
+   }
+  ]
  },
  {
   "name": "應變",
   "type": "寶物",
   "exclusive": null,
-  "effects": [],
-  "_todo": "第3回合開始時對敵軍單體造成繳械1回合; 引擎equip效果無when.rounds窗控制(僅tactic層級when有效),第3回合條件觸發無法在equip效果表達。app原樣同時見於武器/寶物兩欄, 兩欄同名同效(未落地), 遊戲內同名特技只生效一件。"
+  "effects": [
+   {
+    "k": "disarm",
+    "who": "enemy",
+    "dur": 1,
+    "when": {
+     "rounds": [
+      3
+     ]
+    },
+    "_note": "第3回合開始時 敵軍單體繳械1回合"
+   }
+  ]
  }
 ]

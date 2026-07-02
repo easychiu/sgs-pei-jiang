@@ -122,7 +122,14 @@
       const _eq = Array.isArray(eqName) ? eqName : (eqName ? [eqName] : []);
       const _eqSeen = new Set();                      // 同名特技(跨type, 如四欄皆有的"無畏")遊戲規則只生效一件: 依基底名稱去重, 先出現者為準
       const _eqObjs = _eq.map(nm => EQUIPS[nm]).filter(Boolean).filter(e => !_eqSeen.has(e.name) && (_eqSeen.add(e.name), true));
-      this.eq = _eqObjs.flatMap(e => e.effects || []);   // 裝備(4欄)合併(已去重); nm 可為複合鍵"type·name"或純名稱(向後相容, 見 buildPool 註記)
+      const _eqAll = _eqObjs.flatMap(e => (e.effects || []).map(eff => eff.when ? Object.assign({}, eff, { _eqNm: e.name }) : eff));   // 裝備(4欄)合併(已去重); nm 可為複合鍵"type·name"或純名稱(向後相容, 見 buildPool 註記); 帶 when 的效果淺拷貝附加 _eqNm(供 TRACE 標名), 不動原資料物件
+      // 批8: 效果級回合窗(effect.when) —— 裝備效果不像戰法有獨立 when 欄(合併進 eq 陣列時已失去
+      // 個別戰法邊界), 故 when 掛在「單條效果」本身(e.when, 非 t.when)。無 when 的效果照舊在準備
+      // 階段(prep)一次性套用(this.eq); 帶 when 的效果分離到 delayedEq, 於回合迴圈開始時(與戰法
+      // when 窗口同一時點)逐條檢查 roundOk 是否符合, 符合則一次性套用(whenFired 慣例, 用效果物件
+      // 本身去重)。帶 rate 的額外擲骰(如赳螑 50%機率)。
+      this.eq = _eqAll.filter(e => !e.when);
+      this.delayedEq = _eqAll.filter(e => e.when);
       // 裝備 proc(普攻後觸發, 如 昭烈12%繳械/踩踏額外傷): 包成偽突擊(charge)戰法附加, 走既有 charge 觸發路徑(普攻後 rate 擲骰)。
       // 偽戰法不在戰法庫, 不參與同名戰法去重與 NONEQUIP 過濾; nameZh 預設「特技·名」供 TRACE 辨識。
       // proc:true 旗標 → 標記為「特技偽戰法」, 非真突擊戰法: 日後若加 chargeup(突擊發動率加成)原語, 必須排除 t.proc===true(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲)。
@@ -145,7 +152,8 @@
       this.shield = null;                          // 護盾: {amt, dur} 吸收固定量傷害, 先於兵力扣減
       this.dodgeProb = 0; this.dodgeDur = 0;        // 規避: 機率完全迴避一次傷害
       this.surehitDur = 0;                          // 必中: 無視對方 dodge
-      this.whenFired = new Set();                   // 條件觸發(when.rounds/from/until) 已套用效果的戰法(一次性), 依戰法物件去重
+      this.healblock = 0;                           // 批8: 禁療(healblock) 剩餘回合, >0 時 heal 效果對其無效
+      this.whenFired = new Set();                   // 條件觸發(when.rounds/from/until) 已套用效果的戰法(一次性), 依戰法物件去重; 批8: delayedEq(裝備效果級when)共用同一個 Set(效果物件本身去重, 不與戰法物件撞)
       this.hitFlags = new Set();                    // 反應式觸發(when.on) 本回合已觸發的戰法, 每回合重置(防無限鏈)
       this.onHitTacs = this.tactics.filter(t => (t.type === "passive" || t.type === "command") && t.when && t.when.on);  // 預篩: 絕大多數單位為空, hit 熱路徑 O(0)
     }
@@ -159,8 +167,10 @@
     }
     addbonus(kind) { let s = 0; for (const a of this.adds) if (a[0] === kind) s += a[1]; return s; }
     // rateup/chargeup 專用: 依戰法 t 的 prep/native 屬性, 只加總「修飾旗標吻合」的 adds 項。
-    // adds[4] = flags({prepOnly,nativeOnly}|undefined, 見 pushAdd)。無旗標(undefined/{}) 的加成
-    // 一律計入(如虎豹騎的 chargeup 沒有 prepOnly/nativeOnly 限制)。
+    // adds[4] = flags({prepOnly,nativeOnly,inheritedOnly}|undefined, 見 pushAdd)。無旗標
+    // (undefined/{}) 的加成一律計入(如虎豹騎的 chargeup 沒有 prepOnly/nativeOnly 限制)。
+    // 批8: inheritedOnly(nativeOnly 反向) —— 只加「非自帶」(傳承)戰法, 如竭力佐謀「非自帶
+    // 主動戰法發動率+100%」; !t.native 即傳承(Unit 建構時自帶戰法才標 native:true)。
     addbonusFor(kind, t) {
       let s = 0;
       for (const a of this.adds) {
@@ -168,6 +178,7 @@
         const f = a[4];
         if (f && f.prepOnly && !t.prep) continue;
         if (f && f.nativeOnly && !t.native) continue;
+        if (f && f.inheritedOnly && t.native) continue;
         s += a[1];
       }
       return s;
@@ -203,6 +214,7 @@
       this.disarm = Math.max(0, this.disarm - 1);
       this.insight = Math.max(0, this.insight - 1);
       this.first = Math.max(0, this.first - 1);       // 先攻: 逐回合遞減(dur=N 覆蓋前 N 回合, 如「戰鬥前3回合」)
+      this.healblock = Math.max(0, this.healblock - 1);  // 批8: 禁療 逐回合遞減
       this.swap = Math.max(0, this.swap - 1);
       if (this.decay && --this.decay.left <= 0) this.decay = null;
       this.tauntDur = Math.max(0, this.tauntDur - 1);
@@ -255,6 +267,12 @@
     else dst.troop -= dmg;
     if (TRACE) lg(`　→ ${dst.nm} 損兵 ${Math.round(dmg)}，剩餘 ${Math.max(0, Math.round(dst.troop))}` + (dst.troop <= 0 ? " 【擊破】" : ""));
     if (dst.settle) dst.settle.layers = Math.min(dst.settle.max, dst.settle.layers + 1);
+    const ls = src.addbonus("lifesteal");                            // 批8: 倒戈 —— 造成傷害時按比例回復自身兵力(以本次造成的傷害量 dmg 為基準), 上限 START_TROOP
+    if (ls > 0 && src.alive) {
+      const before = src.troop;
+      src.troop = Math.min(START_TROOP, src.troop + dmg * ls);
+      if (TRACE && src.troop - before >= 1) lg(`　▸ ${src.nm} 倒戈回復 +${Math.round(src.troop - before)}`);
+    }
     if (onEvent) onEvent(dst, src, isNormal);
     const c = dst.counter;
     if (c && dst.alive && src.alive && rnd() < (c.prob ?? 1)) {
@@ -314,6 +332,8 @@
       case "shield": return `護盾${e.amt ? "+" + Math.round(e.amt) : ""}${e.pct ? "(相當於" + p(e.pct) + "兵力)" : ""}${d}`;
       case "dodge": return `規避${p(e.prob ?? 0)}${d}`;
       case "surehit": return `必中·無視規避${d}`;
+      case "healblock": return `禁療·無法被治療${d || "(1回合)"}`;
+      case "lifesteal": return `倒戈·造成傷害回復${p(val)}${d}` + sfx;
       // rateup/chargeup 的 scale 用獨立的 RATE_SCALE_C(非上面 amp/mitig/stat 共用的 scaleOf/SCALE),
       // 故不沿用外層算好的 val/sfx, 另外用 rateScaleOf 算實際值(批7)。
       case "rateup": case "chargeup": {
@@ -334,7 +354,7 @@
       if (k === "heal") {
         if (opt.noHeal) continue;
         let hurt = null;
-        for (const a of allies) if (a.alive && (!hurt || a.troop < hurt.troop)) hurt = a;
+        for (const a of allies) if (a.alive && !a.healblock && (!hurt || a.troop < hurt.troop)) hurt = a;  // 批8: 禁療(healblock) 中的目標跳過, 不參與「最殘一人」篩選
         if (hurt) {
           const before = hurt.troop;
           const hcoef = (e.coef ?? 0.8) * (e.scale ? scaleOf(caster, e.scale) : 1);
@@ -360,6 +380,7 @@
       const CTRL_K = k === "stun" || k === "silence" || k === "disarm" || k === "taunt";  // 控制/嘲諷類: 按戰法 n/nMax 選目標數(insight 不擋嘲諷, 只擋 stun/silence/disarm)
       let dests;
       if (who === "self") dests = caster.alive ? [caster] : [];
+      else if (who === "leader") dests = (allies[0] && allies[0].alive) ? [allies[0]] : [];  // 批8: 主將限定(隊伍 index 0)
       else if (who === "enemy") {
         if (CTRL_K) {                                 // 群體控制(n>1 或有 nMax)隨機挑不重複目標; 單體優先鎖定 tgt
           const n = t.n || 1;
@@ -398,16 +419,19 @@
         }
         else if (k === "dodge") { u.dodgeProb = e.prob ?? 0.2; u.dodgeDur = Math.max(u.dodgeDur, (e.dur ?? 1) + 1); }
         else if (k === "surehit") u.surehitDur = Math.max(u.surehitDur, (e.dur ?? 1) + 1);
+        else if (k === "healblock") u.healblock = Math.max(u.healblock, (e.dur ?? 1) + 1);  // 批8: 禁療 —— heal 套用處(applyEffects 開頭)已排除 healblock 中的目標
+        else if (k === "lifesteal") u.pushAdd("lifesteal", e.val, e.dur, src);  // 批8: 倒戈 —— 實際回血在 hit() 結算傷害後(見 hit() 內 lifesteal 段), 這裡只掛加成值
         else if (k === "rateup") {                       // 提高(自身或對象)主動戰法發動機率
           // scale: 施放當下(caster 戰鬥內即時素質)用 RATE_SCALE_C(獨立於全域 SCALE) 縮放實際加成
           // (批7: 太平道法「受智力影響」, 見 docs/data/calibration_anchors.json → rate_scale)。
-          // prepOnly/nativeOnly 修飾旗標存進 adds[4], 由 addbonusFor() 在主動擲骰處依戰法屬性篩選加總。
+          // prepOnly/nativeOnly/inheritedOnly(批8, nativeOnly反向) 修飾旗標存進 adds[4], 由
+          // addbonusFor() 在主動擲骰處依戰法屬性篩選加總。
           const rv = e.scale ? e.val * rateScaleOf(caster, e.scale) : e.val;
-          const flags = (e.prepOnly || e.nativeOnly) ? { prepOnly: !!e.prepOnly, nativeOnly: !!e.nativeOnly } : undefined;
+          const flags = (e.prepOnly || e.nativeOnly || e.inheritedOnly) ? { prepOnly: !!e.prepOnly, nativeOnly: !!e.nativeOnly, inheritedOnly: !!e.inheritedOnly } : undefined;
           // 同一戰法(如太平道法)可能有多條 rateup(一般 + prepOnly 額外), src 相同的話 pushAdd
           // 的「同kind+同src刷新」去重會把前一條蓋掉; 用 flags 組出不同的 dedup key 尾碼區分,
           // 讓語意不同的兩條並存, 但同語意(同flags組合)的仍正常刷新不疊加。
-          const rSrc = (src && flags) ? src + ":" + ["prepOnly", "nativeOnly"].filter(f => flags[f]).join("") : src;
+          const rSrc = (src && flags) ? src + ":" + ["prepOnly", "nativeOnly", "inheritedOnly"].filter(f => flags[f]).join("") : src;
           u.pushAdd("rateup", rv, e.dur, rSrc, flags);
         }
         else if (k === "chargeup") {                    // 提高(自身或對象)突擊戰法發動機率; 排除 t.proc===true 特技偽戰法見突擊擲骰處註解
@@ -514,6 +538,21 @@
             applyEffects(u, null, t, alliesOf(u), foesOf(u), { noHeal: false });
           }
       }
+      // 批8: 裝備效果級回合窗(delayedEq) —— 與戰法 when 窗口同一時點檢查; 效果物件本身(非戰法)
+      // 存進 whenFired 去重(一次性), 帶 rate 的額外擲骰(如赳螑 50%機率), 沒中不算已觸發、下次
+      // 符合視窗的回合(若 when.rounds 只列單一回合則不會再有機會; from/until 型窗口每回合僅嘗試一次
+      // 因為 whenFired 一觸發即封, 若未中也封—— 資料上 rate 型窗口皆為 rounds:[單一回合], 符合設計)。
+      for (const u of [...A, ...B]) {
+        if (!u.alive || !u.delayedEq.length) continue;
+        for (const e of u.delayedEq) {
+          if (!roundOk({ when: e.when }, r) || u.whenFired.has(e)) continue;
+          u.whenFired.add(e);
+          const lbl = `〔特技·${e._eqNm || "?"}〕`;
+          if (e.rate != null && rnd() >= e.rate) { if (TRACE) lg(`【${u.side}】${u.nm}${lbl}（第${r}回合條件）未發動`); continue; }
+          if (TRACE) lg(`【${u.side}】${u.nm}${lbl}（第${r}回合）發動`);
+          applyEffects(u, null, { effects: [e], kind: "phys", n: e.n || 1, nMax: e.nMax || 0 }, alliesOf(u), foesOf(u), { noHeal: false });  // n/nMax傳遞: 群體控制(赳螑 敵軍群體2~3)按效果宣告選目標數
+        }
+      }
       // 行動順序: 先攻(first)優先於速度; 同速平手隨機(先打亂再穩定排序, 修 A 隊固定先手偏差)
       const order = [...A, ...B].filter(u => u.alive);
       for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
@@ -557,11 +596,14 @@
         } else s.left -= 1;
       }
       for (const u of [...A, ...B]) u.tick();
-      if (!A.some(u => u.alive)) return { winner: "B", rounds: r };
-      if (!B.some(u => u.alive)) return { winner: "A", rounds: r };
+      // 批8: 殲滅(kill) —— ROUNDS 回合內一方全滅, 對比「判定勝」(打滿8回合按剩餘兵力比較)。
+      if (!A.some(u => u.alive)) { if (TRACE) lg(`〔戰鬥結束〕敵方【殲滅】我方，第${r}回合`); return { winner: "B", rounds: r, kill: true }; }
+      if (!B.some(u => u.alive)) { if (TRACE) lg(`〔戰鬥結束〕我方【殲滅】敵方，第${r}回合`); return { winner: "A", rounds: r, kill: true }; }
     }
     const ta = A.reduce((s, u) => s + Math.max(0, u.troop), 0), tb = B.reduce((s, u) => s + Math.max(0, u.troop), 0);
-    return { winner: ta >= tb ? "A" : "B", rounds: ROUNDS };
+    const winner = ta >= tb ? "A" : "B";
+    if (TRACE) lg(`〔戰鬥結束〕【判定勝(剩餘兵力)】${winner === "A" ? "我方" : "敵方"}　我方剩餘${Math.round(ta)}　敵方剩餘${Math.round(tb)}`);
+    return { winner, rounds: ROUNDS, kill: false };
   }
 
   function trace(POOL, teamA, teamB, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null, addA = null, addB = null, inhA = null, inhB = null, scenario = null) {
@@ -571,9 +613,17 @@
     return { ...r, log };
   }
   function simulate(POOL, teamA, teamB, n = 2000, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null, addA = null, addB = null, inhA = null, inhB = null, scenario = null) {
-    let a = 0, rs = 0;
-    for (let i = 0; i < n; i++) { const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario); if (r.winner === "A") a++; rs += r.rounds; }
-    return { winA: +(a / n).toFixed(3), winB: +(1 - a / n).toFixed(3), rounds: +(rs / n).toFixed(1) };
+    let a = 0, rs = 0, killA = 0, killB = 0;          // 批8: 殲滅(kill) vs 判定勝(8回合打滿按剩餘兵力) 分開統計
+    for (let i = 0; i < n; i++) {
+      const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario);
+      if (r.winner === "A") { a++; if (r.kill) killA++; } else if (r.kill) killB++;
+      rs += r.rounds;
+    }
+    return {
+      winA: +(a / n).toFixed(3), winB: +(1 - a / n).toFixed(3), rounds: +(rs / n).toFixed(1),
+      killRate: +((killA + killB) / n).toFixed(3), killA: +(killA / n).toFixed(3), killB: +(killB / n).toFixed(3),
+      judgeA: +((a - killA) / n).toFixed(3), judgeB: +((n - a - killB) / n).toFixed(3),  // 判定勝(剩餘兵力比較, 非殲滅)分邊統計
+    };
   }
 
   function score(POOL, team, troop) {

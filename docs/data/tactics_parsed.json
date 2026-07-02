@@ -106,6 +106,22 @@
     "who": "ally",
     "val": 0.25,
     "dur": 1
+   },
+   {
+    "k": "rateup",
+    "who": "leader",
+    "val": 0.16,
+    "dur": 5,
+    "nativeOnly": true,
+    "_note": "主將自帶主動+16% 前5回合; 陣營各異/主將自帶條件無法表達, 近似恆真"
+   },
+   {
+    "k": "chargeup",
+    "who": "leader",
+    "val": 0.16,
+    "dur": 5,
+    "nativeOnly": true,
+    "_note": "主將自帶突擊+16% 前5回合; 同上近似"
    }
   ],
   "quality": "S",
@@ -4303,12 +4319,20 @@
     "stat": "intel",
     "mult": 0.8,
     "dur": 1
+   },
+   {
+    "k": "rateup",
+    "who": "self",
+    "val": 0.7,
+    "dur": 1,
+    "inheritedOnly": true,
+    "_approx": "prob-ev",
+    "_note": "70%機率非自帶主動+100% 期望值折算0.7, 持續1回合"
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "竭忠盡智",

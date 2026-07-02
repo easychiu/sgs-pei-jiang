@@ -323,6 +323,27 @@ TAIPING_EFFECTS = [
      "prepOnly": True, "_note": "準備戰法合計12%"},
 ]
 
+# --- 批8: inheritedOnly / who:leader 白名單(引擎原語就位後補落地) --------------------
+# 竭力佐謀「有70%機率使自身本回合非自帶主動戰法發動率提高100%,持續一回合」:
+#   效果級機率引擎不讀 → 期望值折算 0.7×1.0=0.7(_approx:prob-ev); inheritedOnly=非自帶。
+#   既有 stat(降敵智) 保留; 落地後移除 _est。
+# 三勢陣「主將自帶突擊或主動戰法時,戰鬥前5回合,主將提高8%→16%自帶主動、突擊戰法發動機率」:
+#   who:leader(批8原語)+nativeOnly, dur:5(前5回合=開戰套用持續5回合等價);
+#   「三將陣營均不相同」與「主將自帶突擊或主動」兩個啟用條件無法表達 → 近似恆真, _note 揭露。
+#   既有 mitig/amp(副將輪替 buff, 本身已是簡化) 保留。
+BATCH8_TACTIC_EFFECTS = {
+    "竭力佐謀": [
+        {"k": "rateup", "who": "self", "val": 0.7, "dur": 1, "inheritedOnly": True,
+         "_approx": "prob-ev", "_note": "70%機率非自帶主動+100% 期望值折算0.7, 持續1回合"},
+    ],
+    "三勢陣": [
+        {"k": "rateup", "who": "leader", "val": 0.16, "dur": 5, "nativeOnly": True,
+         "_note": "主將自帶主動+16% 前5回合; 陣營各異/主將自帶條件無法表達, 近似恆真"},
+        {"k": "chargeup", "who": "leader", "val": 0.16, "dur": 5, "nativeOnly": True,
+         "_note": "主將自帶突擊+16% 前5回合; 同上近似"},
+    ],
+}
+
 # --- 批7: rateup/chargeup 已落地條目全庫掃描, 補「受X影響」的 scale --------------
 # 逐條核對目前所有已落地 rateup/chargeup 效果(白眉/先成其慮/獅子奮迅/進言/虎豹騎/陷陣突襲)
 # 對應的 effectText, 找「受X影響」措辭是否修飾發動率子句本身:
@@ -571,6 +592,7 @@ def main():
     n_chargeup_tagged = 0
     chargeup_tagged_names = []
     n_taiping_tagged = 0
+    n_batch8_tagged = 0                                   # 批8: 竭力佐謀/三勢陣 白名單套用數
     n_rate_scale_backfilled = 0
     rate_scale_backfilled_names = []
 
@@ -864,6 +886,26 @@ def main():
                 n_taiping_tagged += 1
             touched_meaningful = True
 
+        # --- 19) 批8: 竭力佐謀(inheritedOnly)/三勢陣(who:leader) 白名單, 見 BATCH8_TACTIC_EFFECTS --
+        if name in BATCH8_TACTIC_EFFECTS:
+            cur8 = p.get("effects", [])
+            changed8 = False
+            for want in [dict(x) for x in BATCH8_TACTIC_EFFECTS[name]]:
+                hit8 = next((i for i, e in enumerate(cur8)
+                             if e.get("k") == want["k"] and e.get("who") == want["who"]), None)
+                if hit8 is None:
+                    cur8.append(want)
+                    changed8 = True
+                elif cur8[hit8] != want:
+                    cur8[hit8] = want
+                    changed8 = True
+            p["effects"] = cur8
+            if name == "竭力佐謀" and p.pop("_est", None) is not None:
+                changed8 = True                           # 數值已全落地
+            if changed8:
+                n_batch8_tagged += 1
+            touched_meaningful = True
+
         # --- 18) rateup/chargeup 已落地條目全庫掃描: 原文「受X影響」有寫的補 scale, 沒寫的不加 --
         # 見 RATE_SCALE_PLAN 註解(批7新增, 與 SCALE_PLAN 同保守白名單原則, 只是這次逐條核對後
         # 全部落空, 詳見腳本輸出的 skip 清單)。
@@ -932,6 +974,7 @@ def main():
           f"（{', '.join(chargeup_tagged_names) if chargeup_tagged_names else '無'}）"
           f"；跳過: 三勢陣(僅限「主將」概念, 引擎無通用主將機制)"
           f"、經天緯地(proc-on-cast觸發鏈, 非chargeup原語)——詳見 CHARGEUP_ADD 註解")
+    print(f"批8 白名單(竭力佐謀 inheritedOnly / 三勢陣 who:leader): {n_batch8_tagged} 個戰法套用/更新(0=已是目標值冪等)")
     print(f"--- 批7: 發動率縮放(rate-scale) + 太平道法落地 ---")
     print(f"太平道法 白名單落地: {'已套用/更新' if n_taiping_tagged else '已是目標值(無變動, 冪等)'}"
           f"（amp 0.28 + rateup×2〔一般6% nativeOnly + 準備戰法額外6% prepOnly+nativeOnly, "
