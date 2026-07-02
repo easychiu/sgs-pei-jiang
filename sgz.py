@@ -8,6 +8,7 @@ v4: 讀 sgsdeck 真實全庫(193武將 / 384戰法)。
 傷害用社群拆解公式(data/formula.md)。run: python sgz.py
 """
 import json
+import math
 import os
 import random
 import re
@@ -358,11 +359,23 @@ class Unit:
         self.hit_flags.clear()                         # 受擊觸發(when.on) 每回合各戰法重置一次觸發額度
 
 
+# 傷害公式旋鈕(批3 重塑): 社群拆解(知乎菜頭50級傷害模型 + B站櫻謀詭計錨點), 用實測錨點反解常數。
+# 錨點(兵10000/coef1.0/士氣100/無增減傷, morale_mult(100)=1.0 已併入取樣, 取隨機帶中值1.0):
+#   錨1 屬性差0   → 實測 ≈476 傷害 ⇒ DMG_A = 476/sqrt(10000) = 4.76
+#   錨2 屬性差200 → 實測 ≈764 傷害 ⇒ DMG_B = (764-476)/200 = 1.44
+#   錨3 屬性差大負值(保底) → 實測 ≈90  傷害 ⇒ DMG_FLOOR = 90/sqrt(10000) = 0.9
+# 之後有更多實測數據(不同兵力/等級)可再校準, 目前僅50級單一等級係數樣本, 折入常數中。
+DMG_A = 4.76
+DMG_B = 1.44
+DMG_FLOOR = 0.9
+
+
 def damage(src, dst, coef, kind, src_troop=None):
     troop = src.troop if src_troop is None else src_troop  # 結算傷害用施毒當下定格兵力
     atk = src.eff("intel") if kind == "intel" else src.eff("force")
     deff = dst.eff("intel") if kind == "intel" else dst.eff("command")
-    base = ((atk - deff) / 150 + 1) * (troop / 20) * coef
+    troop_sqrt = math.sqrt(max(0, troop))
+    base = max(DMG_A * troop_sqrt + DMG_B * (atk - deff), DMG_FLOOR * troop_sqrt) * coef
     base *= counter_mult(src.ttype, dst.ttype)        # 克制: 隊伍兵種 vs 隊伍兵種
     base *= morale_mult(MORALE)
     base *= max(0.0, 1 + src.amp())                   # 增傷(疊加/衰減/敵方減益)
@@ -935,6 +948,26 @@ def demo():
     assert "明察秋毫" not in TACTICS, "明察秋毫(內政類) overrides 應設 type:none 並被排除"
     assert "爭分奪秒" not in TACTICS, "爭分奪秒(內政類) overrides 應設 type:none 並被排除"
     assert TACTICS["火燒連營"]["coef"] > 0, "火燒連營 overrides 套用後應仍有 coef(查證資料含傷害率)"
+
+    # --- 批3 傷害公式重塑 錨點驗收 ---------------------------------------------
+    # 固定輸入(兵10000/coef1.0/士氣100/無增減傷/同兵種無克制), 多次取樣平均應落在實測錨點 ±容差內。
+    def _anchor_unit(force, command, troop=10000):
+        u = Unit(POOL["呂布"], "騎")                    # 借真實武將建構後直接覆寫屬性(繞開卡面數值, 精準命中錨點)
+        u.force, u.command, u.intel = force, command, force
+        u.troop = troop
+        return u
+
+    def _avg_damage(atk_force, def_command, n=4000):
+        atk_u = _anchor_unit(atk_force, 999999)         # 攻擊方 command 不使用, 給極端值避免誤用
+        samples = [damage(atk_u, _anchor_unit(999999, def_command), 1.0, "phys") for _ in range(n)]
+        return sum(samples) / len(samples)
+
+    d0 = _avg_damage(1000, 1000)                        # 錨1: 屬性差0 → ≈476
+    assert 476 * 0.95 <= d0 <= 476 * 1.05, f"錨1(差0)應在476±5%內, got {d0:.1f}"
+    d200 = _avg_damage(1200, 1000)                      # 錨2: 屬性差200 → ≈764
+    assert 764 * 0.95 <= d200 <= 764 * 1.05, f"錨2(差200)應在764±5%內, got {d200:.1f}"
+    dneg = _avg_damage(100, 5000)                       # 錨3: 屬性差大負值(保底) → ≈90
+    assert 90 * 0.90 <= dneg <= 90 * 1.10, f"錨3(保底)應在90±10%內, got {dneg:.1f}"
 
     print("self-check OK")
 

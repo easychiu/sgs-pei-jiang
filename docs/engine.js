@@ -173,17 +173,25 @@
     }
   }
 
+  // 傷害公式旋鈕(批3 重塑): 社群拆解(知乎菜頭50級傷害模型 + B站櫻謀詭計錨點), 用實測錨點反解常數。
+  // 錨點(兵10000/coef1.0/士氣100/無增減傷, moraleMult(100)=1.0 已併入取樣, 取隨機帶中值1.0):
+  //   錨1 屬性差0   → 實測 ≈476 傷害 ⇒ DMG_A = 476/sqrt(10000) = 4.76
+  //   錨2 屬性差200 → 實測 ≈764 傷害 ⇒ DMG_B = (764-476)/200 = 1.44
+  //   錨3 屬性差大負值(保底) → 實測 ≈90  傷害 ⇒ DMG_FLOOR = 90/sqrt(10000) = 0.9
+  // 之後有更多實測數據(不同兵力/等級)可再校準, 目前僅50級單一等級係數樣本, 折入常數中。
+  const DMG_A = 4.76, DMG_B = 1.44, DMG_FLOOR = 0.9;
   function damage(src, dst, coef, kind, srcTroop) {
     const troop = srcTroop == null ? src.troop : srcTroop;
     const atk = kind === "intel" ? src.eff("intel") : src.eff("force");
     const def = kind === "intel" ? dst.eff("intel") : dst.eff("command");
-    let base = ((atk - def) / 150 + 1) * (troop / 20) * coef;
+    const troopSqrt = Math.sqrt(Math.max(0, troop));
+    let base = Math.max(DMG_A * troopSqrt + DMG_B * (atk - def), DMG_FLOOR * troopSqrt) * coef;
     base *= counterMult(src.ttype, dst.ttype);     // 克制: 隊伍兵種 vs 隊伍兵種
     base *= moraleMult(MORALE);
     base *= Math.max(0, 1 + src.amp());
     const mit = dst.addbonus("mitig") * (1 - Math.min(1, src.addbonus("pierce")));
     base *= Math.max(0.1, 1 - mit);
-    base *= 0.96 + rnd() * 0.08;
+    base *= 0.96 + rnd() * 0.08;   // 隨機帶 0.96~1.04(對稱): rnd()*0.08 涵蓋 [0,0.08), 起點0.96 → 上限0.96+0.08=1.04
     return Math.max(0, base);
   }
   function hit(src, dst, coef, kind, isNormal, onEvent) {
