@@ -1,10 +1,18 @@
 // 三國志戰略版 配將引擎 — sgz.py 的 JS 移植(瀏覽器/node 通用)
 // 兵種由「隊伍」決定; 各武將只有對該兵種的適性(S/A/B/C/D)決定屬性發揮。克制為隊伍兵種 vs 隊伍兵種。
-// 15 原語: coef amp mitig stun heal stat dot settle extra redirect stack decay swap pierce counter
+// 原語: coef amp mitig stun heal stat dot settle extra redirect stack decay swap pierce counter
+//       silence disarm insight first taunt shield dodge surehit rateup
 "use strict";
 (function (root) {
   const ROUNDS = 8, START_TROOP = 10000, MORALE = 100;
   const CITY = 20, FACTION = 1.10;                   // 城建滿(武智統速各+20) + 陣營滿(全屬性+10%), 雙方皆有
+  // 「受X影響」屬性縮放旋鈕。輸入為戰鬥內即時素質 caster.eff(stat)(已含城建/陣營/適性/
+  // 加點/賽季/戰鬥中buff, 典型值 250~400, 而非卡面裸值)。公式取社群拆解(巴哈姆特高等陣容
+  // 戰法論/NGA數據貼): 屬性100=面板基準值(SCALE=1.0), 每+350點效果翻倍(v=450時SCALE=2.0)。
+  // 仍是可調校準旋鈕, 之後有更多實測數據可再調整斜率/錨點。
+  const SCALE = v => Math.max(0, 1 + (v - 100) / 350);
+  const SCALE_CLAMP = 1.5;                            // amp/mitig 縮放後上限保護: |val| <= 1.5
+  const scaleOf = (caster, scale) => scale === "charm" ? SCALE(caster.charm) : (scale ? SCALE(caster.eff(scale)) : 1);
   const COUNTER = { "騎": "盾", "盾": "弓", "弓": "槍", "槍": "騎" };
   const APT_PCT = { S: 1.20, A: 1.00, B: 0.85, C: 0.70, D: 0.55 };
   const APT_RANK = { S: 4, A: 3, B: 2, C: 1, D: 0 };
@@ -84,6 +92,7 @@
         bingshuOptions: raw.bingshuOptions || null,
         gender: raw.gender, growth: raw.growthStats || null,
         base: { force: st["武力"] ?? 80, intel: st["智力"] ?? 80, command: st["統率"] ?? 90, speed: st["速度"] ?? 70 },
+        charm: st["魅力"] ?? 60,                    // 魅力: 只供 scale:"charm" 查表, 不進戰鬥四維 eff()
         tacticName: raw.tactic || "—", tactic: raw.tactic ? (TAC[raw.tactic] || null) : null,
       };
     }
@@ -104,6 +113,7 @@
       const scm = sm.mult || 1.0, flat = sm.flat || 0;  // 屬性=(基礎+養成+賽季固定)×適性×賽季乘數
       this.force = (g.base.force + CITY + (a.force || 0) + flat) * apt * scm * FACTION; this.intel = (g.base.intel + CITY + (a.intel || 0) + flat) * apt * scm * FACTION;
       this.command = (g.base.command + CITY + (a.command || 0) + flat) * apt * scm * FACTION; this.speed = (g.base.speed + CITY + (a.speed || 0) + flat) * apt * scm * FACTION;
+      this.charm = g.charm || 60;                  // 魅力: 城建/陣營是否加成不明, 保守用裸值不縮放(供 scale:"charm" 查表)
       this.mods = []; this.adds = []; this.dots = [];
       if (a.amp) this.adds.push(["amp", a.amp, 9999]);    // 進階/典藏 攻防加成
       if (a.mitig) this.adds.push(["mitig", a.mitig, 9999]);
@@ -223,19 +233,22 @@
     return out;
   }
 
-  const STAT_ZH = { force: "武力", intel: "智力", command: "統率", speed: "速度", all: "全屬性" };
-  function effDesc(k, e) {                          // 把15原語效果翻成可讀中文(供日誌)
+  const STAT_ZH = { force: "武力", intel: "智力", command: "統率", speed: "速度", all: "全屬性", charm: "魅力" };
+  function effDesc(k, e, caster) {                  // 把15原語效果翻成可讀中文(供日誌); caster 供 scale 縮放後實際值顯示
     const p = v => Math.round(Math.abs(v) * 100) + "%";
     const d = e.dur && e.dur < 90 ? `(${e.dur}回合)` : "";
+    const sfx = e.scale && caster ? `〔受${STAT_ZH[e.scale] || e.scale}影響, ×${scaleOf(caster, e.scale).toFixed(2)}〕` : "";
+    const val = (e.scale && caster) ? Math.max(-SCALE_CLAMP, Math.min(SCALE_CLAMP, e.val * scaleOf(caster, e.scale))) : e.val;
+    const mult = (e.scale && caster) ? 1 + ((e.mult ?? 1) - 1) * scaleOf(caster, e.scale) : e.mult;
     switch (k) {
-      case "amp": return e.who === "enemy" && e.val > 0 ? `易傷+${p(e.val)}${d}` : (e.val >= 0 ? `增傷+${p(e.val)}${d}` : `減傷${p(e.val)}${d}`);
-      case "mitig": return e.val >= 0 ? `減傷+${p(e.val)}${d}` : `易傷+${p(e.val)}${d}`;
+      case "amp": return (e.who === "enemy" && val > 0 ? `易傷+${p(val)}${d}` : (val >= 0 ? `增傷+${p(val)}${d}` : `減傷${p(val)}${d}`)) + sfx;
+      case "mitig": return (val >= 0 ? `減傷+${p(val)}${d}` : `易傷+${p(val)}${d}`) + sfx;
       case "stun": return `震懾·全禁${d || "(1回合)"}`;
       case "silence": return `計窮·禁主動戰法${d || "(1回合)"}`;
       case "disarm": return `繳械·禁普攻${d || "(1回合)"}`;
       case "insight": return `洞察·免疫控制${d || "(1回合)"}`;
       case "first": return "先攻·優先行動";
-      case "stat": return `${STAT_ZH[e.stat] || e.stat} ×${e.mult}${d}`;
+      case "stat": return `${STAT_ZH[e.stat] || e.stat} ×${mult.toFixed(2)}${d}${sfx}`;
       case "dot": return `持續傷害${d}`;
       case "extra": return `額外攻擊+${e.val}`;
       case "stack": return "疊加增傷";
@@ -250,6 +263,7 @@
       case "shield": return `護盾${e.amt ? "+" + Math.round(e.amt) : ""}${e.pct ? "(相當於" + p(e.pct) + "兵力)" : ""}${d}`;
       case "dodge": return `規避${p(e.prob ?? 0)}${d}`;
       case "surehit": return `必中·無視規避${d}`;
+      case "rateup": return `主動戰法發動機率+${p(e.val)}${d}`;
       default: return k;
     }
   }
@@ -263,7 +277,12 @@
         if (opt.noHeal) continue;
         let hurt = null;
         for (const a of allies) if (a.alive && (!hurt || a.troop < hurt.troop)) hurt = a;
-        if (hurt) { const before = hurt.troop; hurt.troop = Math.min(START_TROOP, hurt.troop + (e.coef ?? 0.8) * caster.troop * 0.10); if (TRACE && hurt.troop - before >= 1) lg(`　▸ 治療 ${hurt.nm} +${Math.round(hurt.troop - before)}`); }
+        if (hurt) {
+          const before = hurt.troop;
+          const hcoef = (e.coef ?? 0.8) * (e.scale ? scaleOf(caster, e.scale) : 1);
+          hurt.troop = Math.min(START_TROOP, hurt.troop + hcoef * caster.troop * 0.10);
+          if (TRACE && hurt.troop - before >= 1) lg(`　▸ 治療 ${hurt.nm} +${Math.round(hurt.troop - before)}` + (e.scale ? `（受${STAT_ZH[e.scale] || e.scale}影響, 實際治療率${Math.round(hcoef * 100)}%）` : ""));
+        }
         continue;
       }
       if (k === "settle") {
@@ -291,16 +310,21 @@
         } else dests = enemies.filter(x => x.alive);
       }
       else dests = allies.filter(a => a.alive);
-      if (TRACE && dests.length) lg(`　▸ ${effDesc(k, e)} → ${dests.map(u => u.nm).join("、")}`);
+      if (TRACE && dests.length) lg(`　▸ ${effDesc(k, e, caster)} → ${dests.map(u => u.nm).join("、")}`);
+      // scale:"intel"|"force"|"command"|"speed"|"charm" 縮放(以施放者戰鬥內即時素質為準):
+      // amp/mitig 的 val 直接乘 SCALE, clamp 到 ±SCALE_CLAMP 防止極端值; stat 的 mult 對
+      // 1.0 的偏移量(增益/削弱幅度)乘 SCALE, 1.0 本身(無效果)不受縮放影響。
+      const svVal = v => e.scale ? Math.max(-SCALE_CLAMP, Math.min(SCALE_CLAMP, v * scaleOf(caster, e.scale))) : v;
+      const svMult = m => e.scale ? 1 + (m - 1) * scaleOf(caster, e.scale) : m;
       for (const u of dests) {
-        if (k === "amp") who === "enemy" && e.val > 0 ? u.pushAdd("mitig", -e.val, e.dur, src) : u.pushAdd("amp", e.val, e.dur, src);
-        else if (k === "mitig") u.pushAdd("mitig", e.val, e.dur, src);
+        if (k === "amp") { const v = svVal(e.val); who === "enemy" && v > 0 ? u.pushAdd("mitig", -v, e.dur, src) : u.pushAdd("amp", v, e.dur, src); }
+        else if (k === "mitig") u.pushAdd("mitig", svVal(e.val), e.dur, src);
         else if (k === "stun") { if (!u.insight) { u.stun = Math.max(u.stun, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入震懾(全禁)`); } else if (TRACE) lg(`　▸ ${u.nm} 洞察免疫震懾`); }
         else if (k === "silence") { if (!u.insight) { u.silence = Math.max(u.silence, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入計窮(禁主動戰法)`); } else if (TRACE) lg(`　▸ ${u.nm} 洞察免疫計窮`); }
         else if (k === "disarm") { if (!u.insight) { u.disarm = Math.max(u.disarm, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入繳械(禁普攻)`); } else if (TRACE) lg(`　▸ ${u.nm} 洞察免疫繳械`); }
         else if (k === "insight") { u.insight = Math.max(u.insight, (e.dur ?? 1) + 1); u.stun = 0; u.silence = 0; u.disarm = 0; }
         else if (k === "first") u.first = Math.max(u.first, e.dur ?? 1);
-        else if (k === "stat") u.pushMod(e.stat, e.mult ?? 1, e.dur, src);
+        else if (k === "stat") u.pushMod(e.stat, svMult(e.mult ?? 1), e.dur, src);
         else if (k === "dot") u.dots.push([damage(caster, u, e.coef ?? 0.5, t.kind || "intel"), e.dur]);
         else if (k === "extra") u.pushAdd("extra", e.val, e.dur, src);
         else if (k === "stack") u.stack = { per: e.per ?? 0.1, max: e.max ?? 5, n: 0 };
@@ -315,6 +339,7 @@
         }
         else if (k === "dodge") { u.dodgeProb = e.prob ?? 0.2; u.dodgeDur = Math.max(u.dodgeDur, (e.dur ?? 1) + 1); }
         else if (k === "surehit") u.surehitDur = Math.max(u.surehitDur, (e.dur ?? 1) + 1);
+        else if (k === "rateup") u.pushAdd("rateup", e.val, e.dur, src);   // 提高(自身或對象)主動戰法發動機率
       }
     }
   }
@@ -410,7 +435,7 @@
         if (u.silence && TRACE) lg(`【${u.side}】${u.nm} 陷入計窮，無法發動主動戰法`);
         if (!u.silence) for (const t of u.tactics) {   // 自帶 + 傳承: 各自獨立附加發動(計窮時跳過主動/指揮/被動)
           let fire = false;
-          if (t.type === "active" && (t.coef || t.effects.length) && !(t.prep && r === 1)) fire = rnd() < t.rate;
+          if (t.type === "active" && (t.coef || t.effects.length) && !(t.prep && r === 1)) fire = rnd() < t.rate + u.addbonus("rateup");  // rateup: 提高自身主動戰法發動機率(如白眉)
           else if ((t.type === "command" || t.type === "passive") && t.coef && !(t.when && t.when.on) && roundOk(t, r)) fire = rnd() < t.rate;  // 指揮/被動: 每回合以資料 rate 擲骰(多數 rate=1 即每回合必發); when.rounds/from/until 只在符合回合才擲骰; when.on(反應式) 改由 onHit 事件點觸發, 不在此處常駐擲骰
           if (fire) {
             if (TRACE) lg(`【${u.side}】${u.nm} 發動戰法【${t.nameZh}】` + (t.when ? `（第${r}回合條件）` : ""));

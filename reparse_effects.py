@@ -13,6 +13,20 @@ docs/data/tactics_parsed.json 的 coef/rate/n/nMax/dur/heal-coef。
   (無法從既有 15 原語表達)。「先攻」語意因目標對象(自己/我軍主將/我軍全體)混雜,
   regex 無法安全判斷, 保守跳過, 留給引擎端(item 5)人工判斷或後續 LLM 精解。
 
+批2.5: 受屬性影響縮放 + rateup + overrides ---------------------------------
+- 受屬性影響縮放: effectText 含「受X影響」(X=智力/武力/統率/統帥/速度/魅力)的 heal/amp/
+  mitig/stat 子句, 白名單標記對應 effect 物件的 scale="intel"|"force"|"command"|"speed"|
+  "charm"(引擎端依施放者戰鬥內即時素質縮放, 見 engine.js/sgz.py 的 SCALE())。傷害 coef
+  的「受X影響」已經由 kind(phys用武力/intel用智力) 天然建模, 不重複標記; kind 與文字提及
+  的屬性不一致的罕見案例(如 phys 主戰法內嵌一段 intel 的灼燒/謀略子傷害) 保守跳過。
+  dot 效果的傷害同樣經由 damage() 用 caster 的 force/intel 天然建模, 不需額外 scale。
+  詳細判定見 SCALE_MAP/_scale_candidates_for_match()。
+- rateup: 「主動戰法(的)發動機率提高X%→Y%」句型 → 新增 k="rateup" 效果(who=self, dur=99,
+  val=Y/100), 見 RATEUP_RE。
+- overrides: 讀 docs/data/tactics_overrides.json, 在抽取前先用其 effectText/type 覆蓋
+  raw_by_name 對應戰法(見 _apply_overrides())。invalid=true 的條目(如宜城之志, user 已確認
+  遊戲內無此戰法) 直接把 parsed 的 type 設 "none"(排除戰鬥與選單), 略過其餘抽取步驟。
+
 用法: python reparse_effects.py
 輸出: 就地覆寫 docs/data/tactics_parsed.json, 並印出回填報告。
 """
@@ -23,6 +37,7 @@ import re
 ROOT = os.path.dirname(os.path.abspath(__file__))
 RAW_PATH = os.path.join(ROOT, "data", "tactics.json")
 PARSED_PATH = os.path.join(ROOT, "docs", "data", "tactics_parsed.json")
+OVERRIDES_PATH = os.path.join(ROOT, "docs", "data", "tactics_overrides.json")
 
 DMG_RANGE = re.compile(r"傷害率\s*(\d+(?:\.\d+)?)\s*%?\s*(?:→|~|-)\s*(\d+(?:\.\d+)?)\s*%?")
 DMG_SINGLE = re.compile(r"傷害率\s*(\d+(?:\.\d+)?)\s*%")
@@ -128,6 +143,125 @@ SUREHIT_ADD = {"驍健神行": 2, "國士將風": 3, "萬軍取將": 1}
 # --- shield(護盾): 需要可解析的具體吸收量(固定值或兵力%), 全庫僅「赴湯蹈火」提及
 # 護盾但敘述是「多層抵禦疊加機制」, 無具體數字可抽, 保守跳過(見報告)。
 SHIELD_ADD = {}
+
+# ---------------------------------------------------------------------------
+# 批2.5 item1: 受屬性影響縮放(scale) 白名單
+#
+# effectText 176 處「受X影響」(X=智力/武力/統率/統帥/速度/魅力), 語意是該子句效果量隨
+# 施放者對應屬性縮放。逐條核對後, 只在滿足下列條件時標記:
+#   - 該子句對應 heal/amp/mitig/stat 其中一種既有 effect(dot 的傷害已由 damage() 的
+#     kind=intel/phys 天然用 caster 屬性建模, 不需額外標記; 傷害coef同理已用kind建模)。
+#   - 「受X影響」的 X 不是機率/發動率(那是觸發機率縮放, 15原語無對應概念, 跳過)。
+#   - 對應到「唯一」或「結構相同(可安全複用同一scale)」的 effect 物件, 無歧義。
+# 多個候選 effect 且彼此結構不同(如 竭忠盡智/虛實奇謀 的機率類子句誤觸發、扶危定傾的
+# 「受自身最高屬性影響」無法對應單一固定屬性) 一律保守跳過, 詳見腳本輸出的 skip 清單。
+# 值格式: {戰法名: [(effects索引, scale屬性), ...]}
+SCALE_PLAN = {
+    "一力拒守": [(0, "force")],
+    "乘敵不虞": [(1, "intel")],
+    "亂世奸雄": [(0, "intel"), (1, "intel")],
+    "仁德載世": [(0, "intel"), (1, "intel")],
+    "以寡敵眾": [(0, "force")],
+    "以逸待勞": [(0, "intel"), (1, "intel")],
+    "傲睨王侯": [(1, "intel")],
+    "八門金鎖陣": [(0, "intel")],
+    "兵無常勢": [(0, "intel")],
+    "刮骨療毒": [(0, "intel")],
+    "千里饋糧": [(0, "force")],      # 「使自身獲得急救狀態(受武力影響)」→ heal效果; stat(提高武力)無scale措辭
+    "包紮": [(0, "intel")],
+    "國士將風": [(0, "speed")],
+    "圍師必闕": [(0, "command")],
+    "坐守孤城": [(0, "intel")],
+    "垂心萬物": [(1, "intel")],
+    "天下無雙": [(0, "force")],
+    "奇兵間道": [(0, "force")],      # 「主動戰法造成的傷害提高15%→30%（受武力影響）」= idx0(val0.3,dur4); idx1(倒戈0.45)無scale措辭
+    "奇計良謀": [(0, "speed"), (1, "speed")],
+    "奪魂挾魄": [(0, "intel"), (1, "intel"), (2, "intel"), (3, "intel")],  # 偷取武智速統各一效果, 同句「受智力影響」可安全複用
+    "嬰城自守": [(0, "intel")],
+    "定軍斬將": [(0, "force")],
+    "密計誅逆": [(0, "command")],
+    "掣刀斫敵": [(0, "force")],
+    "揮兵謀勝": [(1, "intel")],
+    "援救": [(0, "intel")],
+    "搦戰群雄": [(1, "force")],
+    "撫輯軍民": [(0, "intel"), (1, "command")],
+    "擊其惰歸": [(0, "command"), (1, "command")],
+    "斂眾而擊": [(0, "force")],
+    "智計": [(0, "intel"), (1, "intel")],       # 「武力、智力降低19→38（受智力影響）」兩個stat同句可安全複用
+    "暫避其鋒": [(0, "intel")],
+    "杯蛇鬼車": [(0, "intel")],
+    "機鑑先識": [(0, "intel")],
+    "水淹七軍": [(1, "force")],
+    "沉斷機謀": [(1, "intel")],      # 「統率、智力降低15%→30%（受智力影響）」→ stat效果; idx0 amp為同句近似, 依審查僅標stat
+    "江天長焰": [(0, "intel")],
+    "江東小霸王": [(1, "force")],
+    "江東猛虎": [(2, "force")],
+    "深藏若虛": [(0, "intel"), (1, "intel")],
+    "深謀遠慮": [(0, "intel")],
+    "淑懿之德": [(0, "intel"), (1, "intel")],   # 「智力、統率提升1.5%→3%（受智力影響）」兩個stat同句可安全複用
+    "淵然難測": [(0, "command")],
+    "濟貧好施": [(1, "intel"), (2, "intel")],
+    "火神英風": [(2, "force")],
+    "焰逐風飛": [(1, "intel")],
+    "百計多謀": [(1, "intel")],
+    "眾志成城": [(0, "intel")],
+    "破軍威勝": [(0, "force")],
+    "破陣摧堅": [(0, "force"), (1, "force")],   # 「統率、智力降低40→80點（受武力影響）」兩個stat同句可安全複用
+    "箕形陣": [(0, "force")],
+    "義心昭烈": [(0, "intel")],
+    "肉身鐵壁": [(1, "command")],
+    "胡笳餘音": [(0, "intel"), (1, "intel")],
+    "草船借箭": [(0, "command")],
+    "蕙質蘭心": [(2, "intel"), (3, "intel")],
+    "藏器待時": [(0, "command")],
+    "藤甲兵": [(0, "command")],
+    "虎痴": [(0, "force")],
+    "計定謀決": [(2, "intel")],
+    "詐降": [(1, "intel")],
+    "誘敵深入": [(0, "intel")],
+    "謙讓": [(0, "intel")],
+    "金丹秘術": [(1, "intel")],
+    "金城湯池": [(0, "intel")],
+    "錦囊妙計": [(1, "intel")],
+    "鎮扼防拒": [(1, "intel")],
+    "長驅直入": [(1, "force")],
+    "陷陣營": [(2, "intel")],
+    "離月": [(0, "intel"), (1, "intel")],
+    "青囊": [(1, "intel")],
+    "青州兵": [(0, "force")],
+    "顧盼生姿": [(0, "intel"), (1, "intel")],   # 「偷取敵軍單體18→36點智力及武力（受智力影響）」兩個stat同句可安全複用
+    "飛沙走石": [(0, "intel")],
+    "魚鱗陣": [(1, "command")],
+}
+
+# --- 批2.5 item2: rateup(主動戰法發動機率提升) --------------------------------
+# 「(自己/自身/友軍單體)主動戰法(的)發動機率|概率|幾率提高|提升X%→Y%」句型 →
+# k="rateup", val=Y/100(取升滿值), who: 句中出現「友軍/我軍」等他指對象時為 ally, 否則
+# (自己/自身/無主語, 即預設施放者自身) 為 self。
+# dur: 從匹配位置後方近距離(30字內, 同一句語境)抽「持續X回合」寫入; 抽不到 = 常駐句型
+# (如白眉「戰鬥中…」無持續字樣) 取 99。引擎端 rateup 走 adds 陣列, tick() 每回合遞減
+# 自然到期, 無需額外處理。
+# 已知案例: 白眉(6%→12%取0.12, 常駐→99)、先成其慮(持續1回合)、獅子奮迅(持續2回合)、
+# 進言(持續2回合, who=ally)。宜城之志經 user 確認為幽靈條目, 與白眉是不同戰法。
+RATEUP_RE = re.compile(
+    r"(?P<who>自己|自身|友軍單體|友軍)?主動戰法(?:的)?發動(?:機率|概率|幾率)"
+    r"(?:提高|提升)\s*(?:\d+(?:\.\d+)?\s*%\s*(?:→|~|-)\s*)?(?P<val>\d+(?:\.\d+)?)\s*%")
+RATEUP_DUR_RE = re.compile(r"持續\s*(\d+)\s*回合")
+
+# --- 批2.5 item3補: overrides 落地手動白名單 -----------------------------------
+# 桃園結義 的查證文全用概數措辭(「治療率約36%」「傷害率約46%」), 通用 regex(傷害率\s*\d)
+# 對「約」抽不到, 若不處理會靜默落空(coef:0/effects:[] 無任何效果)。依查證文手動落地:
+# 每回合 20%→40% 機率三選一(治療單體/對智力最低謀略傷害/對統率最低兵刃傷害)。近似:
+# coef=0.46(傷害擇一, kind 沿用既有 phys), rate=0.4(取滿級), 另加 heal 效果 coef=0.36
+# (受智力影響→scale)。「三選一」機制引擎無法表達, 近似成「傷害擲骰+治療每回合」略強於
+# 實際; 查證 confidence=med, 依原始任務規格保留 _est 標記(force_est)。
+MANUAL_FILL = {
+    "桃園結義": {
+        "coef": 0.46, "rate": 0.4, "n": 1,
+        "effects_add": [{"k": "heal", "who": "ally", "coef": 0.36, "dur": 1, "scale": "intel"}],
+        "force_est": True,
+    },
+}
 
 
 def extract_dmg_pct(txt):
@@ -245,13 +379,66 @@ def extract_inline_rate(txt):
     return None
 
 
+def load_overrides():
+    """讀 docs/data/tactics_overrides.json。缺檔時回傳空 dict(overrides 為選配層)。"""
+    if not os.path.exists(OVERRIDES_PATH):
+        return {}
+    with open(OVERRIDES_PATH, encoding="utf-8") as f:
+        doc = json.load(f)
+    return doc.get("overrides", {})
+
+
+def apply_overrides_to_raw(raw_by_name, overrides):
+    """在抽取前, 用 overrides 的 effectText/type 覆蓋 raw_by_name 對應戰法。
+    invalid=true 的條目不覆蓋 effectText(維持原文供人工參考), 由 main() 另行處理成 type=none。
+    回傳套用的戰法名清單(不含 invalid 條目), 供報告統計。"""
+    applied = []
+    for name, ov in overrides.items():
+        if ov.get("invalid"):
+            continue
+        r = raw_by_name.get(name)
+        if not r:
+            continue
+        if "effectText" in ov:
+            r["effectText"] = ov["effectText"]
+        if "type" in ov:
+            r["_override_type"] = ov["type"]           # 交給 main() 決定如何套用到 parsed.type
+        applied.append(name)
+    return applied
+
+
 def main():
     with open(RAW_PATH, encoding="utf-8") as f:
         raw_list = json.load(f)
     raw_by_name = {t["nameZh"]: t for t in raw_list}
 
+    overrides = load_overrides()
+    overrides_applied = apply_overrides_to_raw(raw_by_name, overrides)
+    overrides_invalid = [nm for nm, ov in overrides.items() if ov.get("invalid")]
+
     with open(PARSED_PATH, encoding="utf-8") as f:
         parsed = json.load(f)
+
+    # overrides: invalid(幽靈條目) / type=none(內政類等) 覆蓋 —— 在主迴圈前先處理, 這兩類
+    # 直接跳過後續一切抽取(coef/scale/rateup...), 維持 type=none 的「排除戰鬥與選單」語意。
+    # no-op 統計口徑: 在 overrides type:none 生效「之前」計 before(與 HEAD 直接比較一致
+    # —— 被 overrides 排除的戰法在 before 仍算 no-op 貢獻者, 排除本身即是一種「處理」)。
+    noop_before = sum(1 for p in parsed if p.get("type") != "none"
+                       and not p.get("coef") and not p.get("effects"))
+
+    n_overrides_invalid = 0
+    n_overrides_type_none = 0
+    for p in parsed:
+        name = p["nameZh"]
+        ov = overrides.get(name)
+        if not ov:
+            continue
+        if ov.get("invalid") and p.get("type") != "none":
+            p["type"] = "none"
+            n_overrides_invalid += 1
+        elif ov.get("type") == "none" and p.get("type") != "none":
+            p["type"] = "none"
+            n_overrides_type_none += 1
 
     n_coef_filled = 0
     n_rate_filled = 0
@@ -266,8 +453,10 @@ def main():
     n_dodge_tagged = 0
     n_surehit_tagged = 0
     n_shield_tagged = 0
-    noop_before = sum(1 for p in parsed if p.get("type") != "none"
-                       and not p.get("coef") and not p.get("effects"))
+    n_scale_tagged = 0
+    n_rateup_tagged = 0
+    n_manual_filled = 0
+    rateup_tagged_names = []
 
     for p in parsed:
         if p.get("type") == "none":
@@ -319,8 +508,10 @@ def main():
             # activationRate 可核對, 光是 rate 對上不代表該戰法的效果資料完整。
 
         # --- 3) 目標數 -> n / nMax (effectTarget 欄位, 較 effectText 結構化) -----
+        # MANUAL_FILL 有指定 n 的戰法跳過: 其 effectTarget(如桃園結義「我軍群體3人」)描述的
+        # 是增益受眾, 非傷害目標數, 由白名單值優先(避免每輪 3↔1 互相覆寫的計數churn)。
         tgt_n, tgt_nmax = extract_target_n(r.get("effectTarget"))
-        if tgt_n is not None:
+        if tgt_n is not None and "n" not in MANUAL_FILL.get(p["nameZh"], {}):
             if p.get("n") != tgt_n:
                 p["n"] = tgt_n
                 n_n_filled += 1
@@ -473,6 +664,52 @@ def main():
             n_shield_tagged += 1
             touched_meaningful = True
 
+        # --- 13) scale(受屬性影響縮放): 白名單新增, 見 SCALE_PLAN 註解 -----------------
+        if name in SCALE_PLAN:
+            effs = p.get("effects", [])
+            for idx, scale in SCALE_PLAN[name]:
+                if idx < len(effs) and effs[idx].get("scale") != scale:
+                    effs[idx]["scale"] = scale
+                    n_scale_tagged += 1
+            touched_meaningful = True
+
+        # --- 14) rateup(主動戰法發動機率提升): regex 全庫掃描, 見 RATEUP_RE 註解 ----------
+        rm = RATEUP_RE.search(txt)
+        if rm:
+            who = "ally" if rm.group("who") in ("友軍單體", "友軍") else "self"
+            val = round(float(rm.group("val")) / 100, 4)
+            # dur: 匹配後方30字內(同句語境)的「持續X回合」; 抽不到 = 常駐(戰鬥中…) → 99
+            dm3 = RATEUP_DUR_RE.search(txt[rm.end():rm.end() + 30])
+            dur = int(dm3.group(1)) if dm3 else 99
+            existing_rateup = next((e for e in p.get("effects", []) if e.get("k") == "rateup"), None)
+            if existing_rateup is None:
+                p.setdefault("effects", []).append({"k": "rateup", "who": who, "val": val, "dur": dur})
+                n_rateup_tagged += 1
+                rateup_tagged_names.append(f"{name}(val={val},dur={dur})")
+            elif existing_rateup.get("val") != val or existing_rateup.get("dur") != dur \
+                    or existing_rateup.get("who") != who:
+                # 收斂既有條目(如舊版硬編碼 dur=99 的資料), 保持重跑冪等
+                existing_rateup.update({"who": who, "val": val, "dur": dur})
+                n_rateup_tagged += 1
+                rateup_tagged_names.append(f"{name}(val={val},dur={dur},更新)")
+            touched_meaningful = True
+
+        # --- 15) overrides 落地手動白名單(桃園結義等概數措辭 regex 抽不到的), 見 MANUAL_FILL --
+        if name in MANUAL_FILL:
+            spec = MANUAL_FILL[name]
+            for fld in ("coef", "rate", "n"):
+                if fld in spec and p.get(fld) != spec[fld]:
+                    p[fld] = spec[fld]
+                    n_manual_filled += 1
+            existing_ks2 = {e.get("k") for e in p.get("effects", [])}
+            for eff in spec.get("effects_add", []):
+                if eff["k"] not in existing_ks2:
+                    p.setdefault("effects", []).append(dict(eff))
+                    n_manual_filled += 1
+            if spec.get("force_est"):
+                p["_est"] = True                       # med confidence, 依任務規格保持可見的估計標記
+            touched_meaningful = True
+
         if not touched_meaningful:
             p["_est"] = True
             n_est += 1
@@ -503,7 +740,18 @@ def main():
           f"修正mitig誤標: {sorted(DODGE_FIX_MITIG)}）")
     print(f"surehit(必中) 標記: {n_surehit_tagged} 個戰法（{sorted(SUREHIT_ADD)}）")
     print(f"shield(護盾) 標記: {n_shield_tagged} 個戰法（{sorted(SHIELD_ADD) if SHIELD_ADD else '無, 全庫僅赴湯蹈火提及但無具體吸收量數字可抽, 保守跳過'}）")
-    print(f"no-op 戰法: {noop_before} -> {noop_after}")
+    print(f"--- 批2.5: 受屬性影響縮放 + rateup + overrides ---")
+    print(f"scale(受屬性影響縮放) 標記: {n_scale_tagged} 處效果, 涵蓋 {len(SCALE_PLAN)} 個戰法")
+    print(f"rateup(主動戰法發動機率提升) 標記: {n_rateup_tagged} 個戰法"
+          f"（{', '.join(rateup_tagged_names) if rateup_tagged_names else '無'}）")
+    print(f"overrides(查證資料整合) 套用 effectText/type: {len(overrides_applied)} 筆"
+          f"（{', '.join(sorted(overrides_applied)) if overrides_applied else '無'}）")
+    print(f"overrides invalid(幽靈條目→type:none): {n_overrides_invalid} 筆"
+          f"（{', '.join(sorted(overrides_invalid)) if overrides_invalid else '無'}）")
+    print(f"overrides type:none(內政類等): {n_overrides_type_none} 筆")
+    print(f"overrides 手動落地(概數措辭 regex 抽不到, 見 MANUAL_FILL): {n_manual_filled} 個欄位/效果"
+          f"（{', '.join(sorted(MANUAL_FILL))}）")
+    print(f"no-op 戰法: {noop_before} -> {noop_after}（口徑: before 在 overrides type:none 生效前計, 與 HEAD 直接比較一致）")
     print(f"抽不到數字, 標記 _est=true 的戰法數: {n_est}")
 
 

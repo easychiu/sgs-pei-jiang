@@ -26,6 +26,21 @@ FACTION = 1.10                                       # 陣營滿: 全屬性+10%(
 COUNTER = {"騎": "盾", "盾": "弓", "弓": "槍", "槍": "騎"}  # 騎>盾>弓>槍>騎; 器全被克
 APT_PCT = {"S": 1.20, "A": 1.00, "B": 0.85, "C": 0.70, "D": 0.55, None: 0.85}
 APT_RANK = {"S": 4, "A": 3, "B": 2, "C": 1, "D": 0, None: -1}
+SCALE_CLAMP = 1.5                                    # amp/mitig 縮放後上限保護: |val| <= 1.5
+
+
+def SCALE(v):
+    """「受X影響」屬性縮放旋鈕。輸入為戰鬥內即時素質 caster.eff(stat)(已含城建/陣營/適性/
+    加點/賽季/戰鬥中buff, 典型值 250~400, 而非卡面裸值)。公式取社群拆解(巴哈姆特高等陣容
+    戰法論/NGA數據貼): 屬性100=面板基準值(SCALE=1.0), 每+350點效果翻倍(v=450時SCALE=2.0)。
+    仍是可調校準旋鈕, 之後有更多實測數據可再調整斜率/錨點。"""
+    return max(0.0, 1 + (v - 100) / 350)
+
+
+def scale_of(caster, scale):
+    if not scale:
+        return 1.0
+    return SCALE(caster.charm) if scale == "charm" else SCALE(caster.eff(scale))
 
 
 def morale_mult(m):
@@ -101,6 +116,7 @@ class General:
         st = raw.get("stats", {})
         self.base = {"force": st.get("武力", 80), "intel": st.get("智力", 80),
                      "command": st.get("統率", 90), "speed": st.get("速度", 70)}
+        self.charm = st.get("魅力", 60)               # 魅力: 只供 scale="charm" 查表, 不進戰鬥四維 eff()
         self.tactic = TACTICS.get(raw.get("tactic")) if raw.get("tactic") else None
         self.tactic_name = raw.get("tactic") or "—"
         self.bingshu_cats = raw.get("availableBingshu", [])  # 可用兵書類別
@@ -251,6 +267,7 @@ class Unit:
         self.intel = (g.base["intel"] + CITY + a.get("intel", 0) + flat) * apt * scm * FACTION
         self.command = (g.base["command"] + CITY + a.get("command", 0) + flat) * apt * scm * FACTION
         self.speed = (g.base["speed"] + CITY + a.get("speed", 0) + flat) * apt * scm * FACTION
+        self.charm = getattr(g, "charm", 60)          # 魅力: 城建/陣營是否加成不明, 保守用裸值不縮放(供 scale="charm" 查表)
         self.mods = []                                # 乘法: [stat, mult, left, src]
         self.adds = []                                # 加法: [amp|mitig|extra, val, left, src]
         if a.get("amp"):                              # 進階/典藏 攻防加成: 每階+2%攻+2%防(無來源, 不去重)
@@ -426,7 +443,8 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             hurt = min((a for a in allies if a.alive),
                        key=lambda a: a.troop, default=None)
             if hurt:                                  # ponytail: 治療量粗估, 上限不超過初始兵力
-                hurt.troop = min(START_TROOP, hurt.troop + e.get("coef", 0.8) * caster.troop * 0.10)
+                hcoef = e.get("coef", 0.8) * (scale_of(caster, e["scale"]) if e.get("scale") else 1.0)
+                hurt.troop = min(START_TROOP, hurt.troop + hcoef * caster.troop * 0.10)
             continue
         if k == "settle":                             # 結算傷害(猛毒): 掛統率最高敵將, 觸發見 fight
             tg = max((x for x in enemies if x.alive),
@@ -463,14 +481,28 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 dests = [x for x in enemies if x.alive]
         else:
             dests = [a for a in allies if a.alive]
+        # scale="intel"|"force"|"command"|"speed"|"charm" 縮放(以施放者戰鬥內即時素質為準):
+        # amp/mitig 的 val 直接乘 SCALE, clamp 到 ±SCALE_CLAMP 防止極端值; stat 的 mult 對
+        # 1.0 的偏移量(增益/削弱幅度)乘 SCALE, 1.0 本身(無效果)不受縮放影響。
+        def sv_val(v):
+            if not e.get("scale"):
+                return v
+            return max(-SCALE_CLAMP, min(SCALE_CLAMP, v * scale_of(caster, e["scale"])))
+
+        def sv_mult(m):
+            if not e.get("scale"):
+                return m
+            return 1 + (m - 1) * scale_of(caster, e["scale"])
+
         for u in dests:
             if k == "amp":
-                if who == "enemy" and e["val"] > 0:   # 修正: 敵方正amp(誤幫敵增傷)→ 視為敵方易傷
-                    u.push_add("mitig", -e["val"], e["dur"], src)
+                v = sv_val(e["val"])
+                if who == "enemy" and v > 0:          # 修正: 敵方正amp(誤幫敵增傷)→ 視為敵方易傷
+                    u.push_add("mitig", -v, e["dur"], src)
                 else:
-                    u.push_add("amp", e["val"], e["dur"], src)
+                    u.push_add("amp", v, e["dur"], src)
             elif k == "mitig":
-                u.push_add("mitig", e["val"], e["dur"], src)
+                u.push_add("mitig", sv_val(e["val"]), e["dur"], src)
             elif k == "stun":
                 if not u.insight:
                     u.stun = max(u.stun, e["dur"] + 1)
@@ -486,7 +518,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             elif k == "first":                        # 先攻: 本回合旗標, 優先於速度排序
                 u.first = max(u.first, e.get("dur", 1))
             elif k == "stat":
-                u.push_mod(e["stat"], e.get("mult", 1.0), e["dur"], src)
+                u.push_mod(e["stat"], sv_mult(e.get("mult", 1.0)), e["dur"], src)
             elif k == "dot":                          # 持續傷害: 套用時定格每回合傷害
                 u.dots.append([damage(caster, u, e.get("coef", 0.5),
                                       t.get("kind", "intel")), e["dur"]])
@@ -516,6 +548,8 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 u.dodge_dur = max(u.dodge_dur, e.get("dur", 1) + 1)
             elif k == "surehit":                       # 必中: 無視對方 dodge
                 u.surehit_dur = max(u.surehit_dur, e.get("dur", 1) + 1)
+            elif k == "rateup":                        # 提高(自身或對象)主動戰法發動機率
+                u.push_add("rateup", e["val"], e["dur"], src)
 
 
 def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, eqB=None,
@@ -610,7 +644,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     fire = False
                     if t["type"] == "active" and (t["coef"] or t["effects"]) \
                             and not (t["prep"] and rnd == 1):
-                        fire = random.random() < t["rate"]
+                        fire = random.random() < t["rate"] + u.addbonus("rateup")  # rateup: 提高自身主動戰法發動機率(如白眉)
                     elif t["type"] in ("command", "passive") and t["coef"] \
                             and not (t.get("when") and t["when"].get("on")) and round_ok(t, rnd):
                         fire = random.random() < t["rate"]  # 每回合以資料 rate 擲骰; when.rounds/from/until 只在符合回合才擲骰; when.on(反應式) 改由 on_hit 事件點觸發
@@ -857,6 +891,50 @@ def demo():
     troop_before_surehit = dodger.troop
     hit(sure_attacker, dodger, 1.0, "phys")
     assert dodger.troop < troop_before_surehit, "必中應無視對方規避, 傷害應正常命中"
+
+    # --- 批2.5 新機制驗收 -----------------------------------------------------
+    # 11) SCALE(): 錨點 v=100 -> 1.0(面板基準值), v=450 -> 2.0(每+350點效果翻倍)
+    assert abs(SCALE(100) - 1.0) < 1e-9, "SCALE(100) 應為面板基準值 1.0"
+    assert abs(SCALE(450) - 2.0) < 1e-9, "SCALE(450) 應為 2.0(社群拆解: 每+350點效果翻倍)"
+
+    # 12) scale 縮放: heal 效果帶 scale="intel" 時, 施放者智力(戰鬥內 eff 值)越高治療量越大
+    heal_tactic = {"nameZh": "測試治療術", "type": "active", "kind": "intel", "coef": 0,
+                   "rate": 1.0, "n": 1, "prep": 0,
+                   "effects": [{"k": "heal", "who": "ally", "coef": 0.8, "dur": 1, "scale": "intel"}]}
+    low_int_caster = Unit(POOL["呂布"], "騎")               # 呂布智力低
+    high_int_caster = Unit(POOL["諸葛亮"], "弓")             # 諸葛亮智力高
+    high_int_caster.push_mod("intel", 2.0, 9)               # 額外掛 buff 拉高戰鬥內 eff("intel"), 驗證縮放走 eff() 而非裸值
+    low_ally, high_ally = Unit(lb, "騎"), Unit(lb, "騎")
+    low_ally.troop = high_ally.troop = 1000
+    apply_effects(low_int_caster, None, heal_tactic, [low_ally], [], no_heal=False)
+    apply_effects(high_int_caster, None, heal_tactic, [high_ally], [], no_heal=False)
+    assert high_ally.troop > low_ally.troop, \
+        "scale=intel 的治療應隨施放者戰鬥內智力(eff('intel'), 含buff)提高而提高"
+
+    # 13) rateup: 帶白眉(rateup 0.12)者主動戰法發動率應提升(以 addbonus 直接驗證擲骰門檻)
+    plain_u = Unit(lb, "騎")
+    rateup_u = Unit(lb, "騎")
+    rateup_u.push_add("rateup", 0.12, 9)
+    assert abs(rateup_u.addbonus("rateup") - 0.12) < 1e-9 and plain_u.addbonus("rateup") == 0, \
+        "rateup 應提高 addbonus('rateup'), 主動戰法擲骰門檻 rate+addbonus('rateup') 因而提高"
+    assert "白眉" in TACTICS and any(e["k"] == "rateup" for e in TACTICS["白眉"]["effects"]), \
+        "白眉應由 reparse 標記 rateup 效果"
+    # 13b) rateup 有限持續: 走 adds 陣列, tick() 遞減到期應消失(先成其慮 dur=1 等非永久buff)
+    temp_ru = Unit(lb, "騎")
+    temp_ru.push_add("rateup", 0.15, 1)
+    assert abs(temp_ru.addbonus("rateup") - 0.15) < 1e-9
+    temp_ru.tick()
+    assert temp_ru.addbonus("rateup") == 0, "rateup dur=1 應在 tick 後到期消失(非永久)"
+    be = next(e for e in TACTICS["白眉"]["effects"] if e["k"] == "rateup")
+    xa = next(e for e in TACTICS["先成其慮"]["effects"] if e["k"] == "rateup")
+    assert be["dur"] == 99 and xa["dur"] == 1, \
+        "白眉(常駐)dur=99, 先成其慮(持續1回合)dur=1 —— rateup dur 應從原文抽取而非硬編碼"
+
+    # 14) overrides: 宜城之志(幽靈條目)/明察秋毫(內政) 應被排除在 TACTICS 之外(type:none)
+    assert "宜城之志" not in TACTICS, "宜城之志(user 確認幽靈條目) overrides 應設 type:none 並被排除"
+    assert "明察秋毫" not in TACTICS, "明察秋毫(內政類) overrides 應設 type:none 並被排除"
+    assert "爭分奪秒" not in TACTICS, "爭分奪秒(內政類) overrides 應設 type:none 並被排除"
+    assert TACTICS["火燒連營"]["coef"] > 0, "火燒連營 overrides 套用後應仍有 coef(查證資料含傷害率)"
 
     print("self-check OK")
 
