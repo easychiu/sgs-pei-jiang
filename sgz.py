@@ -45,6 +45,20 @@ def scale_of(caster, scale):
     return SCALE(caster.charm) if scale == "charm" else SCALE(caster.eff(scale))
 
 
+# 批7: 發動率類「受X影響」縮放 —— 獨立常數, 與上面 SCALE(每+350翻倍) 不是同一條曲線。
+# user 實測太平道法(黃巾/張角, docs/data/calibration_anchors.json → rate_scale): 智力484.6
+# 才翻倍(對比 SCALE 只要+350即450), 反解 c=0.002598(6組獨立點一致到小數第6位, 取0.0026)。
+# chargeup 尚無獨立實測, 暫共用同常數(假設同曲線, 待未來樣本校準)。
+RATE_SCALE_C = 0.0026
+
+
+def rate_scale_of(caster, scale):
+    if not scale:
+        return 1.0
+    v = caster.charm if scale == "charm" else caster.eff(scale)
+    return 1 + (v - 100) * RATE_SCALE_C
+
+
 def morale_mult(m):
     return 0.007 * min(m, 100) + 0.30                 # 士氣上限100(戰報: 士氣110.4傷害不變, 超過100按100算)
 
@@ -258,7 +272,10 @@ class Unit:
         self.disarm = 0                                # 繳械: 無法普通攻擊(含連擊/突擊)
         self.insight = 0                               # 洞察: 免疫 stun/silence/disarm, 施加時同時解除
         self.first = 0                                 # 先攻: 剩餘回合數, 排序時優先於速度
-        self.tactics = ([g.tactic] if g.tactic else []) + \
+        # 自帶 + 傳承; 自帶戰法(g.tactic)淺拷貝附加 native:True 旗標(供 rateup/chargeup 的 nativeOnly
+        # 修飾判斷「這是不是自帶戰法」, 如太平道法只加成張角自帶的五雷轟頂)。淺拷貝而非直接改
+        # TACTICS 共享物件, 避免多個武將共用同一戰法物件時互相污染(如兩人都自帶白眉)。
+        self.tactics = ([dict(g.tactic, native=True)] if g.tactic else []) + \
             [TACTICS[nm] for nm in (inherit or []) if nm in TACTICS]  # 自帶 + 傳承戰法
         _bn = bingshu if isinstance(bingshu, (list, tuple)) else ([bingshu] if bingshu else [])
         self.bs = [e for nm in _bn for e in BINGSHU.get(nm, {}).get("effects", [])]  # 兵書(主+副)合併效果
@@ -344,6 +361,23 @@ class Unit:
     def addbonus(self, kind):
         return sum(v for k, v, *_ in self.adds if k == kind)
 
+    def addbonus_for(self, kind, t):
+        """rateup/chargeup 專用: 依戰法 t 的 prep/native 屬性, 只加總「修飾旗標吻合」的 adds 項。
+        adds[4] = flags({"prepOnly":.., "nativeOnly":..}|None, 見 push_add)。無旗標的加成一律計入
+        (如虎豹騎的 chargeup 沒有 prepOnly/nativeOnly 限制)。"""
+        s = 0.0
+        for a in self.adds:
+            if a[0] != kind:
+                continue
+            flags = a[4] if len(a) > 4 else None
+            if flags:
+                if flags.get("prepOnly") and not t.get("prep"):
+                    continue
+                if flags.get("nativeOnly") and not t.get("native"):
+                    continue
+            s += a[1]
+        return s
+
     def amp(self):                                    # 總增傷 = 一般+疊加層+衰減
         a = self.addbonus("amp")
         if self.stack:
@@ -352,11 +386,12 @@ class Unit:
             a += self.decay["v0"] * self.decay["left"] / self.decay["total"]
         return a
 
-    def push_add(self, kind, val, dur, src=None):
-        """同來源(戰法名)同種效果 刷新而非疊加。src=None(兵書/裝備/緣分)不去重。"""
+    def push_add(self, kind, val, dur, src=None, flags=None):
+        """同來源(戰法名)同種效果 刷新而非疊加。src=None(兵書/裝備/緣分)不去重。
+        flags: {"prepOnly":bool, "nativeOnly":bool}, 供 addbonus_for() 篩選(見批7 太平道法)。"""
         if src:
             self.adds = [a for a in self.adds if not (a[0] == kind and a[3] == src)]
-        self.adds.append([kind, val, dur, src])
+        self.adds.append([kind, val, dur, src, flags])
 
     def push_mod(self, stat, mult, dur, src=None):
         if src:
@@ -373,7 +408,7 @@ class Unit:
             self.troop -= dmg
         self.dots = [[d, l - 1] for d, l in self.dots if l - 1 > 0]
         self.mods = [[s, m, l - 1, src] for s, m, l, src in self.mods if l - 1 > 0]
-        self.adds = [[k, v, l - 1, src] for k, v, l, src in self.adds if l - 1 > 0]
+        self.adds = [[k, v, l - 1, src, flags] for k, v, l, src, flags in self.adds if l - 1 > 0]
         self.stat_adds = [[s, ad, l - 1, src] for s, ad, l, src in self.stat_adds if l - 1 > 0]  # 裝備平加到期移除(如 疾馳 speed+25 dur:2)
         self.stun = max(0, self.stun - 1)
         self.silence = max(0, self.silence - 1)
@@ -614,9 +649,26 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             elif k == "surehit":                       # 必中: 無視對方 dodge
                 u.surehit_dur = max(u.surehit_dur, e.get("dur", 1) + 1)
             elif k == "rateup":                        # 提高(自身或對象)主動戰法發動機率
-                u.push_add("rateup", e["val"], e["dur"], src)
+                # scale: 施放當下(caster 戰鬥內即時素質)用 RATE_SCALE_C(獨立於全域 SCALE) 縮放實際
+                # 加成(批7: 太平道法「受智力影響」, 見 docs/data/calibration_anchors.json → rate_scale)。
+                # prepOnly/nativeOnly 修飾旗標存進 adds[4], 由 addbonus_for() 在主動擲骰處依戰法屬性篩選加總。
+                rv = e["val"] * rate_scale_of(caster, e["scale"]) if e.get("scale") else e["val"]
+                rflags = {"prepOnly": bool(e.get("prepOnly")), "nativeOnly": bool(e.get("nativeOnly"))} \
+                    if (e.get("prepOnly") or e.get("nativeOnly")) else None
+                # 同一戰法(如太平道法)可能有多條 rateup(一般 + prepOnly 額外), src 相同的話
+                # push_add 的「同kind+同src刷新」去重會把前一條蓋掉; 用 flags 組出不同的 dedup
+                # key 尾碼區分, 讓語意不同的兩條並存, 但同語意(同flags組合)的仍正常刷新不疊加。
+                r_src = (src + ":" + "".join(k2 for k2 in ("prepOnly", "nativeOnly") if rflags.get(k2))) \
+                    if (src and rflags) else src
+                u.push_add("rateup", rv, e["dur"], r_src, rflags)
             elif k == "chargeup":                      # 提高(自身或對象)突擊戰法發動機率; 排除 proc=True 特技偽戰法見突擊擲骰處註解
-                u.push_add("chargeup", e["val"], e["dur"], src)
+                # chargeup 同樣支援 scale(未有實測前與 rateup 共用 RATE_SCALE_C, 假設同曲線, 見上方常數註解)
+                cv = e["val"] * rate_scale_of(caster, e["scale"]) if e.get("scale") else e["val"]
+                cflags = {"prepOnly": bool(e.get("prepOnly")), "nativeOnly": bool(e.get("nativeOnly"))} \
+                    if (e.get("prepOnly") or e.get("nativeOnly")) else None
+                c_src = (src + ":" + "".join(k2 for k2 in ("prepOnly", "nativeOnly") if cflags.get(k2))) \
+                    if (src and cflags) else src
+                u.push_add("chargeup", cv, e["dur"], c_src, cflags)
                 # 曹純特例(虎豹騎): 若隊伍主將(index 0, allies[0])===本效果指定 general 且恰為本 u,
                 # 額外發動機率受武力影響。二次曲線 extra% = force^2 * k(注意 k 擬合的是「%數值」本身,
                 # 如 force=373.83 時 force^2*k≈4.47, 代表 4.47%, 需 /100 換算成 addbonus 用的小數比例),
@@ -722,7 +774,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     fire = False
                     if t["type"] == "active" and (t["coef"] or t["effects"]) \
                             and not (t["prep"] and rnd == 1):
-                        fire = random.random() < t["rate"] + u.addbonus("rateup")  # rateup: 提高自身主動戰法發動機率(如白眉)
+                        fire = random.random() < t["rate"] + u.addbonus_for("rateup", t)  # rateup: 提高自身主動戰法發動機率(如白眉); addbonus_for 依 t["prep"]/t["native"] 篩選 prepOnly/nativeOnly 修飾的加成(批7: 太平道法)
                     elif t["type"] in ("command", "passive") and t["coef"] \
                             and not (t.get("when") and t["when"].get("on")) and round_ok(t, rnd):
                         fire = random.random() < t["rate"]  # 每回合以資料 rate 擲骰; when.rounds/from/until 只在符合回合才擲骰; when.on(反應式) 改由 on_hit 事件點觸發
@@ -745,7 +797,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 # 突擊(charge)擲骰: chargeup(突擊發動率加成, 如虎豹騎)只對真突擊戰法生效, 排除
                 # t.get("proc") is True 的特技偽戰法(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲)。
                 for t in u.tactics:
-                    up = 0 if t.get("proc") else u.addbonus("chargeup")
+                    up = 0 if t.get("proc") else u.addbonus_for("chargeup", t)
                     if t["type"] == "charge" and random.random() < t["rate"] + up:
                         if t["coef"]:
                             hit(u, tgt, t["coef"], t["kind"], False, on_hit)
@@ -1169,6 +1221,46 @@ def demo():
     # 方向性比較: 曹純當主將(index 0) 的 chargeup 加成應高於非曹純主將隊伍
     assert cc_leader.addbonus("chargeup") > team_other[0].addbonus("chargeup"), \
         "曹純當主將 vs 非曹純主將: 前者 chargeup 加成應較高(曹純特例額外值>0)"
+
+    # --- 批7: 發動率縮放(rate-scale) + 太平道法落地 -------------------------------
+    # 29) 太平道法資料落地: amp 0.28 + 2 條 rateup(一般6%/準備戰法額外6%, 皆 scale=intel+nativeOnly)
+    assert "太平道法" in TACTICS, "太平道法應由 reparse 落地(inherit 傳承戰法, 非任何武將自帶)"
+    tp_tac = TACTICS["太平道法"]
+    assert not tp_tac.get("_est"), "太平道法資料落地後不應再有 _est 標記"
+    tp_amp = next(e for e in tp_tac["effects"] if e["k"] == "amp")
+    assert abs(tp_amp["val"] - 0.28) < 1e-9, "太平道法奇謀(amp近似) 應為升滿值0.28(14%→28%)"
+    tp_rateups = [e for e in tp_tac["effects"] if e["k"] == "rateup"]
+    assert len(tp_rateups) == 2, "太平道法應有2條rateup(一般+準備戰法額外)"
+    assert all(abs(e["val"] - 0.06) < 1e-9 and e.get("scale") == "intel" and e.get("nativeOnly")
+               for e in tp_rateups), "太平道法2條rateup皆應為val=0.06, scale=intel, nativeOnly=True"
+    tp_prep_only = [e for e in tp_rateups if e.get("prepOnly")]
+    assert len(tp_prep_only) == 1, "太平道法應恰有1條rateup帶prepOnly=True(準備戰法額外加成)"
+
+    # 30a) 智力426.57時, 太平道法「準備戰法」目標(native+prep皆真)拿到的加成總額 ≈ 0.2218
+    #     (12%基礎 × RATE_SCALE(426.57) = 12%×1.849 ≈ 22.19%, 容差1%; 見 calibration_anchors.json
+    #     → rate_scale)。用 push_mod 頂高智力到 426.57 驗算(同 chargeup 曹純測試的手法)。
+    tp_caster = Unit(POOL["張角"], "騎")
+    tp_caster.push_mod("intel", 426.57 / tp_caster.eff("intel"), 9)
+    assert abs(tp_caster.eff("intel") - 426.57) < 1e-6, "測試前置條件: 智力應精確落在426.57"
+    apply_effects(tp_caster, None, tp_tac, [tp_caster], [], no_heal=True)
+    prep_native_tac = {"type": "active", "rate": 0.5, "prep": 1, "native": True, "effects": [], "coef": 0}
+    total_prep = tp_caster.addbonus_for("rateup", prep_native_tac)
+    assert abs(total_prep - 0.2219) / 0.2219 < 0.01, \
+        f"智力426.57時, 太平道法對「自帶+準備」戰法的加成總額應≈0.2219(12%×1.849, 容差1%), got={total_prep:.4f}"
+
+    # 30b) prepOnly 修飾: 只加給 prep=真 的戰法; 自帶但非準備戰法應只拿到一般那條(6%×縮放)
+    normal_native_tac = {"type": "active", "rate": 0.5, "prep": 0, "native": True, "effects": [], "coef": 0}
+    total_normal = tp_caster.addbonus_for("rateup", normal_native_tac)
+    expect_normal = 0.06 * (1 + (426.57 - 100) * RATE_SCALE_C)
+    assert abs(total_normal - expect_normal) < 1e-6, \
+        f"prepOnly=True的那條不應計入非準備戰法, got={total_normal:.4f} expect={expect_normal:.4f}"
+    assert total_normal < total_prep, "prepOnly: 準備戰法應比非準備戰法拿到更多加成(多了prepOnly那條)"
+
+    # 30c) nativeOnly 修飾: 不應加成給非自帶(傳承)戰法, 即使該戰法也是 prep=真
+    inherited_prep_tac = {"type": "active", "rate": 0.5, "prep": 1, "native": False, "effects": [], "coef": 0}
+    total_inherited = tp_caster.addbonus_for("rateup", inherited_prep_tac)
+    assert total_inherited == 0, \
+        f"nativeOnly=True 的加成不應套用到傳承(非自帶)戰法, got={total_inherited:.4f}"
 
     print("self-check OK")
 

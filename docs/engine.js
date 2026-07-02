@@ -14,6 +14,12 @@
   const SCALE = v => Math.max(0, 1 + (v - 100) / 350);
   const SCALE_CLAMP = 1.5;                            // amp/mitig 縮放後上限保護: |val| <= 1.5
   const scaleOf = (caster, scale) => scale === "charm" ? SCALE(caster.charm) : (scale ? SCALE(caster.eff(scale)) : 1);
+  // 批7: 發動率類「受X影響」縮放 —— 獨立常數, 與上面 SCALE(每+350翻倍) 不是同一條曲線。
+  // user 實測太平道法(黃巾/張角, docs/data/calibration_anchors.json → rate_scale): 智力484.6
+  // 才翻倍(對比 SCALE 只要+350即450), 反解 c=0.002598(6組獨立點一致到小數第6位, 取0.0026)。
+  // chargeup 尚無獨立實測, 暫共用同常數(假設同曲線, 待未來樣本校準)。
+  const RATE_SCALE_C = 0.0026;
+  const rateScaleOf = (caster, scale) => scale === "charm" ? 1 + (caster.charm - 100) * RATE_SCALE_C : (scale ? 1 + (caster.eff(scale) - 100) * RATE_SCALE_C : 1);
   const COUNTER = { "騎": "盾", "盾": "弓", "弓": "槍", "槍": "騎" };
   const APT_PCT = { S: 1.20, A: 1.00, B: 0.85, C: 0.70, D: 0.55 };
   const APT_RANK = { S: 4, A: 3, B: 2, C: 1, D: 0 };
@@ -107,7 +113,10 @@
     constructor(g, ttype, bsName, eqName, add, inherit, season) {
       this.g = g; this.ttype = ttype; this.troop = START_TROOP; this.stun = 0;
       this.silence = 0; this.disarm = 0; this.insight = 0; this.first = 0;  // 控制細分: 計窮/繳械/洞察(免控) + 先攻(優先行動, 剩餘回合數)
-      this.tactics = (g.tactic ? [g.tactic] : []).concat((inherit || []).map(nm => TACTICS[nm]).filter(Boolean));  // 自帶 + 傳承
+      // 自帶 + 傳承; 自帶戰法(g.tactic)淺拷貝附加 native:true 旗標(供 rateup/chargeup 的 nativeOnly
+      // 修飾判斷「這是不是自帶戰法」, 如太平道法只加成張角自帶的五雷轟頂)。淺拷貝而非直接改
+      // TACTICS 共享物件, 避免多個武將共用同一戰法物件時互相污染(如兩人都自帶白眉)。
+      this.tactics = (g.tactic ? [Object.assign({}, g.tactic, { native: true })] : []).concat((inherit || []).map(nm => TACTICS[nm]).filter(Boolean));
       const _bn = Array.isArray(bsName) ? bsName : (bsName ? [bsName] : []);
       this.bs = _bn.flatMap(nm => (BINGSHU[nm] && BINGSHU[nm].effects) || []);  // 兵書(主+副)合併; 缺 effects 欄降級空陣列(同 sgz.py .get)
       const _eq = Array.isArray(eqName) ? eqName : (eqName ? [eqName] : []);
@@ -149,11 +158,25 @@
       return v;
     }
     addbonus(kind) { let s = 0; for (const a of this.adds) if (a[0] === kind) s += a[1]; return s; }
+    // rateup/chargeup 專用: 依戰法 t 的 prep/native 屬性, 只加總「修飾旗標吻合」的 adds 項。
+    // adds[4] = flags({prepOnly,nativeOnly}|undefined, 見 pushAdd)。無旗標(undefined/{}) 的加成
+    // 一律計入(如虎豹騎的 chargeup 沒有 prepOnly/nativeOnly 限制)。
+    addbonusFor(kind, t) {
+      let s = 0;
+      for (const a of this.adds) {
+        if (a[0] !== kind) continue;
+        const f = a[4];
+        if (f && f.prepOnly && !t.prep) continue;
+        if (f && f.nativeOnly && !t.native) continue;
+        s += a[1];
+      }
+      return s;
+    }
     // 同來源(戰法名)同種效果 刷新而非疊加: push 前先移除同 kind(或 stat) + 同 src 的舊項。
     // src=null/undefined(兵書/裝備/緣分, 開戰只套一次) 不做去重, 維持原行為。
-    pushAdd(kind, val, dur, src) {
+    pushAdd(kind, val, dur, src, flags) {
       if (src) this.adds = this.adds.filter(a => !(a[0] === kind && a[3] === src));
-      this.adds.push([kind, val, dur, src]);
+      this.adds.push([kind, val, dur, src, flags]);
     }
     pushMod(stat, mult, dur, src) {
       if (src) this.mods = this.mods.filter(m => !(m[0] === stat && m[3] === src));
@@ -291,8 +314,14 @@
       case "shield": return `護盾${e.amt ? "+" + Math.round(e.amt) : ""}${e.pct ? "(相當於" + p(e.pct) + "兵力)" : ""}${d}`;
       case "dodge": return `規避${p(e.prob ?? 0)}${d}`;
       case "surehit": return `必中·無視規避${d}`;
-      case "rateup": return `主動戰法發動機率+${p(e.val)}${d}`;
-      case "chargeup": return `突擊發動機率+${p(e.val)}${d}`;
+      // rateup/chargeup 的 scale 用獨立的 RATE_SCALE_C(非上面 amp/mitig/stat 共用的 scaleOf/SCALE),
+      // 故不沿用外層算好的 val/sfx, 另外用 rateScaleOf 算實際值(批7)。
+      case "rateup": case "chargeup": {
+        const rsfx = e.scale && caster ? `〔受${STAT_ZH[e.scale] || e.scale}影響〕` : "";
+        const rv = e.scale && caster ? e.val * rateScaleOf(caster, e.scale) : e.val;
+        const label = k === "rateup" ? "主動戰法發動機率" : "突擊發動機率";
+        return `${label}+${p(rv)}${d}${rsfx}`;
+      }
       default: return k;
     }
   }
@@ -369,9 +398,24 @@
         }
         else if (k === "dodge") { u.dodgeProb = e.prob ?? 0.2; u.dodgeDur = Math.max(u.dodgeDur, (e.dur ?? 1) + 1); }
         else if (k === "surehit") u.surehitDur = Math.max(u.surehitDur, (e.dur ?? 1) + 1);
-        else if (k === "rateup") u.pushAdd("rateup", e.val, e.dur, src);   // 提高(自身或對象)主動戰法發動機率
+        else if (k === "rateup") {                       // 提高(自身或對象)主動戰法發動機率
+          // scale: 施放當下(caster 戰鬥內即時素質)用 RATE_SCALE_C(獨立於全域 SCALE) 縮放實際加成
+          // (批7: 太平道法「受智力影響」, 見 docs/data/calibration_anchors.json → rate_scale)。
+          // prepOnly/nativeOnly 修飾旗標存進 adds[4], 由 addbonusFor() 在主動擲骰處依戰法屬性篩選加總。
+          const rv = e.scale ? e.val * rateScaleOf(caster, e.scale) : e.val;
+          const flags = (e.prepOnly || e.nativeOnly) ? { prepOnly: !!e.prepOnly, nativeOnly: !!e.nativeOnly } : undefined;
+          // 同一戰法(如太平道法)可能有多條 rateup(一般 + prepOnly 額外), src 相同的話 pushAdd
+          // 的「同kind+同src刷新」去重會把前一條蓋掉; 用 flags 組出不同的 dedup key 尾碼區分,
+          // 讓語意不同的兩條並存, 但同語意(同flags組合)的仍正常刷新不疊加。
+          const rSrc = (src && flags) ? src + ":" + ["prepOnly", "nativeOnly"].filter(f => flags[f]).join("") : src;
+          u.pushAdd("rateup", rv, e.dur, rSrc, flags);
+        }
         else if (k === "chargeup") {                    // 提高(自身或對象)突擊戰法發動機率; 排除 t.proc===true 特技偽戰法見突擊擲骰處註解
-          u.pushAdd("chargeup", e.val, e.dur, src);
+          // chargeup 同樣支援 scale(未有實測前與 rateup 共用 RATE_SCALE_C, 假設同曲線, 見上方常數註解)
+          const cv = e.scale ? e.val * rateScaleOf(caster, e.scale) : e.val;
+          const cflags = (e.prepOnly || e.nativeOnly) ? { prepOnly: !!e.prepOnly, nativeOnly: !!e.nativeOnly } : undefined;
+          const cSrc = (src && cflags) ? src + ":" + ["prepOnly", "nativeOnly"].filter(f => cflags[f]).join("") : src;
+          u.pushAdd("chargeup", cv, e.dur, cSrc, cflags);
           // 曹純特例(虎豹騎): 若隊伍主將(index 0, allies[0])===本效果指定 general 且恰為本 u,
           // 額外發動機率受武力影響。二次曲線 extra% = force^2 * k(注意 k 擬合的是「%數值」本身,
           // 如 force=373.83 時 force^2*k≈4.47, 代表 4.47%, 需 /100 換算成 addbonus 用的小數比例),
@@ -481,7 +525,7 @@
         if (u.silence && TRACE) lg(`【${u.side}】${u.nm} 陷入計窮，無法發動主動戰法`);
         if (!u.silence) for (const t of u.tactics) {   // 自帶 + 傳承: 各自獨立附加發動(計窮時跳過主動/指揮/被動)
           let fire = false;
-          if (t.type === "active" && (t.coef || t.effects.length) && !(t.prep && r === 1)) fire = rnd() < t.rate + u.addbonus("rateup");  // rateup: 提高自身主動戰法發動機率(如白眉)
+          if (t.type === "active" && (t.coef || t.effects.length) && !(t.prep && r === 1)) fire = rnd() < t.rate + u.addbonusFor("rateup", t);  // rateup: 提高自身主動戰法發動機率(如白眉); addbonusFor 依 t.prep/t.native 篩選 prepOnly/nativeOnly 修飾的加成(批7: 太平道法)
           else if ((t.type === "command" || t.type === "passive") && t.coef && !(t.when && t.when.on) && roundOk(t, r)) fire = rnd() < t.rate;  // 指揮/被動: 每回合以資料 rate 擲骰(多數 rate=1 即每回合必發); when.rounds/from/until 只在符合回合才擲骰; when.on(反應式) 改由 onHit 事件點觸發, 不在此處常駐擲骰
           if (fire) {
             if (TRACE) lg(`【${u.side}】${u.nm} 發動戰法【${t.nameZh}】` + (t.when ? `（第${r}回合條件）` : ""));
@@ -501,7 +545,7 @@
             for (let i = 0; i < extraCount(u.addbonus("extra")); i++) { const nt = pickTarget(foesOf(u), u); if (nt) { if (TRACE) lg(`【${u.side}】${u.nm} 連擊 → ${nt.nm}`); hit(u, nt, 1.0, "phys", true, onHit); } }
             // 突擊(charge)擲骰: chargeup(突擊發動率加成, 如虎豹騎)只對真突擊戰法生效, 排除 t.proc===true 的
             // 特技偽戰法(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲proc本身無此欄)。
-            for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate + (t.proc ? 0 : u.addbonus("chargeup"))) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind, false, onHit); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
+            for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate + (t.proc ? 0 : u.addbonusFor("chargeup", t))) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind, false, onHit); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
           }
         }
       }

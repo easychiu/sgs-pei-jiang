@@ -294,6 +294,54 @@ CHARGEUP_ADD = {
     "陷陣突襲": {"who": "self", "val": 0.15, "dur": 99},
 }
 
+# --- 批7: 太平道法(張角, S級被動) 白名單 ---------------------------------------
+# effectText: 「獲得14%→28%奇謀並提高自帶主動戰法發動機率（3%→6%，若為準備戰法則提高6%→12%，
+# 受智力影響），自身為黃巾軍主將時，使黃巾軍副將同樣獲得自帶戰法發動機率提升」。
+# RATEUP_RE 抓不到(「自帶主動戰法」中間夾了「自帶」, 不是 regex 認的「(自己/自身/友軍)主動戰法」
+# 句型), 且同句混雜 amp(奇謀)+2種 rateup(一般/準備戰法)+陣營擴散條款, 屬多值複合語意, 沿用
+# MANUAL_FILL/CHARGEUP_ADD 的白名單保守原則手動落地(user 遊戲實測驗證, 見下方常數):
+# - amp: 「獲得14%→28%奇謀」→ 取升滿值 0.28。奇謀(智力系會心)無獨立原語, 用 amp 近似其期望
+#   傷害加成(_approx:"crit-ev" 標記近似性質, 供未來精解時辨識這條非真正的「固定增傷」)。
+# - rateup 一般: 「提高自帶主動戰法發動機率(3%→6%...受智力影響)」→ who=self, val=0.06,
+#   scale="intel", nativeOnly=True(只加成「自帶戰法」, 即 Unit.tactics 中 native:true 的那個,
+#   不該加到太平道法自己或其他傳承戰法上——太平道法本身走 inherit 傳承欄位, 不是張角自帶戰法)。
+# - rateup 準備: 「若為準備戰法則提高6%→12%」→ 疊加在一般加成之上(同句「合計」語意, 故此效果
+#   額外加 prepOnly=True, 只在目標戰法 tactic.prep 為真時額外套用; 兩條 rateup 相加 = prepOnly
+#   戰法拿到 6%+6%=12%, 非prep戰法只拿6%, 與原文「準備戰法則提高…12%」的「則」字(非prep戰法
+#   仍是6%)一致)。
+# - scale="intel": 原文明寫「受智力影響」, 用批7新增的 RATE_SCALE_C(獨立於全域 SCALE, 見
+#   docs/data/calibration_anchors.json → rate_scale, user 實測反解 c=0.0026)。
+# - 黃巾軍主將擴散條款(「自身為黃巾軍主將時, 使黃巾軍副將同樣獲得自帶戰法發動機率提升」):
+#   _todo — 需要「陣營+隊伍主將身份」的條件式效果轉移原語(把施放者的某個 buff 複製給同陣營
+#   隊友), 現有 15+2 原語都無法表達「以陣營篩選 + 主將身份判斷 + 效果轉移給他人」的複合語意
+#   (與批6跳過的三勢陣「主將」概念缺口同源)。保守跳過, 待「主將」概念/陣營篩選原語擴充後補。
+TAIPING_EFFECTS = [
+    {"k": "amp", "who": "self", "val": 0.28, "dur": 99, "_approx": "crit-ev",
+     "_note": "奇謀28%(智力系會心)期望值折算"},
+    {"k": "rateup", "who": "self", "val": 0.06, "dur": 99, "scale": "intel", "nativeOnly": True},
+    {"k": "rateup", "who": "self", "val": 0.06, "dur": 99, "scale": "intel", "nativeOnly": True,
+     "prepOnly": True, "_note": "準備戰法合計12%"},
+]
+
+# --- 批7: rateup/chargeup 已落地條目全庫掃描, 補「受X影響」的 scale --------------
+# 逐條核對目前所有已落地 rateup/chargeup 效果(白眉/先成其慮/獅子奮迅/進言/虎豹騎/陷陣突襲)
+# 對應的 effectText, 找「受X影響」措辭是否修飾發動率子句本身:
+# - 白眉「戰鬥中，自身主動戰法的發動機率提高6%→12%」: 無「受X影響」, 跳過。
+# - 先成其慮「…並使自己主動戰法的發動機率提高7.5%→15%，持續1回合」: 句中「受智力影響」
+#   修飾的是前段謀略傷害(72.5%→145%)子句, 不是發動機率子句, 跳過(kind=intel 已天然建模
+#   傷害那半, 不重複標記)。
+# - 獅子奮迅「…並使自身主動戰法發動機率提高5%→10%，持續2回合」: 全句無「受X影響」, 跳過
+#   (後段的「受武力影響」修飾的是叛逃狀態的持續傷害子句, 與發動機率無關)。
+# - 進言「使友軍單體主動戰法發動幾率提高4%→8%，并提高20→40點智力，持續2回合」: 無「受X影響」,
+#   跳過。
+# - 虎豹騎「若曹純統領時，提升的發動機率額外受武力影響」: 有「受X影響」, 但已用專屬
+#   leaderBonus 二次曲線機制(engine.js/sgz.py 的曹純特例, k=3.2e-5, 見 CHARGEUP_ADD 註解)
+#   建模, 與本次新增的線性 RATE_SCALE_C 是不同曲線/不同錨點, 不套用本白名單的線性 scale。
+# - 陷陣突襲「自身突擊戰法發動機率提高7.5%→15%」: 無「受X影響」, 跳過。
+# 結論: 全庫目前已落地的 rateup/chargeup 條目中, 除太平道法(本批新增)外, 沒有其他戰法的
+# 發動率子句本身標註「受X影響」, 故本白名單暫為空(保留供未來新落地戰法核對時使用)。
+RATE_SCALE_PLAN = {}
+
 
 def extract_dmg_pct(txt):
     """取滿級傷害率(取範圍上限), 找不到回傳 None。"""
@@ -490,6 +538,9 @@ def main():
     rateup_tagged_names = []
     n_chargeup_tagged = 0
     chargeup_tagged_names = []
+    n_taiping_tagged = 0
+    n_rate_scale_backfilled = 0
+    rate_scale_backfilled_names = []
 
     for p in parsed:
         if p.get("type") == "none":
@@ -749,6 +800,51 @@ def main():
                 chargeup_tagged_names.append(f"{name}(val={spec['val']},dur={spec['dur']},更新)")
             touched_meaningful = True
 
+        # --- 17) 太平道法(張角S級被動): 白名單新增, 見 TAIPING_EFFECTS 註解 ---------------
+        if name == "太平道法":
+            existing_ks3 = [(i, e.get("k"), e.get("prepOnly")) for i, e in enumerate(p.get("effects", []))]
+            want_list = [dict(eff) for eff in TAIPING_EFFECTS]
+            # 冪等比對: 逐一核對「同k+同prepOnly」是否已是目標值, 不同才寫入(重跑不重複計數)
+            cur_effects = p.get("effects", [])
+            matched_idxs = set()
+            changed = False
+            for want in want_list:
+                found_idx = None
+                for i, k2, prep2 in existing_ks3:
+                    if i in matched_idxs:
+                        continue
+                    if k2 == want["k"] and bool(prep2) == bool(want.get("prepOnly")):
+                        found_idx = i
+                        break
+                if found_idx is None:
+                    cur_effects.append(want)
+                    changed = True
+                elif cur_effects[found_idx] != want:
+                    cur_effects[found_idx] = want
+                    changed = True
+                    matched_idxs.add(found_idx)
+                else:
+                    matched_idxs.add(found_idx)
+            p["effects"] = cur_effects
+            if p.pop("_est", None) is not None:
+                changed = True                            # 移除 _est(資料已落地, 不再是估計)
+            if changed:
+                n_taiping_tagged += 1
+            touched_meaningful = True
+
+        # --- 18) rateup/chargeup 已落地條目全庫掃描: 原文「受X影響」有寫的補 scale, 沒寫的不加 --
+        # 見 RATE_SCALE_PLAN 註解(批7新增, 與 SCALE_PLAN 同保守白名單原則, 只是這次逐條核對後
+        # 全部落空, 詳見腳本輸出的 skip 清單)。
+        if p.get("nameZh") in RATE_SCALE_PLAN:
+            for idx, scale in RATE_SCALE_PLAN[p["nameZh"]]:
+                effs3 = p.get("effects", [])
+                if idx < len(effs3) and effs3[idx].get("k") in ("rateup", "chargeup") \
+                        and effs3[idx].get("scale") != scale:
+                    effs3[idx]["scale"] = scale
+                    n_rate_scale_backfilled += 1
+                    rate_scale_backfilled_names.append(f"{name}[{idx}]→scale={scale}")
+            touched_meaningful = True
+
         # --- 15) overrides 落地手動白名單(桃園結義等概數措辭 regex 抽不到的), 見 MANUAL_FILL --
         if name in MANUAL_FILL:
             spec = MANUAL_FILL[name]
@@ -804,6 +900,15 @@ def main():
           f"（{', '.join(chargeup_tagged_names) if chargeup_tagged_names else '無'}）"
           f"；跳過: 三勢陣(僅限「主將」概念, 引擎無通用主將機制)"
           f"、經天緯地(proc-on-cast觸發鏈, 非chargeup原語)——詳見 CHARGEUP_ADD 註解")
+    print(f"--- 批7: 發動率縮放(rate-scale) + 太平道法落地 ---")
+    print(f"太平道法 白名單落地: {'已套用/更新' if n_taiping_tagged else '已是目標值(無變動, 冪等)'}"
+          f"（amp 0.28 + rateup×2〔一般6% nativeOnly + 準備戰法額外6% prepOnly+nativeOnly, "
+          f"皆 scale=intel〕；黃巾軍主將擴散條款 _todo 跳過, 見 TAIPING_EFFECTS 註解）")
+    _rsb_skip_note = ("無, 逐條核對白眉/先成其慮/獅子奮迅/進言/虎豹騎/陷陣突襲後全部跳過"
+                       "(原文發動率子句本身未寫「受X影響」, 或已用專屬曲線如虎豹騎曹純特例)"
+                       "——詳見 RATE_SCALE_PLAN 註解")
+    print(f"rateup/chargeup 已落地條目全庫掃描補 scale: {n_rate_scale_backfilled} 處"
+          f"（{', '.join(rate_scale_backfilled_names) if rate_scale_backfilled_names else _rsb_skip_note}）")
     print(f"overrides(查證資料整合) 套用 effectText/type: {len(overrides_applied)} 筆"
           f"（{', '.join(sorted(overrides_applied)) if overrides_applied else '無'}）")
     print(f"overrides invalid(幽靈條目→type:none): {n_overrides_invalid} 筆"

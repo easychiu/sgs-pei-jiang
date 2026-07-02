@@ -1407,11 +1407,37 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.28,
+    "dur": 99,
+    "_approx": "crit-ev",
+    "_note": "奇謀28%(智力系會心)期望值折算"
+   },
+   {
+    "k": "rateup",
+    "who": "self",
+    "val": 0.06,
+    "dur": 99,
+    "scale": "intel",
+    "nativeOnly": true
+   },
+   {
+    "k": "rateup",
+    "who": "self",
+    "val": 0.06,
+    "dur": 99,
+    "scale": "intel",
+    "nativeOnly": true,
+    "prepOnly": true,
+    "_note": "準備戰法合計12%"
+   }
+  ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "EVENT",
-  "_est": true
+  "src": "EVENT"
  },
  {
   "nameZh": "奇兵間道",
