@@ -434,8 +434,10 @@
             applyEffects(u, null, t, alliesOf(u), foesOf(u), { noHeal: false });
           }
       }
-      // 行動順序: 先攻(first)優先於速度; 各組內仍按速度高到低排序
-      const order = [...A, ...B].filter(u => u.alive).sort((x, y) => (y.first - x.first) || (y.eff("speed") - x.eff("speed")));
+      // 行動順序: 先攻(first)優先於速度; 同速平手隨機(先打亂再穩定排序, 修 A 隊固定先手偏差)
+      const order = [...A, ...B].filter(u => u.alive);
+      for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+      order.sort((x, y) => (y.first - x.first) || (y.eff("speed") - x.eff("speed")));
       for (const u of order) {
         if (!u.alive) continue;
         if (u.stun) { lg(`【${u.side}】${u.nm} 被控制(震懾)，無法行動`); continue; }

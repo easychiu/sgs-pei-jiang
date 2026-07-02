@@ -645,9 +645,10 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     u.when_fired.add(id(t))
                     apply_effects(u, None, t, allies_of(u), foes_of(u))
 
-        # 行動順序: 先攻(first)優先於速度; 各組內仍按速度高到低排序
-        for u in sorted([x for x in A + B if x.alive],
-                        key=lambda x: (x.first, x.eff("speed")), reverse=True):
+        # 行動順序: 先攻(first)優先於速度; 同速平手隨機(先打亂再穩定排序, 修 A 隊固定先手偏差)
+        _pool = [x for x in A + B if x.alive]
+        random.shuffle(_pool)
+        for u in sorted(_pool, key=lambda x: (x.first, x.eff("speed")), reverse=True):
             if not u.alive or u.stun:
                 continue
             if pick_target(foes_of(u)) is None:
