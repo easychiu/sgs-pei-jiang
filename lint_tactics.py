@@ -1347,7 +1347,113 @@ ENGINE_CAPABILITY_ALIASES = {
     "造成傷害時": "dealtDamage(批27新增, when.on==\"dealtDamage\", 見 sgz.py/engine.js 的"
                 "on_deal_tacs/on_deal_effect_tacs + dealt_damage()/dealtDamage() 掛在 hit() 傷害"
                 "結算後對 src 掃描; 支援選填 when.dmgType 區分兵刃/謀略觸發條件)",
+    "主將時": "ifLeader(批26新增, 效果級「施放者須為隊伍主將(index 0)」條件閘門, 見 engine.js/sgz.py"
+                " applyEffects 對 e.ifLeader 的判斷: caster!==allies[0] 時該效果段整段不觸發)",
+    "無條件判斷": "ifLeader(同上; 「限X時觸發,引擎無條件判斷」這類措辭是 ifLeader 落地前的舊近似"
+                "說明, 落地後應改寫並補上 e.ifLeader:true)",
+    "傷害來源區分": "dmgType/normalOnly(批24/28新增, amp/mitig 效果欄位, dmgType 區分兵刃/謀略"
+                "來源, normalOnly 區分普攻/戰法來源, 見 engine.js addbonus() 的 dmgType/isNormal"
+                "過濾參數; 「引擎mitig無傷害來源區分」這類措辭應視為兩原語落地前的舊近似說明)",
+    "普攻傷害": "normalOnly(批28新增, amp/mitig/redirect 效果欄位, 限定只對「普通攻擊」造成/受到的"
+                "傷害生效, 見 engine.js addbonus()/hit() 對 f.normalOnly + isNormal 的過濾判斷)",
+    "代替主將": "guardFor(批28新增, counter 效果欄位 guardFor:\"leader\", 登記進主將"
+                "counterGuards 清單, 由 hit() 在主將受普攻時代為觸發還擊, 見 engine.js/sgz.py)",
+    "主將受擊時": "guardFor(同上)",
+    "為主將承受": "guardFor(同上; 若該筆描述的是「代為反擊攻擊者」而非「代為承受傷害轉移」, 對應"
+                "counter.guardFor:\"leader\"; 若確實是傷害轉移/代承語意, 引擎現有 redirect 機制只能"
+                "保護全體我軍而非單獨鎖定主將, 此限制仍真實存在, 不算 stale, 見 engine_limitations.md)",
+    "每次發動": "stackPer(批26新增, stack 效果欄位 stackPer:\"cast\", 每次成功發動遞增疊層,"
+                "對比預設 stackPer:\"round\" 逐回合遞增, 見 engine.js/sgz.py applyStackCast())",
+    "三選一": "choices(批16新增, 戰法欄 choices:[{weight,effects,...}], 發動時按權重隨機選一組"
+                "效果; 批27 C 已擴充支援反應式 onHit 路徑同樣消費 choices, 見 engine.js pickChoice())",
+    "二選一": "choices(同上)",
+    "其中一種": "choices(同上)",
+    "選標": "targetSel(批18新增, 戰法/效果/extraHits級欄位, 依準則(如maxForce/minCommand等)挑選"
+                "單一目標, 見 engine.js pickByCriterion())",
+    "指定目標": "targetSel(同上)",
+    "已有該狀態": "ifTargetHas(批16新增, 效果/extraHits級條件欄位, 只對「已具備該狀態」的目標"
+                "生效/結算, 見 engine.js targetHas()/ifTargetHas 過濾)",
+    "既有狀態": "ifTargetHas(同上)",
 }
+
+# =============================================================================
+# 批29 A: R20 漂移自動偵測(制度性堵洞) —— ENGINE_CAPABILITY_ALIASES 手工維護, 每次engine.js
+# 新增原語都要記得補登, 過去批26-28的新原語(ifLeader/stackPer/dealtDamage/guardFor/
+# normalOnly/choices傷害段擴充)有登記延遲的情形(如江東猛虎的stale註記逃過偵測到批29
+# 才現形)。制度化解法: 從 docs/engine.js 原始碼自動盤點「引擎實際支援的能力」(k 分派值,
+# 全自動; e.xxx 效果欄位讀取, 全自動; when.on/guardFor/stackPer 等字面值分派, 全自動),
+# 與人工維護的 ENGINE_CAPABILITY_ALIASES 做交叉比對——engine.js 有實作、但沒有任何別名
+# 描述文字提及該 token 字面值的, 視為「登記缺口」, --selftest 印出警告(不是紅色failure,
+# 因為這是提醒人工補別名, 不是資料本身的違規; 全自動只做得到「k/字面值」這個粒度, 欄位級
+# 语意判斷仍需人工白名單, 見下方 KNOWN engine token 白名單)。
+# =============================================================================
+ENGINE_JS_PATH = os.path.join(ROOT, "docs", "engine.js")
+
+# 這些 token 屬於「基礎骨架能力」(自批12前後即存在, 或性質上不會被誤稱「引擎不支援」的
+# 常態欄位/種類, 如 who/dur/scale 等), 即使目前沒有別名描述提及也不算「新原語漏登記」,
+# 不需要 R20 警示——避免每個 k/欄位都得為了消音而硬湊一條別名。只有「較新(批16之後)、
+# 較容易被誤稱不支援」的能力才需要在 ENGINE_CAPABILITY_ALIASES 裡有對應描述。
+CAPABILITY_INVENTORY_IGNORE = {
+    # 效果種類(k): 批16之前已存在的基礎種類, 或性質單純不會被誤稱不支援的種類
+    "amp", "mitig", "stun", "silence", "disarm", "chaos", "ambush", "first", "stat",
+    "dot", "extra", "decay", "swap", "pierce", "taunt", "shield", "dodge", "surehit",
+    "healblock", "lifesteal", "rateup", "chargeup", "healBoost", "healGiven",
+    "fakeReport", "dispel", "heal", "redirect", "settle", "counter", "insight", "immune",
+    "block",
+    # 效果欄位(e.xxx): 通用/基礎欄位, 非「新能力」語意
+    "k", "who", "dur", "scale", "when", "n", "nMax", "val", "coef", "kind", "dur",
+    "durMax", "undispellable", "rate", "prob", "add", "mult", "stat", "types",
+    "what", "once", "v0", "rounds", "per", "max", "amt", "pct", "share", "guard",
+    "init", "base", "prepOnly", "nativeOnly", "inheritedOnly", "leaderBonus", "proc",
+    "name", "type", "_eqNm",
+    # when.on 基礎字面值: attack(自身普攻次數計數, everyN機制)/attacked(受擊反應式,
+    # 批8即存在的既有機制, R17已管轄「反應式治療缺失」不需要R20額外重複警示)
+    "attack", "attacked",
+}
+
+
+def _scan_engine_js_tokens(path=ENGINE_JS_PATH):
+    """從 docs/engine.js 原始碼自動盤點引擎實際支援的能力 token(半自動偵測的「全自動」那半):
+    - k 分派值(k === "xxx" 模式) —— 效果種類全集
+    - e.xxx 讀取的效果層級欄位名
+    - when.on / guardFor / stackPer 等字面值分派(較細顆粒度的子能力, 如 dealtDamage/leader/cast)
+    回傳 set of token 字串。讀不到檔案(理論上不應發生, engine.js 是本庫核心檔案)回傳空集合,
+    呼叫端視為「無法盤點」而跳過警示, 不因檔案暫時缺失而誤報。"""
+    if not os.path.exists(path):
+        return set()
+    with open(path, encoding="utf-8") as f:
+        src = f.read()
+    tokens = set()
+    tokens.update(re.findall(r'k\s*===\s*"([a-zA-Z]+)"', src))
+    tokens.update(re.findall(r'\be\.([a-zA-Z_][a-zA-Z0-9_]*)', src))
+    tokens.update(re.findall(r'\.on\s*===?\s*"([a-zA-Z]+)"', src))
+    tokens.update(re.findall(r'guardFor\s*===?\s*"([a-zA-Z]+)"', src))
+    tokens.update(re.findall(r'stackPer.*?===?\s*"([a-zA-Z]+)"', src))
+    return tokens
+
+
+def check_r20_capability_drift():
+    """R20漂移偵測: engine.js 實際支援(掃描出的token)裡, 有哪些不在 CAPABILITY_INVENTORY_IGNORE
+    白名單、且沒有任何 ENGINE_CAPABILITY_ALIASES 別名描述文字提及該 token 字面值——這些是
+    「引擎已有能力, 但R20別名表還沒登記, 未來若有戰法用stale說法聲稱不支援會漏抓」的缺口。
+    回傳 sorted list of token 字串(供 --selftest 印警告; 不是 lint() 的 violation, 不計入
+    全庫違規數, 純粹是給維護者的提醒)。"""
+    tokens = _scan_engine_js_tokens()
+    if not tokens:
+        return []
+    alias_text = " ".join(ENGINE_CAPABILITY_ALIASES.values())
+    gaps = []
+    for tok in sorted(tokens):
+        if tok in CAPABILITY_INVENTORY_IGNORE:
+            continue
+        if tok in alias_text:
+            continue
+        gaps.append(tok)
+    return gaps
+
+
+R20_WINDOW = 20
+R20_AFTER_GAP = 6  # 「能力關鍵字在前、否定語氣詞在後」句型的緊鄰窗口(見下方說明), 比前向窗口窄很多
 
 
 def check_r20(p, txt):
@@ -1357,10 +1463,28 @@ def check_r20(p, txt):
             idx = text.find(alias)
             if idx == -1:
                 continue
-            # 「否定語氣詞」須出現在能力關鍵字前方鄰近處(同一子句, 用 20 字窗口), 確保
-            # 兩者語法上構成「引擎無/不支援 + 這個能力」的否定斷言, 而非各自獨立出現。
-            window = text[max(0, idx - 20):idx]
-            if not any(neg in window for neg in NEGATION_KW):
+            # 「否定語氣詞」可能出現在能力關鍵字前方(如「引擎無「單次格擋」原語」)或後方
+            # (如「限自身為主將時觸發,引擎無條件判斷」——「主將時」在前,「無條件判斷」這個
+            # 否定斷言接在後面, 描述的是「引擎不會判斷這個條件」, 語意上仍是對同一能力的
+            # 否定斷言)。批29 A: 原本只查前方20字窗口, 漏掉「能力關鍵字在前、否定語氣詞
+            # 在後」的句型(江東猛虎 ifLeader stale 註記即此句型, 逃過批25-28的偵測)。
+            #
+            # 後向窗口需比前向窄很多且加額外排除條件, 否則會誤傷「能力關鍵字之後接了另一個
+            # 帶引號的無關能力名詞, 否定詞其實是在否定那個引號內名詞」的情形(批29實測案例:
+            # 挫銳「造成傷害時65%機率完全無法造成傷害」引擎無「攔截傷害」原語——否定的是
+            # 「攔截傷害」不是「造成傷害時」; 錦囊妙計「(主將時100%)跳過1回合準備」無對應
+            # 原語——否定的是「跳過1回合準備」不是「主將時」)。這兩個假陽性案例的共同特徵:
+            # 否定詞與能力關鍵字之間隔了一段較長文字(>6字)且中間出現「」引號標記(暗示否定詞
+            # 實際指向引號內的另一個具體名詞, 語法上與能力關鍵字脫鉤)。改用: (a) 緊鄰窗口
+            # (<=6字, 江東猛虎真陽性案例間隔僅"觸發,"3字) 且 (b) 窗口內不含「/」引號字元
+            # 兩條件皆成立才算後向命中, 排除上述假陽性同時保留真陽性。
+            before = text[max(0, idx - R20_WINDOW):idx]
+            after_gap = text[idx + len(alias):idx + len(alias) + R20_AFTER_GAP]
+            after_hit = (
+                any(neg in after_gap for neg in NEGATION_KW)
+                and "「" not in after_gap and "」" not in after_gap
+            )
+            if not any(neg in before for neg in NEGATION_KW) and not after_hit:
                 continue
             violations.append({
                 "name": p["nameZh"], "rule": "R20",
@@ -1746,6 +1870,15 @@ SELFTEST_CASES = {
         ("正常措辭不應誤報",
          _base_tactic(coef=0, _todo="引擎無per-instance機率原語，未編碼"),
          "隨意文字", False),
+        ("能力關鍵字在前否定詞在後應抓到(批29回歸測試: 江東猛虎ifLeader stale句型)",
+         _base_tactic(coef=0, _approx="限自身為主將時觸發,引擎無條件判斷,暫維持為恆定生效"),
+         "隨意文字", True),
+        ("否定詞隔了引號內無關名詞不應誤報(批29回歸測試: 挫銳假陽性案例)",
+         _base_tactic(coef=0, _approx="「造成傷害時65%機率完全無法造成傷害」引擎無「攔截傷害」原語，以amp近似"),
+         "隨意文字", False),
+        ("否定詞隔了引號內無關名詞不應誤報(批29回歸測試: 錦囊妙計假陽性案例)",
+         _base_tactic(coef=0, _note="「17.5%→35%(主將時100%)跳過1回合準備」無對應原語(chargeup=突擊發動率非準備跳過)，未建模"),
+         "隨意文字", False),
     ],
     "R21": [
         ("點語意卻用mult應抓到",
@@ -1768,7 +1901,13 @@ SELFTEST_CASES = {
 
 
 def run_selftest():
-    """對每條規則跑其陽性/陰性樣例, 回傳 (n_pass, n_fail, fail_details)。"""
+    """對每條規則跑其陽性/陰性樣例, 回傳 (n_pass, n_fail, fail_details)。
+    批29 A: 額外把 R20 漂移偵測(check_r20_capability_drift)納入 selftest 的失敗條件——
+    engine.js 掃描出的能力 token 若有不在 CAPABILITY_INVENTORY_IGNORE 白名單、且沒有任何
+    ENGINE_CAPABILITY_ALIASES 別名描述提及的, 視為「新原語落地後忘記登記別名」的制度性
+    缺口, selftest 直接失敗(而非只印警告), 逼維護者當下就補登, 不必等到下次盲測才發現
+    (見批29任務背景: 批26-28新原語ifLeader/stackPer/dealtDamage/guardFor/normalOnly/
+    choices傷害段擴充全沒登記, 讓江東猛虎的stale註記逃過偵測)。"""
     rule_fn_by_id = dict(RULES)
     n_pass, n_fail = 0, 0
     fail_details = []
@@ -1793,6 +1932,17 @@ def run_selftest():
                 expect_str = "應抓到違規" if expect_violation else "不應誤報"
                 got_str = f"實際抓到{len(result)}筆" if result else "實際無違規"
                 fail_details.append(f"[{rule_id}] {case_desc}: 預期{expect_str}, {got_str}")
+
+    drift_gaps = check_r20_capability_drift()
+    if drift_gaps:
+        n_fail += 1
+        fail_details.append(
+            "[R20-drift] engine.js 支援下列能力 token, 但 ENGINE_CAPABILITY_ALIASES 無任何別名"
+            f"描述提及, 疑似新原語落地後忘記登記(或應加入 CAPABILITY_INVENTORY_IGNORE 白名單"
+            f"若確認不需要別名): {drift_gaps}"
+        )
+    else:
+        n_pass += 1
     return n_pass, n_fail, fail_details
 
 
