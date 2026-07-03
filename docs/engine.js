@@ -809,6 +809,17 @@
         if (rnd() >= evRate) { if (TRACE) lg(`　▸ ${caster.nm} 〔${t.nameZh || "?"}〕每回合判定〔${Math.round(evRate * 100)}%機率〕未觸發`); continue; }
         // 通過閘門後不 continue —— 落到下方通用 who/dests 派發邏輯(amp/mitig/block/...),
         // 走與 prep 套用相同的效果分派, 只是改成每回合重新判定/套用一次。
+      } else if (e.when && k !== "heal" && !e.everyRound) {
+        // 批32 R23: e.when(非heal/非everyRound效果) 的回合窗口檢查 —— 過去只有「母戰法無
+        // t.when 時, opt.skipWhenEffects=true 的 prep 呼叫會跳過此效果(留給 fight() 回合
+        // 迴圈通用掃描處理, 見上方754行)」這一種路徑會尊重 e.when; 其餘直接呼叫
+        // applyEffects() 的路徑(尤其 active 型戰法擲骰命中後, fight() 主迴圈直接呼叫)完全
+        // 不檢查 e.when, 導致「奇數回合...偶數回合...」這類需要用 e.when.parity 切分同一
+        // 戰法內兩組互斥效果的 active 戰法(飛沙走石), 即使補了 e.when.parity 也會被無條件
+        // 套用(奇偶兩組效果同時生效, 塌縮成常駐雙倍輸出, 即R23要抓的缺口本身)。此處補上
+        // 通用檢查: 任何非heal/非everyRound效果只要帶 e.when, 就先驗證當前回合是否落在窗口
+        // 內, 不符合則跳過該效果段。
+        if (!roundOk({ when: e.when }, CUR_R)) continue;
       }
       if (k === "heal") {
         if (opt.noHeal) continue;
@@ -1207,7 +1218,15 @@
         if (rnd() >= t.rate) continue;
         src.hitFlags.add(t);
         if (TRACE) lg(`【${src.side}】${src.nm} 戰法【${t.nameZh}】（造成傷害觸發）發動`);
-        if (t.coef) hit(src, dst, t.coef, t.kind, false, onHit, dealtDamage);
+        // 批32 B: targetSel(依準則選標) —— 過去 dealtDamage 的 coef 傷害段固定命中 dst(觸發
+        // 本次事件的同一目標), 沒有讀取 t.targetSel 這條路徑, 導致原文「對負傷最高之敵造成
+        // 謀略傷害」(選標準則與觸發目標無關, 如監統震軍)只能被迫近似或完全不建模。比照主動
+        // 戰法主迴圈既有的 targetSel 判斷式, 若戰法帶 targetSel 則改用準則選標, 找不到符合
+        // 準則的目標時不出手(而非退回 dst, 避免誤傷/誤選)。
+        if (t.targetSel) {
+          const dv = pickByCriterion(foesOf(src), t.targetSel);
+          if (dv) hit(src, dv, t.coef, t.kind, false, onHit, dealtDamage);
+        } else if (t.coef) hit(src, dst, t.coef, t.kind, false, onHit, dealtDamage);
         if (t.extraHits) fireExtraHits(src, t, dst, alliesOf, foesOf, onHit, dealtDamage);
         if (t.effects.length) applyEffects(src, dst, t, alliesOf(src), foesOf(src), { reactive: true });
       }
@@ -1372,7 +1391,12 @@
           // 才被讀取, 若從未 fire 等於整個戰法失效 —— 全庫掃描發現暗潮洶湧/暗潮湧動已是此模式且
           // 從未真正發動過)。加上 t0.choices.length / t0.extraHits.length 這兩個額外判斷條件, 讓
           // 「內容全在 choices/extraHits 裡」的戰法也能正常擲骰派發。
-          if (t0.type === "active" && (t0.coef || t0.effects.length || (t0.choices && t0.choices.length) || (t0.extraHits && t0.extraHits.length)) && !(t0.prep && r === 1)) fire = rnd() < t0.rate + u.addbonusFor("rateup", t0);  // rateup: 提高自身主動戰法發動機率(如白眉); addbonusFor 依 t.prep/t.native 篩選 prepOnly/nativeOnly 修飾的加成(批7: 太平道法)
+          // 批32 R23: active 型戰法過去完全不檢查 t.when(roundOk), 只有 command/passive 分支
+          // (下一行elif)才會擲骰前先驗回合窗口——導致需要 t.when.parity 切分奇偶互斥效果的
+          // active 戰法(如飛沙走石)無法用頂層 when 精確表達。補上 roundOk(t0, r) 對稱於
+          // command/passive 既有判斷, 對唯一既有帶 t.when 的 active 戰法(移花接木, when僅含
+          // dur鍵)無回歸(roundOk 對未知鍵一律回傳true)。
+          if (t0.type === "active" && (t0.coef || t0.effects.length || (t0.choices && t0.choices.length) || (t0.extraHits && t0.extraHits.length)) && !(t0.prep && r === 1) && roundOk(t0, r)) fire = rnd() < t0.rate + u.addbonusFor("rateup", t0);  // rateup: 提高自身主動戰法發動機率(如白眉); addbonusFor 依 t.prep/t.native 篩選 prepOnly/nativeOnly 修飾的加成(批7: 太平道法)
           else if ((t0.type === "command" || t0.type === "passive") && (t0.coef || (t0.choices && t0.choices.length)) && !(t0.when && t0.when.on) && roundOk(t0, r)) fire = rnd() < t0.rate;  // 指揮/被動: 每回合以資料 rate 擲骰(多數 rate=1 即每回合必發); when.rounds/from/until 只在符合回合才擲骰; when.on(反應式) 改由 onHit 事件點觸發, 不在此處常駐擲骰; 批18: choices 派發同active一併補coef=0情形
           if (fire) {
             // 批26 B2: stack.stackPer=="cast" —— 本戰法本次成功發動(fire), 若 u 身上已有

@@ -1667,6 +1667,187 @@ def check_r22(p, txt):
     return violations
 
 
+# ---------------------------------------------------------------------------
+# R23(批32): 奇偶交替塌縮 —— 原文含「奇數回合...偶數回合...」/「單數回合...雙數回合...」/
+# 「奇偶交替」等明確互斥切分回合的措辭, 但戰法/效果皆無 when.parity(批16已支援, 見武鋒陣/
+# 垂心萬物既有 precedent, engine_limitations.md 第24節), 且無「主題相關」揭露(揭露文字須
+# 提到 parity/奇偶/交替 等關鍵字, 純「機制簡化為同時生效」這類舊措辭若沒點出parity原語
+# 本身存在與否, 仍應被抓——因為這代表尚未升級成精確when.parity建模, 而非刻意的已知取捨)。
+#
+# 低誤報設計:
+# - 只抓「奇數回合」+「偶數回合」同時出現(或「單數回合」+「雙數回合」)的明確互斥切分句型,
+#   不對單獨出現「第N回合」(那是R16管轄的單點爆發)或「每回合」(常駐)誤判。
+# - 版本區塊感知(split_version_blocks): 只在含兩個關鍵詞的版本區塊內核對, 避免跨版本誤配
+#   (如舊版只有奇數回合機制、新版改成每回合, 不應該對著舊版文字誤判新版資料缺parity)。
+# - 揭露豁免要求主題相關關鍵字(parity/奇偶/交替/單數/雙數), 避免無關舊揭露(如純疊層近似
+#   說明)頂替掉真正的奇偶塌縮問題。
+# ---------------------------------------------------------------------------
+R23_ODD_KW = ("奇數回合", "單數回合")
+R23_EVEN_KW = ("偶數回合", "雙數回合")
+R23_ALT_KW = ("奇偶交替", "奇偶輪替")
+R23_PARITY_TOPIC_KW = ("parity", "奇偶", "交替", "單數", "雙數", "奇數回合", "偶數回合")
+
+
+def _has_parity_when(obj):
+    return (obj.get("when") or {}).get("parity") in ("odd", "even")
+
+
+def check_r23(p, txt):
+    violations = []
+    for block in split_version_blocks(txt):
+        has_odd = any(kw in block for kw in R23_ODD_KW)
+        has_even = any(kw in block for kw in R23_EVEN_KW)
+        has_alt = any(kw in block for kw in R23_ALT_KW)
+        if not ((has_odd and has_even) or has_alt):
+            continue
+        # 戰法頂層或任一效果帶 when.parity 即視為已精確表達, 不論是否仍有其他效果段未升級
+        # (漸進遷移中的部分落地不算違規, 比照 R22/R17 對「已局部落地」的寬容慣例)。
+        if _has_parity_when(p):
+            return violations
+        if any(_has_parity_when(e) for e in (p.get("effects") or [])):
+            return violations
+        if _topic_disclosed(p, R23_PARITY_TOPIC_KW):
+            return violations
+        kw_hit = next((kw for kw in R23_ODD_KW + R23_EVEN_KW + R23_ALT_KW if kw in block), "")
+        violations.append({
+            "name": p["nameZh"], "rule": "R23",
+            "message": f"原文含「{kw_hit}」等奇偶回合交替互斥措辭, 但戰法/效果皆無 when.parity"
+                       "(批16已支援, 見武鋒陣/垂心萬物既有用法)且無主題相關揭露, 疑似奇偶兩組"
+                       "效果被無條件同時套用(塌縮成常駐雙倍生效, 而非各自單回合互斥觸發)",
+            "evidence": block.strip()[:150],
+        })
+        break
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# R24(批32): 虛弱誤建暈眩 —— 原文明確寫「虛弱」且附帶「(無法造成傷害)」註解(本庫對「虛弱」
+# 一詞的固定官方定義: 只封鎖傷害輸出, 不影響行動/其他效果觸發), 但落地效果用了 k=="stun"
+# (震懾, 整回合鎖死該單位一切行動, 見 sgz.py/engine.js `if u.stun: continue` 全禁機制,
+# 威力遠大於虛弱), 且無「主題相關」揭露(揭露文字須提到虛弱/amp:-1/無法造成傷害 等關鍵字,
+# 且揭露內容須點出「非stun」或「非全禁」等語意, 純粹複誦原文機率數字不算數——那只是說明
+# 機率為何, 沒有承認stun本身就是錯誤的機制替換)。
+#
+# 慣例: 「虛弱(無法造成傷害)」= amp(val:-1, 對 who="enemy" 走 mitig 分支全額封鎖傷害輸出,
+# 見批23乘敵不虞既有慣例), 不得升格用 stun(全面控制)頂替。
+#
+# 低誤報設計:
+# - 只抓「虛弱」緊鄰「(無法造成傷害)」或「無法造成傷害」註解的措辭(排除純「虛弱」二字被
+#   用在其他無關語意的情形, 全庫核對後確認本詞固定伴隨此註解使用, 無需額外排除表)。
+# - 只在該戰法確實用了 k=="stun" 效果時才觸發(若已正確改用 amp/mitig, 自然不會誤報)。
+# - 揭露豁免要求主題相關關鍵字, 且不接受「控制無法折值,保守單建」這類只解釋機率處理方式、
+#   完全未提及stun本身是否合適的舊措辭頂替(見仁德載世批28遺留案例, 即本規則設計初衷)。
+# ---------------------------------------------------------------------------
+R24_WEAK_RE = re.compile(r"虛弱(?:（|\()\s*無法造成傷害\s*(?:）|\))|虛弱[^。；;]{0,10}無法造成傷害")
+# 刻意不用裸「虛弱」/「無法造成傷害」當豁免關鍵字——這兩詞是原文本身就會出現的固定描述,
+# 任何複誦原文機率數字的舊_note(如"虛弱5-10%機率/回合")都會天然包含這些字, 卻完全沒有
+# 承認「用了stun而非amp是錯誤機制替換」這件事(見仁德載世批28遺留案例, 本規則設計初衷)。
+# 只接受明確點出「stun/amp/全禁/震懾」等機制層級對比詞彙的揭露, 才算真正承認了問題所在。
+R24_TOPIC_KW = ("amp:-1", "amp(val:-1)", "非stun", "非全禁", "並非震懾", "不封鎖行動",
+                "stun過重", "stun過度", "误用stun", "誤用stun", "不應用stun", "應為amp")
+
+
+def check_r24(p, txt):
+    violations = []
+    if not R24_WEAK_RE.search(txt):
+        return violations
+    stuns = [e for e in (p.get("effects") or []) if e.get("k") == "stun"]
+    if not stuns:
+        return violations
+    if _topic_disclosed(p, R24_TOPIC_KW):
+        return violations
+    violations.append({
+        "name": p["nameZh"], "rule": "R24",
+        "message": "原文「虛弱(無法造成傷害)」只封鎖傷害輸出(慣例對應 amp(val:-1)), 但落地用了"
+                   " k=\"stun\"(震懾, 全禁一切行動, 威力遠大於虛弱)且無主題相關揭露, 屬機制"
+                   "替換錯誤(非近似, 是錯誤的debuff類型置換)",
+        "evidence": txt[:100].strip(),
+    })
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# R25(批32): 傷害宣告零輸出 —— 原文明說「造成兵刃攻擊/傷害」「謀略傷害」「兵刃/謀略攻擊」
+# 但戰法頂層 t.coef==0 且無 extraHits 傷害段、無 choices 傷害分支、無其他效果(dot等)承載
+# 傷害輸出, 導致該戰法完全零輸出(引擎 `if (t.coef)` 為false時整段主傷害呼叫被跳過, 見
+# engine.js/sgz.py fight() 主迴圈), 且無「主題相關」揭露(揭露文字須提到coef/傷害/輸出等
+# 關鍵字說明為何缺傷害段, 純粹描述其他機制的舊揭露不算數, 見短兵相接批28遺留案例)。
+#
+# 低誤報設計:
+# - 只抓「(對|向)...造成(一次)?(兵刃|謀略)?(攻擊|傷害)」或「(再次)?發起(一次)?(兵刃|謀略)?
+#   攻擊」這類明確宣告「本戰法對目標輸出一次傷害」的句型(要求「對/向」介詞+目標, 或「發起」
+#   動詞), 排除兩類常見假陽性:
+#   (1)「無法造成傷害」(虛弱類負面狀態描述, 已由R24/R11管轄, 不是本戰法自己要輸出傷害);
+#   (2)「使(自己/自身/我軍主將/...)造成的?(兵刃)?傷害提高/提升/降低/增加」(這是amp增傷/
+#      減傷描述, "造成傷害"是被修飾的受詞而非本戰法直接輸出的傷害宣告, 如乘勝長驅"使自身
+#      造成傷害提高5.5%"、長驅直入"使自己造成兵刃傷害提升7.5%"、威武並昭"造成傷害時無視
+#      目標降低效果"(看破/pierce機制) 皆屬此類, 全庫核對後確認此排除不影響真正的零輸出案例)。
+# - 若戰法已有 extraHits 且其中至少一段有 coef>0(傷害由額外段承載, 如屠几上肉的雙段結構),
+#   或有 choices 且其中至少一分支的 effects 含傷害段, 皆視為已建模(承載管道不同, 非零輸出),
+#   不算違規。
+# - 若 effects 內含 dot(持續傷害)且 dot.coef>0, 視為傷害輸出已由DoT段精確承載(如熯天熾地
+#   的火攻+灼燒, 主段coef本身有值, 不觸發本規則; 但也涵蓋"coef==0純DoT輸出"的合法設計),
+#   不算違規。
+# - 版本區塊感知: 只在含「造成傷害」措辭的版本區塊內核對。
+# ---------------------------------------------------------------------------
+R25_DEAL_DMG_RE = re.compile(r"(?:對|向)[^。；;，,]{0,12}造成(?:一次)?(?:兵刃|謀略)?(?:攻擊|傷害)|"
+                             r"(?:再次)?發起(?:一次)?(?:兵刃|謀略)?(?:攻擊|傷害)")
+R25_NO_DMG_EXCLUDE_RE = re.compile(r"無法造成傷害")
+R25_AMP_EXCLUDE_RE = re.compile(r"造成(?:的)?(?:兵刃|謀略)?傷害(?:時|後)?\s*(?:提高|提升|降低|增加|減少)")
+R25_TOPIC_KW = ("coef", "傷害", "輸出", "傷害段")
+
+
+def _extra_hits_has_damage(p):
+    for eh in p.get("extraHits") or []:
+        if (eh.get("coef") or 0) > 0:
+            return True
+    return False
+
+
+def _choices_has_damage(p):
+    for ch in p.get("choices") or []:
+        for e in ch.get("effects") or []:
+            if e.get("k") == "dot" and (e.get("coef") or 0) > 0:
+                return True
+        if (ch.get("coef") or 0) > 0:
+            return True
+    return False
+
+
+def _dot_has_damage(p):
+    return any(e.get("k") == "dot" and (e.get("coef") or 0) > 0 for e in (p.get("effects") or []))
+
+
+def check_r25(p, txt):
+    violations = []
+    if (p.get("coef") or 0) > 0:
+        return violations
+    if _extra_hits_has_damage(p) or _choices_has_damage(p) or _dot_has_damage(p):
+        return violations
+    for block in split_version_blocks(txt):
+        # 逐子句核對, 排除「無法造成傷害」(虛弱類負面狀態措辭, 非本戰法自身傷害輸出宣告)
+        for clause in split_clauses(block):
+            if R25_AMP_EXCLUDE_RE.search(clause):
+                continue  # 「使...造成傷害提高/提升」是amp增傷描述, 非本戰法自身傷害宣告
+            clause_no_neg = R25_NO_DMG_EXCLUDE_RE.sub("", clause)
+            m = R25_DEAL_DMG_RE.search(clause_no_neg)
+            if not m:
+                continue
+            if _topic_disclosed(p, R25_TOPIC_KW):
+                return violations
+            violations.append({
+                "name": p["nameZh"], "rule": "R25",
+                "message": f"原文「{m.group(0)}」明說造成兵刃/謀略攻擊或傷害, 但戰法 coef=0 且無"
+                           "extraHits/choices/dot 等其他傷害承載段, 且無主題相關揭露, 核心傷害"
+                           "輸出完全掛零(引擎 `if(t.coef)` 為false時整段跳過)",
+                "evidence": clause.strip()[:120],
+            })
+            break
+        if violations:
+            break
+    return violations
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
@@ -1674,6 +1855,7 @@ RULES = [
     ("R13", check_r13), ("R14", check_r14), ("R15", check_r15),
     ("R16", check_r16), ("R17", check_r17), ("R18", check_r18), ("R19", check_r19),
     ("R20", check_r20), ("R21", check_r21), ("R22", check_r22),
+    ("R23", check_r23), ("R24", check_r24), ("R25", check_r25),
 ]
 
 
@@ -1924,6 +2106,48 @@ SELFTEST_CASES = {
          _base_tactic(coef=0, effects=[{"k": "stat", "who": "self", "stat": "intel", "add": 10, "dur": 99,
                                         "when": {"on": "dealtDamage"}}]),
          "自己每次造成謀略傷害時，增加10點智力", False),
+    ],
+    "R23": [
+        ("奇偶回合交替但無when.parity應抓到",
+         _base_tactic(coef=0.5, effects=[{"k": "stat", "who": "enemy", "stat": "intel", "add": -20, "dur": 1},
+                                          {"k": "dot", "who": "enemy", "coef": 0.5, "dur": 2}]),
+         "奇數回合使敵軍智力降低20點，偶數回合使敵軍陷入沙暴狀態，傷害率50%", True),
+        ("戰法級when.parity不應誤報",
+         {**_base_tactic(coef=0.5, effects=[{"k": "dot", "who": "enemy", "coef": 0.5, "dur": 2}]),
+          "when": {"parity": "odd"}},
+         "奇數回合使敵軍智力降低20點，偶數回合使敵軍陷入沙暴狀態，傷害率50%", False),
+        ("效果級when.parity不應誤報",
+         _base_tactic(coef=0.5, effects=[{"k": "stat", "who": "enemy", "stat": "intel", "add": -20, "dur": 1,
+                                           "when": {"parity": "odd"}},
+                                          {"k": "dot", "who": "enemy", "coef": 0.5, "dur": 2,
+                                           "when": {"parity": "even"}}]),
+         "奇數回合使敵軍智力降低20點，偶數回合使敵軍陷入沙暴狀態，傷害率50%", False),
+    ],
+    "R24": [
+        ("虛弱誤建stun應抓到",
+         _base_tactic(coef=0, effects=[{"k": "stun", "who": "enemy", "dur": 1}]),
+         "有10%機率對敵軍單體施加虛弱（無法造成傷害）狀態，持續1回合", True),
+        ("改用amp不應誤報",
+         _base_tactic(coef=0, effects=[{"k": "amp", "who": "enemy", "val": -1.0, "dur": 1}]),
+         "有10%機率對敵軍單體施加虛弱（無法造成傷害）狀態，持續1回合", False),
+        ("主題相關揭露應豁免",
+         _base_tactic(coef=0, effects=[{"k": "stun", "who": "enemy", "dur": 1,
+                                        "_todo": "虛弱應為amp:-1非全禁stun，待修正"}]),
+         "有10%機率對敵軍單體施加虛弱（無法造成傷害）狀態，持續1回合", False),
+    ],
+    "R25": [
+        ("宣告造成傷害但coef=0且無承載段應抓到",
+         _base_tactic(coef=0, effects=[{"k": "stat", "who": "enemy", "stat": "command", "mult": 0.88, "dur": 1, "n": 1}]),
+         "對敵軍單體造成兵刃攻擊並降低其統率屬性", True),
+        ("coef>0不應誤報",
+         _base_tactic(coef=1.0, effects=[{"k": "stat", "who": "enemy", "stat": "command", "mult": 0.88, "dur": 1, "n": 1}]),
+         "對敵軍單體造成兵刃攻擊並降低其統率屬性", False),
+        ("extraHits有傷害段不應誤報",
+         _base_tactic(coef=0, extraHits=[{"who": "sameTarget", "coef": 1.5, "kind": "intel"}]),
+         "對敵軍單體造成一次兵刃攻擊及謀略攻擊", False),
+        ("無法造成傷害(虛弱描述)不應誤判為本戰法自身傷害宣告",
+         _base_tactic(coef=0, effects=[{"k": "amp", "who": "enemy", "val": -1.0, "dur": 1}]),
+         "對敵軍單體施加虛弱（無法造成傷害）狀態，持續1回合", False),
     ],
 }
 

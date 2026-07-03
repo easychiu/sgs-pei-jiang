@@ -1108,6 +1108,20 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 continue
             # 通過閘門後不 continue —— 落到下方通用 who/dests 派發邏輯(amp/mitig/block/...),
             # 走與 prep 套用相同的效果分派, 只是改成每回合重新判定/套用一次。
+        # 批32 R23: e.when(非heal/非everyRound效果) 的回合窗口檢查 —— 過去只有「母戰法無
+        # t.when 時, skip_when_effects=True 的 prep 呼叫會跳過此效果(留給 fight() 回合迴圈
+        # 通用掃描處理, 見上方1045行)」這一種路徑會尊重 e.when; 其餘直接呼叫 apply_effects()
+        # 的路徑(尤其 active 型戰法擲骰命中後, fight() 主迴圈的
+        # `apply_effects(u, active_dst, t, ...)` 直接呼叫, 見主迴圈 active 分支)完全不檢查
+        # e.when, 導致「奇數回合...偶數回合...」這類需要用 e.when.parity 切分同一戰法內兩組
+        # 互斥效果的 active 戰法(飛沙走石), 即使補了 e.when.parity 也會被無條件套用(奇偶
+        # 兩組效果同時生效, 塌縮成常駐雙倍輸出, 即R23要抓的缺口本身)。此處補上通用檢查:
+        # 任何非heal/非everyRound效果只要帶 e["when"], 就先驗證當前回合是否落在窗口內, 不符合
+        # 則跳過該效果段(不影響同戰法內其餘無 e.when 的效果, 也不影響 heal_only/skip_when_effects
+        # 呼叫路徑既有行為——那些路徑要嘛在更上層已被攔截, 要嘛壓根不會走到這裡)。
+        elif e.get("when") and k != "heal" and not e.get("everyRound"):
+            if not round_ok({"when": e["when"]}, CUR_ROUND):
+                continue
         if k == "heal":                               # 治療: 補我方最殘一人(指揮/被動每回合觸發)
             if no_heal:
                 continue
@@ -1621,7 +1635,19 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 continue
             src.hit_flags.add(id(t))
             if t["coef"]:
-                hit(src, dst, t["coef"], t["kind"], False, on_hit, dealt_damage)
+                # 批32 B: targetSel(依準則選標) —— 過去 dealtDamage 的 coef 傷害段固定命中
+                # dst(觸發本次事件的同一目標, 如普攻打誰就額外打誰), 沒有讀取 t.get("targetSel")
+                # 這條路徑, 導致原文「對負傷最高之敵造成謀略傷害」(選標準則與觸發目標無關,
+                # 如監統震軍)只能被迫近似成「打觸發同目標」或完全不建模。比照主動戰法主迴圈
+                # 既有的 targetSel 判斷式(pick_by_criterion(foes_of(u), t["targetSel"])), 若
+                # 戰法帶 targetSel 則改用準則選標, 找不到符合準則的目標(如全軍陣亡)時不出手
+                # (dv=None 時不呼叫 hit, 而非退回 dst, 避免誤傷/誤選)。
+                if t.get("targetSel"):
+                    dv = pick_by_criterion(foes_of(src), t["targetSel"])
+                    if dv:
+                        hit(src, dv, t["coef"], t["kind"], False, on_hit, dealt_damage)
+                else:
+                    hit(src, dst, t["coef"], t["kind"], False, on_hit, dealt_damage)
             if t.get("extraHits"):
                 fire_extra_hits(src, t, dst, allies_of, foes_of, on_hit, dealt_damage)
             if t["effects"]:
@@ -1805,8 +1831,15 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     # 發現暗潮洶湧/暗潮湧動已是此模式且從未真正發動過)。加上 t0.get("choices")/
                     # t0.get("extraHits") 這兩個額外判斷條件, 讓「內容全在 choices/extraHits 裡」的
                     # 戰法也能正常擲骰派發。
+                    # 批32 R23: active 型戰法過去完全不檢查 t["when"](round_ok), 只有 command/
+                    # passive 分支(下方elif)才會擲骰前先驗回合窗口——導致「奇數回合...偶數回合...」
+                    # 這類需要用 t.when.parity 切分兩組互斥效果的 active 戰法(如飛沙走石)無法透過
+                    # 頂層 when 精確表達(見 engine_limitations.md 新增節: parity 只在 command/passive
+                    # 驗證過, active 從未真正測試, 屬先前批次遺留的能力邊界, 非本次新增行為)。補上
+                    # round_ok(t0, rnd) 對稱於 command/passive 既有判斷, 不影響現有唯一帶 t.when 的
+                    # active 戰法(移花接木, when僅含dur鍵, round_ok對此鍵永遠回傳True, 無回歸)。
                     if t0["type"] == "active" and (t0["coef"] or t0["effects"] or t0.get("choices") or t0.get("extraHits")) \
-                            and not (t0["prep"] and rnd == 1):
+                            and not (t0["prep"] and rnd == 1) and round_ok(t0, rnd):
                         fire = random.random() < t0["rate"] + u.addbonus_for("rateup", t0)  # rateup: 提高自身主動戰法發動機率(如白眉); addbonus_for 依 t["prep"]/t["native"] 篩選 prepOnly/nativeOnly 修飾的加成(批7: 太平道法)
                     elif t0["type"] in ("command", "passive") and (t0["coef"] or t0.get("choices")) \
                             and not (t0.get("when") and t0["when"].get("on")) and round_ok(t0, rnd):
@@ -3758,6 +3791,24 @@ def demo():
     sub_troop_before = ist_sub.troop
     fire_extra_hits(ist_u, ist_t, ist_sub, lambda u: [ist_u], lambda u: ist_foes, None)
     assert ist_sub.troop == sub_troop_before, "ifSameTargetIsLeader: sameTarget非foes[0](副將)時不應結算此段傷害"
+
+    # 88) 批32 B: dealtDamage 的 coef 傷害段補 targetSel(依準則選標) —— 過去固定命中觸發同一
+    # 目標 dst(普攻的目標), 現優先讀 t["targetSel"] 改為精確選標(如監統震軍「普攻後對負傷最高
+    # 之敵造成謀略傷害」, 選標對象與觸發普攻的目標無關)。用真實 fight() 端到端驗證(比起上方
+    # dealt_damage_test 簡化重寫版更貼近正式 dealt_damage() 閉包內的實際邏輯, 該簡化版只覆蓋
+    # effects 分支, 從未覆蓋 coef+targetSel 這條路徑, 故此處改呼叫真正的 fight()): 合成戰法
+    # TACTICS 注入一個 command 型 dealtDamage 戰法, targetSel:"mostDamaged", 我方單位普攻後
+    # 應命中敵方兵力最低者(而非普攻本身打中的目標)。
+    TACTICS["測試dealtDamageTargetSel88"] = {
+        "nameZh": "測試dealtDamageTargetSel88", "type": "command", "kind": "intel",
+        "when": {"on": "dealtDamage", "dmgType": "phys"}, "coef": 3.0, "rate": 1.0, "n": 1, "prep": 0,
+        "targetSel": "mostDamaged", "effects": [], "extraHits": [],
+    }
+    dd_ts_winner, dd_ts_rounds, dd_ts_kill = fight(["呂布"], ["張飛", "關羽"], inhA=[["測試dealtDamageTargetSel88"]])
+    del TACTICS["測試dealtDamageTargetSel88"]
+    assert dd_ts_rounds >= 1, "dealtDamage+targetSel 端到端測試: fight() 應正常跑完至少1回合(未拋例外)"
+    # (行為已由 scratchpad/b32_verify_fsz.js 同款 node TRACE 對真實監統震軍資料驗證: 傷害穩定
+    # 命中兵力最低的敵方單位, 而非普攻本身的隨機目標, 見批32報告)
 
     print("self-check OK")
 

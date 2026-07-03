@@ -376,17 +376,21 @@
     "n": 1
    },
    {
-    "k": "stun",
+    "k": "amp",
     "who": "enemy",
+    "val": -1.0,
     "dur": 1,
-    "_note": "虛弱5-10%(主將25%)機率/回合;控制無法折值,保守單建(首回合一次),與慣例同"
+    "n": 1,
+    "rate": 0.1,
+    "_note": "批32 R24: 原用stun(震懾, 全禁一切行動)頂替虛弱(無法造成傷害), 兩者機制威力天差地遠(stun連普攻/被動觸發都封鎖, 虛弱只封鎖傷害輸出), 屬機制替換錯誤而非近似, 已修正為amp(val:-1)慣例(見乘敵不虞/克敵制勝/威謀靡亢/臨戰先登同款做法)——傷害公式在total_amp<=-1時完全歸零, 精確對應「無法造成傷害」語意。批23 A4新增的e.rate通用機率判定用於表達5%→10%發動機率(取滿級值0.10, 真擲骰而非無條件套用), n:1對應原文「敵軍單體」。"
    }
   ],
   "_src": " +他AI補全effectText/重解",
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=mitig] 缺 e['n'], 原文目標為「單體」, 補 e['n']=1。"
+  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=mitig] 缺 e['n'], 原文目標為「單體」, 補 e['n']=1。",
+  "_todo": "批32 R24: 「自身為主將時，施加虛弱狀態的機率提高至12.5%→25%」——ifLeader(批26新增)只支援布林條件閘門(是否為主將, 無條件觸發), 無法表達「主將時機率從10%提升到25%」這種依身份縮放機率數值的複合語意(與engine_limitations.md第9節「觸發機率的按施放者身份條件縮放」同類缺口), 現維持10%基礎值不建模主將加成, 已誠實揭露待未來若新增身份縮放機率原語再升級。"
  },
  {
   "nameZh": "以寡敵眾",
@@ -4968,22 +4972,17 @@
   "nameZh": "監統震軍",
   "type": "command",
   "kind": "intel",
-  "coef": 0,
+  "coef": 1.14,
   "rate": 1,
   "n": 2,
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
-    "who": "enemy",
-    "val": -0.38,
-    "dur": 99
-   },
-   {
     "k": "heal",
     "who": "ally",
     "coef": 0.92,
-    "dur": 1
+    "dur": 1,
+    "_note": "「若敵軍無負面狀態則治療損失最多友軍(治療率92%)」的替代治療分支——引擎無「目標是否帶有任一負面狀態」的通用判斷(僅有ifTargetHas檢查單一指定狀態, 無法表達'任一debuff皆算'的or語意), 故heal維持既有無條件常駐治療近似(較原文'僅無負面時才觸發'寬鬆, 已知高估), 非本批處理範圍。"
    }
   ],
   "_src": "https://m.ali213.net/news/gl2011/519859.html",
@@ -4992,7 +4991,13 @@
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "_todo": "批28 A2: lint R11新現形——原文「普攻後對負傷最高之敵造成謀略傷害(傷害率114%,受智力影響)」(見effectText/_real)是「自身每次普通攻擊後, 額外對負傷最高的敵方單體造成一次獨立的謀略傷害」, 引擎目前完全未建模這段(現行effects只有amp(延長友軍負面狀態近似)+heal(無負面時的替代治療), 缺少對應這次額外普攻後傷害的dot/extraHits承載)。需要「普通攻擊後觸發」的掛鉤點(見dealtDamage原語, 批27新增, when.on==\"dealtDamage\")+targetSel(選負傷最高之敵)組合才能精確表達, 本批僅新增揭露, 未動此戰法的落地結構(較大範圍的新建模留待後續批次評估優先序)。"
+  "_todo": "批28 A2: lint R11新現形——原文「普攻後對負傷最高之敵造成謀略傷害(傷害率114%,受智力影響)」(見effectText/_real)是「自身每次普通攻擊後, 額外對負傷最高的敵方單體造成一次獨立的謀略傷害」, 引擎目前完全未建模這段(現行effects只有amp(延長友軍負面狀態近似)+heal(無負面時的替代治療), 缺少對應這次額外普攻後傷害的dot/extraHits承載)。需要「普通攻擊後觸發」的掛鉤點(見dealtDamage原語, 批27新增, when.on==\"dealtDamage\")+targetSel(選負傷最高之敵)組合才能精確表達, 本批僅新增揭露, 未動此戰法的落地結構(較大範圍的新建模留待後續批次評估優先序)。",
+  "when": {
+   "on": "dealtDamage",
+   "dmgType": "phys"
+  },
+  "targetSel": "mostDamaged",
+  "_note": "批32 B: 原用amp(who:enemy,val:-0.38,dur:99)近似「延長友軍施加的負面狀態1回合」, 但engine.js/sgz.py對amp(who==enemy時, val<0)的實際分派是`u.pushAdd(\"amp\", v, ...)`, 直接讓敵方單位自己的攻擊倍率-38%(=敵方輸出降低38%常駐), 這是與原文「延長己方debuff時效」完全不同的機制替換錯誤(非近似), 已移除。核心「自身普攻後對負傷最高之敵造成謀略傷害(114%)」改用批32新增能力: t.when:{on:\"dealtDamage\", dmgType:\"phys\"}(僅普攻/兵刃傷害觸發, 對稱既有dmgType過濾慣例)+t.targetSel:\"mostDamaged\"(=minTroop準則, 「負傷最高」=兵力損失絕對量最大=當前剩餘兵力最低, 見sgz.py TARGETSEL_KEY/TARGETSEL_MIN既定語意)+coef:1.14(kind:intel), 搭配批32新增的dealt_damage()/dealtDamage() targetSel支援(過去此路徑固定命中觸發同一目標dst, 現優先讀t.targetSel改為精確選標)精確重建。「延長友軍debuff時效」語意本身(而非近似錯誤的那個機制)完全未建模, 因引擎無「debuff剩餘回合數延長」原語(需要在push_add/pushAdd的dur欄位上做加法而非覆寫刷新, 屬另一類缺口), 已於此note誠實記錄, 不與虛構的amp近似混淆。「若敵無負面則改為治療」的條件分支(heal段)因引擎無「任一debuff存在與否」的通用判斷, 維持既有無條件治療近似(見effects[0]._note)。"
  },
  {
   "nameZh": "眾動萬計",
@@ -7924,7 +7929,10 @@
     "note": "奇數回合：敵2人智力降低36點（受智力影響），持續1回合",
     "scale": "intel",
     "add": -36,
-    "n": 2
+    "n": 2,
+    "when": {
+     "parity": "odd"
+    }
    },
    {
     "k": "dot",
@@ -7932,7 +7940,10 @@
     "coef": 0.58,
     "dur": 2,
     "note": "奇數回合：敵2人陷入水攻狀態，傷害率58%/回，持續2回合",
-    "n": 2
+    "n": 2,
+    "when": {
+     "parity": "odd"
+    }
    },
    {
     "k": "dot",
@@ -7940,12 +7951,19 @@
     "coef": 1.08,
     "dur": 2,
     "note": "偶數回合：敵單體武力智力互換（近似智力大幅提傷），並陷入沙暴，傷害率108%/回，持續2回合；互換效果引擎無法精確表示，以高傷DoT近似",
-    "n": 2
+    "n": 1,
+    "when": {
+     "parity": "even"
+    }
    },
    {
     "k": "swap",
     "who": "enemy",
-    "dur": 1
+    "dur": 1,
+    "n": 1,
+    "when": {
+     "parity": "even"
+    }
    }
   ],
   "_src": "https://www.gamersky.com/handbooksy/202307/1617272.shtml",
@@ -7954,7 +7972,7 @@
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INNATE",
-  "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=stat] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=dot] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。 | 批28 A2: lint R4新現形——兩個dot效果的dur原為1, 但原文明確「持續2回合」(且各自note欄位也已寫「持續2回合」, 與dur=1矛盾, 屬先前批次遺留的資料錯位), 修正dur:1→2, 使dot效果真正持續2回合(過去低估水攻/沙暴傷害期數約一半)。"
+  "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=stat] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=dot] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。 | 批28 A2: lint R4新現形——兩個dot效果的dur原為1, 但原文明確「持續2回合」(且各自note欄位也已寫「持續2回合」, 與dur=1矛盾, 屬先前批次遺留的資料錯位), 修正dur:1→2, 使dot效果真正持續2回合(過去低估水攻/沙暴傷害期數約一半)。 | 批32 R23: 全庫掃「奇數回合...偶數回合...」互斥交替措辭新增lint規則後現形——過去四段效果(智力debuff/水攻dot/沙暴dot/swap)無條件同時套用, 導致每回合雙倍dot疊加(奇偶效果塌縮成常駐), 且swap誤套全體敵軍(應為原文「敵軍隨機單體」)。本批: (1)引擎補強——sgz.py/engine.js的active型戰法fire判定過去完全不檢查t.when(round_ok/roundOk), 只有command/passive分支才驗回合窗口, 導致頂層when.parity對active型天生失效; apply_effects()/applyEffects()的非heal/非everyRound效果過去也完全不檢查e.when(只有prep階段skip_when_effects=true時才會跳過留給回合迴圈通用掃描, 但該通用掃描只覆蓋command/passive, 不含active), 兩處皆已對稱補上round_ok/roundOk檢查(飛沙走石為全庫首個實際使用active型e.when.parity的案例, 修復前parity對active型從未真正生效過, 屬既有能力邊界而非本批新增行為)。(2)資料重建——奇數回合效果(stat+水攻dot)補when.parity:odd, 偶數回合效果(沙暴dot+swap)補when.parity:even, 各自僅在對應回合觸發, 不再同時常駐；swap的n從無(=全體敵軍)改為n:1(單體), 精確對應原文「敵軍隨機單體」武智互換, 取代先前誤套全體敵軍的範圍錯位。「武力智力互換」機制本身(而非觸發時機)仍以高傷DoT近似, 見沙暴dot效果note, 非本批範圍。"
  },
  {
   "nameZh": "飛熊軍",
@@ -9222,7 +9240,7 @@
   "nameZh": "短兵相接",
   "type": "active",
   "kind": "phys",
-  "coef": 0,
+  "coef": 2.1,
   "rate": 0.4,
   "n": 1,
   "prep": 0,
@@ -9231,15 +9249,17 @@
     "k": "stat",
     "who": "enemy",
     "stat": "command",
-    "mult": 0.88,
+    "add": -30,
     "dur": 1,
-    "n": 1
+    "n": 1,
+    "_est": true,
+    "_note": "批32 R25: 原文無任何百分比/點數數值(「對敵軍單體造成兵刃攻擊並降低其統率屬性，具備一定的破防效果」一個數字都沒有), 比照同名近義且結構幾乎一致的「短兵相見」(type:active/rate:0.4/kind:phys/單體/統率debuff, 原文「使敵軍單體降低15→30點統率,持續1回合,並對其造成一次兵刃攻擊(傷害率105%→210%)」)取其滿級值coef:2.1、stat.add:-30(點數語意, 依批12 ModeA慣例用add非mult, 原mult:0.88已一併撤回)作為保守估計, 待未來查證到官方精確數值再覆寫。"
    }
   ],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——原文明確描述效果(k=stat)目標為「單體」, 但該效果缺 e['n'], 過去無e.n時套用到全體(過去系統性高估覆蓋人數, 見批23 A1機制), 補 e['n']=1。"
+  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——原文明確描述效果(k=stat)目標為「單體」, 但該效果缺 e['n'], 過去無e.n時套用到全體(過去系統性高估覆蓋人數, 見批23 A1機制), 補 e['n']=1。 | 批32 R25: 全庫掃「造成兵刃/謀略攻擊或傷害」但coef無承載段新增lint規則後現形——原文明說「造成兵刃攻擊」, 但過去coef=0且無extraHits/choices/dot承載, 核心傷害輸出完全掛零, 且此缺口過去完全未被任何_note/_todo揭露(對比同批臨危救主同樣「無官方數值」但有詳盡_est揭露, 本筆先前是靜默零輸出)。已比照短兵相見補coef:2.1(_est, 見effects[0]._note)。"
  },
  {
   "nameZh": "短兵相見",
