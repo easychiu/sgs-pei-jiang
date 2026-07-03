@@ -521,10 +521,173 @@ def check_r9(p, txt):
     return violations
 
 
+# ---------------------------------------------------------------------------
+# R10: 選標缺失 —— 原文含「鎖定/兵力最低/武力最高/智力最低/統率最低/兵力最少/最殘/
+# 損失兵力較多」等選標關鍵字, 但對應戰法/效果無 targetSel 且無揭露。
+#
+# targetSel 只在「效果實際依準則挑選單一目標」時才有意義——heal 效果本身天生固定選
+# 「我方兵力最低一人」(見 engine_limitations.md #1 heal_only 通道), 不需要/不支援
+# targetSel; mitig/amp 套用在角色集合(leader/subs/ally全體)上的选标(如「損失兵力較多的
+# 副將」二選一分给不同副將)也不是 targetSel 能表達的「準則挑單一目標」語意, 屬於另一種
+# 近似(engine_limitations 6.5/6.6一類), 這兩種情形本規則不強制要求 targetSel, 只在
+# 「效果影響對象是 who=enemy/ally 的單體選定, 且原文明確用選標關鍵字描述該對象」時才視為
+# 缺口。為降低誤報, 只在下列情形觸發:
+#   - 命中選標關鍵字, 且
+#   - 該子句同一版本區塊內存在 amp/mitig/dot/stun/silence/disarm/healblock/immune 等
+#     「非heal」效果, 且這些效果都不是 who 對應 leader/subs 角色集合(這類角色選標非
+#     targetSel 語意, 見上), 且
+#   - 無 targetSel(戰法級/效果級/extraHits級皆無) 且無揭露
+# ---------------------------------------------------------------------------
+SELECT_KW_RE = re.compile(
+    r"鎖定|兵力最低|武力最高|智力最低|統率最低|兵力最少|最殘|損失兵力較多|損失兵力最多|損失兵力較高"
+)
+ROLE_WHO = {"leader", "subs", "self"}
+
+
+def _has_targetsel(p):
+    if p.get("targetSel"):
+        return True
+    if any(e.get("targetSel") for e in p.get("effects", []) or []):
+        return True
+    if any(eh.get("targetSel") for eh in p.get("extraHits", []) or []):
+        return True
+    return False
+
+
+def check_r10(p, txt):
+    violations = []
+    if not SELECT_KW_RE.search(txt):
+        return violations
+    if _has_targetsel(p):
+        return violations
+    # heal-only 戰法(唯一非role效果是 heal) 天生已用「我方最殘一人」通道, 不算缺口
+    non_heal_non_role = [
+        e for e in p.get("effects", []) or []
+        if e.get("k") != "heal" and e.get("who") not in ROLE_WHO
+    ]
+    if not non_heal_non_role:
+        return violations
+    if has_disclosure(p, non_heal_non_role):
+        return violations
+    for clause in split_clauses(txt):
+        m = SELECT_KW_RE.search(clause)
+        if not m:
+            continue
+        violations.append({
+            "name": p["nameZh"], "rule": "R10",
+            "message": f"原文含選標關鍵字「{m.group(0)}」但無 targetSel 且無揭露",
+            "evidence": clause.strip(),
+        })
+        break
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# R11: 機制錯置 —— 原文「造成…傷害/攻擊」(真實傷害輸出) 但對應 effect 是
+# amp/mitig(增減傷 debuff), 且該戰法無 coef/dot/extraHits 承載該傷害、無 _approx 揭露
+# (抓火燒連營類: 「引爆對敵軍全體造成謀略攻擊」是一次真實傷害輸出, 不該只建模成amp易傷)。
+#
+# 只在「傷害動詞緊鄰目標」且同一版本區塊內完全没有 coef(戰法頂層, 非該子句自身已由頂層
+# coef承載的情形除外)/dot/extraHits 可以對應「這一次」傷害輸出時才觸發, 避免對「先造成一次
+# 傷害(頂層coef已表達)、又額外加註amp易傷副效果」的正常戰法(如水淹七軍dot+amp並存)誤判。
+# ---------------------------------------------------------------------------
+REAL_DMG_ACTION_RE = re.compile(r"(?:對[^。；;，,]{0,12}造成[^。；;，,]{0,10}(?:攻擊|傷害)|引爆|焚營)")
+
+
+def check_r11(p, txt):
+    violations = []
+    effects = p.get("effects", []) or []
+    if not effects:
+        return violations
+    amp_mitig = [e for e in effects if e.get("k") in ("amp", "mitig")]
+    if not amp_mitig:
+        return violations
+    dot_count = sum(1 for e in effects if e.get("k") == "dot")
+    has_extra = bool(p.get("extraHits"))
+    coef = p.get("coef") or 0
+    for block in split_version_blocks(txt):
+        for m in REAL_DMG_ACTION_RE.finditer(block):
+            trigger_word = m.group(0)
+            is_detonate = ("引爆" in trigger_word) or ("焚營" in trigger_word)
+            if is_detonate:
+                # 「引爆/焚營」宣告一次「獨立於DoT本體」的第二段傷害輸出——若同一版本區塊內
+                # 已有DoT(灼燒本體, 對應「每回合持續造成傷害」子句)佔用了頂層coef/唯一dot,
+                # 「引爆」這一段就必須有自己的傷害載體(第二個dot 或 extraHits), 否則等於這次
+                # 傷害輸出被憑空丟棄、只剩下amp(易傷debuff)這個附帶效果。
+                carrier_present = dot_count >= 2 or has_extra
+                if not carrier_present:
+                    if has_disclosure(p, amp_mitig):
+                        continue
+                    violations.append({
+                        "name": p["nameZh"], "rule": "R11",
+                        "message": f"原文「{trigger_word}」宣告獨立於主段的第二次傷害輸出, 但無額外 dot/extraHits 承載(僅有 amp/mitig 增減傷), 且無揭露",
+                        "evidence": block.strip()[:120],
+                    })
+            else:
+                # 一般「對X造成傷害/攻擊」: 若頂層coef==0 且無dot/extraHits, 且效果只有amp/mitig, 判定錯置
+                if coef == 0 and dot_count == 0 and not has_extra:
+                    if has_disclosure(p, amp_mitig):
+                        continue
+                    violations.append({
+                        "name": p["nameZh"], "rule": "R11",
+                        "message": f"原文「{trigger_word}」描述真實傷害輸出, 但 coef=0 且無 dot/extraHits 承載, 效果只有 amp/mitig(增減傷), 且無揭露",
+                        "evidence": block.strip()[:120],
+                    })
+            break  # 每個版本區塊只報一次(避免同區塊多個傷害動詞重複產生違規)
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# R12: 清除/免疫缺失 —— 原文「清除/淨化/解除…狀態」但 effects 缺 dispel 且無揭露;
+# 原文「免疫X狀態」(非「免疫所有控制」= insight 全免) 但缺 immune/insight 且無揭露。
+# ---------------------------------------------------------------------------
+DISPEL_KW_RE = re.compile(r"清除[^。；;，,]{0,10}(?:狀態|效果|負面)|淨化(?:自己|自身|我軍|其)?[^。；;，,]{0,6}(?:狀態|負面|效果)?|解除[^。；;，,]{0,10}(?:狀態|負面|效果)")
+# 「可(以)免疫傷害」是抵禦/規避(shield/dodge)機制的固定括號註解措辭(解釋該狀態的效果, 非
+# 宣告一個獨立的狀態免疫), 見 勇者得前/折衝禦侮(抵禦)/金丹秘術/妖術(規避/抵禦), 這幾筆
+# 已用 shield/dodge 精確建模, 不屬 R12 要抓的「免疫X狀態但缺 immune/insight」語意, 排除
+# ——用「免疫」後直接跟已知控制類狀態名(混亂/計窮/震懾/繳械/嘲諷/禁療/遇襲等, 對應 ctrl_k
+# +ambush+healblock+taunt) 或「…狀態/效果」通用後綴來界定, 天然排除「免疫傷害」這個不同語意。
+CONTROL_STATUS_NAMES = "混亂|計窮|震懾|繳械|嘲諷|禁療|遇襲"
+IMMUNE_KW_RE = re.compile(rf"免疫(?!所有控制)(?:{CONTROL_STATUS_NAMES})|免疫(?!所有控制)(?!傷害)[^。；;，,、]{{0,8}}(?:狀態|效果)")
+IMMUNE_ALL_RE = re.compile(r"免疫所有控制|洞察")
+
+
+def check_r12(p, txt):
+    violations = []
+    effects = p.get("effects", []) or []
+    has_dispel = any(e.get("k") == "dispel" for e in effects)
+    has_immune_all = any(e.get("k") == "insight" for e in effects)
+    immune_types_covered = set()
+    for e in effects:
+        if e.get("k") == "immune":
+            immune_types_covered.update(e.get("types") or [])
+
+    for clause in split_clauses(txt):
+        dm = DISPEL_KW_RE.search(clause)
+        if dm and not has_dispel:
+            if not has_disclosure(p):
+                violations.append({
+                    "name": p["nameZh"], "rule": "R12",
+                    "message": f"原文含清除/淨化/解除措辭「{dm.group(0)}」但 effects 無 dispel 且無揭露",
+                    "evidence": clause.strip(),
+                })
+
+        im = IMMUNE_KW_RE.search(clause)
+        if im and not IMMUNE_ALL_RE.search(clause):
+            if not has_immune_all and not immune_types_covered:
+                if not has_disclosure(p):
+                    violations.append({
+                        "name": p["nameZh"], "rule": "R12",
+                        "message": f"原文含免疫措辭「{im.group(0)}」但 effects 無 immune/insight 且無揭露",
+                        "evidence": clause.strip(),
+                    })
+    return violations
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
-    ("R9", check_r9),
+    ("R9", check_r9), ("R10", check_r10), ("R11", check_r11), ("R12", check_r12),
 ]
 
 
