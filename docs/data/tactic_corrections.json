@@ -2356,10 +2356,10 @@
   "鐵騎驅馳": {
    "effects": [
     {
-     "k": "first",
-     "who": "ally",
+     "k": "ambush",
+     "who": "enemy",
      "dur": 2,
-     "_note": "遇襲=行動滯後(敵軍行動延後), 非無法行動; 以我軍全體先攻2回合等價近似。原用stun enemy dur 2=敵全體前2回合完全跳過行動, 嚴重高估(全隊2回合AoE硬控)"
+     "_note": "批18: ambush原語落地, 取代舊版「以我軍先攻2回合近似」——遇襲=行動滯後的反面(先攻的反面), 原文「使敵軍全體處於遇襲狀態」應直接對敵軍套用ambush, 而非對我方套first(方向錯誤地反向近似同一效果, 雖然排序上大致等效, 但當敵軍自己也有先攻/遇襲來源時, 套在敵方(ambush)才能正確與其他效果疊加/抵消, 套在我方(first)則無法)。"
     },
     {
      "k": "stat",
@@ -2371,7 +2371,7 @@
     }
    ],
    "_evidence": "戰鬥前2回合，使敵軍全體處於遇襲狀態（行動滯後），我軍全體發動主動或突擊戰法後，隨機選擇一名敵軍武將，若該敵軍武將當前兵力低於我軍主將，則降低其7.5%→15%統率，持續3回合，可疊加 (2023-09-13最新段)",
-   "_bucket": "rederive_b8"
+   "_bucket": "batch18_wounded_ambush_targetsel"
   },
   "詐降": {
    "effects": [
@@ -4517,11 +4517,12 @@
   },
   "避實擊虛": {
    "set": {
-    "lockTarget": null
+    "lockTarget": null,
+    "targetSel": "minCommand"
    },
    "_evidence": "對統率最低的敵軍單體發動一次兵刃攻擊（傷害率92.5% → 185%）",
-   "_note": "lockTarget:true 語意是「首次選定目標後, 之後每次發動沿用同一目標」(見引擎 resolveLockedTarget), 但原文「統率最低」是每次發動當下重新篩選最低統率目標, 兩者方向相反。此與批12既已明確的原則衝突: 批12(全庫掃描)結論為「上兵伐謀/刮骨療毒的按條件每次重選, 非鎖定, 誠實不硬套, 資料端0筆套用lockTarget」, 避實擊虛屬同一「依屬性選標」模式, 卻在批13「0分效果補全」時被誤加lockTarget(當時著眼於讓0效果戰法至少有點內容, 未回頭核對批12原則)。engine無「依統率高低篩選目標」原語, 移除lockTarget後退回預設隨機單體選標(與上兵伐謀同慣例)。",
-   "_bucket": "rederive_b8"
+   "_note": "lockTarget:true 語意是「首次選定目標後, 之後每次發動沿用同一目標」(見引擎 resolveLockedTarget), 但原文「統率最低」是每次發動當下重新篩選最低統率目標, 兩者方向相反。此與批12既已明確的原則衝突: 批12(全庫掃描)結論為「上兵伐謀/刮骨療毒的按條件每次重選, 非鎖定, 誠實不硬套, 資料端0筆套用lockTarget」, 避實擊虛屬同一「依屬性選標」模式, 卻在批13「0分效果補全」時被誤加lockTarget(當時著眼於讓0效果戰法至少有點內容, 未回頭核對批12原則)。批18: engine新增targetSel原語(依準則選標, 不受混亂影響), 移除lockTarget後改用targetSel=minCommand精確表達「統率最低」語意(取代批12當時「engine無此原語, 退回隨機選標」的暫時性結論)。",
+   "_bucket": "batch18_wounded_ambush_targetsel"
   },
   "武鋒陣": {
    "effects": [
@@ -5876,6 +5877,41 @@
    ],
    "_evidence": "對敵軍群體（2 人）發動一次兵刃攻擊（傷害率 48%→96%，並有 25% 機率（根據自身連擊、洞察、先攻、必中、破陣的狀態數，每多一種提高 5%→10% 機率）造成震懾（無法行動）狀態，持續 1 回合",
    "_bucket": "batch17_v5_primitives"
+  },
+  "上兵伐謀": {
+   "set": {
+    "coef": 0
+   },
+   "extraHits": [
+    {
+     "coef": 1.28,
+     "kind": "intel",
+     "n": 1,
+     "targetSel": "minTroop",
+     "_note": "分別對兵力最低/武力最高/智力最低三名敵將各發動一次謀略攻擊(批18 targetSel原語落地); 原coef頂層打3個隨機目標(pickTargets)不符合原文「分別對(三種不同準則)」語意, 改用3段extraHits各自targetSel指定選標"
+    },
+    {
+     "coef": 1.28,
+     "kind": "intel",
+     "n": 1,
+     "targetSel": "maxForce"
+    },
+    {
+     "coef": 1.28,
+     "kind": "intel",
+     "n": 1,
+     "targetSel": "minIntel"
+    }
+   ],
+   "_evidence": "分別對敵軍兵力最低、武力最高、智力最低的武將發動 1 次謀略攻擊（傷害率 64%→128%，受智力影響）",
+   "_note": "批18: user機制說明「指定」類戰法(按準則選目標)不受混亂影響, engine新增targetSel原語(minTroop/maxForce/minIntel/maxIntel/minCommand/mostDamaged)取代批12「上兵伐謀非目標持久化, 未套用lockTarget」的舊結論——並非不需要特殊選標邏輯, 而是需要targetSel(每次重新按準則選)而非lockTarget(首次選定後鎖定沿用)。三段各自100%發動(無獨立rate, 隨主段一起觸發), coef沿用原文上限128%(scale=intel已在_todo comment中說明kind=intel已天然受智力影響, 不重複標scale)。",
+   "_bucket": "batch18_wounded_ambush_targetsel"
+  },
+  "刮骨療毒": {
+   "_addTopLevel": {
+    "_note": "targetSel=mostDamaged 語意備註: 本戰法heal效果選「我方最殘一人」的邏輯(applyEffects中hurt=allies裡troop最低者)本來就等價於mostDamaged準則, 且heal的目標選擇不經過pickTarget/pickTargets的隨機路徑, 天生不受混亂(chaos)影響——故不需要額外加targetSel欄位改變行為, 此處僅作揭露性標註確認語意已合(批18 user targetSel需求核對: 刮骨療毒既有實作已符合「指定類戰法不受混亂影響」的要求, 無需改動)。"
+   },
+   "_bucket": "batch18_wounded_ambush_targetsel"
   }
  },
  "_batch12_note": "批12: 盲測殘差修正, 在批10(173筆corrections)基礎上新增44筆corrections(217筆總計)。Mode A(stat mult->add修正,36筆) / Mode B(hitsRepeat原語,3筆: 五雷轟頂/摧鋒斷刃/暴斂四方) / Mode C(空effects補完9筆 + heal.who=enemy系統性bug修正5筆) / Mode D(控制/機率修正6筆, 含威震華夏stun->disarm重新編碼+神機妙算coef補完) / Mode E(1分清單次要clause補完6筆) / Mode F(新增chaos原語, 混亂重分類9筆tactics+1筆equips) / Mode G(新增lockTarget原語與引擎機制, 但上兵伐謀/刮骨療毒經核實不符合「目標持久化」語意, 未套用資料, 詳見批12最終報告)。新增雙原語(chaos/hitsRepeat/lockTarget)已於engine.js與sgz.py同步實作並各自新增self-check assertion(38-41)。",

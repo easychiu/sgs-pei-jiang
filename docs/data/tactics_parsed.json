@@ -172,14 +172,36 @@
   "nameZh": "上兵伐謀",
   "type": "active",
   "kind": "intel",
-  "coef": 1.28,
+  "coef": 0,
   "rate": 0.4,
   "n": 3,
   "prep": 0,
   "effects": [],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "extraHits": [
+   {
+    "coef": 1.28,
+    "kind": "intel",
+    "n": 1,
+    "targetSel": "minTroop",
+    "_note": "分別對兵力最低/武力最高/智力最低三名敵將各發動一次謀略攻擊(批18 targetSel原語落地); 原coef頂層打3個隨機目標(pickTargets)不符合原文「分別對(三種不同準則)」語意, 改用3段extraHits各自targetSel指定選標"
+   },
+   {
+    "coef": 1.28,
+    "kind": "intel",
+    "n": 1,
+    "targetSel": "maxForce"
+   },
+   {
+    "coef": 1.28,
+    "kind": "intel",
+    "n": 1,
+    "targetSel": "minIntel"
+   }
+  ],
+  "_note": "批18: user機制說明「指定」類戰法(按準則選目標)不受混亂影響, engine新增targetSel原語(minTroop/maxForce/minIntel/maxIntel/minCommand/mostDamaged)取代批12「上兵伐謀非目標持久化, 未套用lockTarget」的舊結論——並非不需要特殊選標邏輯, 而是需要targetSel(每次重新按準則選)而非lockTarget(首次選定後鎖定沿用)。三段各自100%發動(無獨立rate, 隨主段一起觸發), coef沿用原文上限128%(scale=intel已在_todo comment中說明kind=intel已天然受智力影響, 不重複標scale)。"
  },
  {
   "nameZh": "丹陽兵",
@@ -733,7 +755,8 @@
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "targetSel=mostDamaged 語意備註: 本戰法heal效果選「我方最殘一人」的邏輯(applyEffects中hurt=allies裡troop最低者)本來就等價於mostDamaged準則, 且heal的目標選擇不經過pickTarget/pickTargets的隨機路徑, 天生不受混亂(chaos)影響——故不需要額外加targetSel欄位改變行為, 此處僅作揭露性標註確認語意已合(批18 user targetSel需求核對: 刮骨療毒既有實作已符合「指定類戰法不受混亂影響」的要求, 無需改動)。"
  },
  {
   "nameZh": "剛勇無前",
@@ -6748,10 +6771,10 @@
   "prep": 0,
   "effects": [
    {
-    "k": "first",
-    "who": "ally",
+    "k": "ambush",
+    "who": "enemy",
     "dur": 2,
-    "_note": "遇襲=行動滯後(敵軍行動延後), 非無法行動; 以我軍全體先攻2回合等價近似。原用stun enemy dur 2=敵全體前2回合完全跳過行動, 嚴重高估(全隊2回合AoE硬控)"
+    "_note": "批18: ambush原語落地, 取代舊版「以我軍先攻2回合近似」——遇襲=行動滯後的反面(先攻的反面), 原文「使敵軍全體處於遇襲狀態」應直接對敵軍套用ambush, 而非對我方套first(方向錯誤地反向近似同一效果, 雖然排序上大致等效, 但當敵軍自己也有先攻/遇襲來源時, 套在敵方(ambush)才能正確與其他效果疊加/抵消, 套在我方(first)則無法)。"
    },
    {
     "k": "stat",
@@ -8781,7 +8804,8 @@
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_note": "lockTarget:true 語意是「首次選定目標後, 之後每次發動沿用同一目標」(見引擎 resolveLockedTarget), 但原文「統率最低」是每次發動當下重新篩選最低統率目標, 兩者方向相反。此與批12既已明確的原則衝突: 批12(全庫掃描)結論為「上兵伐謀/刮骨療毒的按條件每次重選, 非鎖定, 誠實不硬套, 資料端0筆套用lockTarget」, 避實擊虛屬同一「依屬性選標」模式, 卻在批13「0分效果補全」時被誤加lockTarget(當時著眼於讓0效果戰法至少有點內容, 未回頭核對批12原則)。engine無「依統率高低篩選目標」原語, 移除lockTarget後退回預設隨機單體選標(與上兵伐謀同慣例)。"
+  "_note": "lockTarget:true 語意是「首次選定目標後, 之後每次發動沿用同一目標」(見引擎 resolveLockedTarget), 但原文「統率最低」是每次發動當下重新篩選最低統率目標, 兩者方向相反。此與批12既已明確的原則衝突: 批12(全庫掃描)結論為「上兵伐謀/刮骨療毒的按條件每次重選, 非鎖定, 誠實不硬套, 資料端0筆套用lockTarget」, 避實擊虛屬同一「依屬性選標」模式, 卻在批13「0分效果補全」時被誤加lockTarget(當時著眼於讓0效果戰法至少有點內容, 未回頭核對批12原則)。批18: engine新增targetSel原語(依準則選標, 不受混亂影響), 移除lockTarget後改用targetSel=minCommand精確表達「統率最低」語意(取代批12當時「engine無此原語, 退回隨機選標」的暫時性結論)。",
+  "targetSel": "minCommand"
  },
  {
   "nameZh": "長者之風",
