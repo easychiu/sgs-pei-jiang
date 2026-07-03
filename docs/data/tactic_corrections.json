@@ -2150,13 +2150,17 @@
      "k": "disarm",
      "who": "enemy",
      "dur": 2,
-     "_approx": "原文「造成兵刃傷害時，有25%→50%機率使敵軍單體繳械」為反應式觸發(造成傷害的瞬間判定), 引擎無「造成傷害時」的反應式掛鉤(when.on僅支援attacked/damaged受擊事件, 非「我方造成傷害時」), 現簡化為準備階段一次性必定套用(高估: 原文是機率觸發且每回合最多各一次, 現行為視同100%發動)"
+     "rate": 0.5,
+     "when": {"on": "dealtDamage", "dmgType": "phys"},
+     "_note": "批27 A: 改用when.on:\"dealtDamage\"(批27新增原語)精確重建原文「自身造成兵刃傷害時，有25%→50%機率使敵軍單體繳械」的反應式語意——取代批15舊版「反應式觸發機制當時尚無掛鉤點, 簡化為準備階段一次性必定套用(高估)」的近似。dmgType:\"phys\"限定只在造成兵刃傷害(kind==phys)時才判定; e.rate=0.5取滿級機率值(真實擲骰, 比EV折算更接近真實方差); who:\"enemy\"+dest單體邏輯(cnt<=1時優先鎖定dealt_damage()傳入的dst=本次被打中的敵軍, 見apply_effects的ctrl_k單體選標分支)精確對應「使敵軍單體」——不再是準備階段對隨機敵軍1人100%必中, 而是每次造成兵刃傷害時對這一擊的目標單體各自50%機率判定; 同回合節流(hit_flags)符合原文「每回合最多分別觸發一次」。"
     },
     {
      "k": "silence",
      "who": "enemy",
      "dur": 1,
-     "_approx": "原文「造成謀略傷害時，有25%→50%機率使敵軍單體計窮」同上, 為反應式觸發近似為準備階段必定套用(高估)"
+     "rate": 0.5,
+     "when": {"on": "dealtDamage", "dmgType": "intel"},
+     "_note": "批27 A: 同上, 改用when.on:\"dealtDamage\"+dmgType:\"intel\"精確重建「自身造成謀略傷害時，有25%→50%機率使敵軍單體計窮」——與disarm段各自綁定不同dmgType, 互不干擾, 同回合節流各自獨立(id(e)去重鍵)。"
     },
     {
      "k": "block",
@@ -2167,8 +2171,8 @@
     }
    ],
    "_evidence": "戰鬥首回合我軍全體獲得 1 次抵禦，戰鬥中，自身造成兵刃傷害時有 25%→50% 機率使敵軍單體繳械（無法進行普通攻擊），持續 2 回合，造成謀略傷害時有 25%→50% 機率使敵軍單體計窮（無法發動主動戰法），持續 1 回合，該效果每回合最多分別觸發一次",
-   "_note": "批15: disarm/silence兩效果原文皆為「造成傷害時XX%機率觸發, 每回合最多一次」的反應式機制, 引擎無此類事件掛鉤點(僅支援受擊觸發, 不支援施加傷害觸發), 現簡化為戰鬥開始時一次性必定套用, 機率與逐回合重複觸發的時機語意已於此揭露(較原文高估: 原文每回合最多各觸發一次且非必中, 現行為視同開場永久生效一次)。批22: 抵禦段改用block新原語精確表達次數(見上方block效果_note)。",
-   "_bucket": "batch22_block_migration"
+   "_note": "批27 A: on:\"dealtDamage\"落地——disarm/silence兩效果改用效果級e.when.on:\"dealtDamage\"(戰法本身無t.when, 其餘效果如block仍在prep正常套用, 不受影響), 精確表達「自身造成兵刃/謀略傷害時」反應式機率觸發, 取代批15「反應式觸發機制當時尚無掛鉤點, 簡化為準備階段必定套用」的舊近似(該近似較原文顯著高估: 原文機率觸發+每回合限次, 舊版視同開場100%永久生效)。批22: 抵禦段改用block新原語精確表達次數(見上方block效果_note)。",
+   "_bucket": "batch27_dealtDamage_migration"
   },
   "扶危定傾": {
    "set": {
@@ -5341,7 +5345,10 @@
   },
   "刀出如霆": {
    "set": {
-    "hitsRepeat": true
+    "hitsRepeat": true,
+    "_src": null,
+    "_real": null,
+    "_conf": null
    },
    "effects": [
     {
@@ -5362,7 +5369,8 @@
    ],
    "_evidence": "對敵軍造成兵刃傷害(180%)及掠陣狀態,重複3次;使自身及友軍單體獲得30%倒戈,持續2回合",
    "_diff": "移除原文沒有的我方amp+30%兩條(舊300%平分解讀殘留的增益);『重複3次』補hitsRepeat(可重複命中同目標)",
-   "_bucket": "rederive_b1"
+   "_bucket": "rederive_b1",
+   "_note": "批27 D: 清除stale頂層_src/_real/_conf——這三個欄位是更早批次(rederive_b1之前)對「傷害率300%由敵軍全體平分」舊版官方文字的手工推導殘留(當時_real欄位描述的正是舊版平分機制與300%數值), 2025年7月官方已將此戰法改版為「180%×重複3次, 可集中打同一目標」(見docs/data/tactics_overrides.json的\"刀出如霆\"override, confidence:high, 2026-07-02 agy查證; 本批27 D用grok+agy雙來源交叉確認現行公告與此完全一致, 無進一步變動), rederive_b1早已依新版效果數值(coef1.8/hitsRepeat)修正了effects/set, 但舊_real文字(描述300%平分)從未同步更新, 形成「戰鬥數值已是新版, 揭露文字仍描述舊版邏輯」的stale局面——比engine_limitations.md維護規約既有描述的「_note聲稱數值不一致」更隱蔽, 因為_real本身描述的300%數字與新版coef(1.8=180%)恰好同量級(都是1.x~3.x範圍), 表面上看不出矛盾, 需要對照官方版本歷史才會發現推導邏輯已經過時。清除這三個欄位(set為null=移除), 避免維護者誤讀舊_real以為現行300%平分機制仍是設計依據。"
   },
   "剛柔並濟": {
    "set": {},
@@ -6555,17 +6563,25 @@
    ]
   },
   "魅惑": {
-   "effects": [
+   "effects": [],
+   "choices": [
     {
-     "k": "silence",
-     "who": "enemy",
-     "dur": 1
+     "weight": 1,
+     "effects": [{"k": "chaos", "who": "enemy", "dur": 1, "n": 1}]
+    },
+    {
+     "weight": 1,
+     "effects": [{"k": "silence", "who": "enemy", "dur": 1}]
+    },
+    {
+     "weight": 1,
+     "effects": [{"k": "amp", "who": "enemy", "val": -1, "dur": 1, "n": 1}]
     }
    ],
    "_evidence": "自身受到普通攻擊時，有 22.5%→45% 機率使攻擊者進入混亂（攻擊和戰法無差別選擇目標）、計窮（無法發動主動戰法）、虛弱（無法造成傷害）狀態的一種，持續 1 回合，若自身為女性，觸發機率額外受智力影響",
-   "_note": "批20覆核(R8): 原文為「混亂/計窮(禁主動)/虛弱(禁傷害)」三選一, 現有資料只固定落地其中一種(silence=計窮)。曾嘗試改用choices(批16原語)三選一分支, 但覆核sgz.py後確認choices只在主動/指揮/被動的常駐輪詢派發路徑讀取, 該路徑明確排除when.on反應式戰法(魅惑正是when.on:'attacked'), 魅惑完全走on_hit()獨立事件路徑, 該路徑從未讀取choices欄位——資料層寫入choices不會被引擎消費, 形同虛設。這是真正的引擎缺口(on_hit需擴充choices讀取), 非資料層可迂迴解決, 依紅線不動引擎, 維持現況(固定選用silence, 為三者之一, 中間強度), 缺口正式記入docs/data/engine_limitations.md供未來引擎端擴充參考。",
-   "_todo": "「混亂/虛弱」另外2/3的機率結果完全未建模(見上_note的引擎缺口說明); 「若自身為女性，觸發機率額外受智力影響」亦未建模: Unit.g.gender資料確實存在(sgz.py Unit.__init__透過self.g引用General, General.gender已用於緣分apt_add條件判斷, 見250行), 但round_ok()/apply_effects()的when/scale機制目前只支援回合窗口(rounds/from/until/parity/every)與固定屬性縮放(scale:'intel'等), 沒有「依施放者性別條件切換觸發機率縮放與否」這個判斷點(需要在rate擲骰前插入`if caster.g.gender=='Female': rate *= scale_of(...)`這類新分支, 屬引擎邏輯擴充而非資料層可迂迴)。依紅線不動引擎, 全體施放者一律用基礎機率(rate=0.45取滿級), 女性角色的實際觸發率被低估。",
-   "_bucket": "batch20_named"
+   "_note": "批27 C: 引擎缺口已解決(on_hit()反應式路徑現已支援choices, 見sgz.py/engine.js on_hit內新增pick_choice解析)——改用choices三選一精確重建「混亂/計窮/虛弱」三選一(取代批20「choices在on_hit路徑形同虛設, 固定選用silence一種」的權宜近似)。三分支均分權重(原文未說明三者機率是否不均, 保守假設均分): chaos(混亂, n=1限定攻擊者本人, 對比ctrl_k群體選標預設但這裡tgt=攻擊者已由apply_effects的cnt<=1優先鎖定tgt邏輯天然對應單體, n=1僅為保險明示不擴大)/silence(計窮)/amp(val:-1, 虛弱, 沿用克敵制勝/威謀靡亢/臨戰先登既有慣例精確歸零當回合傷害, n=1限定單體避免非ctrl_k效果預設套用全體敵軍, 見批23 A1 e.n機制)。三效果的dur/rate/when(on:attacked)維持在戰法頂層不變(choices只覆寫coef/kind/effects/extraHits/n/nMax, 頂層when.on/rate等仍由基礎戰法t0承載, 見engine_limitations.md§8修法後段落)。",
+   "_todo": "「若自身為女性，觸發機率額外受智力影響」仍未建模: Unit.g.gender資料確實存在(sgz.py Unit.__init__透過self.g引用General, General.gender已用於緣分apt_add條件判斷, 見250行), 但round_ok()/apply_effects()的when/scale機制目前只支援回合窗口(rounds/from/until/parity/every)與固定屬性縮放(scale:'intel'等), 沒有「依施放者性別條件切換觸發機率縮放與否」這個判斷點(需要在rate擲骰前插入依caster.g.gender條件判斷是否套用額外scale的分支, 屬引擎邏輯擴充而非資料層可迂迴, 與本批choices/dealtDamage是不同機制形狀, 見engine_limitations.md第9節)。依紅線不動此部分引擎, 全體施放者一律用基礎機率(rate=0.45取滿級), 女性角色的實際觸發率被低估。",
+   "_bucket": "batch27_choices_migration"
   },
   "赴湯蹈火": {
    "effects": [
@@ -6760,6 +6776,39 @@
    "_evidence": "我軍普攻有機率（受速度影響）恢復兵力最低者並獲謀略減傷。",
    "_bucket": "batch25_R18_placeholder_pending_calibration",
    "_note": "批25 R18: 原效果全0(heal.coef=0+mitig.val=0)但原文描述實質機制(恢復兵力+謀略減傷),裸_est:true無解釋文字, 效果完全空轉。改用保守估計值(見各效果_note)並補上文字揭露,待未來取得官方數值後覆寫。"
+  },
+  "深謀遠慮": {
+   "effects": [
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 0.12,
+     "dur": 1,
+     "scale": "intel",
+     "rate": 1.0,
+     "when": {"on": "dealtDamage", "dmgType": "intel"},
+     "_note": "批27 A: 原文「我軍主將普通攻擊轉為謀略傷害(coef1.2/kind intel, 頂層coef段已表達), 並使其造成謀略傷害時，治療我軍單體(治療率6%→12%，受智力影響)」——治療是「造成謀略傷害那一刻」的反應式結果, 非每回合無條件常駐治療。過去heal無when, 每回合都會結算一次治療(不論頂層coef段本回合是否真的命中/造成傷害), 高估治療頻率且時序上與原文「造成傷害時」的因果關係脫鉤。改用effect級e.when.on:\"dealtDamage\"+dmgType:\"intel\"(批27新增原語)精確重建: 只在本單位造成謀略傷害(含頂層coef段/普攻/其他來源, 只要kind==intel)那一刻才以治療率12%(取滿級值)判定治療我軍最殘一人。e.rate=1.0(原文無獨立機率修飾治療段, 每次造成謀略傷害皆會觸發, 取材原文語氣「並使其...」為必然伴隨結果, 非額外機率); dur=1(單次治療, 非常駐buff)。"
+    }
+   ],
+   "_evidence": "戰鬥中，我軍主將普通攻擊轉為謀略傷害(傷害率60%→120%)，並使其造成謀略傷害時，治療我軍單體(治療量相當於此傷害的6%→12%，受智力影響)。",
+   "_bucket": "batch27_dealtDamage_migration",
+   "_note": "批27 A: heal效果補when.on:\"dealtDamage\"(見effects[0]._note), 取代舊版「每回合無條件常駐治療(coef 0.12, dur 99, 無when)」的近似——舊版對「造成謀略傷害時」這個反應式因果關係完全未表達, 治療與頂層coef段(是否真的命中/造成傷害)脫鉤獨立結算, 高估治療觸發頻率(尤其頂層coef段rate<1或目標被規避時, 舊版仍會治療, 新版則不會)。「使我軍主將普攻轉為謀略傷害」本體(頂層coef=1.2/kind=intel)維持不變, 屬既有正確建模, 本批僅修正heal段的觸發時機。"
+  },
+  "非攻制勝": {
+   "effects": [
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 0.5,
+     "dur": 1,
+     "rate": 1.0,
+     "when": {"on": "dealtDamage", "from": 3},
+     "_note": "批27 A: 原文「3回合起，武力最高者造成傷害時，同時治療兵力最低的隊友（受武力差影響）」——治療是「(武力最高者)造成傷害那一刻」的反應式結果(且限定第3回合起才生效), 非每回合無條件常駐治療。過去heal只有t.when:{from:3}(回合窗口)而無on:\"dealtDamage\", 每回合(第3回合起)都會無條件結算一次治療, 未表達「造成傷害時」這個觸發前提(即使本單位本回合完全沒有造成任何傷害, 舊版仍會治療)。改用effect級e.when.on:\"dealtDamage\"+沿用原本的from:3(round_ok對dealtDamage事件同樣會檢查rounds/from/until, 見dealt_damage()實作)精確重建: 只在第3回合起、且本單位確實造成傷害的那一刻才觸發治療。「武力最高者」的施放者身份限定(非隊伍任意成員, 而是特定「武力最高」的那一人)/「受武力差影響」的目標端動態縮放, 皆超出現有targetSel(僅支援固定準則選目標, 非「僅該準則勝出者才能施放」)與scale(僅支援施放者自身屬性, 非雙方差值)機制範圍, 沿用既有近似(戰法掛在該將自己身上即隱含「武力最高」前提, 不做額外過濾; scale維持不加, 沿用批15前既有近似), 本批僅修正heal觸發時機(from t.when(常駐無條件)迻at effect e.when.on(反應式))這一項, 未擴大近似範圍。"
+    }
+   ],
+   "_evidence": "3回合起，武力最高者造成傷害時，同時治療兵力最低的隊友（受武力差影響）。",
+   "_bucket": "batch27_dealtDamage_migration",
+   "_note": "批27 A: heal效果補when.on:\"dealtDamage\"(保留原有from:3回合窗口, 見effects[0]._note), 取代舊版「t.when:{from:3}回合視窗一次性套用, 每回合(3回合起)無條件治療」的近似——舊版完全未表達「造成傷害時」這個反應式觸發前提, 新版精確要求本單位在第3回合起、且確實造成一次傷害時才治療, 不再是視窗開啟後的無條件常駐。"
   }
  },
  "_batch12_note": "批12: 盲測殘差修正, 在批10(173筆corrections)基礎上新增44筆corrections(217筆總計)。Mode A(stat mult->add修正,36筆) / Mode B(hitsRepeat原語,3筆: 五雷轟頂/摧鋒斷刃/暴斂四方) / Mode C(空effects補完9筆 + heal.who=enemy系統性bug修正5筆) / Mode D(控制/機率修正6筆, 含威震華夏stun->disarm重新編碼+神機妙算coef補完) / Mode E(1分清單次要clause補完6筆) / Mode F(新增chaos原語, 混亂重分類9筆tactics+1筆equips) / Mode G(新增lockTarget原語與引擎機制, 但上兵伐謀/刮骨療毒經核實不符合「目標持久化」語意, 未套用資料, 詳見批12最終報告)。新增雙原語(chaos/hitsRepeat/lockTarget)已於engine.js與sgz.py同步實作並各自新增self-check assertion(38-41)。",

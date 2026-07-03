@@ -1244,6 +1244,9 @@ ENGINE_CAPABILITY_ALIASES = {
     "傷害類型區分": "dmgType(同上)",
     "兵刃/謀略": "dmgType(批24新增, amp/mitig 效果欄位, 見 sgz.py amp()/addbonus() dmg_type 參數;"
                 "「不分兵刃/謀略」等措辭應視為 dmgType 落地前的舊近似說明, 落地後需重寫)",
+    "造成傷害時": "dealtDamage(批27新增, when.on==\"dealtDamage\", 見 sgz.py/engine.js 的"
+                "on_deal_tacs/on_deal_effect_tacs + dealt_damage()/dealtDamage() 掛在 hit() 傷害"
+                "結算後對 src 掃描; 支援選填 when.dmgType 區分兵刃/謀略觸發條件)",
 }
 
 
@@ -1331,13 +1334,81 @@ def check_r21(p, txt):
     return violations
 
 
+
+# ---------------------------------------------------------------------------
+# R22(批27 A): dealtDamage 可用而未用 —— 原文含「(自身/自己)造成兵刃/謀略傷害時/後...」描述
+# 「自己打人的瞬間」觸發某效果(對比 R17 反應式治療管的是「受到傷害時」=被打視角), 但戰法/
+# 效果都沒有 when.on=="dealtDamage"(批27新增原語, 見 engine_limitations.md), 且無「主題
+# 相關」揭露(揭露文字須提到 dealtDamage/造成傷害時/反應式等關鍵字; 純舊式「引擎無造成傷害時
+# 反應式掛鉤」這類話術本身就是 stale 能力聲明, 落地後應改寫, 見 ENGINE_CAPABILITY_ALIASES
+# 註冊, 不算合格豁免)。
+#
+# 低誤報設計:
+# - 只抓「(自身/自己)?造成(兵刃/謀略)?傷害(時|後)」或「每次造成傷害/每次命中」這類明確描述
+#   施放者自己造成傷害那一刻觸發的句型, 不含「受到傷害時」(那是 attacked/damaged, 已有機制,
+#   見 R17/既有 on_hit_tacs)。
+# - 只在該戰法完全沒有任何 dealtDamage 掛鉤(戰法級 t.when.on 或任一效果 e.when.on)時才觸發,
+#   已局部落地(如白衣渡江遷移後只剩其中一段)不算違規(避免對「已用新原語但同戰法內其他
+#   效果段仍維持既有近似, 且該近似有自己揭露」的正常漸進遷移狀態誤判)。
+# - who=="enemy"/"ally"的lifesteal(倒戈)/攻心類效果若已通過既有「造成傷害時按比例回復」
+#   常駐機制(addbonus("lifesteal")在hit()内建結算, 非反應式回合輪詢)精確表達, 不算本規則
+#   管轄範圍(lifesteal本身就是根據「本次造成的傷害量」由hit()直接結算, 不需要when.on掛鉤;
+#   只有「造成傷害後才附加另一個獨立狀態效果」如disarm/silence/dot/stat疊加等, 才是
+#   dealtDamage原語要補的缺口)——用效果k白名單排除純lifesteal戰法降低誤報。
+# ---------------------------------------------------------------------------
+R22_DEALT_DMG_RE = re.compile(r"(?:自身|自己)?造成(?:的)?(?:兵刃|謀略)?(?:傷害|攻擊)(?:時|後)|每次(?:造成|命中)")
+R22_ATTACKED_EXCLUDE_RE = re.compile(r"受到[^。；;，,]{0,6}(?:傷害|攻擊)(?:時|後)")
+R22_TOPIC_KW = ("dealtDamage", "造成傷害時", "造成傷害後", "反應式", "on_deal")
+R22_LIFESTEAL_ONLY_KINDS = {"lifesteal"}
+# 「倒戈」是本庫對 lifesteal(hit()內建按傷害量比例回復機制, 非反應式回合輪詢)的固定措辭,
+# 該子句本身即使命中「造成XX傷害時」句型也不算 R22 缺口(見上方規則說明); 逐子句排除(而非
+# 整戰法排除), 避免像魯莽(倒戈+獨立的insight效果同戰法共存)這種「戰法內有lifesteal也有其他
+# 效果, 但lifesteal那一句本身已被正確建模」被誤判。
+R22_LIFESTEAL_CLAUSE_KW = ("倒戈",)
+
+
+def check_r22(p, txt):
+    violations = []
+    effects = p.get("effects", []) or []
+    if not effects:
+        return violations
+    # 已有 dealtDamage 掛鉤(戰法級或任一效果級)即視為已用新原語, 不論是否還有其他近似效果段
+    if (p.get("when") or {}).get("on") == "dealtDamage":
+        return violations
+    if any((e.get("when") or {}).get("on") == "dealtDamage" for e in effects):
+        return violations
+    for clause in split_clauses(txt):
+        if any(kw in clause for kw in R22_LIFESTEAL_CLAUSE_KW):
+            continue  # 該子句描述的是倒戈(lifesteal), 已由 hit() 內建機制精確表達, 非本規則管轄
+        if R22_ATTACKED_EXCLUDE_RE.search(clause) and not R22_DEALT_DMG_RE.search(clause.replace("受到", "", 1)):
+            continue  # 純「受到傷害時」(被打視角, 已有 attacked/damaged 機制), 非本規則管轄
+        m = R22_DEALT_DMG_RE.search(clause)
+        if not m:
+            continue
+        if _topic_disclosed(p, R22_TOPIC_KW):
+            return violations
+        if has_disclosure(p, effects):
+            # 既有揭露(即使主題詞不精確命中)也視為「已知的工程判斷」, 避免對大量歷史近似
+            # (如批15的「反應式簡化為準備階段套用」說明)重複開新違規——R22 的目的是抓「完全
+            # 沒人注意到」的新缺口, 不是要求所有舊近似立刻用新原語重寫。
+            return violations
+        violations.append({
+            "name": p["nameZh"], "rule": "R22",
+            "message": f"原文「{m.group(0)}」描述自身造成傷害時/後觸發(反應式), 但戰法/效果皆無"
+                       " when.on==\"dealtDamage\"(批27新增原語)且無揭露",
+            "evidence": clause.strip()[:120],
+        })
+        break
+    return violations
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
     ("R9", check_r9), ("R10", check_r10), ("R11", check_r11), ("R12", check_r12),
     ("R13", check_r13), ("R14", check_r14), ("R15", check_r15),
     ("R16", check_r16), ("R17", check_r17), ("R18", check_r18), ("R19", check_r19),
-    ("R20", check_r20), ("R21", check_r21),
+    ("R20", check_r20), ("R21", check_r21), ("R22", check_r22),
 ]
 
 
