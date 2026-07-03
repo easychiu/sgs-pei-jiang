@@ -406,8 +406,15 @@ class Unit:
         # 是「受傷當下才觸發」的反應式語意, 不能把整個戰法標成 t["when"]["on"](那樣會連帶讓
         # 武力/統率平加也不在 prep 套用, 語意跑掉)。on_hit_effect_tacs 收集這類「戰法本身無
         # t.when, 但至少一個效果帶 e.when.on」的戰法, on_hit() 只讀取/結算符合的個別效果。
+        # 批23: 型別放寬含 active —— 過去只認 passive/command(「戰法本身有其他常駐效果, 只有
+        # heal段是反應式」的典型模式, 如陷陣營/雲聚影從)。但草船借箭一類 type:"active" 戰法也有
+        # 同樣模式(「使我軍獲得急救狀態, 受傷時機率觸發治療」是active發動後掛的一個反應式buff,
+        # 不是常駐), 過去完全沒有機制承接, 只能誤把heal當成active發動當下的常駐治療(0分bug)。
+        # 放寬後active戰法帶e.when.on的效果同樣走on_hit()反應式結算, 該戰法主coef/其餘無when
+        # 效果仍照常經由主動擲骰路徑(t0["rate"])發動觸發(兩者互不干擾, 見apply_effects內新增的
+        # reactive閘門, 確保e.when.on效果不會在active擲骰命中時被重複套用)。
         self.on_hit_effect_tacs = [t for t in self.tactics
-                                   if not t.get("when") and t["type"] in ("passive", "command")
+                                   if not t.get("when") and t["type"] in ("passive", "command", "active")
                                    and any((e.get("when") or {}).get("on") for e in t.get("effects", []))]
         self.locked_targets = {}                       # 批12 ModeG: lockTarget:true 戰法的鎖定目標, 鍵=id(戰法dict)(dict不可雜湊, 用id())
         # 批16: 原語擴充包 —— 新增狀態欄位(現有資料無新欄位, 皆維持0/{}/set()預設值, 行為零變化)
@@ -571,6 +578,10 @@ class Unit:
             self.shield["dur"] -= 1
             if self.shield["dur"] <= 0:
                 self.shield = None
+        if self.counter:                               # 批23 A2: 反擊到期清除(過去 dur 幽靈欄位從不遞減, 帶時限的反擊變永久)
+            self.counter["dur"] -= 1
+            if self.counter["dur"] <= 0:
+                self.counter = None
         self.hit_flags.clear()                         # 受擊觸發(when.on) 每回合各戰法重置一次觸發額度
         if self.immune:                                 # 批16: immuneTo 逐回合遞減(修正: 與 engine.js tick() 對齊, 此前 sgz.py 遺漏此行, 雙引擎不同步)
             self.immune = [[ty, l - 1] for ty, l in self.immune if l - 1 > 0]
@@ -849,7 +860,8 @@ def fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit):
             hit(u, v, eh["coef"], eh.get("kind", "phys"), False, on_hit)
 
 
-def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=False, skip_when_effects=False):
+def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=False, skip_when_effects=False,
+                   rate_checked=False, reactive=False):
     src = t.get("nameZh")                              # 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → None, 不去重)
     for e in t["effects"]:
         k = e["k"]
@@ -862,6 +874,25 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # when:{rounds:[6]}/工神的 amp when:{from:4}, 見 _todo 揭露)。此處在 prep 呼叫時跳過
         # 這些效果, 改由 fight() 回合迴圈的通用 e.when 掃描(仿 delayed_eq 慣例)在視窗開啟時才套用。
         if skip_when_effects and k != "heal" and e.get("when") and not t.get("when"):
+            continue
+        # 批23: e["when"]["on"](反應式, 受擊當下觸發) 效果只應在 on_hit() 事件點結算
+        # (reactive=True 的合成單效果呼叫), 不應在準備階段/主動主迴圈擲骰(fire=random.random()
+        # <t0["rate"])/charge突擊等一般路徑被無條件套用。過去(草船借箭0分bug之一)heal 的
+        # e["when"]["on"] 只被 heal 分支自己內部的 heal_only 閘門過濾, 但一般 active 主動戰法
+        # 擲骰命中時呼叫 apply_effects() 完全不經過 heal_only, 導致帶 e["when"]["on"] 的 heal
+        # 效果被當成「無 when 的常駐效果」在戰法觸發當下立即無條件治療一次, 與 on_hit 反應式
+        # 觸發疊加, 造成雙重結算。此處統一擋下: 非 reactive 呼叫時, 任何 k 只要帶
+        # e["when"]["on"] 就跳過(改由 on_hit() 事件點才會結算)。
+        if not reactive and (e.get("when") or {}).get("on"):
+            continue
+        # 批23 A4: 效果級 e["rate"] 折算一致性 —— 過去只有 on_hit(反應式)/delayed_eq(裝備回合
+        # 窗)兩條路徑會讀 e["rate"](見呼叫端各自的 ev_rate = e.get("rate", ...) 判定), 其餘路徑
+        # (prep/active主動/charge突擊/when視窗一次性套用)完全忽略 e["rate"], 造成同一戰法內
+        # 「有的效果段折機率、有的沒折」(如草船借箭80%/魚鱗陣heal段25%/援救50%)。修法: 在這裡
+        # 統一補上判定(套用時 random.random()<e["rate"], 比EV折算更接近真實方差, 見批23 A4
+        # brief)。rate_checked=True: 呼叫端(on_hit/delayed_eq 的合成單效果呼叫)已自行讀取並
+        # 擲骰過同一個 e["rate"], 避免在這裡對同一效果重複擲骰(機率會被平方, 造成低估)。
+        if not rate_checked and e.get("rate") is not None and random.random() >= e["rate"]:
             continue
         if k == "heal":                               # 治療: 補我方最殘一人(指揮/被動每回合觸發)
             if no_heal:
@@ -947,6 +978,15 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             continue
         who = e.get("who", "ally")
         ctrl_k = k in ("stun", "silence", "disarm", "taunt", "chaos")  # 控制/嘲諷類: 按戰法 n/nMax 選目標數(insight 不擋嘲諷, 只擋 stun/silence/disarm/chaos)
+        # 批23 A1: 效果級 e["n"](可配 e["nMax"]) —— 非CTRL效果(amp/mitig/stat/dot/healblock/
+        # rateup/…)過去無條件把 who="enemy"/"ally" 放大成全體敵軍/我軍, 大量原文寫「單體」
+        # 「目標」「我軍2人」的非控制效果被系統性高估成全體(見批23清單: 謙讓/殿後/破甲/談心/
+        # 追傷/兵鋒/舌戰群儒/八門金鎖陣/進言/江東小霸王/眾動萬計/國士將風等)。修法: 有 e["n"]
+        # 時比照 ctrl_k 群體控制的既有選標邏輯(pick_targets 隨機不重複; 單體時優先鎖定 tgt,
+        # 與 ctrl_k 慣例一致), 只是讀 e["n"]/e["nMax"](效果自身欄位)而非 t["n"]/t["nMax"]
+        # (戰法頂層, ctrl_k 專用, 維持不變)。無 e["n"] 時完全維持原行為(全體敵軍/我軍), 向後
+        # 相容 —— 大量「全體」條目依賴現行為。
+        has_en = e.get("n") is not None
         # 批18: targetSel(指定選標準則) —— 效果級欄位, 優先於 who 的預設隨機/群體邏輯: 依準則
         # (兵力最低/武力最高/智力最低/我方最殘等)在對應陣營(enemy用敵方, 其餘用我方)挑單一目標。
         # 「指定」不受混亂(chaos)影響(混亂只亂「隨機」選目標的普攻/主動/突擊, 見 pick_target_chaos
@@ -969,8 +1009,22 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     dests = [tgt] if tgt and tgt.alive else pick_targets(enemies, 1)
                 else:
                     dests = pick_targets(enemies, cnt)
+            elif has_en:                               # 批23 A1: 非CTRL效果讀 e["n"]/e["nMax"]
+                n = e["n"]
+                cnt = n + random.randint(0, e["nMax"] - n) if e.get("nMax") else n
+                if cnt <= 1:
+                    dests = [tgt] if tgt and tgt.alive else pick_targets(enemies, 1)
+                else:
+                    dests = pick_targets(enemies, cnt)
             else:
                 dests = [x for x in enemies if x.alive]
+        elif has_en:                                   # 批23 A1: who="ally"(含預設) 非CTRL效果讀 e["n"]/e["nMax"](如「我軍2人」「自己及友軍單體」)
+            n = e["n"]
+            cnt = n + random.randint(0, e["nMax"] - n) if e.get("nMax") else n
+            if cnt <= 1:
+                dests = [tgt] if (tgt and tgt.alive and tgt in allies) else pick_targets(allies, 1)
+            else:
+                dests = pick_targets(allies, cnt)
         else:
             dests = [a for a in allies if a.alive]
         # 批16: ifTargetHas —— 效果段條件, 只對「已有該狀態」的目標生效; 選目標後過濾(不影響選目標邏輯本身)
@@ -1032,8 +1086,12 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 else:
                     u.push_mod(e["stat"], sv_mult(e.get("mult", 1.0)), e["dur"], src, ud_flags)
             elif k == "dot":                          # 持續傷害: 套用時定格每回合傷害; dots[2]=undispellable旗標
+                # 批23 A3: dot 結算優先讀 e["kind"](戰法整體是兵刃 t["kind"]="phys", 但灼燒/
+                # 水攻類 dot 段依原文「受智力影響」應走謀略傷害類型, 過去誤用 t["kind"] 導致
+                # 傷害類型錯位, 如天降火雨兵刃戰法掛的灼燒本應是 intel 類)。無 e["kind"] 時
+                # fallback t["kind"](向後相容既有無 e["kind"] 的 dot 資料)。
                 u.dots.append([damage(caster, u, e.get("coef", 0.5),
-                                      t.get("kind", "intel")), e["dur"], bool(e.get("undispellable"))])
+                                      e.get("kind") or t.get("kind", "intel")), e["dur"], bool(e.get("undispellable"))])
             elif k == "extra":                        # 連擊/追擊: 普攻後追加普攻的預算
                 u.push_add("extra", e["val"], e["dur"], src)
             elif k == "stack":                        # 疊加增益: 每回合+1層, 每層加 per 增傷
@@ -1046,8 +1104,13 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             elif k == "pierce":                       # 看破: 無視目標 val 比例的減傷
                 u.push_add("pierce", e["val"], e["dur"], src)
             elif k == "counter":                      # 反擊: 受擊時還擊
+                # 批23 A2: counter 讀 e["dur"](過去是幽靈欄位, 從不寫入/遞減 —— 「反擊持續1
+                # 回合」等帶時限的反擊被無聲變成常駐/永久, 見還擊/千里走單騎等)。dur 預設99
+                # (=常駐被動慣例, 向後相容無 dur 欄位的既有反擊資料)。+1 補償: tick 施加當
+                # 回合末即扣1, 與 taunt/dodge/surehit/shield 慣例一致。tick() 逐回合遞減,
+                # 歸零時清除(見 tick() 對應段落)。
                 u.counter = {"coef": e.get("coef", 1.0), "kind": e.get("kind", "phys"),
-                             "prob": e.get("prob", 1.0)}
+                             "prob": e.get("prob", 1.0), "dur": e.get("dur", 99) + 1}
             elif k == "taunt":                         # 嘲諷: 中招者普攻/單體戰法強制指向施放者
                 u.taunt_by = caster
                 u.taunt_dur = max(u.taunt_dur, e.get("dur", 1) + 1)
@@ -1198,7 +1261,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             if t.get("extraHits"):
                 fire_extra_hits(dst, t, src, allies_of, foes_of, on_hit)  # 批13: 受擊觸發類多段傷害(如剛烈不屈 反擊後群體額外段)
             if t["effects"]:
-                apply_effects(dst, src, t, allies_of(dst), foes_of(dst))
+                apply_effects(dst, src, t, allies_of(dst), foes_of(dst), reactive=True)  # 批23: 戰法級when.on本身即反應式, 標記reactive供內部e.when.on效果(若有)一致判定
         # 批22: 效果級 e.when.on(急救類反應式治療, 見 on_hit_effect_tacs 註解) —— 戰法本身無
         # t["when"](其餘效果如武力/統率平加仍在 prep 正常套用, 不受影響), 只有帶 e.when.on 的
         # 個別效果在此處反應式結算。用「合成單效果戰法」(effects=[e])呼叫 apply_effects, 讓
@@ -1221,7 +1284,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     continue
                 dst.hit_flags.add(id(e))
                 apply_effects(dst, src, {"effects": [e], "kind": t.get("kind", "phys"), "nameZh": t.get("nameZh")},
-                             allies_of(dst), foes_of(dst))
+                             allies_of(dst), foes_of(dst), rate_checked=True, reactive=True)  # 批23 A4/reactive: 上面已擲過 e["rate"], 避免重複擲骰; reactive供e.when.on閘門放行
         # 批22: 裝備效果級 e.when.on(見 on_hit_eq 註解) —— 同上, 用合成單效果戰法呼叫 apply_effects
         for e in dst.on_hit_eq:
             ew = e["when"]
@@ -1235,7 +1298,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             if random.random() >= ev_rate:
                 continue
             dst.hit_flags.add(id(e))
-            apply_effects(dst, src, {"effects": [e], "kind": "phys"}, allies_of(dst), foes_of(dst))
+            apply_effects(dst, src, {"effects": [e], "kind": "phys"}, allies_of(dst), foes_of(dst), rate_checked=True, reactive=True)  # 批23 A4/reactive
         # 批22: 兵書效果級 e.when.on(見 on_hit_bs 註解) —— 同上, 用合成單效果戰法呼叫 apply_effects
         for e in dst.on_hit_bs:
             ew = e["when"]
@@ -1249,7 +1312,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             if random.random() >= ev_rate:
                 continue
             dst.hit_flags.add(id(e))
-            apply_effects(dst, src, {"effects": [e], "kind": "phys"}, allies_of(dst), foes_of(dst))
+            apply_effects(dst, src, {"effects": [e], "kind": "phys"}, allies_of(dst), foes_of(dst), rate_checked=True, reactive=True)  # 批23 A4/reactive
 
     apply_passives(no_heal=True, skip_when_effects=True)  # 開戰套持久效果(治療除外); skip_when_effects: 批18 e.when泛化, 非heal效果帶e.when且母戰法無t.when時prep階段不套用, 改由回合迴圈通用掃描
 
@@ -1277,11 +1340,26 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                             if id(t) in u.hp_below_fired:
                                 continue
                             u.hp_below_fired.add(id(t))
+                        # 批23 A5: 補 t["rate"] 判定(此路徑過去從不讀 t["rate"], 機率戰法被當成
+                        # 必發)。hpAbove 是持續窗(每回合都可能重新判定), 未中不消耗 when_fired
+                        # (仍可下回合再擲); hpBelow 是一次性(見上方 hp_below_fired 去重), 未中
+                        # 同樣不消耗 when_fired 之外的額外狀態(hp_below_fired 已在觸發判定前
+                        # 標記, 維持既有「首次跨越」語意不變)。
+                        if random.random() >= t.get("rate", 1):
+                            continue
                         apply_effects(u, None, t, allies_of(u), foes_of(u), no_heal=True)
                         if w.get("hpBelow") is not None:
                             u.when_fired.add(id(t))     # hpBelow 一次性: 同時標記 when_fired 供其他路徑一致查詢
                         continue
+                    # 批23 A5: 此路徑過去從不讀 t["rate"] —— 機率戰法(如盛氣凌敵 rate=1 不受
+                    # 影響, 但火神英風/鷹視狼顧一類 rate<1 的 when-gated 條目)一律當成必發,
+                    # 高估命中率。主動/指揮/被動的「coef 傷害段」自有獨立擲骰(見主迴圈
+                    # fire=random.random()<t0["rate"], 已正確套用), 此處是「非coef、window
+                    # 開啟時一次性套用的 effects 段」, 需要補上同一份 t["rate"] 判定。未中同樣
+                    # 消耗 when_fired(此路徑本就是一次性視窗, 見函式頂端註解, 未中不重試)。
                     u.when_fired.add(id(t))
+                    if random.random() >= t.get("rate", 1):
+                        continue
                     # 批15: no_heal=True —— heal 效果改由上面 apply_passives(heal_only=True) 統一
                     # 處理(它自己會檢查 t["when"]/round_ok, 見 apply_effects 內 heal_only 分支),
                     # 避免此處與 heal_only 常駐通道用不同的去重鍵(id(t) vs id(e))各自判定, 造成
@@ -1301,7 +1379,8 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 if e.get("rate") is not None and random.random() >= e["rate"]:
                     continue
                 apply_effects(u, None, {"effects": [e], "kind": "phys",   # n/nMax傳遞: 群體控制(赳螑 敵軍群體2~3)按效果宣告選目標數
-                                        "n": e.get("n", 1), "nMax": e.get("nMax", 0)}, allies_of(u), foes_of(u))
+                                        "n": e.get("n", 1), "nMax": e.get("nMax", 0)}, allies_of(u), foes_of(u),
+                              rate_checked=True)  # 批23 A4: 上面已擲過 e["rate"], 避免重複擲骰
 
         # 批18: e.when 泛化(非 heal 種類) —— 與上面 delayed_eq 同一時點、同慣例: 掃描「母戰法無
         # t["when"]」的 passive/command 戰法, 找出其中帶 e["when"] 的非 heal 效果(prep 階段已被
@@ -2601,9 +2680,93 @@ def demo():
                     continue
                 dst.hit_flags.add(id(e))
                 apply_effects(dst, s2, {"effects": [e], "kind": t.get("kind", "phys"), "nameZh": t.get("nameZh")},
-                              [dst], [s2])
+                              [dst], [s2], rate_checked=True, reactive=True)  # 批23 A4/reactive: 上面已擲過 e["rate"]
     hit(heal67_src, heal67_holder, 1.0, "phys", True, on_hit67)
     assert heal67_holder.wounded != 3000, "受傷+反應式急救觸發後, 傷兵池應有變動(受傷增加又被治療扣減, 淨值不會剛好停在3000)"
+    CUR_ROUND = 0
+
+    # ------------------------------------------------------------------
+    # 批23 系統性缺陷修復 asserts (A1-A5)
+    # ------------------------------------------------------------------
+
+    # 68) A1: 效果級 e["n"] —— 非CTRL效果(如 mitig/amp)過去無條件 who="enemy"/"ally" 放大成
+    # 全體, 現在有 e["n"] 時應只命中 e["n"] 人(隨機不重複), 而非全體。
+    a1_caster = Unit(POOL["呂布"], "騎")
+    a1_allies = [Unit(POOL["張飛"], "盾") for _ in range(5)]
+    a1_tac_single = {"nameZh": "測試A1單體68", "effects": [{"k": "mitig", "who": "ally", "val": 0.2, "dur": 3, "n": 1}]}
+    apply_effects(a1_caster, a1_allies[0], a1_tac_single, a1_allies, [], no_heal=True)
+    hit_count = sum(1 for u in a1_allies if u.addbonus("mitig") > 0)
+    assert hit_count == 1, f"A1: e['n']=1 應只有1人獲得mitig, 實際{hit_count}人(過去無e.n讀取會是全體5人)"
+    # 無 e["n"] 時應維持全體(向後相容)
+    a1_allies2 = [Unit(POOL["張飛"], "盾") for _ in range(5)]
+    a1_tac_all = {"nameZh": "測試A1全體68b", "effects": [{"k": "mitig", "who": "ally", "val": 0.2, "dur": 3}]}
+    apply_effects(a1_caster, None, a1_tac_all, a1_allies2, [], no_heal=True)
+    assert all(u.addbonus("mitig") > 0 for u in a1_allies2), "A1: 無e['n']時應維持全體套用(向後相容)"
+    # who="enemy" 非CTRL效果(如 amp 易傷)同樣要讀 e["n"]
+    a1_enemies = [Unit(POOL["張飛"], "盾") for _ in range(5)]
+    a1_tac_enemy_n = {"nameZh": "測試A1敵單體68c", "effects": [{"k": "amp", "who": "enemy", "val": 0.15, "dur": 2, "n": 1}]}
+    apply_effects(a1_caster, a1_enemies[0], a1_tac_enemy_n, [], a1_enemies, no_heal=True)
+    enemy_hit = sum(1 for u in a1_enemies if u.addbonus("mitig") < 0)  # who=enemy的正amp會轉存成負mitig(易傷)
+    assert enemy_hit == 1, f"A1: who=enemy 帶 e['n']=1 應只有1人中招, 實際{enemy_hit}人"
+
+    # 69) A2: counter 讀 e["dur"] —— dur=1 的反擊次回合應失效(過去 dur 幽靈欄位從不遞減, 變永久)
+    a2_u = Unit(POOL["張飛"], "盾")
+    apply_effects(a2_u, None, {"nameZh": "測試A2反擊69", "effects": [{"k": "counter", "who": "self", "coef": 1.0, "dur": 1}]},
+                  [a2_u], [], no_heal=True)
+    assert a2_u.counter is not None, "A2: 施加後應立即擁有counter"
+    a2_u.tick()  # 第1回合結束: dur=1(+1補償=2) -1 = 1, 仍應存在(本回合內生效)
+    assert a2_u.counter is not None, "A2: dur=1的反擊在施加當回合的tick()後應仍存在(補償+1慣例, 本回合內仍生效)"
+    a2_u.tick()  # 第2回合結束: 應到期清除
+    assert a2_u.counter is None, "A2: dur=1的反擊在下一回合的tick()後應到期清除(過去幽靈欄位從不遞減, 永久存在)"
+    # 無 e["dur"] 應預設常駐(99, 向後相容既有反擊資料)
+    a2_u2 = Unit(POOL["張飛"], "盾")
+    apply_effects(a2_u2, None, {"nameZh": "測試A2常駐69b", "effects": [{"k": "counter", "who": "self", "coef": 1.0}]},
+                  [a2_u2], [], no_heal=True)
+    for _ in range(8):
+        a2_u2.tick()
+    assert a2_u2.counter is not None, "A2: 無e['dur']應預設常駐(99), 8回合內不應消失"
+
+    # 70) A3: dot 結算讀 e["kind"](優先於 t["kind"]) —— 灼燒類 dot 掛在兵刃戰法上仍應走謀略類型
+    a3_caster = Unit(POOL["諸葛亮"], "弓")
+    a3_tgt = Unit(POOL["張飛"], "盾")
+    a3_tac = {"nameZh": "測試A3灼燒70", "kind": "phys",  # 戰法整體是兵刃(t.kind=phys)
+              "effects": [{"k": "dot", "who": "enemy", "coef": 0.5, "dur": 2, "kind": "intel"}]}  # dot段自帶kind=intel
+    apply_effects(a3_caster, a3_tgt, a3_tac, [a3_caster], [a3_tgt], no_heal=True)
+    assert len(a3_tgt.dots) == 1
+    random.seed(77)
+    expect_intel_dmg = damage(a3_caster, a3_tgt, 0.5, "intel")
+    random.seed(77)
+    a3_caster2 = Unit(POOL["諸葛亮"], "弓")
+    a3_tgt2 = Unit(POOL["張飛"], "盾")
+    apply_effects(a3_caster2, a3_tgt2, a3_tac, [a3_caster2], [a3_tgt2], no_heal=True)
+    assert abs(a3_tgt2.dots[0][0] - expect_intel_dmg) < 1e-6, "A3: dot段帶e['kind']='intel'應覆蓋戰法整體t['kind']='phys', 走謀略傷害公式(以智力/謀略防禦計算)"
+
+    # 71) A4: 效果級 e["rate"] 在一般路徑(非onHit/delayedEq)也要判定 —— rate=0 應完全不觸發
+    a4_u = Unit(POOL["張飛"], "盾")
+    a4_tac_zero = {"nameZh": "測試A4零機率71", "effects": [{"k": "stat", "who": "self", "stat": "force", "add": 999, "dur": 5, "rate": 0.0}]}
+    apply_effects(a4_u, None, a4_tac_zero, [a4_u], [], no_heal=True)
+    assert abs(a4_u.eff("force") - a4_u.force) < 1e-6, "A4: e['rate']=0.0 的效果應完全不觸發(prep/主動等一般路徑過去完全不讀e['rate'], 必定觸發)"
+    a4_u2 = Unit(POOL["張飛"], "盾")
+    a4_tac_one = {"nameZh": "測試A4全機率71b", "effects": [{"k": "stat", "who": "self", "stat": "force", "add": 999, "dur": 5, "rate": 1.0}]}
+    apply_effects(a4_u2, None, a4_tac_one, [a4_u2], [], no_heal=True)
+    assert abs(a4_u2.eff("force") - (a4_u2.force + 999)) < 1e-6, "A4: e['rate']=1.0 應正常觸發"
+    # rate_checked=True 呼叫端應跳過此處判定(避免與呼叫端自己的擲骰重複疊乘)
+    a4_u3 = Unit(POOL["張飛"], "盾")
+    apply_effects(a4_u3, None, a4_tac_zero, [a4_u3], [], no_heal=True, rate_checked=True)
+    assert abs(a4_u3.eff("force") - (a4_u3.force + 999)) < 1e-6, "A4: rate_checked=True時應略過e['rate']判定(呼叫端已自行擲骰過), 即使rate=0也套用"
+
+    # 72) A5: when-gated one-shot 路徑應讀 t["rate"] —— rate=0 的 when-gated 戰法不應觸發
+    a5_u = Unit(POOL["張飛"], "盾")
+    a5_tac = {"nameZh": "測試A5機率72", "type": "command", "kind": "phys", "coef": 0, "rate": 0.0, "n": 1, "prep": 0,
+              "when": {"until": 2}, "effects": [{"k": "stat", "who": "self", "stat": "force", "add": 999, "dur": 5}]}
+    a5_u.tactics.append(a5_tac)
+    CUR_ROUND = 1
+    if a5_tac["type"] in ("passive", "command") and a5_tac.get("when") and not a5_tac["when"].get("on") \
+            and round_ok(a5_tac, 1) and id(a5_tac) not in a5_u.when_fired:
+        a5_u.when_fired.add(id(a5_tac))
+        if not (random.random() >= a5_tac.get("rate", 1)):
+            apply_effects(a5_u, None, a5_tac, [a5_u], [], no_heal=True)
+    assert abs(a5_u.eff("force") - a5_u.force) < 1e-6, "A5: rate=0.0 的when-gated戰法不應觸發effects(過去此路徑從不讀t['rate'], 必定觸發)"
     CUR_ROUND = 0
 
     print("self-check OK")

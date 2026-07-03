@@ -203,7 +203,14 @@
       // 平加也不在 prep 套用, 語意跑掉)。onHitEffectTacs 收集這類「戰法本身無 t.when, 但至少
       // 一個效果帶 e.when.on」的戰法, onHit() 只讀取/結算符合的個別效果(不影響同戰法其餘無
       // e.when 的效果, 那些已在 prep 由 applyPassives 正常套用)。
-      this.onHitEffectTacs = this.tactics.filter(t => !t.when && (t.type === "passive" || t.type === "command") && (t.effects || []).some(e => e.when && e.when.on));
+      // 批23: 型別放寬含 active —— 過去只認 passive/command(「戰法本身有其他常駐效果, 只有
+      // heal段是反應式」的典型模式, 如陷陣營/雲聚影從)。但草船借箭一類 type:"active" 戰法也有
+      // 同樣模式(「使我軍獲得急救狀態, 受傷時機率觸發治療」是active發動後掛的一個反應式buff,
+      // 不是常駐), 過去完全沒有機制承接, 只能誤把heal當成active發動當下的常駐治療(0分bug)。
+      // 放寬後active戰法帶e.when.on的效果同樣走onHit()反應式結算, 該戰法主coef/其餘無when
+      // 效果仍照常經由主動擲骰路徑(t0.rate)發動觸發(兩者互不干擾, 見applyEffects內新增的
+      // opt.reactive閘門, 確保e.when.on效果不會在active擲骰命中時被重複套用)。
+      this.onHitEffectTacs = this.tactics.filter(t => !t.when && (t.type === "passive" || t.type === "command" || t.type === "active") && (t.effects || []).some(e => e.when && e.when.on));
       this.lockedTargets = new Map();               // 批12 ModeG: lockTarget:true 戰法的鎖定目標, 鍵=戰法物件本身(同一戰法物件跨回合重用同一 Map)
       // 批16: 原語擴充包 —— 新增狀態欄位(現有資料無新欄位, 皆維持0/null預設值, 行為零變化)
       this.atkCount = new Map();                     // everyN: 自身普攻次數計數器, 鍵=戰法物件本身(同一戰法物件跨回合重用同一 Map)
@@ -322,6 +329,7 @@
       if (this.dodgeDur <= 0) this.dodgeProb = 0;
       this.surehitDur = Math.max(0, this.surehitDur - 1);
       if (this.shield && --this.shield.dur <= 0) this.shield = null;
+      if (this.counter && --this.counter.dur <= 0) this.counter = null;  // 批23 A2: 反擊到期清除(過去 dur 幽靈欄位從不遞減, 帶時限的反擊變永久)
       this.hitFlags.clear();                           // 受擊觸發(when.on) 每回合各戰法重置一次觸發額度
       if (this.immune.length) this.immune = this.immune.filter(a => --a[1] > 0);  // 批16: immuneTo 逐回合遞減
       this.fakeReportDur = Math.max(0, this.fakeReportDur - 1);  // 批16: 偽報 逐回合遞減
@@ -617,6 +625,23 @@
       // 工神的 amp when:{from:4}, 見 _todo 揭露)。此處在 prep 呼叫時跳過這些效果, 改由 fight()
       // 回合迴圈的通用 e.when 掃描(仿 delayedEq 慣例)在視窗開啟時才套用, 見下方呼叫端。
       if (opt.skipWhenEffects && k !== "heal" && e.when && !t.when) continue;
+      // 批23: e.when.on(反應式, 受擊當下觸發) 效果只應在 onHit() 事件點結算(opt.reactive=true
+      // 的合成單效果呼叫), 不應在準備階段/主動主迴圈擲骰(fire=rnd()<t0.rate)/charge突擊等
+      // 一般路徑被無條件套用。過去(草船借箭0分bug之一)heal 的 e.when.on 只被 heal 分支自己
+      // 內部的 opt.healOnly 閘門過濾(見下方 k==="heal"), 但一般 active 主動戰法擲骰命中時
+      // 呼叫 applyEffects() 完全不經過 opt.healOnly, 導致帶 e.when.on 的 heal 效果被當成
+      // 「無 when 的常駐效果」在戰法觸發當下立即無條件治療一次, 與 onHit 反應式觸發疊加,
+      // 造成雙重結算。此處統一擋下: 非 opt.reactive 呼叫時, 任何 k 只要帶 e.when.on 就跳過
+      // (改由 onHit() 事件點才會結算, 見 onHitEffectTacs/onHitEq/onHitBs 呼叫端)。
+      if (!opt.reactive && e.when && e.when.on) continue;
+      // 批23 A4: 效果級 e.rate 折算一致性 —— 過去只有 onHit(反應式)/delayedEq(裝備回合窗)
+      // 兩條路徑會讀 e.rate(見呼叫端各自的 evRate = e.rate ?? t.rate ?? 1 判定), 其餘路徑
+      // (prep/active主動/charge突擊/when視窗一次性套用)完全忽略 e.rate, 造成同一戰法內
+      // 「有的效果段折機率、有的沒折」(如草船借箭80%/魚鱗陣heal段25%/援救50%)。修法: 在
+      // 這裡統一補上判定(套用時 rnd()<e.rate, 比EV折算更接近真實方差, 見批23 A4 brief)。
+      // opt.rateChecked: 呼叫端(onHit/delayedEq 的合成單效果呼叫)已自行讀取並擲骰過同一個
+      // e.rate, 傳此旗標避免在這裡對同一效果重複擲骰(機率會被平方, 造成低估)。
+      if (!opt.rateChecked && e.rate != null && rnd() >= e.rate) { if (TRACE) lg(`　▸ ${effDesc(k, e, caster)}〔${Math.round(e.rate * 100)}%機率〕未觸發`); continue; }
       if (k === "heal") {
         if (opt.noHeal) continue;
         if ((e.coef ?? 0.8) < 0) continue;              // 批10: 資料衛生防禦 —— 負 heal coef(如機略縱橫類 dot 誤標成 heal 負值)一律視為0並跳過, 避免資料錯誤反而扣友軍血
@@ -695,6 +720,14 @@
       const who = e.who || "ally";
       const CTRL_K = k === "stun" || k === "silence" || k === "disarm" || k === "taunt" || k === "chaos";  // 控制/嘲諷類: 按戰法 n/nMax 選目標數(insight 不擋嘲諷, 只擋 stun/silence/disarm/chaos)
       let dests;
+      // 批23 A1: 效果級 e.n(可配 e.nMax) —— 非CTRL效果(amp/mitig/stat/dot/healblock/rateup/…)
+      // 過去無條件把 who:"enemy"/"ally" 放大成全體敵軍/我軍, 大量原文寫「單體」「目標」「我軍
+      // 2人」的非控制效果被系統性高估成全體(見批23清單: 謙讓/殿後/破甲/談心/追傷/兵鋒/舌戰
+      // 群儒/八門金鎖陣/進言/江東小霸王/眾動萬計/國士將風等)。修法: 有 e.n 時比照 CTRL_K
+      // 群體控制的既有選標邏輯(pickTargets 隨機不重複; 單體時優先鎖定 tgt, 與 CTRL_K 慣例
+      // 一致), 只是讀 e.n/e.nMax(效果自身欄位)而非 t.n/t.nMax(戰法頂層, CTRL_K 專用, 維持
+      // 不變)。無 e.n 時完全維持原行為(全體敵軍/我軍), 向後相容 —— 大量「全體」條目依賴現行為。
+      const hasEN = e.n != null;
       // 批18: targetSel(指定選標準則) —— 效果級欄位, 優先於 who 的預設隨機/群體邏輯: 依準則
       // (兵力最低/武力最高/智力最低/我方最殘等)在對應陣營(enemy用敵方, 其餘用我方)挑單一目標。
       // 「指定」不受混亂(chaos)影響(混亂只亂「隨機」選目標的普攻/主動/突擊, 見 pickTargetChaos
@@ -713,7 +746,14 @@
           const n = t.n || 1;
           const cnt = t.nMax ? n + Math.floor(rnd() * (t.nMax - n + 1)) : n;
           dests = cnt <= 1 ? (tgt && tgt.alive ? [tgt] : pickTargets(enemies, 1)) : pickTargets(enemies, cnt);
+        } else if (hasEN) {                            // 批23 A1: 非CTRL效果讀 e.n/e.nMax
+          const cnt = e.nMax ? e.n + Math.floor(rnd() * (e.nMax - e.n + 1)) : e.n;
+          dests = cnt <= 1 ? (tgt && tgt.alive ? [tgt] : pickTargets(enemies, 1)) : pickTargets(enemies, cnt);
         } else dests = enemies.filter(x => x.alive);
+      }
+      else if (hasEN) {                                 // 批23 A1: who="ally"(含預設) 非CTRL效果讀 e.n/e.nMax(如「我軍2人」「自己及友軍單體」)
+        const cnt = e.nMax ? e.n + Math.floor(rnd() * (e.nMax - e.n + 1)) : e.n;
+        dests = cnt <= 1 ? (tgt && tgt.alive && allies.includes(tgt) ? [tgt] : pickTargets(allies, 1)) : pickTargets(allies, cnt);
       }
       else dests = allies.filter(a => a.alive);
       // 批16: ifTargetHas —— 效果段條件, 只對「已有該狀態」的目標生效; 選目標後過濾(不影響選目標邏輯本身)
@@ -742,13 +782,21 @@
         // effFirst 三檔排序鍵)。insight(全免)/immuneTo(單項免疫)可免, 同其他控制類慣例。
         else if (k === "ambush") { if (!u.insight && !u.isImmuneTo("ambush")) { u.ambush = Math.max(u.ambush, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入遇襲(行動遲滯)`); } else if (TRACE) lg(`　▸ ${u.nm} 免疫遇襲`); }
         else if (k === "stat") { if (e.add != null) u.pushStatAdd(e.stat, svAdd(e.add), e.dur, src, udFlags); else u.pushMod(e.stat, svMult(e.mult ?? 1), e.dur, src, udFlags); }  // 裝備平加(add)與乘算(mult)擇一; add 為戰報所示「裝備獨立平加階段」
-        else if (k === "dot") u.dots.push([damage(caster, u, e.coef ?? 0.5, t.kind || "intel"), e.dur, !!e.undispellable]);  // dots[2]=undispellable 旗標(供 dispel 略過)
+        // 批23 A3: dot 結算優先讀 e.kind(戰法整體是兵刃 t.kind="phys", 但灼燒/水攻類 dot 段
+        // 依原文「受智力影響」應走謀略傷害類型, 過去誤用 t.kind 導致傷害類型錯位, 如天降火雨
+        // 兵刃戰法掛的灼燒本應是 intel 類, 若戰法整體改記 kind="phys" 會連帶把 dot 也算成
+        // 兵刃), 無 e.kind 時 fallback t.kind(向後相容既有無 e.kind 的 dot 資料)。
+        else if (k === "dot") u.dots.push([damage(caster, u, e.coef ?? 0.5, e.kind || t.kind || "intel"), e.dur, !!e.undispellable]);  // dots[2]=undispellable 旗標(供 dispel 略過)
         else if (k === "extra") u.pushAdd("extra", e.val, e.dur, src);
         else if (k === "stack") u.stack = { per: e.per ?? 0.1, max: e.max ?? 5, n: 0 };
         else if (k === "decay") u.decay = { v0: e.v0 ?? 0.5, left: e.rounds ?? 8, total: e.rounds ?? 8 };
         else if (k === "swap") u.swap = Math.max(u.swap, (e.dur ?? 1) + 1);
         else if (k === "pierce") u.pushAdd("pierce", e.val, e.dur, src);
-        else if (k === "counter") u.counter = { coef: e.coef ?? 1, kind: e.kind || "phys", prob: e.prob ?? 1 };
+        // 批23 A2: counter 讀 e.dur(過去是幽靈欄位, 從不寫入/遞減 —— 「反擊持續1回合」等
+        // 帶時限的反擊被無聲變成常駐/永久, 見還擊/千里走單騎等)。dur 預設99(=常駐被動慣例,
+        // 向後相容無 dur 欄位的既有反擊資料)。dur 記在 counter 物件上, tick() 逐回合遞減,
+        // 歸零時清除(見 tick() 對應段落)。
+        else if (k === "counter") u.counter = { coef: e.coef ?? 1, kind: e.kind || "phys", prob: e.prob ?? 1, dur: (e.dur ?? 99) + 1 };
         else if (k === "taunt") { u.tauntBy = caster; u.tauntDur = Math.max(u.tauntDur, (e.dur ?? 1) + 1); }
         else if (k === "shield") {
           const amt = (e.amt ?? 0) + (e.pct ? e.pct * caster.troop : 0);
@@ -885,7 +933,7 @@
         if (TRACE) lg(`【${dst.side}】${dst.nm} 戰法【${t.nameZh}】（受擊觸發）發動`);
         if (t.coef) hit(dst, src, t.coef, t.kind, false, onHit);
         if (t.extraHits) fireExtraHits(dst, t, src, alliesOf, foesOf, onHit);  // 批13: 受擊觸發類多段傷害(如剛烈不屈 反擊後群體額外段)
-        if (t.effects.length) applyEffects(dst, src, t, alliesOf(dst), foesOf(dst));
+        if (t.effects.length) applyEffects(dst, src, t, alliesOf(dst), foesOf(dst), { reactive: true });  // 批23: 戰法級when.on本身即反應式, 標記reactive供內部e.when.on效果(若有)一致判定
       }
       // 批22: 效果級 e.when.on(急救類反應式治療, 見 onHitEffectTacs 註解) —— 戰法本身無 t.when
       // (其餘效果如武力/統率平加仍在 prep 正常套用, 不受影響), 只有帶 e.when.on 的個別效果在
@@ -903,7 +951,7 @@
           if (rnd() >= evRate) continue;
           dst.hitFlags.add(e);
           if (TRACE) lg(`【${dst.side}】${dst.nm} 戰法【${t.nameZh}】急救效果（受擊觸發）發動`);
-          applyEffects(dst, src, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(dst), foesOf(dst));
+          applyEffects(dst, src, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(dst), foesOf(dst), { rateChecked: true, reactive: true });  // 批23 A4: 這裡已擲過 e.rate, 避免 applyEffects 通用閘門重複擲骰; reactive:true 供內部 e.when.on 閘門判定放行
         }
       }
       // 批22: 裝備效果級 e.when.on(見 onHitEq 註解) —— 同上, 用合成單效果戰法呼叫 applyEffects
@@ -915,7 +963,7 @@
         if (rnd() >= evRate) continue;
         dst.hitFlags.add(e);
         if (TRACE) lg(`【${dst.side}】${dst.nm}〔特技·${e._eqNm || "?"}〕（受擊觸發）發動`);
-        applyEffects(dst, src, { effects: [e], kind: "phys" }, alliesOf(dst), foesOf(dst));
+        applyEffects(dst, src, { effects: [e], kind: "phys" }, alliesOf(dst), foesOf(dst), { rateChecked: true, reactive: true });  // 批23 A4/reactive: 已擲過 e.rate
       }
       // 批22: 兵書效果級 e.when.on(見 onHitBs 註解) —— 同上, 用合成單效果戰法呼叫 applyEffects
       for (const e of dst.onHitBs) {
@@ -926,7 +974,7 @@
         if (rnd() >= evRate) continue;
         dst.hitFlags.add(e);
         if (TRACE) lg(`【${dst.side}】${dst.nm}〔兵書〕（受擊觸發）發動`);
-        applyEffects(dst, src, { effects: [e], kind: "phys" }, alliesOf(dst), foesOf(dst));
+        applyEffects(dst, src, { effects: [e], kind: "phys" }, alliesOf(dst), foesOf(dst), { rateChecked: true, reactive: true });  // 批23 A4/reactive: 已擲過 e.rate
       }
     };
     if (TRACE) {                                    // 準備階段標頭: 兵種 + 城建/陣營
@@ -957,13 +1005,26 @@
             if (t.when.hpBelow != null || t.when.hpAbove != null) {
               if (!hpOk(t, u)) continue;
               if (t.when.hpBelow != null) { if (u.hpBelowFired.has(t)) continue; u.hpBelowFired.add(t); }
+              // 批23 A5: 補 t.rate 判定(此路徑過去從不讀 t.rate, 機率戰法被當成必發)。hpAbove
+              // 是持續窗(每回合都可能重新判定), 未中不消耗 whenFired(仍可下回合再擲); hpBelow
+              // 是一次性(見上方 hpBelowFired 去重), 未中同樣不消耗 whenFired/hpBelowFired 之外
+              // 的額外狀態(hpBelowFired 已在觸發判定前標記, 維持既有「首次跨越」語意不變)。
+              if (rnd() >= (t.rate ?? 1)) { if (TRACE) lg(`【${u.side}】${u.nm}（第${r}回合條件）【${t.nameZh}】未發動`); continue; }
               // hpAbove: 不加入 whenFired(持續窗, 允許之後回合再次觸發), 直接套用後 continue 到下個戰法
               if (TRACE) lg(`【${u.side}】${u.nm}（第${r}回合兵力${t.when.hpBelow != null ? "低於" : "高於"}${Math.round((t.when.hpBelow ?? t.when.hpAbove) * 100)}%）發動【${t.nameZh}】`);
               applyEffects(u, null, t, alliesOf(u), foesOf(u), { noHeal: true });
               if (t.when.hpBelow != null) u.whenFired.add(t);  // hpBelow 一次性: 同時標記 whenFired 供其他路徑(如未來擴充)一致查詢
               continue;
             }
+            // 批23 A5: 此路徑過去從不讀 t.rate —— 機率戰法(如盛氣凌敵 rate=1 不受影響, 但
+            // 火神英風/鷹視狼顧一類 rate<1 的 when-gated 條目)一律當成必發, 高估命中率。
+            // 主動/指揮/被動的「coef 傷害段」自有獨立擲骰(見下方主迴圈 fire=rnd()<t0.rate,
+            // 已正確套用), 此處是「非coef、window開啟時一次性套用的 effects 段」, 需要補上
+            // 同一份 t.rate 判定, 貼合原文機率語意(如「N%機率使目標...」)。未中同樣消耗
+            // whenFired(此路徑本就是一次性視窗, 見函式頂端註解, 未中不重試, 與原「必發」相比
+            // 現在只是「有機率完全不觸發」, 貼合原文機率語意)。
             u.whenFired.add(t);
+            if (rnd() >= (t.rate ?? 1)) { if (TRACE) lg(`【${u.side}】${u.nm}（第${r}回合條件）【${t.nameZh}】未發動`); continue; }
             if (TRACE) lg(`【${u.side}】${u.nm}（第${r}回合條件）發動【${t.nameZh}】`);
             // 批15: noHeal:true —— heal 效果改由上面 applyPassives({healOnly:true}) 統一處理
             // (它自己會檢查 t.when/roundOk, 見 applyEffects 內 opt.healOnly 分支), 避免此處與
@@ -984,7 +1045,7 @@
           const lbl = `〔特技·${e._eqNm || "?"}〕`;
           if (e.rate != null && rnd() >= e.rate) { if (TRACE) lg(`【${u.side}】${u.nm}${lbl}（第${r}回合條件）未發動`); continue; }
           if (TRACE) lg(`【${u.side}】${u.nm}${lbl}（第${r}回合）發動`);
-          applyEffects(u, null, { effects: [e], kind: "phys", n: e.n || 1, nMax: e.nMax || 0 }, alliesOf(u), foesOf(u), { noHeal: false });  // n/nMax傳遞: 群體控制(赳螑 敵軍群體2~3)按效果宣告選目標數
+          applyEffects(u, null, { effects: [e], kind: "phys", n: e.n || 1, nMax: e.nMax || 0 }, alliesOf(u), foesOf(u), { noHeal: false, rateChecked: true });  // n/nMax傳遞: 群體控制(赳螑 敵軍群體2~3)按效果宣告選目標數; 批23 A4: 上一行已擲過 e.rate, 避免重複擲骰
         }
       }
       // 批18: e.when 泛化(非 heal 種類) —— 與上面 delayedEq 同一時點、同慣例: 掃描「母戰法無

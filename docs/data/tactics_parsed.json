@@ -265,10 +265,12 @@
   "prep": 1,
   "effects": [
    {
-    "k": "stun",
+    "k": "amp",
     "who": "enemy",
+    "val": -1.0,
     "dur": 2,
-    "_note": "虛弱(無法造成傷害)以震懾近似(引擎中兩者行為幾乎等價);對象原文為敵軍主將,效果欄無enemyLeader只能隨機單體"
+    "n": 1,
+    "_note": "批23: stun(震懾, 全面禁止行動)改為amp(val:-1, 虛弱慣例, 見克敵制勝/威謀靡亢/臨戰先登同款做法)——原文「進入虛弱(無法造成傷害)狀態」只禁止造成傷害, 不禁止行動(如普攻/戰法仍可正常發動, 只是傷害結算為0), stun額外禁止了原文沒有的'全面行動', 較虛弱語意更強, 高估效果; amp(-1)精確對應「無法造成傷害」的原文語意(傷害公式在total_amp<=-1時完全歸零, 見damage()實作)。對象原文為敵軍主將, 效果欄無enemyLeader只能隨機單體(e.n=1明確化單體語意)。"
    },
    {
     "k": "heal",
@@ -282,7 +284,8 @@
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批23: stun改amp(-1)虛弱慣例(見effects[0]._note), 較stun更準確且略降低過往的行動禁止高估; heal維持既有批17版本不變。"
  },
  {
   "nameZh": "亂世奸雄",
@@ -647,7 +650,8 @@
     "who": "enemy",
     "val": -0.3,
     "dur": 3,
-    "scale": "intel"
+    "scale": "intel",
+    "n": 2
    },
    {
     "k": "first",
@@ -657,7 +661,8 @@
   ],
   "quality": "S",
   "cat": "FORMATION",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批23 A1: amp(who:enemy)段補e.n=2(原文「敵軍群體2人」, 過去無e.n套用到全體敵軍, 高估覆蓋人數)。first(who:leader)為主將限定, 不受A1影響。"
  },
  {
   "nameZh": "兵無常勢",
@@ -707,12 +712,14 @@
     "who": "ally",
     "val": 1,
     "dur": 1,
-    "_note": "原文'自己及友軍單體'僅1名隨機友軍, 但non-CTRL的who:ally套用到全體友軍(最多3人含自己), 略高估覆蓋範圍(已知engine限制: 無'隨機挑1名友軍'原語)"
+    "n": 1,
+    "_note": "批23 A1修正: 原文'自己及友軍單體'僅1名隨機友軍, 過去無e.n時non-CTRL的who:ally套用到全體友軍(最多3人含自己), 現補e.n=1精確表達「1名隨機友軍」(不含自己, 自己已由上面who:self段單獨處理)。"
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批23 A1: extra(who:ally)段補e.n=1, 修正過去全體友軍高估。"
  },
  {
   "nameZh": "刀出如霆",
@@ -1091,18 +1098,21 @@
     "k": "dot",
     "who": "enemy",
     "coef": 0.74,
-    "dur": 2
+    "dur": 2,
+    "n": 2
    },
    {
     "k": "healblock",
     "who": "enemy",
-    "dur": 2
+    "dur": 2,
+    "n": 2
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_note": "批23 R13: dot/healblock補e.n=2(原文「敵軍群體2人」, 對齊t.n=2; 過去無e.n時兩者皆套用到全體敵軍, 高估覆蓋人數)。"
  },
  {
   "nameZh": "千里走單騎",
@@ -1117,8 +1127,9 @@
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1.2,
-    "dur": 2
+    "add": 50,
+    "dur": 2,
+    "_note": "批23 ModeA修正: 原文「提高25→50武力」為flat點數(非%乘算), stat.mult:1.2→stat.add:50(取滿級值, 同進言/弓腰姬等ModeA修正慣例)。"
    },
    {
     "k": "insight",
@@ -1129,15 +1140,16 @@
     "k": "counter",
     "coef": 2.38,
     "kind": "phys",
-    "prob": 1.0,
+    "prob": 1,
     "dur": 2,
-    "_note": "反擊傷害率119%→238%, 觸發窗為洞察生效期間(2回合); counter原語原生支援prob欄位(非stun/silence/disarm家族的機率限制), 故可精確編碼機率, 但引擎counter為\"受擊時按prob擲骰\"常駐狀態而非\"僅洞察期間\"的時間窗限定——這裡仍受該效果本身dur=2回合限制, 屬合理近似"
+    "_note": "反擊傷害率119%→238%, 觸發窗為洞察生效期間(2回合); counter原語原生支援prob欄位(非stun/silence/disarm家族的機率限制), 故可精確編碼機率。批23 A2落地: 過去引擎的counter.dur是幽靈欄位(從不讀取/遞減), 此dur=2雖然資料上早已寫入, 實際執行時反擊變成常駐生效至戰鬥結束(而非僅洞察期間2回合); 批23修引擎讀dur並於tick()到期清除後, 此dur=2才會真正只在洞察期間2回合內生效, 資料本身不需改動, 純屬引擎修復落地。 批23另修正: counter效果過去缺who欄位(預設落到\"ally\"=全體我軍, 而非原文\"自身受到普攻時反擊\"的施放者本人), 補who=self(與同戰法stat/insight兩效果一致, 皆為self)——此為與A2並行發現的鄰近既有bug, 一併修正。",
+    "who": "self"
    }
   ],
   "quality": "S",
   "cat": "PASSIVE",
   "src": "EVENT",
-  "_note": "批15修正: 批14把頂層coef(2.38)+rate(0.7)與effects裡的counter(coef2.38,prob1)同時保留, 造成同一句「受到普通攻擊時反擊」被雙重計算——頂層coef+rate讓被動每回合額外以70%機率主動打出一段238%傷害(原文並無此獨立攻擊段, 只有「受擊時反擊」), counter效果本身才是正確映射(受擊時按prob擲骰觸發, 不需要頂層coef重複表達)。頂層coef歸零消除這條原文不存在的傷害管線; stat(武力×1.2)/insight(洞察)/counter三效果不受影響, 仍在準備階段(no_heal pass)套用。"
+  "_note": "批23: stat.mult→stat.add(ModeA); counter.dur=2已存在但過去因A2幽靈欄位bug無效(常駐生效), 批23引擎修復後正確落地為僅2回合。頂層coef=0(消除批15已修正的雙重計算管線)維持不變。"
  },
  {
   "nameZh": "南蠻渠魁",
@@ -1177,19 +1189,23 @@
     "who": "ally",
     "guard": "self",
     "share": 1,
-    "_note": "「為我軍主將承擔此次普攻」原文限主將, redirect無法只保護leader, 沿用guard:self近似保護全體(既有慣例, 如千里馳援)"
+    "dur": 1,
+    "normalOnly": true,
+    "_note": "批23: 補normalOnly=true(原文'承擔此次普通攻擊'限普攻傷害, 戰法/突擊傷害不轉移, 過去缺此旗標讓保護範圍誤含戰法傷害, 高估)+dur=1(原文'此次'=單次語意; 因本戰法t.rate=1每回合都會重新擲骰發動, dur=1與舊近似(常駐無限期)在此戰法的實際持續效果上其實等價——每回合都會被本次發動的redirect刷新覆蓋, 這裡補dur=1純粹是語意精確化與防禦性寫法, 若日後rate改為<1或加上when窗口限制, dur=1才會讓實際行為差異顯現。「為我軍主將承擔」原文限主將, redirect無法只保護leader, 沿用guard:self近似保護全體(既有慣例, 如千里馳援)。"
    },
    {
     "k": "amp",
     "who": "enemy",
     "val": -0.18,
-    "dur": 1
+    "dur": 1,
+    "n": 1
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_note": "批23: redirect補normalOnly(僅普攻)+dur=1(僅此次, 非常駐), 修正過去把'單次代承'誤變成'全程恆定代承所有傷害'的高估。amp段已於前批補e.n=1(見批23 A1)。"
  },
  {
   "nameZh": "合軍聚眾",
@@ -1380,7 +1396,9 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_todo": "遺漏「友軍單體」份額(3個效果各自需要一份who:ally,n:1版本), 待後續批次評估是否新增。",
+  "_note": "批23 A1核對: 原文「使自己及友軍單體獲得...」= 自己+1名友軍 = 最多2人; 現三效果皆who:self(僅自己), 遺漏「1名友軍」那份(與兵鋒同類缺口, 但兵鋒有獨立who:ally段可補e.n=1, 此戰法未拆分ally段, 需新增三個who:ally,n:1的效果段才能補上——本批僅核對範圍限定在'不當放大成全體'的A1修復, 新增遺漏的友軍段屬另一類'低估'修正, 誠實揭露維持現狀, 不在本批展開)。"
  },
  {
   "nameZh": "國色",
@@ -1760,20 +1778,13 @@
   "rate": 1,
   "n": 2,
   "prep": 0,
-  "effects": [
-   {
-    "k": "heal",
-    "who": "ally",
-    "coef": 0.07,
-    "dur": 1,
-    "_approx": "prob-ev: 增益延長效果每觸發3次才治療40%; 觸發≈友軍增益獲得~0.5次/回合×35%→約每6回合達成3次→引擎逐回合heal攤平7%/回合"
-   }
-  ],
+  "effects": [],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "_note": "主效果『友軍功能性增益延長1回合(35%機率,受統率)』與條件式10%攻心/倒戈(1回合)無對應原語, _todo; 原資料heal 0.4每回合結算=總量3.2(真實期望~0.5)高估6倍"
+  "_note": "批23: 移除批10版本的heal(coef=0.07)——該值是「增益延長效果每觸發3次才治療」這個跨回合計數條件的EV瞎猜(觸發頻率完全靠猜測的'~0.5次/回合'估算, 無可信折算依據, 且heal本身的觸發條件与數值都與原文機制不符, 引擎既有heal_only常駐通道也無法表達'每N次觸發才治療一次'的計數語意)。改為effects=[](誠實揭露完全未建模, 不製造看似有數值但實為虛構的近似)。",
+  "_todo": "主效果『友軍功能性增益延長1回合(35%機率,受統率)』與條件式『若友軍智力高於武力則5%→10%攻心否則5%→10%倒戈(1回合)』皆無對應原語(增益延長需要跨戰法追蹤「友軍此刻是否正持有某個增益」並延長其dur, 引擎adds/mods的dur只有施加時單次寫入, 無「延長既有buff剩餘時間」的操作原語; 攻心/倒戈的智力vs武力條件分支也無對應判斷點), 完全誠實揭露為_todo, 不強行近似(避免像上一版本heal瞎猜造成的失真)。"
  },
  {
   "nameZh": "奪魂挾魄",
@@ -2190,10 +2201,18 @@
   "prep": 0,
   "effects": [
    {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.2,
+    "dur": 1,
+    "kind": "phys",
+    "_note": "批23: 補「虎嗔」本體(下一回合對目標造成額外兵刃傷害, 初始20%)——過去完全未建模(0分主因之一, 只有stun+amp, 缺主要DoT機制)。取初始值20%(dur=1, 只在下回合結算一次), 「每次受傷+30%, 最多3層=110%」的疊層需要跨回合統計「目標在虎嗔期間受擊次數」, 引擎現有dot/stack皆是固定值機制(dot每回合定額, stack僅施放者自身遞增), 無法表達「依目標受擊次數動態疊加」, 誠實維持初始值近似(低估, 未反映可能疊加到110%的情形)。"
+   },
+   {
     "k": "stun",
     "who": "enemy",
     "dur": 1,
-    "_note": "stun原文為條件觸發(目標於虎嗔期間受3次傷害才結算震懾),現引擎版本無條件套用,顯著高估"
+    "_note": "stun原文為條件觸發(目標於虎嗔期間受3次傷害才結算震懾),現引擎版本無條件套用,顯著高估(既有揭露維持)"
    },
    {
     "k": "amp",
@@ -2207,7 +2226,8 @@
   "_conf": "high",
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_note": "批23: 補虎嗔dot本體(初始值20%近似, 見effects[0]._note); stun門檻(3次受傷才觸發)維持既有_note揭露(顯著高估, 無條件套用)不變; amp(自身兵刃增傷8%可疊)維持不變。"
  },
  {
   "nameZh": "工神",
@@ -2283,6 +2303,15 @@
     "per": 0.2,
     "max": 5,
     "_note": "每層+20%最多5層(上限100%); v5盲測抓到舊資料同時存flat amp+0.2造成120%重複計算,已移除僅留stack"
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "force",
+    "add": 18,
+    "dur": 99,
+    "_approx": "static-representative",
+    "_note": "批23補: 原文「每多1個功能性增益狀態,提高自身9→18點武力,最多疊加5次(最多+90武力)」與傷害段(stack)同源, 但引擎stack原語只驅動amp(自身增傷), 無「同一計數器同時驅動stat.add」的機制, 無法讓武力增益隨場上增益狀態數動態疊加。取單層滿級值(18點)作靜態近似(而非5層疊滿的90點), 偏保守低估; 與傷害段(stack, 會隨回合數動態疊加到滿5層)不同步, 已明確揭露此不一致。"
    }
   ],
   "_src": "https://sgz.ejoy.com/second/detail-5298.html",
@@ -2291,7 +2320,7 @@
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正"
+  "_note": "批23: 補上原文遺漏的武力增益段(見effects[1]._note評估與取值理由)。"
  },
  {
   "nameZh": "引弦力戰",
@@ -2335,10 +2364,18 @@
   "prep": 0,
   "effects": [
    {
+    "k": "decay",
+    "who": "ally",
+    "v0": -0.3,
+    "rounds": 3,
+    "_note": "批23補: 原文「造成傷害降低30%,此效果每回合降低10%」是自身輸出衰減(3回合線性歸零), 過去完全遺漏此段(只有下面mitig的受到傷害降低)。decay原語(v0=-0.3, rounds=3)精確表達'開場-30%輸出, 每回合遞減10%, 3回合後歸零'的曲線(見Unit.amp()實作: a += decay.v0*decay.left/decay.total, 線性遞減至0)。decay作用於who=ally的全體我軍(現有decay原語實作是套在caster/單一unit.decay欄位上, 這裡沿用mitig同款who:ally群體套用慣例)。"
+   },
+   {
     "k": "mitig",
     "who": "ally",
     "val": 0.3,
-    "dur": 3
+    "dur": 3,
+    "_note": "受到傷害降低30%(mitig無decay等價機制, 維持flat近似不遞減, 較原文'每回合降低10%'略高估後期回合的減傷效果)"
    },
    {
     "k": "amp",
@@ -2350,7 +2387,7 @@
   "quality": "S",
   "cat": "FORMATION",
   "src": "EVENT",
-  "_todo": "「自身最高屬性+30→60點」的自身屬性buff完全未表達(無法判斷「最高屬性」對應哪一項); 衰減結束後「受到傷害+1→4%」的代價未表達(僅保留「造成傷害+8→16%」的收益面)"
+  "_todo": "「自身最高屬性+30→60點」的自身屬性buff完全未表達(無法判斷「最高屬性」對應哪一項); 衰減結束後「受到傷害+1→4%」的代價未表達(僅保留「造成傷害+8→16%」的收益面)。批23: 已補「造成傷害降低(decay)」段, mitig(受到傷害降低)因decay只作用於amp無法比照遞減, 維持flat近似(略高估後期回合減傷)。"
  },
  {
   "nameZh": "形機軍略",
@@ -2580,14 +2617,16 @@
     "who": "enemy",
     "stat": "command",
     "dur": 2,
-    "add": -100
+    "add": -100,
+    "n": 1
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "intel",
     "dur": 2,
-    "add": -100
+    "add": -100,
+    "n": 1
    },
    {
     "k": "block",
@@ -2599,7 +2638,8 @@
   ],
   "quality": "S",
   "cat": "BURST",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批23 R13: stat×2段補e.n=1(原文「隨機敵軍單體」, 對齊t.n=1; 過去無e.n時套用到全體敵軍, 高估覆蓋人數)。block(who:leader)為角色限定, 不受R13管轄。"
  },
  {
   "nameZh": "抬棺決戰",
@@ -3034,7 +3074,8 @@
     "stat": "force",
     "dur": 2,
     "scale": "intel",
-    "add": -38
+    "add": -38,
+    "n": 2
    },
    {
     "k": "stat",
@@ -3043,12 +3084,14 @@
     "dur": 2,
     "scale": "intel",
     "add": -38,
+    "n": 2,
     "_approx": "原文可疊加2次(-19→-38, 累積可達-76); pushStatAdd同src刷新不疊加, 引擎無法表達重複施放疊層, 保守取單次滿值-38, 未建模疊加"
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批23 R13: stat×2段補e.n=2(原文「敵軍群體2人」, 對齊t.n=2; 過去無e.n時套用到全體敵軍, 高估覆蓋人數)。"
  },
  {
   "nameZh": "暗渡陳倉",
@@ -3180,11 +3223,11 @@
   "prep": 0,
   "effects": [
    {
-    "k": "mitig",
-    "who": "leader",
-    "val": 0.3,
-    "dur": 99,
-    "_note": "為主將分擔30%傷害（兵力移除，不觸發急救/減傷效果）"
+    "k": "redirect",
+    "who": "ally",
+    "guard": "self",
+    "share": 0.3,
+    "_note": "批23: mitig(who:leader,傷害移除)改用redirect(guard:self,share:0.3)——原文'為主將分擔30%傷害(分擔量視為兵力移除,不享受減傷加成)'本質是傷害轉嫁給施放者, 而非主將自身打折, redirect語意更貼切(直接把一部分傷害轉給guardian承受, 不經過mitig的減傷公式, 符合'不享受減傷加成'的原文限定)。既有限制: redirect無法只保護leader, 沿用guard:self近似保護全體我軍(既有慣例, 如千里馳援/古之惡來), 較原文'僅主將'更寬鬆(全隊都被分擔傷害, 而非只有主將)。"
    },
    {
     "k": "amp",
@@ -3193,14 +3236,6 @@
     "dur": 99,
     "_approx": "crit-ev",
     "_note": "14%奇謀機率(觸發+100%)+20%奇謀傷害 期望折算0.14+0.14*0.20"
-   },
-   {
-    "k": "lifesteal",
-    "who": "leader",
-    "val": 0.14,
-    "dur": 99,
-    "_approx": "crit-ev",
-    "_note": "14%攻心(觸發時按傷害比例回血)近似, 借用觸發率代入回血比例"
    }
   ],
   "_src": "https://www.gamersky.com/handbooksy/202007/1308628.shtml",
@@ -3209,7 +3244,7 @@
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "_est": true
+  "_note": "批23: 移除lifesteal(who:leader,val:0.14)——原文完全無「倒戈」字樣, 過去把「14%攻心(奇謀)機率」重複借用成lifesteal觸發比例是無原文依據的臆造效果(奇謀=暴擊, 不等於倒戈回血, 兩者是不同機制); amp(奇謀EV折算)已完整表達奇謀機率×傷害的效果, 不需要額外編造回血。mitig(分擔傷害)改用redirect, 見effects[0]._note。"
  },
  {
   "nameZh": "桃園結義",
@@ -3288,7 +3323,7 @@
   "cat": "PASSIVE",
   "src": "INNATE",
   "_note": "(bucket6原標記tactic-level _est: 部分數值為估計,詳見_diff/effects內個別_est/_note)",
-  "_todo": "批17核對: coef=0.6取用「主將時60%」的較高值(非主將時應為54%), 略高估非主將持有情境; 「自身為主將時」的caster-is-leader條件判定同奮矛英姿/鬼神霆威缺口同源, 現有when/ifTargetHas/hpBelow/immune/dispel/choices/fakeReport/healBoost/healGiven/everyN/parity等新舊原語皆無「隊伍主將身份」通用判定機制, 維持近似取單一值(60%), 已明確揭露而非沉默高估。"
+  "_todo": "批17核對: coef=0.6取用「主將時60%」的較高值(非主將時應為54%), 略高估非主將持有情境; 「自身為主將時」的caster-is-leader條件判定同奮矛英姿/鬼神霆威缺口同源, 現有when/ifTargetHas/hpBelow/immune/dispel/choices/fakeReport/healBoost/healGiven/everyN/parity等新舊原語皆無「隊伍主將身份」通用判定機制, 維持近似取單一值(60%), 已明確揭露而非沉默高估。 批23核對: 已評估extraHits能否精確表達「主目標+濺射到目標同部隊其他武將」——結論不可行:extraHits的who欄位只支援sameTarget(沿用主段目標本身,即再打一次同一人,非隊友)/enemyLeader(固定index0,非'目標的隊友'這種相對關係)/未指定(pickTargets隨機選敵方N人,不排除已被主段命中的目標, 可能重複打中同一人而非其隊友)三種, 皆無法表達「排除主目標後從其餘敵方單位中選」的相對關係。維持現行type:charge(單體隨機再打1下, 非嚴格排除主目標)近似, 已明確評估並排除extraHits方案, 非未查證的沉默近似。"
  },
  {
   "nameZh": "槍舞如風",
@@ -3500,22 +3535,28 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 0.92,
+    "coef": 1.84,
     "dur": 1,
-    "_approx": "奇數回合治療184%→引擎每回合heal結算, 折半為每回合EV 92%"
+    "when": {
+     "parity": "odd"
+    },
+    "_note": "批23: 改用e.when.parity=odd精確表達「奇數回合治療184%」, 取代先前EV折半(0.92/回合); coef改回原文全值1.84(不再折半, 因parity已確保只在奇數回合才觸發, 不需要用折半來近似'一半回合才治療'的頻率)。"
    },
    {
     "k": "amp",
     "who": "subs",
     "val": 0.15,
     "dur": 99,
-    "_approx": "偶數回合+15%可疊(較高適性副將執行)→單將穩態~2層30%攤平為雙副將常駐15%"
+    "when": {
+     "parity": "even"
+    },
+    "_note": "批23: 改用e.when.parity=even精確表達「偶數回合造成傷害提高15%」, 取代先前EV折半近似(仍為15%, 但過去是'單將穩態~2層30%攤平為雙副將常駐15%'的粗略折算, 現在是精確的'偶數回合觸發'條件, 只是仍簡化了'可疊加'的多層堆疊語意——引擎e.when重複觸發時透過push_add同src刷新而非疊加, 這部分維持既有簡化)。"
    }
   ],
   "quality": "S",
   "cat": "FORMATION",
   "src": "EVENT",
-  "_note": "原資料heal 1.84無奇數回合折算=引擎每回合結算1.84(總治療量高估2倍); mitig對象self→leader(原文主將限定); amp對象ally(含主將)→subs(原文為副將)"
+  "_note": "批23: 奇偶回合語意改用批16已支援的e.when.parity精確表達觸發時機(取代EV折半近似); heal/amp數值也還原成原文全值(不再折半)。mitig(主將分擔30%傷害, 前5回合)維持不變。"
  },
  {
   "nameZh": "死戰不退",
@@ -3675,6 +3716,7 @@
     "who": "enemy",
     "val": 0.3,
     "dur": 2,
+    "n": 1,
     "_approx": "prob-ev/scope",
     "_note": "原文限'自身為主將時,戰鬥前2回合'觸發, 現與主coef同綁在每回合50%機率擲骰上(command/passive非heal效果實際上是prep時套用一次而非跟隨rate擲骰, 故此易傷效果實為battle全程恆定生效, 而非'僅主將且僅前2回合'), 略高估"
    }
@@ -3682,7 +3724,8 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_note": "批23 A1: amp(who:enemy)段補e.n=1(原文「使敵軍單體受到傷害提高」對齊coef的單體目標, 過去無e.n套用到全體敵軍, 高估覆蓋人數)。heal維持既有'我方最殘一人'慣例不變。"
  },
  {
   "nameZh": "江東猛虎",
@@ -3781,18 +3824,21 @@
     "k": "amp",
     "who": "enemy",
     "val": 0.25,
-    "dur": 2
+    "dur": 2,
+    "n": 2
    },
    {
     "k": "dot",
     "who": "enemy",
     "coef": 1.26,
-    "dur": 2
+    "dur": 2,
+    "n": 2
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批23 R13: amp/dot兩段補e.n=2(原文「敵軍群體2人」, 對齊t.n=2; 過去無e.n時皆套用到全體敵軍, 高估覆蓋人數)。"
  },
  {
   "nameZh": "淑懿之德",
@@ -3948,7 +3994,7 @@
   "cat": "PASSIVE",
   "src": "INNATE",
   "_todo": "「每回合25%→50%機率淨化自身(清除自身負面狀態)」與「自身為主將時淨化觸發機率+5%→10%」未建模: 引擎無「淨化」(cleanse)原語。",
-  "_note": "批15修正: 批14把頂層coef(0.5)+rate(0.6)與effects裡的counter(coef0.5,prob0.6)同時保留, 造成同一句「受到傷害時...造成傷害」被雙重計算(頂層coef+rate每回合額外主動打出一段50%傷害, counter效果本身才是正確映射)。頂層coef歸零消除雙重計算; stun效果因此改為只在準備階段套用一次(不再隨頂層coef每回合重新擲骰套用), 為「自身造成傷害時17.5-35%機率觸發stun」這個反應式機制的簡化近似(開場單次, 較原文的持續反應式觸發保守/低估), 已在stun的_approx更新說明(修正前的_approx誤稱「現用戰法整體rate=0.35近似」但實際欄位是0.6, 自相矛盾, 已一併修正)。"
+  "_note": "批15修正: 批14把頂層coef(0.5)+rate(0.6)與effects裡的counter(coef0.5,prob0.6)同時保留, 造成同一句「受到傷害時...造成傷害」被雙重計算(頂層coef+rate每回合額外主動打出一段50%傷害, counter效果本身才是正確映射)。頂層coef歸零消除雙重計算; stun效果因此改為只在準備階段套用一次(不再隨頂層coef每回合重新擲骰套用), 為「自身造成傷害時17.5-35%機率觸發stun」這個反應式機制的簡化近似(開場單次, 較原文的持續反應式觸發保守/低估), 已在stun的_approx更新說明(修正前的_approx誤稱的舊rate值與實際欄位0.6自相矛盾, 已一併修正)。"
  },
  {
   "nameZh": "潛龍陣",
@@ -4673,7 +4719,8 @@
     "k": "amp",
     "who": "enemy",
     "val": -0.4,
-    "dur": 1
+    "dur": 1,
+    "n": 1
    }
   ],
   "quality": "S",
@@ -4681,7 +4728,8 @@
   "src": "EVENT",
   "when": {
    "on": "attacked"
-  }
+  },
+  "_note": "批23 A1: amp(who:enemy)段補e.n=1(原文「其(攻擊來源, 單一目標)」, 過去無e.n套用到全體敵軍, 高估覆蓋人數; 又因onHit反應式的tgt即為攻擊者本人, e.n=1時會優先鎖定tgt, 精確命中攻擊來源而非隨機敵軍)。數值(-0.4)沿用批20 rederive_b5的修正(移除重複EV折算, 見_evidence)。"
  },
  {
   "nameZh": "眾志成城",
@@ -4848,7 +4896,7 @@
   "nameZh": "神機妙算",
   "type": "command",
   "kind": "intel",
-  "coef": 1.0,
+  "coef": 1.28,
   "rate": 0.35,
   "n": 2,
   "prep": 0,
@@ -4864,8 +4912,8 @@
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "_note": "批12 ModeD: 原coef=1缺失主將128%謀略傷害數值, 修正coef=1.28+kind=intel(取主將分支滿級值); 新增silence效果近似「發動失敗」控制clause(見效果_note詳述引擎限制)",
-  "_todo": "coef=1.28取「自身為主將時」的分支數值(基礎傷害率128%), 但原文明確此為條件分支(僅主將時適用), 非主將時應為基礎值100%(coef=1.0)——條件判斷未建模, 統一按主將版取值(高估非主將持有者的傷害輸出)。「並基於雙方智力差額外提高」的智力差加成機制亦完全未建模。"
+  "_note": "批12 ModeD: 原coef=1缺失主將128%謀略傷害數值, 修正coef=1.28+kind=intel(取主將分支滿級值); 新增silence效果近似「發動失敗」控制clause(見效果_note詳述引擎限制)。批23 stale同步修正: 上述_note/_todo早已聲稱coef=1.28, 但correction從未真正在set裡寫入, parsed.coef實際停留在1.0(與文字描述矛盾, 且方向相反地低估而非高估), 現補set.coef=1.28落地。",
+  "_todo": "coef=1.28取「自身為主將時」的分支數值(基礎傷害率128%), 但原文明確此為條件分支(僅主將時適用), 非主將時應為基礎值100%(即該分支對應數值1.0, 而非目前set的1.28)——條件判斷未建模, 統一按主將版取值(高估非主將持有者的傷害輸出, 批23已修正stale set落地, 此高估方向現在才真正生效)。「並基於雙方智力差額外提高」的智力差加成機制亦完全未建模。"
  },
  {
   "nameZh": "神機莫測",
@@ -5322,7 +5370,9 @@
     "who": "enemy",
     "stat": "force",
     "add": -64,
-    "dur": 2
+    "dur": 2,
+    "n": 1,
+    "_note": "批23 R13: 補e.n=1(原文「奇數回合...對敵軍單體...降低武力」, 過去無e.n套用到全體敵軍, 高估覆蓋人數)"
    },
    {
     "k": "dot",
@@ -5330,7 +5380,8 @@
     "coef": 0.76,
     "dur": 1,
     "scale": "intel",
-    "_note": "偶數回合對敵軍群體(2人)謀略傷害(受智力影響),以dot近似週期性群體傷害;dot固定套用全體敵軍(engine dot無法限定2人子集,較原文寬鬆);且與奇數回合單體兵刃傷害(main coef)實際為互斥交替觸發,engine無法表達回合奇偶交替條件,現簡化為兩者同時常駐生效(較原文寬鬆,可能高估)"
+    "n": 2,
+    "_note": "偶數回合對敵軍群體(2人)謀略傷害(受智力影響),以dot近似週期性群體傷害;與奇數回合單體兵刃傷害(main coef)實際為互斥交替觸發,engine無法表達回合奇偶交替條件,現簡化為兩者同時常駐生效(較原文寬鬆,可能高估)。批23 R13: 補e.n=2對齊原文「敵軍群體2人」(過去無e.n套用到全體敵軍, 更進一步高估)。"
    },
    {
     "k": "stat",
@@ -5338,13 +5389,15 @@
     "stat": "intel",
     "add": -34,
     "dur": 2,
-    "_note": "偶數回合智力debuff,與奇數回合武力debuff(上條stat force)實際交替觸發,現同時常駐套用(較原文寬鬆)"
+    "n": 2,
+    "_note": "偶數回合智力debuff,與奇數回合武力debuff(上條stat force)實際交替觸發,現同時常駐套用(較原文寬鬆)。批23 R13: 補e.n=2對齊原文「敵軍群體2人」。"
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_note": "批23 R13: 三段效果各自補e.n(單體段n=1, 群體2人段n=2), 對齊原文目標數描述(過去無e.n時全部套用到全體敵軍, 高估覆蓋人數, 較既有已揭露的'交替觸發簡化為同時生效'問題更進一步疊加高估)。"
  },
  {
   "nameZh": "聚石成金",
@@ -5473,12 +5526,15 @@
     "who": "ally",
     "val": 0.26,
     "dur": 2,
-    "scale": "intel"
+    "scale": "intel",
+    "n": 2,
+    "_note": "批23 R13: 補e.n=2(原文「自身及友軍單體(共2人)」=2人, 過去無e.n套用到全體我軍, 高估覆蓋人數)。"
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_note": "批23 R13: mitig段補e.n=2對齊原文「共2人」。heal維持既有'我方最殘一人'慣例(heal選標邏輯固定, 不受e.n影響)。"
  },
  {
   "nameZh": "臥薪嘗膽",
@@ -5774,12 +5830,14 @@
     "who": "ally",
     "val": 0.01,
     "dur": 99,
+    "n": 2,
     "_approx": "prob-ev: 25%機率×4%增幅折算成持續期望值"
    }
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批23 A1: 第二段rateup(who:ally)補e.n=2(原文「自己及隨機友軍」=自己+1人=2人, 過去無e.n套用到全體我軍, 高估覆蓋人數)。第一段who:enemy維持全體(t.n=3且原文「敵軍群體3人」本就是全體, 不受A1影響, 見effectTarget)。"
  },
  {
   "nameZh": "花容月貌",
@@ -5837,16 +5895,28 @@
   "prep": 0,
   "effects": [
    {
+    "k": "dispel",
+    "who": "ally",
+    "what": "debuffs",
+    "_note": "批23: 補「移除我軍群體(2-3人)負面效果」。隊伍固定3人, 「2-3人」實務上=全體我軍, 沿用dispel既有who:ally全體慣例, 不需額外e.n。"
+   },
+   {
     "k": "heal",
     "who": "ally",
     "coef": 0.28,
     "dur": 2,
-    "scale": "command"
+    "scale": "command",
+    "when": {
+     "on": "damaged"
+    },
+    "rate": 0.8,
+    "_note": "批23: 原文「每次受到傷害時有40%→80%機率回復傷害量14%→28%」是反應式急救狀態(受傷當下觸發), 非常駐每回合治療——過去(0分)完全誤建模成active主動戰法的常駐heal(無when.on, 每次發動100%治療且不折算80%觸發率, 與戰法頂層發動率(0.65)混為一談)。改用批22已支援的效果級e.when.on(damaged)+e.rate=0.8(取滿級80%觸發率, 受統率影響的scale已由scale:command表達)。引擎端需放寬onHitEffectTacs的型別篩選(過去只認passive/command)以涵蓋此type:active戰法, 見批23引擎修改。heal對象仍是engine既有『我方兵力最低者』近似(非嚴格'2人群體')。"
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "_todo": "1回合冷卻(cooldown)無對應原語(見engine_limitations.md#2)。t.rate=0.65維持作為戰法整體發動率(觸發「移除負面+獲得急救狀態」這個開場動作本身)的近似, 不代表冷卻; 冷卻的『稀釋』效果暫未疊加進t.rate, 略高估發動頻率。"
  },
  {
   "nameZh": "萬箭齊發",
@@ -6262,7 +6332,9 @@
     "who": "ally",
     "dur": 1,
     "_approx": "prob-ev",
-    "_note": "每回合25%->50%機率(受智力影響)使群體(2-3人)獲得1回合剛毅(解除/抵抗負面狀態);insight為二元效果無法按機率縮放幅度,機率未折算,以dur=1單次授予近似(可能高估)。批20 lint R9修正: 移除死欄位n/nMax(insight的who=ally套用到全體我軍, 引擎ctrl_k群體隨機選標邏輯只認stun/silence/disarm/taunt/chaos, insight不在其中, n/nMax從未被讀取, 純幽靈欄位; 原文「群體2-3人」語意目前只能靠_note揭露, 無法用n/nMax實際限制受益人數)"
+    "_note": "每回合25%->50%機率(受智力影響)使群體(2-3人)獲得1回合剛毅(解除/抵抗負面狀態);insight為二元效果無法按機率縮放幅度,機率未折算,以dur=1單次授予近似(可能高估)。批23 A1落地: 補e.n=2/e.nMax=3精確表達「群體2-3人」(取代批20 lint R9當時因引擎尚未支援非CTRL效果e.n而移除的死欄位; 批23新增e.n/e.nMax後insight這類非CTRL效果也能正確限制受益人數, 不再套用到全體我軍)。",
+    "n": 2,
+    "nMax": 3
    },
    {
     "k": "insight",
@@ -6444,19 +6516,24 @@
    {
     "k": "insight",
     "who": "ally",
-    "dur": 2
+    "dur": 2,
+    "n": 2,
+    "_note": "批23 R13: 補e.n=2(原文「我軍群體2人」, 過去無e.n套用到全體我軍, 高估覆蓋人數)。"
    },
    {
     "k": "silence",
     "who": "enemy",
     "dur": 2,
-    "_approx": "簡化為對敵軍主將必定計窮，原文條件為「自身2回合內受到下一次謀略傷害時」才觸發"
+    "n": 1,
+    "_approx": "簡化為對敵軍主將必定計窮，原文條件為「自身2回合內受到下一次謀略傷害時」才觸發",
+    "_note": "批23 R13: 補e.n=1(原文「計窮...敵軍主將」=單體, 過去無e.n套用到全體敵軍, 高估覆蓋人數)。"
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_note": "批23 R13: insight/silence兩段各自補e.n對齊原文目標數(我軍2人/敵軍單體, 過去皆套用到全體, 高估覆蓋人數)。"
  },
  {
   "nameZh": "誘敵深入",
@@ -6834,9 +6911,9 @@
   "nameZh": "錦帆軍",
   "type": "command",
   "kind": "phys",
-  "coef": 0.64,
+  "coef": 1.28,
   "rate": 0.45,
-  "n": 3,
+  "n": 1,
   "prep": 0,
   "effects": [
    {
@@ -6854,13 +6931,14 @@
    {
     "coef": 1.1,
     "kind": "phys",
-    "n": 3,
+    "who": "sameTarget",
     "rate": 0.6,
     "_approx": "prob-ev",
-    "_note": "「若目標已潰逃則造成兵刃攻擊110%並恢復30%傷害量」分支; 穩態已潰逃機率≈1-(0.55)²≈0.6折算; 30%傷害量回血未建模(保守)"
+    "_note": "「若目標已潰逃則造成兵刃攻擊110%並恢復30%傷害量」分支; 穩態已潰逃機率≈1-(0.55)²≈0.6折算; 30%傷害量回血未建模(保守); who改為sameTarget(沿用主段已選定的同一目標, 原文明確是'目標已潰逃'的同一人, 非重新隨機挑選); n欄已移除(sameTarget分支不讀n/nMax)"
    }
   ],
-  "_note": "批15: coef=1.28可回溯——原文「45%機率使目標潰逃(傷害率32%→64%,持續2回合)」是2回合DoT, 每次觸發總傷害=64%×2回合=128%(coef1.28即此總量, 原coef若只取64%單跳會低估一半), 此折算邏輯先前未揭露, 現已於此說明。extraHits(已潰逃分支, rate=0.6)沿用既有_note揭露(潰逃穩態機率折算)。amp(0.06)的「甘寧統領」條件遺漏與「會心→常駐增傷」轉換方式已於effects[0]._approx揭露。"
+  "_note": "批23 stale同步修正: coef從未真正set成1.28(過去_note聲稱1.28但parsed.coef仍是0.64, 主段傷害被腰斬近半, 為0分主因之一)。同時n(目標數)從3改為1(對齊t.nMax=0)——原文「部隊普通攻擊時,使目標進入潰逃」是普攻觸發的單體DoT, 過去t.n=3把主coef段(灼燒DoT)與extraHits(潰逃後追打)都誤放大成打全體3名敵軍, 現改為只打1人(普攻命中的同一目標), extraHits改用who:sameTarget精確沿用同一目標(非重新隨機挑3人)。amp(0.06)的「甘寧統領」條件遺漏與「會心→常駐增傷」轉換方式維持既有揭露不變。",
+  "nMax": 0
  },
  {
   "nameZh": "鎮扼防拒",
@@ -7350,7 +7428,8 @@
     "add": -36,
     "dur": 2,
     "scale": "intel",
-    "_note": "批13 ModeA慣例: 偷取18→36「點」為flat平加(原mult 0.82隱含基準200)"
+    "n": 1,
+    "_note": "批13 ModeA慣例: 偷取18→36「點」為flat平加(原mult 0.82隱含基準200)。批23 R13: 補e.n=1(原文「敵軍單體」, 過去無e.n套用到全體敵軍, 高估覆蓋人數)。"
    },
    {
     "k": "stat",
@@ -7358,7 +7437,9 @@
     "stat": "force",
     "add": -36,
     "dur": 2,
-    "scale": "intel"
+    "scale": "intel",
+    "n": 1,
+    "_note": "批23 R13: 補e.n=1(原文「敵軍單體」)。"
    },
    {
     "k": "stat",
@@ -7381,7 +7462,8 @@
   "_src": " +他AI補全effectText/重解",
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_note": "批23 R13: 敵方debuff兩段補e.n=1對齊原文「敵軍單體」(過去無e.n套用到全體敵軍, 高估覆蓋人數)。self段不受R13管轄(self本就是單體語意)。"
  },
  {
   "nameZh": "風助火勢",
@@ -8044,24 +8126,36 @@
   "rate": 0.45,
   "n": 1,
   "prep": 1,
-  "effects": [
-   {
-    "k": "disarm",
-    "who": "enemy",
-    "dur": 2,
-    "_approx": "原文「對敵軍單體造成嘲諷或繳械(擇一)」為二選一, 引擎無法表達互斥分支, 現把disarm與taunt兩者都編碼上(較原文更強, 高估效果, 但方向: 兩者皆屬「限制敵方行動」的控制類型, 只是原文只會選其中一種)"
-   },
-   {
-    "k": "taunt",
-    "who": "enemy",
-    "dur": 2,
-    "_approx": "見disarm效果的_approx說明, 原文「嘲諷或繳械」二選一被同時編碼上, 高估"
-   }
-  ],
+  "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_todo": "「有75%機率額外釋放一次（每次目標獨立選擇）」的額外釋放段完全未建模(僅編碼單次施放, 未表達75%機率對第二個獨立目標再次施放同樣的嘲諷/繳械擇一效果), 低估潛在覆蓋目標數與整體強度。"
+  "_todo": "「有75%機率額外釋放一次（每次目標獨立選擇）」的額外釋放段完全未建模(僅編碼單次施放, 未表達75%機率對第二個獨立目標再次施放同樣的嘲諷/繳械擇一效果)——engine缺乏「排除已選定目標後在其餘敵方單位中選」的選標原語(同槊血縱橫核對到的同類缺口), 低估潛在覆蓋目標數與整體強度。",
+  "choices": [
+   {
+    "weight": 1,
+    "effects": [
+     {
+      "k": "disarm",
+      "who": "enemy",
+      "dur": 2,
+      "n": 1
+     }
+    ]
+   },
+   {
+    "weight": 1,
+    "effects": [
+     {
+      "k": "taunt",
+      "who": "enemy",
+      "dur": 2,
+      "n": 1
+     }
+    ]
+   }
+  ],
+  "_note": "批23: 改用choices(50/50擇一)取代過去disarm+taunt同時套用(較原文'二選一'更強, 高估)——原文未明確給出兩者各自機率, 預設均分權重近似。同時各分支效果補e.n=1(對齊'對敵軍單體'的單體語意, 過去無e.n時套用到全體敵軍)。"
  },
  {
   "nameZh": "屠几上肉",
@@ -8223,12 +8317,14 @@
     "k": "amp",
     "who": "ally",
     "val": 0.27,
-    "dur": 2
+    "dur": 2,
+    "n": 2
    }
   ],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批23 R13: amp段補e.n=2(原文「我軍群體2人」, 對齊t.n=2; 過去無e.n套用到全體我軍, 高估覆蓋人數)。"
  },
  {
   "nameZh": "挫志怒襲",
@@ -8238,10 +8334,21 @@
   "rate": 0.35,
   "n": 2,
   "prep": 1,
-  "effects": [],
+  "effects": [
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -1.0,
+    "dur": 1,
+    "n": 2,
+    "_note": "批23: 補主效果「對敵軍群體(2人)施加虛弱(無法造成傷害)狀態,持續1回合」——過去effects=[]完全空白(0分主因, 只有coef=1.88承載「若目標已虛弱則造成188%猛擊」的條件分支)。amp val=-1.0精確歸零目標當回合傷害(虛弱慣例, 見克敵制勝/威謀靡亢/臨戰先登同款做法); e.n=2對齊原文「敵軍群體2人」。"
+   }
+  ],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_todo": "虛弱debuff與coef猛擊本應互斥的條件分支無法用現有ifTargetHas表達(amp狀態不在targetHas可偵測清單內), 需引擎新增「偵測amp處於-1(虛弱)狀態」的targetHas支援才能精確互斥, 暫維持兩者同時觸發的高估近似。",
+  "_note": "批23: 主效果(虛弱debuff)與coef(已虛弱時的188%猛擊)兩者本應互斥(原文「如果目標已處於虛弱狀態則改為造成一次猛擊」), 但引擎缺乏「偵測amp(-1)虛弱狀態」的ifTargetHas支援(ifTargetHas只認stun/silence/disarm/chaos/insight/dot, 不含amp), 故無法用ifTargetHas精確排他; 現況為兩者同時無條件套用(每次發動都會虛弱目標2人+對目標造成188%傷害), 較原文更強(高估), 但至少不再是完全空白的0分狀態。"
  },
  {
   "nameZh": "挾勢弄權",
@@ -8455,12 +8562,14 @@
     "who": "enemy",
     "coef": 0.58,
     "dur": 2,
-    "scale": "intel"
+    "scale": "intel",
+    "n": 2
    }
   ],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批23 R13: dot段補e.n=2(原文「敵軍群體2人」, 對齊t.n=2; 過去無e.n套用到全體敵軍, 高估覆蓋人數)。"
  },
  {
   "nameZh": "淨化",
@@ -8902,12 +9011,14 @@
     "who": "ally",
     "val": 0.22,
     "dur": 3,
-    "scale": "intel"
+    "scale": "intel",
+    "n": 1
    }
   ],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批23 A1: 原文「使我軍單體」=1人, 補e.n=1(過去無e.n, mitig套用到全體我軍, 高估覆蓋人數)。"
  },
  {
   "nameZh": "輕勇飛燕",
@@ -8938,19 +9049,21 @@
     "who": "ally",
     "stat": "intel",
     "dur": 2,
-    "add": 40
+    "add": 40,
+    "n": 1
    },
    {
     "k": "rateup",
     "who": "ally",
     "val": 0.08,
-    "dur": 2
+    "dur": 2,
+    "n": 1
    }
   ],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正"
+  "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正。批23 A1: 兩段皆補e.n=1(原文「友軍單體」=1人, 過去無e.n套用到全體我軍, 高估覆蓋人數)。"
  },
  {
   "nameZh": "避實擊虛",
@@ -9522,12 +9635,14 @@
     "who": "enemy",
     "stat": "force",
     "add": -20,
-    "dur": 1
+    "dur": 1,
+    "n": 1
    }
   ],
   "quality": "B",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批23 A1: 原文「並使其(即被攻擊的同一敵軍單體)武力降低」=1人, 補e.n=1(過去無e.n, stat debuff套用到全體敵軍, 高估覆蓋人數)。"
  },
  {
   "nameZh": "毒氣",
@@ -9654,12 +9769,14 @@
     "who": "enemy",
     "stat": "command",
     "add": -14,
-    "dur": 2
+    "dur": 2,
+    "n": 1
    }
   ],
   "quality": "B",
   "cat": "BURST",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批23 A1: 原文「使目標(普攻命中的同一敵軍單體)統率降低」=1人, 補e.n=1(過去無e.n, stat debuff套用到全體敵軍, 高估覆蓋人數)。"
  },
  {
   "nameZh": "碩果累累",
@@ -9739,12 +9856,14 @@
     "k": "insight",
     "who": "ally",
     "dur": 2,
+    "n": 1,
     "_approx": "原文僅免疫混亂單一狀態，insight為免疫全部控制的近似(略高估)"
    }
   ],
   "quality": "B",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批23 A1: 原文「使我軍單體」=1人, 補e.n=1(過去無e.n, insight套用到全體我軍, 高估覆蓋人數)。"
  },
  {
   "nameZh": "識破",
@@ -9785,12 +9904,14 @@
    {
     "k": "healblock",
     "who": "enemy",
-    "dur": 1
+    "dur": 1,
+    "n": 1
    }
   ],
   "quality": "B",
   "cat": "BURST",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批23 A1: 原文「使目標(普攻命中的同一敵軍單體)禁療」=1人, 補e.n=1(過去無e.n, healblock套用到全體敵軍, 高估覆蓋人數)。"
  },
  {
   "nameZh": "還擊",
@@ -9812,7 +9933,8 @@
   ],
   "quality": "B",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批23 A2: counter補dur=1(原文「持續1回合」)。過去引擎dur是幽靈欄位(從不讀取/遞減), 反擊變成常駐生效至戰鬥結束(~8倍持續期高估); 批23修引擎讀dur並於tick()到期清除後, 此dur=1才會真正只生效1回合。"
  },
  {
   "nameZh": "重擊",

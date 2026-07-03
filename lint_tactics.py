@@ -478,14 +478,20 @@ def check_r8(p, txt):
 # R9: 幽靈欄位 —— 效果帶引擎不讀的欄位, 或 rate/when 用在引擎不支援的路徑
 # ---------------------------------------------------------------------------
 # 引擎(sgz.py apply_effects)實際會讀的效果層級欄位(依 k 分類), 供比對是否有"寫了但引擎不讀"的欄位。
+# 批23: n/nMax(A1, 非CTRL效果的效果級目標數) 與 rate(A4, 效果級機率折算一致性) 是跨所有k
+# 種類通用的欄位(見 apply_effects 的 has_en/hasEN 與 e.rate 通用閘門判斷, 非per-kind限定),
+# 故加進全域 KNOWN_EFFECT_FIELDS, 不需要為每個 k 逐一在 PER_KIND_FIELDS 補列。
 KNOWN_EFFECT_FIELDS = {
     "k", "who", "dur", "durMax", "scale", "when", "targetSel", "ifTargetHas",
     "undispellable", "_est", "_todo", "_note", "_note2", "_approx", "_src",
+    "n", "nMax", "rate",
 }
 PER_KIND_FIELDS = {
     "amp": {"val"}, "mitig": {"val"}, "stun": set(), "silence": set(), "disarm": set(),
     "chaos": set(), "ambush": set(), "insight": set(), "immune": {"types"}, "first": set(),
-    "stat": {"stat", "add", "mult"}, "dot": {"coef"}, "extra": {"val"}, "stack": {"per", "max"},
+    "stat": {"stat", "add", "mult"},
+    "dot": {"coef", "kind"},  # 批23 A3: e.kind(dot段自帶傷害類型, 優先於t.kind, 見damage()呼叫端)
+    "extra": {"val"}, "stack": {"per", "max"},
     "decay": {"v0", "rounds"}, "swap": set(), "pierce": {"val"}, "counter": {"coef", "kind", "prob"},
     "taunt": set(), "shield": {"amt", "pct"}, "dodge": {"prob"}, "surehit": set(),
     "healblock": set(), "lifesteal": {"val"}, "rateup": {"val", "prepOnly", "nativeOnly", "inheritedOnly"},
@@ -688,10 +694,192 @@ def check_r12(p, txt):
     return violations
 
 
+# ---------------------------------------------------------------------------
+# R13(批23 A1): 非CTRL效果目標數缺 e["n"] —— 原文明確「單體」「目標」「N人」描述某個非控制類
+# 效果(amp/mitig/stat/dot/healblock/rateup/extra/insight/lifesteal/healBoost/healGiven/
+# pierce/surehit/dodge/shield/swap/fakeReport/immune)的受眾範圍, 但該效果缺 e["n"](批23
+# 新增: 有 e["n"] 才會限制目標數, 無則維持全體, 見 sgz.py/engine.js apply_effects 的
+# has_en 判斷式)。
+#
+# CTRL_K 家族(stun/silence/disarm/taunt/chaos)不受本規則管轄(它們讀 t["n"]/t["nMax"], 早已
+# 由既有機制正確處理群體/單體選標, 見 apply_effects 的 ctrl_k 分支)。heal/settle/redirect/
+# dispel 也排除(各自有獨立選標邏輯, 不讀 e["n"]; heal 固定選"我方兵力最低者", dispel 目前
+# 對 who 指定的整組 dests 生效, settle/redirect 有各自的目標決定方式, 見 engine_limitations.md)。
+#
+# 只在效果的 who 對應「敵/我方全體池」(enemy/ally, 含未指定預設ally)時才有意義——who 為
+# self/leader/subs 本身就是明確的角色選標, 不受"單體/N人"全體池語意影響, 不算本規則管轄範圍。
+#
+# 低誤報設計: 只在「效果緊鄰的局部窗口」內找到單體/N人措辭時才觸發, 用類似 R1 的「緊鄰窗口」
+# 手法(該效果對應的關鍵詞在原文中定位, 非全文任意位置的單體/N人描述都算數)。
+# ---------------------------------------------------------------------------
+R13_NONCTRL_KINDS = {
+    "amp", "mitig", "stat", "dot", "healblock", "rateup", "extra", "insight",
+    "lifesteal", "healBoost", "healGiven", "pierce", "surehit", "dodge",
+    "shield", "swap", "fakeReport", "immune",
+}
+R13_ROLE_WHO = {"self", "leader", "subs"}
+# 效果動作關鍵詞(用於在原文中定位該效果對應的子句/局部窗口), 對應到 R13_NONCTRL_KINDS 的
+# 常見中文動詞/名詞片語(不要求完全枚舉, 只取最常見、確定性高的觸發詞, 降低誤報)。
+R13_ACTION_KW = (
+    "降低", "提升", "提高", "增加", "減少",  # amp/mitig/stat 常見動詞
+    "持續傷害", "灼燒", "中毒", "水攻",       # dot
+    "禁療", "無法恢復兵力",                   # healblock
+    "發動機率",                               # rateup
+    "連擊", "追擊",                           # extra
+    "免疫",                                   # insight/immune(注意: R12已管「免疫X狀態但缺immune/insight」,
+                                               # R13管的是"有immune/insight但缺e.n"的目標數問題, 不重複)
+    "倒戈",                                   # lifesteal
+    "護盾",                                   # shield
+    "武智互換",                               # swap
+    "偽報",                                   # fakeReport
+)
+
+
+def _r13_window_for_effect(txt, e):
+    """在原文中找到與此效果種類相關的局部窗口(緊鄰"單體"/"N人"等描述的那一段)。
+    用 R13_ACTION_KW 裡「這個效果k常見的動詞」定位, 取該動詞附近(前後各20字)的窗口。
+    找不到明確錨點時回傳 None(不誤報)。"""
+    k = e.get("k")
+    kw_map = {
+        "amp": ("降低", "提升", "提高", "增加"), "mitig": ("降低", "減少"),
+        "stat": ("提升", "提高", "降低", "點"), "dot": ("持續傷害", "灼燒", "中毒", "水攻"),
+        "healblock": ("禁療", "無法恢復兵力"), "rateup": ("發動機率",),
+        "extra": ("連擊", "追擊"), "insight": ("免疫",), "immune": ("免疫",),
+        "lifesteal": ("倒戈",), "shield": ("護盾",), "swap": ("武智互換",),
+        "fakeReport": ("偽報",), "healBoost": ("治療",), "healGiven": ("治療",),
+        "pierce": ("看破", "無視"), "surehit": ("必中",), "dodge": ("規避",),
+    }
+    kws = kw_map.get(k)
+    if not kws:
+        return None
+    for clause in split_clauses(txt):
+        for kw in kws:
+            idx = clause.find(kw)
+            if idx == -1:
+                continue
+            start = max(0, idx - 20)
+            end = min(len(clause), idx + 20)
+            return clause[start:end]
+    return None
+
+
+def check_r13(p, txt):
+    violations = []
+    effects = p.get("effects", []) or []
+    if not effects:
+        return violations
+    seen_kinds = set()  # 同一戰法同一k只報一次(避免多個同k效果重複刷violation, 取第一個代表)
+    for e in effects:
+        k = e.get("k")
+        if k not in R13_NONCTRL_KINDS:
+            continue
+        who = e.get("who", "ally")
+        if who in R13_ROLE_WHO:
+            continue
+        if e.get("n") is not None:
+            continue
+        if k in seen_kinds:
+            continue
+        window = _r13_window_for_effect(txt, e)
+        if window is None:
+            continue
+        expect_n, desc = None, None
+        grp_range = GROUP_RANGE_RE.search(window)
+        grp = GROUP_TARGET_RE.search(window)
+        if grp_range:
+            expect_n, desc = int(grp_range.group(1)), f"({grp_range.group(1)}~{grp_range.group(2)}人)"
+        elif grp and grp.group(1):
+            expect_n, desc = int(grp.group(1)), f"群體({grp.group(1)}人)"
+        elif SINGLE_TARGET_RE.search(window):
+            expect_n, desc = 1, "單體"
+        else:
+            continue  # 窗口內無明確單體/N人措辭(可能是"全體", 本規則不管全體情形, 全體=無e.n的既有向後相容行為)
+        if has_disclosure(p, [e]):
+            continue
+        seen_kinds.add(k)
+        violations.append({
+            "name": p["nameZh"], "rule": "R13",
+            "message": f"原文描述效果(k={k})目標為「{desc}」但缺 e['n']={expect_n}(非CTRL效果無e.n時套用到全體, 過去系統性高估覆蓋人數, 見批23 A1)",
+            "evidence": window.strip(),
+        })
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# R14(批23): _note 數字矛盾 —— _note/_todo 內聲稱的具體數值(coef/dur/rate)與該戰法/效果
+# 實際欄位值不一致(stale揭露: 揭露文字曾經正確, 但後續資料改動未同步更新, 見engine_limitations.md
+# 維護規約「_note 聲稱的數值必須與資料實際值一致」)。
+#
+# 低誤報設計: 只抓「_note/_todo 明確寫出 coef=X/dur=X/rate=X」這種精確斷言句型(非模糊描述如
+# "较高"、"偏低"), 且能從文字裡穩定抽出數字時才比對; 抽不到就不判定(保守)。
+#
+# 不含 n/nMax: 批23後 "e.n=X"/"n=X" 這類措辭在自由文字裡經常指「效果級 e.n」(而非戰法頂層
+# n), 頂層 note 常敘述"補e.n=1"這種effect-scope斷言, 若拿來與頂層p["n"]比對會系統性誤判
+# (兩個完全不同概念的欄位恰好同名)。coef/dur/rate 在頂層/效果層級的名稱雖然也重疊, 但語意
+# 上較不易混淆(coef/rate 通常討論的就是"這句話所在scope"的coef/rate, 不像n有跨層級歧義),
+# 保留這三個, 排除n/nMax以避免高誤報。
+# 「原X=Y」「舊X=Y」「之前X=Y」「過去X=Y」「取代...折算X=Y」是敘述歷史舊值的常見措辭(非對
+# 目前狀態的斷言), 用「比對數字前 HISTORICAL_LOOKBACK 字內是否出現歷史詞」排除, 而非單純
+# 緊鄰前綴(舊版/過去等修飾詞與coef=之間常夾雜"的EV機率折算"這類描述性文字, 緊鄰式負向前瞻
+# 抓不到, 需要窗口式排除)。
+STALE_ASSERT_RE = re.compile(r"(coef|dur|rate)\s*[=＝]\s*(-?\d+(?:\.\d+)?)")
+HISTORICAL_KW = ("原", "舊", "之前", "過去", "曾", "取代", "先前", "移除", "刪除")
+HISTORICAL_LOOKBACK = 24
+# 「頂層coef=0.68與dot重複計算,一併歸零」這類句型: 歷史詞出現在數字"之後"(描述該數值即將/
+# 已經被清零\移除\改掉), 而非之前。lookahead窗口內出現這些詞同樣視為歷史/已變更值的敘述。
+HISTORICAL_AFTER_KW = ("歸零", "已移除", "已刪除", "改為0", "清零", "已修正", "誤用", "誤標", "誤植")
+HISTORICAL_LOOKAHEAD = 20
+
+
+def _collect_disclosure_texts(p):
+    """收集戰法頂層與所有效果層級的揭露文字(_note/_todo/_note2/_note_self), 供R14掃描斷言句。
+    回傳 [(text, scope, field_getter)] —— scope 用於錯誤訊息標示, field_getter(field_name)
+    用於查詢實際值(頂層查 p, 效果層級查該效果 dict)。"""
+    out = []
+    for k in ("_note", "_todo", "_note2", "_note_self"):
+        if isinstance(p.get(k), str) and p.get(k):
+            out.append((p[k], "頂層", p))
+    for i, e in enumerate(p.get("effects", []) or []):
+        for k in ("_note", "_todo", "_note2", "_note_self", "_approx"):
+            if isinstance(e.get(k), str) and e[k]:
+                out.append((e[k], f"effects[{i}](k={e.get('k')})", e))
+    return out
+
+
+def check_r14(p, txt):
+    violations = []
+    for text, scope, field_src in _collect_disclosure_texts(p):
+        for m in STALE_ASSERT_RE.finditer(text):
+            lookback = text[max(0, m.start() - HISTORICAL_LOOKBACK):m.start()]
+            if any(kw in lookback for kw in HISTORICAL_KW):
+                continue  # 「原/舊/之前/過去/曾/取代/先前 coef=X」是敘述歷史舊值, 非對目前狀態的斷言
+            lookahead = text[m.end():m.end() + HISTORICAL_LOOKAHEAD]
+            if any(kw in lookahead for kw in HISTORICAL_AFTER_KW):
+                continue  # 「coef=X...一併歸零/已移除」是敘述"此數值已被清除/改掉", 歷史詞出現在數字之後
+            field, claimed_str = m.group(1), m.group(2)
+            claimed = float(claimed_str) if "." in claimed_str else int(claimed_str)
+            actual = field_src.get(field)
+            if actual is None:
+                continue  # 欄位在該scope不存在(可能斷言的是另一個scope的欄位), 不誤判
+            try:
+                actual_num = float(actual)
+                claimed_num = float(claimed)
+            except (TypeError, ValueError):
+                continue
+            if abs(actual_num - claimed_num) > 1e-9:
+                violations.append({
+                    "name": p["nameZh"], "rule": "R14",
+                    "message": f"{scope} 揭露文字聲稱 {field}={claimed}, 但實際 {field}={actual}(數字矛盾, stale揭露未同步)",
+                    "evidence": text[:150].strip(),
+                })
+    return violations
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
     ("R9", check_r9), ("R10", check_r10), ("R11", check_r11), ("R12", check_r12),
+    ("R13", check_r13), ("R14", check_r14),
 ]
 
 
