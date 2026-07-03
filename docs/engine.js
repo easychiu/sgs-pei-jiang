@@ -335,6 +335,12 @@
       if (cnt >= (cfg.count || 1)) { this.atkCount.set(t, 0); return true; }
       this.atkCount.set(t, cnt); return false;
     }
+    // 批26 B2: stack.stackPer=="cast" 專用遞增入口 —— 原文常見「每次發動後傷害率提升X」(如
+    // 水淹七軍/陷陣突襲), 是「本戰法每次成功發動」才+1層, 與回合數無關。round模式(預設)沿用
+    // fight() 主迴圈既有逐回合遞增, 呼叫此方法對round模式應為no-op。
+    applyStackCast() {
+      if (this.stack && (this.stack.stackPer || "round") === "cast") this.stack.n = Math.min(this.stack.max, this.stack.n + 1);
+    }
     // 批16: hpPct —— 自身兵力百分比(troop/START_TROOP), 供 when.hpBelow/hpAbove 檢查
     get hpPct() { return this.troop / START_TROOP; }
     // 批24 D2: amp(dmgType) —— dmgType 傳入時只加總該類型(或未宣告類型)的 amp 加成; stack/decay
@@ -685,6 +691,11 @@
       // opt.rateChecked: 呼叫端(onHit/delayedEq 的合成單效果呼叫)已自行讀取並擲骰過同一個
       // e.rate, 傳此旗標避免在這裡對同一效果重複擲骰(機率會被平方, 造成低估)。
       if (!opt.rateChecked && e.rate != null && rnd() >= e.rate) { if (TRACE) lg(`　▸ ${effDesc(k, e, caster)}〔${Math.round(e.rate * 100)}%機率〕未觸發`); continue; }
+      // 批26: e.ifLeader —— 效果級「施放者須為隊伍主將(index 0)」條件閘門。原文常見「自身為
+      // 主將時，額外XX」措辭(南蠻渠魁/江東小霸王/酒池肉林等), 過去無對應原語, 該效果段只能
+      // 被迫「無條件對所有施放者套用」(高估非主將情形)或完全不建模。allies[0] 是隊伍主將慣例
+      // (同 who==="leader" 分支既有假設), 只在 caster 就是 allies[0] 時才放行本效果段。
+      if (e.ifLeader && !(allies && allies[0] === caster)) { if (TRACE) lg(`　▸ ${effDesc(k, e, caster)}〔限主將〕${caster.nm}非主將, 未觸發`); continue; }
       if (k === "heal") {
         if (opt.noHeal) continue;
         if ((e.coef ?? 0.8) < 0) continue;              // 批10: 資料衛生防禦 —— 負 heal coef(如機略縱橫類 dot 誤標成 heal 負值)一律視為0並跳過, 避免資料錯誤反而扣友軍血
@@ -786,8 +797,13 @@
       else if (who === "subs") dests = allies.slice(1).filter(a => a.alive);  // 批13: 副將群限定(隊伍 index 0 以外; 如鋒矢陣/箕形陣副將分化段)
       else if (who === "enemy") {
         if (CTRL_K) {                                 // 群體控制(n>1 或有 nMax)隨機挑不重複目標; 單體優先鎖定 tgt
-          const n = t.n || 1;
-          const cnt = t.nMax ? n + Math.floor(rnd() * (t.nMax - n + 1)) : n;
+          // 批26: CTRL類效果優先讀 e.n/e.nMax(效果自身欄位), 無則fallback到t.n/t.nMax(戰法
+          // 頂層, 舊行為, 向後相容)。原本CTRL_K只認頂層n/nMax, 導致同一戰法內「多段各自不同
+          // 目標數的chaos/stun等控制效果」(如神機莫測「1名必中混亂 + 另外N名各自獨立機率判定
+          // 混亂」)無法用單一戰法頂層n表達出兩種不同的目標數, 被迫二選一近似成同一個n。
+          const n = hasEN ? e.n : (t.n || 1);
+          const nMax = hasEN ? e.nMax : t.nMax;
+          const cnt = nMax ? n + Math.floor(rnd() * (nMax - n + 1)) : n;
           dests = cnt <= 1 ? (tgt && tgt.alive ? [tgt] : pickTargets(enemies, 1)) : pickTargets(enemies, cnt);
         } else if (hasEN) {                            // 批23 A1: 非CTRL效果讀 e.n/e.nMax
           const cnt = e.nMax ? e.n + Math.floor(rnd() * (e.nMax - e.n + 1)) : e.n;
@@ -839,7 +855,12 @@
         // 兵刃), 無 e.kind 時 fallback t.kind(向後相容既有無 e.kind 的 dot 資料)。
         else if (k === "dot") u.dots.push([damage(caster, u, e.coef ?? 0.5, e.kind || t.kind || "intel"), e.dur, !!e.undispellable]);  // dots[2]=undispellable 旗標(供 dispel 略過)
         else if (k === "extra") u.pushAdd("extra", e.val, e.dur, src);
-        else if (k === "stack") u.stack = { per: e.per ?? 0.1, max: e.max ?? 5, n: 0 };
+        // 批26 B2: e.stackPer(可選, "round"預設/"cast") —— 過去疊層只有「每回合+1層」(見下方
+        // fight() 主迴圈 tick 遞增), 原文常見「每次發動後傷害率提升X」(如水淹七軍/陷陣突襲)是
+        // 「本戰法每次成功發動」才+1層, 與回合數無關。"cast"模式改由 applyStackCast() 在戰法
+        // 命中/發動結算處呼叫遞增(見 fight() fire 分支)。刻意不覆寫既有 e.per 語意(per 一直是
+        // "每層增傷倍率"數值欄位), 新增獨立欄位避免型別混淆。
+        else if (k === "stack") u.stack = { per: e.per ?? 0.1, max: e.max ?? 5, n: 0, stackPer: e.stackPer || "round" };
         else if (k === "decay") u.decay = { v0: e.v0 ?? 0.5, left: e.rounds ?? 8, total: e.rounds ?? 8 };
         else if (k === "swap") u.swap = Math.max(u.swap, (e.dur ?? 1) + 1);
         else if (k === "pierce") u.pushAdd("pierce", e.val, e.dur, src);
@@ -1046,7 +1067,7 @@
 
     for (let r = 1; r <= ROUNDS; r++) {
       CUR_R = r;
-      for (const u of [...A, ...B]) if (u.alive && u.stack) u.stack.n = Math.min(u.stack.max, u.stack.n + 1);
+      for (const u of [...A, ...B]) if (u.alive && u.stack && (u.stack.stackPer || "round") === "round") u.stack.n = Math.min(u.stack.max, u.stack.n + 1);  // 批26 B2: 僅stackPer=="round"(預設)才逐回合遞增, 向後相容
       applyPassives({ healOnly: true });
       for (const u of [...A, ...B]) {                 // 條件觸發(when.rounds/from/until): 窗口首次開啟時套用一次非傷害效果(dot/amp/…); when.on 為反應式, 不走此處
         if (!u.alive) continue;
@@ -1144,6 +1165,10 @@
           if (t0.type === "active" && (t0.coef || t0.effects.length || (t0.choices && t0.choices.length) || (t0.extraHits && t0.extraHits.length)) && !(t0.prep && r === 1)) fire = rnd() < t0.rate + u.addbonusFor("rateup", t0);  // rateup: 提高自身主動戰法發動機率(如白眉); addbonusFor 依 t.prep/t.native 篩選 prepOnly/nativeOnly 修飾的加成(批7: 太平道法)
           else if ((t0.type === "command" || t0.type === "passive") && (t0.coef || (t0.choices && t0.choices.length)) && !(t0.when && t0.when.on) && roundOk(t0, r)) fire = rnd() < t0.rate;  // 指揮/被動: 每回合以資料 rate 擲骰(多數 rate=1 即每回合必發); when.rounds/from/until 只在符合回合才擲骰; when.on(反應式) 改由 onHit 事件點觸發, 不在此處常駐擲骰; 批18: choices 派發同active一併補coef=0情形
           if (fire) {
+            // 批26 B2: stack.stackPer=="cast" —— 本戰法本次成功發動(fire), 若 u 身上已有
+            // stackPer=="cast" 的疊層狀態則遞增1層(見 applyStackCast() 定義)。與round模式
+            // (上方主迴圈逐回合遞增)互斥判斷, 不會重複遞增。
+            u.applyStackCast();
             // 批16: choices(擇一分支) —— 發動時按權重隨機選一組效果(coef/kind/effects/extraHits/n/nMax
             // 可各自覆寫基礎戰法), 套用到本次發動; 未中選的分支本次不生效。權重預設均分。t0 為原始
             // 戰法物件(供 addbonusFor/whenFired 等以物件本身為鍵的邏輯保持穩定, 不因選分支而變動),

@@ -484,14 +484,14 @@ def check_r8(p, txt):
 KNOWN_EFFECT_FIELDS = {
     "k", "who", "dur", "durMax", "scale", "when", "targetSel", "ifTargetHas",
     "undispellable", "_est", "_todo", "_note", "_note2", "_approx", "_src",
-    "n", "nMax", "rate",
+    "n", "nMax", "rate", "ifLeader",  # ifLeader: 批26 B1, 施放者須為隊伍主將(index 0)才套用該效果段
 }
 PER_KIND_FIELDS = {
     "amp": {"val", "dmgType"}, "mitig": {"val", "dmgType"}, "stun": set(), "silence": set(), "disarm": set(),  # dmgType: 批24 D2, 兵刃/謀略傷害類型過濾
     "chaos": set(), "ambush": set(), "insight": set(), "immune": {"types"}, "first": set(),
     "stat": {"stat", "add", "mult"},
     "dot": {"coef", "kind"},  # 批23 A3: e.kind(dot段自帶傷害類型, 優先於t.kind, 見damage()呼叫端)
-    "extra": {"val"}, "stack": {"per", "max"},
+    "extra": {"val"}, "stack": {"per", "max", "stackPer"},  # stackPer: 批26 B2, "round"預設/"cast"每次發動遞增
     "decay": {"v0", "rounds"}, "swap": set(), "pierce": {"val"}, "counter": {"coef", "kind", "prob"},
     "taunt": set(), "shield": {"amt", "pct"}, "dodge": {"prob"}, "surehit": set(),
     "healblock": set(), "lifesteal": {"val"}, "rateup": {"val", "prepOnly", "nativeOnly", "inheritedOnly"},
@@ -1269,13 +1269,75 @@ def check_r20(p, txt):
     return violations
 
 
+# ---------------------------------------------------------------------------
+# R21(批26): 點數(flat)誤用 stat.mult —— 原文對某個屬性的加成/降低描述是「點」(固定數值,
+# 見 engine_limitations.md 6.3 批12 ModeA 基準)而非「%」(百分比乘算), 但對應 stat 效果仍用
+# mult(百分比乘算欄位)而非 add(固定值平加欄位), 且無揭露。
+#
+# 批12 ModeA 已系統性把「點」語意的戰法從 stat.mult 改成 stat.add, 但批26盲測病因排查
+# 發現仍有漏網之魚(奮矛英姿 effects[0]/魚鱗陣 effects[0]): 前者甚至頂層 _note 已聲稱
+# "stat.mult→stat.add修正"完成, 但該戰法另一個 stat 效果(同一戰法內, 不同的目標/屬性)
+# 仍留著未修的 mult, 形成"聲稱已修但實際只修了一半"的 stale 局面, 比完全沒修更容易被
+# 誤認為已解決, 值得長期防線。
+#
+# 兩種原文語意需要偵測(對應批26實際踩雷的兩種措辭):
+#   (a) 「動詞 N[→M] 點 屬性」(動詞在前, 點字明示, 如"降低敵方15點統率")
+#   (b) 「屬性 提升/降低等 N[→M]」且緊接著的字元不是 % 也不是 點(裸數值, 無任何單位
+#       符號, 如"統率提升27.5→55"——這種寫法在本庫「點」語意戰法中偶爾省略單位字,
+#       但绝不会省略 % 符號, 故"緊鄰無%"是可靠的裸點數訊號)。
+#
+# 低誤報設計: 只在「該屬性緊鄰窗口內完全找不到 %」時才觸發(排除所有正常的百分比乘算
+# 戰法, 見批26全庫掃描: 36 筆 stat.mult 候選中僅 2 筆符合此條件, 其餘 34 筆窗口內皆有
+# % 符號, 正確使用 mult); mult 效果若同時有 add(理論上不會共存, 但保守判斷)不觸發;
+# 已有揭露一律豁免。
+# ---------------------------------------------------------------------------
+R21_VERB_FIRST_POINT_RE = re.compile(
+    rf"(?:提高|提升|增加|降低|減少)\s*\d+(?:\.\d+)?\s*(?:→|~|-)?\s*(?:\d+(?:\.\d+)?)?\s*點\s*({STAT_NAME_ALT})"
+)
+R21_STAT_FIRST_BARE_RE = re.compile(
+    rf"({STAT_NAME_ALT})\s*(?:提高|提升|增加|降低|減少)\s*(\d+(?:\.\d+)?)\s*(?:→|~|-)?\s*(\d+(?:\.\d+)?)?"
+)
+
+
+def check_r21(p, txt):
+    violations = []
+    effects = p.get("effects", []) or []
+    mult_stats = [e for e in effects if e.get("k") == "stat" and e.get("mult") is not None and e.get("add") is None]
+    if not mult_stats:
+        return violations
+    point_attrs = set()
+    for block in split_version_blocks(txt):
+        for m in R21_VERB_FIRST_POINT_RE.finditer(block):
+            point_attrs.add(m.group(1))
+        for m in R21_STAT_FIRST_BARE_RE.finditer(block):
+            after = block[m.end():m.end() + 3]
+            if "%" in after or "點" in after or "点" in after:
+                continue  # 有單位符號跟隨(百分比或已明確點字), 非本規則要抓的"裸數值"情形
+            point_attrs.add(m.group(1))
+    if not point_attrs:
+        return violations
+    point_stats_k = {STAT_ZH2K.get(name) for name in point_attrs}
+    hit = [e for e in mult_stats if e.get("stat") in point_stats_k]
+    if not hit:
+        return violations
+    if has_disclosure(p, hit):
+        return violations
+    violations.append({
+        "name": p["nameZh"], "rule": "R21",
+        "message": f"原文屬性描述({'/'.join(sorted(point_attrs))})為「點」(flat)語意(無%符號), 但對應 stat 效果仍用"
+                   f" mult(百分比乘算)而非 add(固定值平加), 且無揭露(批12 ModeA 基準: 點數應用stat.add)",
+        "evidence": txt[:120].strip(),
+    })
+    return violations
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
     ("R9", check_r9), ("R10", check_r10), ("R11", check_r11), ("R12", check_r12),
     ("R13", check_r13), ("R14", check_r14), ("R15", check_r15),
     ("R16", check_r16), ("R17", check_r17), ("R18", check_r18), ("R19", check_r19),
-    ("R20", check_r20),
+    ("R20", check_r20), ("R21", check_r21),
 ]
 
 

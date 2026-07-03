@@ -469,6 +469,15 @@ class Unit:
         self.atk_count[key] = cnt
         return False
 
+    def apply_stack_cast(self):
+        """批26 B2: stack.stackPer=="cast" 專用遞增入口 —— 原文常見「每次發動後傷害率提升X」
+        (如水淹七軍/陷陣突襲), 是「本戰法每次成功發動」才+1層, 與回合數無關。既有 stack 機制
+        只有 fight() 主迴圈的逐回合遞增(stackPer=="round", 預設, 向後相容), 此方法供戰法命中/
+        發動結算處呼叫, 只在 stackPer=="cast" 時才遞增(round 模式呼叫此方法應為no-op, 只認
+        tick()式逐回合遞增, 兩種模式互不干擾)。"""
+        if self.stack and self.stack.get("stackPer", "round") == "cast":
+            self.stack["n"] = min(self.stack["max"], self.stack["n"] + 1)
+
     @property
     def hp_pct(self):                                   # 批16: hpPct —— 自身兵力百分比(troop/START_TROOP), 供 when.hpBelow/hpAbove 檢查
         return self.troop / START_TROOP
@@ -940,6 +949,14 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # 擲骰過同一個 e["rate"], 避免在這裡對同一效果重複擲骰(機率會被平方, 造成低估)。
         if not rate_checked and e.get("rate") is not None and random.random() >= e["rate"]:
             continue
+        # 批26: e["ifLeader"] —— 效果級「施放者須為隊伍主將(index 0)」條件閘門。原文常見
+        # 「自身為主將時，額外XX」這種措辭(南蠻渠魁/江東小霸王/酒池肉林等), 過去無對應原語,
+        # 該效果段只能被迫「無條件對所有施放者套用」(高估非主將情形)或完全不建模(遺漏主將
+        # 加成)。allies[0] 是隊伍主將慣例(同 who=="leader" 分支既有假設, 見上文), 只在
+        # caster 就是 allies[0] 時才放行本效果段, 否則跳過。與 e["rate"] 同層級判斷(任何 k
+        # 皆可掛), 置於 e["rate"] 判定之後(若戰法同時有機率也要求主將, 兩者皆需通過)。
+        if e.get("ifLeader") and not (allies and allies[0] is caster):
+            continue
         if k == "heal":                               # 治療: 補我方最殘一人(指揮/被動每回合觸發)
             if no_heal:
                 continue
@@ -1049,8 +1066,20 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             dests = [a for a in allies[1:] if a.alive]
         elif who == "enemy":
             if ctrl_k:                                # 群體控制隨機挑不重複目標; 單體優先鎖定 tgt
-                n = t.get("n") or 1
-                cnt = n + random.randint(0, t["nMax"] - n) if t.get("nMax") else n
+                # 批26: CTRL類效果優先讀 e["n"]/e["nMax"](效果自身欄位), 無則 fallback 到
+                # t["n"]/t["nMax"](戰法頂層, 舊行為, 向後相容)。原本 ctrl_k 只認頂層 n/nMax,
+                # 導致同一戰法內「多段各自不同目標數的chaos/stun等控制效果」(如神機莫測「1名
+                # 必中混亂 + 另外N名各自獨立機率判定混亂」)無法用單一戰法頂層n表達出兩種不同
+                # 的目標數, 只能被迫二選一近似成同一個n。has_en 沿用批23 A1既有判斷(e["n"]是否
+                # 存在), 場景不衝突: 非ctrl_k效果本就走 has_en 分支(見下方elif), 這裡只是讓
+                # ctrl_k效果也能「有e.n就優先用」, 沒有e.n時完全維持原行為(讀t.n/t.nMax)。
+                if has_en:
+                    n = e["n"]
+                    n_max = e.get("nMax")
+                else:
+                    n = t.get("n") or 1
+                    n_max = t.get("nMax")
+                cnt = n + random.randint(0, n_max - n) if n_max else n
                 if cnt <= 1:
                     dests = [tgt] if tgt and tgt.alive else pick_targets(enemies, 1)
                 else:
@@ -1149,8 +1178,18 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                                       e.get("kind") or t.get("kind", "intel")), e["dur"], bool(e.get("undispellable"))])
             elif k == "extra":                        # 連擊/追擊: 普攻後追加普攻的預算
                 u.push_add("extra", e["val"], e["dur"], src)
-            elif k == "stack":                        # 疊加增益: 每回合+1層, 每層加 per 增傷
-                u.stack = {"per": e.get("per", 0.1), "max": e.get("max", 5), "n": 0}
+            elif k == "stack":                        # 疊加增益: 每層加 per 增傷; 遞增時機見 stackPer
+                # 批26 B2: e["stackPer"](可選, "round"預設/"cast") —— 過去疊層只有「每回合+1層」
+                # 這一種語意(見 fight() 回合迴圈 tick 遞增, u.stack["n"] = min(max, n+1)), 但原文
+                # 常見「每次發動後傷害率提升X」(如水淹七軍/陷陣突襲), 是「本戰法每次成功發動」才
+                # +1層, 與回合數無關(可能同一回合不觸發、也可能未來擴充到一回合多次觸發)。新增
+                # stackPer 欄位區分兩種遞增時機: "round"(預設, 沿用既有tick()逐回合遞增, 向後
+                # 相容)/"cast"(不受tick()影響, 改由 apply_stack_cast() 在戰法本次「發動」時呼叫
+                # 遞增, 見 fight() 主動戰法命中分支呼叫端)。刻意不覆寫既有 e["per"] 欄位語意
+                # (per 一直是"每層增傷倍率"的數值欄位, 若拿它兼職當模式字串會造成型別混淆與
+                # PER_KIND_FIELDS/lint的比對複雜化), 新增獨立欄位更安全。
+                u.stack = {"per": e.get("per", 0.1), "max": e.get("max", 5), "n": 0,
+                           "stackPer": e.get("stackPer", "round")}
             elif k == "decay":                        # 衰減增益: 開場 v0 增傷, rounds 內線性歸零
                 u.decay = {"v0": e.get("v0", 0.5), "left": e.get("rounds", 8),
                            "total": e.get("rounds", 8)}
@@ -1376,8 +1415,8 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
     global CUR_ROUND
     for rnd in range(1, ROUNDS + 1):
         CUR_ROUND = rnd                               # 批15: 供 apply_effects() 的 heal_only 常駐治療通道檢查 t["when"](round_ok)
-        for u in A + B:                               # 疊加增益: 每回合 +1 層
-            if u.alive and u.stack:
+        for u in A + B:                               # 疊加增益: 每回合 +1 層(僅 stackPer=="round", 預設值, 向後相容)
+            if u.alive and u.stack and u.stack.get("stackPer", "round") == "round":
                 u.stack["n"] = min(u.stack["max"], u.stack["n"] + 1)
         apply_passives(heal_only=True)                # 逐回合治療(含兵書/裝備/緣分)
 
@@ -1493,6 +1532,11 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                             and not (t0.get("when") and t0["when"].get("on")) and round_ok(t0, rnd):
                         fire = random.random() < t0["rate"]  # 每回合以資料 rate 擲骰; when.rounds/from/until 只在符合回合才擲骰; when.on(反應式) 改由 on_hit 事件點觸發; 批18: choices 派發同active一併補coef=0情形
                     if fire:
+                        # 批26 B2: stack.stackPer=="cast" —— 本戰法本次成功發動(擲骰命中fire),
+                        # 若 u 身上已有 stackPer=="cast" 的疊層狀態(該狀態由本戰法或其他戰法的
+                        # k=="stack"效果段套用而來), 在此遞增1層(見 apply_stack_cast() 定義)。
+                        # 與round模式(fight()主迴圈逐回合遞增, 見上方)互斥判斷, 不會重複遞增。
+                        u.apply_stack_cast()
                         # 批16: choices(擇一分支) —— 發動時按權重隨機選一組效果(coef/kind/effects/
                         # extraHits/n/nMax 可各自覆寫基礎戰法)套用到本次發動; 未中選的分支本次不生效。
                         # 權重預設均分。t0 為原始戰法物件(供 addbonus_for/when_fired/lockTarget 等以
@@ -2871,6 +2915,65 @@ def demo():
     apply_effects(d2_dual_u, None, d2_dual_tac, [d2_dual_u], [], no_heal=True)
     assert abs(d2_dual_u.addbonus("mitig", "phys") - 0.3) < 1e-6, "dmgType: 兩條不同dmgType的mitig不應互相覆蓋(phys段應保留0.3)"
     assert abs(d2_dual_u.addbonus("mitig", "intel") - 0.4) < 1e-6, "dmgType: 兩條不同dmgType的mitig不應互相覆蓋(intel段應保留0.4)"
+
+    # 75) 批26 B1: e["ifLeader"] —— 效果級「施放者須為隊伍主將(index 0)」條件閘門
+    # 主將(allies[0]是施放者自己)時應正常套用
+    il_leader = Unit(POOL["張飛"], "盾")
+    il_sub = Unit(POOL["諸葛亮"], "盾")
+    il_tac = {"nameZh": "測試ifLeader75", "effects": [
+        {"k": "stat", "who": "self", "stat": "force", "add": 999, "dur": 5, "ifLeader": True},
+    ]}
+    apply_effects(il_leader, None, il_tac, [il_leader, il_sub], [], no_heal=True)
+    assert abs(il_leader.eff("force") - (il_leader.force + 999)) < 1e-6, "ifLeader: caster是allies[0](主將)時應正常套用效果"
+    # 副將(allies[0]不是施放者自己)時應完全跳過
+    il_sub2 = Unit(POOL["諸葛亮"], "盾")
+    il_leader2 = Unit(POOL["張飛"], "盾")
+    apply_effects(il_sub2, None, il_tac, [il_leader2, il_sub2], [], no_heal=True)
+    assert abs(il_sub2.eff("force") - il_sub2.force) < 1e-6, "ifLeader: caster不是allies[0](副將)時應完全跳過該效果, 不套用"
+    # 無 e["ifLeader"] 的一般效果不受影響(向後相容)
+    il_tac_noflag = {"nameZh": "測試ifLeader常規75b", "effects": [
+        {"k": "stat", "who": "self", "stat": "force", "add": 999, "dur": 5},
+    ]}
+    il_sub3 = Unit(POOL["諸葛亮"], "盾")
+    apply_effects(il_sub3, None, il_tac_noflag, [Unit(POOL["張飛"], "盾"), il_sub3], [], no_heal=True)
+    assert abs(il_sub3.eff("force") - (il_sub3.force + 999)) < 1e-6, "ifLeader: 無e['ifLeader']欄位時應維持向後相容(不受此閘門影響, 副將也能套用)"
+
+    # 76) 批26 B2: stack.stackPer —— stack 效果每次「發動」(stackPer:"cast")遞增1層, 而非每回合
+    # (stackPer:"round", 預設值, 向後相容)。"cast"模式由 apply_stack_cast() 供戰法命中/發動
+    # 結算處呼叫遞增; "round"模式沿用 fight() 主迴圈既有的逐回合遞增(見上方迴圈守衛條件
+    # stackPer=="round" 才遞增, 此處用同一段邏輯模擬迴圈行為, 不依賴 Unit.tick()——tick()本身
+    # 從未觸碰 stack, 逐回合遞增邏輯獨立寫在 fight() 主迴圈裡, 非 Unit 方法)。
+    sc_u = Unit(POOL["張飛"], "盾")
+    apply_effects(sc_u, None, {"nameZh": "測試stackPer76", "effects": [
+        {"k": "stack", "who": "self", "per": 0.05, "max": 5, "stackPer": "cast"},
+    ]}, [sc_u], [], no_heal=True)
+    assert sc_u.stack is not None and sc_u.stack.get("per") == 0.05 and sc_u.stack.get("stackPer") == "cast", \
+        "stack.stackPer=cast: 初始化後stack字典應保留stackPer標記供遞增邏輯判斷"
+    assert sc_u.stack["n"] == 0, "stack.stackPer=cast: 初始套用時層數應為0(尚未發動過, 首次發動才+1, 不同於round模式的prep階段即開始逐回合遞增)"
+    # 模擬 fight() 主迴圈的逐回合守衛(僅 stackPer=="round" 才遞增): cast模式應完全不受此步驟影響
+    for _ in range(2):
+        if sc_u.alive and sc_u.stack and sc_u.stack.get("stackPer", "round") == "round":
+            sc_u.stack["n"] = min(sc_u.stack["max"], sc_u.stack["n"] + 1)
+    assert sc_u.stack["n"] == 0, "stack.stackPer=cast: fight()主迴圈的逐回合守衛不應遞增cast模式的層數(僅apply_stack_cast()才遞增, 不受回合數影響)"
+    sc_u.apply_stack_cast()
+    assert sc_u.stack["n"] == 1, "stack.stackPer=cast: apply_stack_cast()呼叫一次應遞增1層"
+    sc_u.apply_stack_cast()
+    sc_u.apply_stack_cast()
+    sc_u.apply_stack_cast()
+    sc_u.apply_stack_cast()
+    sc_u.apply_stack_cast()
+    assert sc_u.stack["n"] == 5, "stack.stackPer=cast: 遞增不應超過max=5層(第6次呼叫應封頂)"
+    # stackPer=round(預設/向後相容): 沿用既有fight()主迴圈逐回合遞增行為, apply_stack_cast()呼叫不應有作用
+    sr_u = Unit(POOL["張飛"], "盾")
+    apply_effects(sr_u, None, {"nameZh": "測試stackPerRound76b", "effects": [
+        {"k": "stack", "who": "self", "per": 0.05, "max": 5},
+    ]}, [sr_u], [], no_heal=True)
+    assert sr_u.stack.get("stackPer", "round") == "round", "stack.stackPer=round(預設): 無stackPer欄位時應視為round, 向後相容既有逐回合遞增資料"
+    sr_u.apply_stack_cast()
+    assert sr_u.stack["n"] == 0, "stack.stackPer=round: apply_stack_cast()對round模式的stack不應有作用(round模式只認fight()主迴圈逐回合遞增)"
+    if sr_u.alive and sr_u.stack and sr_u.stack.get("stackPer", "round") == "round":
+        sr_u.stack["n"] = min(sr_u.stack["max"], sr_u.stack["n"] + 1)
+    assert sr_u.stack["n"] == 1, "stack.stackPer=round: fight()主迴圈守衛應照舊逐回合遞增1層(向後相容既有行為)"
 
     print("self-check OK")
 
