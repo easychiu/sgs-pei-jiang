@@ -145,7 +145,12 @@
       // 反應), prep 階段已套用進 adds/mods/statAdds 的常駐效果需要在讀取時（eff/addbonus）過濾掉。
       this.cmdPassiveSrcs = new Set(this.tactics.filter(t => t.type === "command" || t.type === "passive").map(t => t.nameZh).filter(Boolean));
       const _bn = Array.isArray(bsName) ? bsName : (bsName ? [bsName] : []);
-      this.bs = _bn.flatMap(nm => (BINGSHU[nm] && BINGSHU[nm].effects) || []);  // 兵書(主+副)合併; 缺 effects 欄降級空陣列(同 sgz.py .get)
+      const _bsAll = _bn.flatMap(nm => (BINGSHU[nm] && BINGSHU[nm].effects) || []);  // 兵書(主+副)合併; 缺 effects 欄降級空陣列(同 sgz.py .get)
+      this.bs = _bsAll.filter(e => !(e.when && e.when.on));
+      // 批22: 兵書效果級 e.when.on(急救類反應式治療, 如三軍之眾「戰鬥第2-4回合自身獲得急救」)
+      // —— 與裝備 onHitEq 同慣例, 兵書效果本無獨立回合窗機制(applyPassives 只在 prep/healOnly
+      // 套用整包 this.bs), 帶 e.when.on 的效果分離到此陣列, 於 onHit() 反應式事件點結算。
+      this.onHitBs = _bsAll.filter(e => e.when && e.when.on);
       const _eq = Array.isArray(eqName) ? eqName : (eqName ? [eqName] : []);
       const _eqSeen = new Set();                      // 同名特技(跨type, 如四欄皆有的"無畏")遊戲規則只生效一件: 依基底名稱去重, 先出現者為準
       const _eqObjs = _eq.map(nm => EQUIPS[nm]).filter(Boolean).filter(e => !_eqSeen.has(e.name) && (_eqSeen.add(e.name), true));
@@ -156,7 +161,13 @@
       // when 窗口同一時點)逐條檢查 roundOk 是否符合, 符合則一次性套用(whenFired 慣例, 用效果物件
       // 本身去重)。帶 rate 的額外擲骰(如赳螑 50%機率)。
       this.eq = _eqAll.filter(e => !e.when);
-      this.delayedEq = _eqAll.filter(e => e.when);
+      this.delayedEq = _eqAll.filter(e => e.when && !e.when.on);
+      // 批22: 裝備效果級 e.when.on(急救類反應式治療, 如長健/青囊書「戰鬥首回合受傷時回復
+      // 10%兵力」) —— 與上面 delayedEq(回合視窗一次性套用)不同語意: on:"damaged"/"attacked"
+      // 是「受傷當下觸發」, 不是「特定回合開啟時套用一次」。與 onHitEffectTacs(戰法版本)
+      // 對應的裝備版本, 在 onHit() 反應式事件點結算, 同樣可與 e.when.until/from 等回合窗口
+      // 欄位並存(round_ok 檢查)。
+      this.onHitEq = _eqAll.filter(e => e.when && e.when.on);
       // 裝備 proc(普攻後觸發, 如 昭烈12%繳械/踩踏額外傷): 包成偽突擊(charge)戰法附加, 走既有 charge 觸發路徑(普攻後 rate 擲骰)。
       // 偽戰法不在戰法庫, 不參與同名戰法去重與 NONEQUIP 過濾; nameZh 預設「特技·名」供 TRACE 辨識。
       // proc:true 旗標 → 標記為「特技偽戰法」, 非真突擊戰法: 日後若加 chargeup(突擊發動率加成)原語, 必須排除 t.proc===true(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲)。
@@ -177,6 +188,7 @@
       this.stack = null; this.decay = null; this.swap = 0; this.counter = null;
       this.tauntBy = null; this.tauntDur = 0;      // 嘲諷: 被嘲諷時強制普攻/單體戰法指向 tauntBy, 剩餘回合
       this.shield = null;                          // 護盾: {amt, dur} 吸收固定量傷害, 先於兵力扣減
+      this.block = [];                              // 批22: 次數型格擋(抵禦/警戒同族) —— [{val, n, src}], 消耗順序見 hit(); val=1.0全擋/0.x部分減傷, n=剩餘次數
       this.dodgeProb = 0; this.dodgeDur = 0;        // 規避: 機率完全迴避一次傷害
       this.surehitDur = 0;                          // 必中: 無視對方 dodge
       this.healblock = 0;                           // 批8: 禁療(healblock) 剩餘回合, >0 時 heal 效果對其無效
@@ -184,6 +196,14 @@
       this.healRoundsFired = null;                  // 批15: heal 效果 e.when.rounds(明確列出的特定回合)的「每回合各觸發一次」去重, Map<效果物件, Set<已觸發回合數>>, 惰性建立(見 applyEffects 的 heal 分支)
       this.hitFlags = new Set();                    // 反應式觸發(when.on) 本回合已觸發的戰法, 每回合重置(防無限鏈)
       this.onHitTacs = this.tactics.filter(t => (t.type === "passive" || t.type === "command") && t.when && t.when.on);  // 預篩: 絕大多數單位為空, hit 熱路徑 O(0)
+      // 批22: 效果級 e.when.on(急救類反應式治療, 如陷陣營/長健/雲聚影從「受到傷害時XX%機率
+      // 獲得治療」) —— 與上面 t.when.on(戰法級, 整個戰法都是反應式)不同: 這類戰法本身有其他
+      // 常駐效果(如陷陣營的武力/統率平加)需要在 prep 階段就套用, 只有其中的 heal 效果段是
+      // 「受傷當下才觸發」的反應式語意, 不能把整個戰法標成 t.when.on(那樣會連帶讓武力/統率
+      // 平加也不在 prep 套用, 語意跑掉)。onHitEffectTacs 收集這類「戰法本身無 t.when, 但至少
+      // 一個效果帶 e.when.on」的戰法, onHit() 只讀取/結算符合的個別效果(不影響同戰法其餘無
+      // e.when 的效果, 那些已在 prep 由 applyPassives 正常套用)。
+      this.onHitEffectTacs = this.tactics.filter(t => !t.when && (t.type === "passive" || t.type === "command") && (t.effects || []).some(e => e.when && e.when.on));
       this.lockedTargets = new Map();               // 批12 ModeG: lockTarget:true 戰法的鎖定目標, 鍵=戰法物件本身(同一戰法物件跨回合重用同一 Map)
       // 批16: 原語擴充包 —— 新增狀態欄位(現有資料無新欄位, 皆維持0/null預設值, 行為零變化)
       this.atkCount = new Map();                     // everyN: 自身普攻次數計數器, 鍵=戰法物件本身(同一戰法物件跨回合重用同一 Map)
@@ -238,6 +258,27 @@
     pushStatAdd(stat, add, dur, src, flags) {                 // 屬性平加(裝備 stat.add): 同 pushMod 慣例, 同來源刷新不疊
       if (src) this.statAdds = this.statAdds.filter(a => !(a[0] === stat && a[3] === src));
       this.statAdds.push([stat, add, dur, src, flags]);
+    }
+    // 批22: block(次數型格擋, 抵禦/警戒同族) —— 與 shield/mitig 語意不同: 不是持續減傷/固定量
+    // 吸收池, 而是「剩餘次數」計次器, 每次受擊消耗1次(而非按傷害量扣減), val=1.0時完全格擋
+    // 該次傷害、val=0.x時該次傷害打折(如警戒 -75.35%≈val:0.7535)。同源(同 src)再次施加時
+    // 疊加次數(而非同 pushAdd/pushMod 慣例的「同源刷新覆蓋」), 貼合原文「抵禦(N次)」「目前
+    // 抵禦總次數為N」的疊次語意(見 docs/data/calibration_anchors.json battle_report_round_20260703
+    // 戰報實測: 「抵禦(1)」用一次消一層, 「警戒(1)」-75.35%減傷/次用後消層)。
+    pushBlock(val, n, src) {
+      const existed = src && this.block.find(b => b.src === src && Math.abs(b.val - val) < 1e-9);
+      if (existed) existed.n += n; else this.block.push({ val, n, src });
+    }
+    // 消耗一次格擋(若有): 從陣列頭(先加的先消耗, 貼合戰報「總次數」單一計數語意, 不分層級
+    // 順序; 多筆不同 val 的 block 並存時採先進先出)扣1次, n<=0時整筆移除。回傳消耗到的 val
+    // (0=無格擋可消耗, 呼叫端不應觸發)。
+    consumeBlock() {
+      if (!this.block.length) return 0;
+      const b = this.block[0];
+      b.n -= 1;
+      const val = b.val;
+      if (b.n <= 0) this.block.shift();
+      return val;
     }
     // 批16: immuneTo —— 單項控制免疫(對比 insight 全免)。immune 陣列存 [type, dur], type ∈
     // stun/silence/disarm/chaos。isImmuneTo(type) 供控制施加處查詢(同 insight 判斷點並列)。
@@ -302,7 +343,14 @@
     let base = Math.max(DMG_A * troopSqrt + DMG_B * (atk - def), DMG_FLOOR * troopSqrt) * coef;
     base *= counterMult(src.ttype, dst.ttype);     // 克制: 隊伍兵種 vs 隊伍兵種
     base *= moraleMult(MORALE);
-    base *= Math.max(0, 1 + src.amp());
+    // 批22: 輸出減益疊加上限 -90%(戰報實測: 荀彧-50%疊到-90.00%封頂, 輸出至少保留10%)。
+    // 與 SCALE_CLAMP(±1.5, 單一效果值縮放後的per-effect clamp)是不同層級: 這裡是「多個amp
+    // 效果加總後」的合計下限。例外: 虛弱(無法造成傷害)類戰法既有慣例用單一 amp val:-1.0
+    // 精確歸零當回合傷害(克敵制勝/威謀靡亢/臨戰先登, 見批15/17/19), 這是「無法造成傷害」的
+    // 二元語意, 不是「%減益疊加」, 故 amp 總和 <= -1.0 時維持完全歸零(不受-90%封頂影響),
+    // 只在 -1.0 < 總和 < -0.9 這個「多重%減益疊加但尚未到虛弱程度」的區間套用-90%下限。
+    const totalAmp = src.amp();
+    base *= totalAmp <= -1 ? 0 : 1 + Math.max(-0.9, totalAmp);
     const mit = dst.addbonus("mitig") * (1 - Math.min(1, src.addbonus("pierce")));
     base *= Math.max(0.1, 1 - mit);
     base *= 0.96 + rnd() * 0.08;   // 隨機帶 0.96~1.04(對稱): rnd()*0.08 涵蓋 [0,0.08), 起點0.96 → 上限0.96+0.08=1.04
@@ -315,6 +363,15 @@
       return;
     }
     let dmg = damage(src, dst, coef, kind);
+    // 批22: block(次數型格擋, 抵禦/警戒同族) —— 判定順序 dodge→block→shield→傷害(見紅線指示)。
+    // 每次受擊消耗1次(不論本次傷害量多寡), val=1.0(如「抵禦」)完全格擋歸零本次傷害,
+    // val=0.x(如「警戒」-75.35%)按比例打折。用光即從陣列移除, 供 TRACE 顯示「剩餘N層」。
+    if (dst.block.length) {
+      const b = dst.block[0];
+      const blockVal = dst.consumeBlock();
+      dmg *= Math.max(0, 1 - blockVal);
+      if (TRACE) lg(`　▸ ${dst.nm} ${blockVal >= 1 ? "抵禦" : "警戒"}生效` + (blockVal < 1 ? `（減傷${Math.round(blockVal * 100)}%）` : "") + `（剩餘${b.n > 0 ? b.n : 0}層）`);
+    }
     if (dst.shield && dst.shield.amt > 0) {                        // 護盾: 先於兵力扣減吸收傷害
       const absorb = Math.min(dst.shield.amt, dmg);
       dst.shield.amt -= absorb; dmg -= absorb;
@@ -388,6 +445,7 @@
       u.mods = u.mods.filter(m => !((m[1] >= 1) && notUD(m)));
       u.statAdds = u.statAdds.filter(a => !((a[1] >= 0) && notUD(a)));
       if (u.shield && !u.shield.undispellable) u.shield = null;
+      if (u.block.length) u.block = [];      // 批22: block(抵禦/警戒)為防禦性增益, 同 shield 慣例被 buffs 驅散清除(現有資料未帶 undispellable block)
     } else {  // debuffs
       u.adds = u.adds.filter(a => !((a[0] === "amp" || a[0] === "mitig") && a[1] < 0 && notUD(a)));
       u.mods = u.mods.filter(m => !((m[1] < 1) && notUD(m)));
@@ -526,6 +584,7 @@
       case "taunt": return `嘲諷·強制指向施放者${d || "(1回合)"}`;
       case "shield": return `護盾${e.amt ? "+" + Math.round(e.amt) : ""}${e.pct ? "(相當於" + p(e.pct) + "兵力)" : ""}${d}`;
       case "dodge": return `規避${p(e.prob ?? 0)}${d}`;
+      case "block": { const bv = (e.scale && caster) ? Math.max(0, Math.min(1, (e.val ?? 1.0) * scaleOf(caster, e.scale))) : (e.val ?? 1.0); return `${bv >= 1 ? "抵禦" : `警戒(減傷${p(bv)})`}(${e.times ?? 1}次)` + sfx; }
       case "surehit": return `必中·無視規避${d}`;
       case "healblock": return `禁療·無法被治療${d || "(1回合)"}`;
       case "lifesteal": return `倒戈·造成傷害回復${p(val)}${d}` + sfx;
@@ -696,6 +755,16 @@
           u.shield = { amt: (u.shield ? u.shield.amt : 0) + amt, dur: (e.dur ?? 99) + 1, undispellable: !!e.undispellable };  // +1 補償: tick 施加當回合末即扣1, 與 taunt/dodge/surehit 慣例一致
         }
         else if (k === "dodge") { u.dodgeProb = e.prob ?? 0.2; u.dodgeDur = Math.max(u.dodgeDur, (e.dur ?? 1) + 1); }
+        // 批22: block(次數型格擋, 抵禦/警戒同族) —— times:N(剩餘次數), val:1.0全擋/0.x部分減傷
+        // (如警戒基礎40%受智力影響)。同源(同一戰法名 src)再次施加時疊加次數(pushBlock 內部
+        // 處理), 不像 pushAdd/pushMod 的「同源刷新覆蓋」慣例 —— 貼合戰報「目前抵禦總次數為N」
+        // 的疊次語意。val 的 scale 縮放用 0~1 專屬 clamp(非 svVal 的 ±SCALE_CLAMP, 因 block
+        // val 是「減傷比例」語意, 不應為負值或超過1.0全擋)。
+        else if (k === "block") {
+          const bVal = e.scale ? Math.max(0, Math.min(1, (e.val ?? 1.0) * scaleOf(caster, e.scale))) : (e.val ?? 1.0);
+          u.pushBlock(bVal, e.times ?? 1, src);
+          if (TRACE) lg(`　▸ ${u.nm} 獲得${bVal >= 1 ? "抵禦" : `警戒(減傷${Math.round(bVal * 100)}%)`}(${e.times ?? 1}次)`);
+        }
         else if (k === "surehit") u.surehitDur = Math.max(u.surehitDur, (e.dur ?? 1) + 1);
         else if (k === "healblock") u.healblock = Math.max(u.healblock, (e.dur ?? 1) + 1);  // 批8: 禁療 —— heal 套用處(applyEffects 開頭)已排除 healblock 中的目標
         else if (k === "lifesteal") u.pushAdd("lifesteal", e.val, e.dur, src);  // 批8: 倒戈 —— 實際回血在 hit() 結算傷害後(見 hit() 內 lifesteal 段), 這裡只掛加成值
@@ -735,7 +804,21 @@
         else if (k === "healGiven") u.pushAdd("healGiven", e.val, e.dur, src);
         // 批16: fakeReport(偽報) —— 中招者被動+指揮戰法失效: 每回合擲骰的coef段與onHit反應被抑制
         // (prep已套用效果不回收, 近似)。insight 可免(同其他控制類慣例)。
-        else if (k === "fakeReport") { if (!u.insight) { u.fakeReportDur = Math.max(u.fakeReportDur, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入偽報(被動/指揮戰法失效)`); } else if (TRACE) lg(`　▸ ${u.nm} 洞察免疫偽報`); }
+        // 批22: 偽報疊加規則(戰報實測「身上已存在同等或更強的偽報效果」→不覆蓋) —— 新 dur
+        // (以 e.dur 近似「強度」, 剩餘回合越多視為越強)必須 > 現有 fakeReportDur 才覆蓋,
+        // 否則本次施加跳過(不刷新/不縮短), 並 TRACE 記錄「已存在同等或更強」。與既有其他控制類
+        // (stun/silence/…)的 Math.max 慣例不同: 那些是「取較大值」語意(仍會刷新到較大值本身,
+        // 只是不會變小), 偽報是「若新的不夠強則完全不生效」(連刷新都不做), 貼合原文用詞
+        // 「已存在同等或更強的偽報效果」暗示的二元判定(而非簡單取max, 雖數值結果與取max相同,
+        // 但需要能表達「本次施加被完全拒絕」的語意與對應TRACE訊息)。
+        else if (k === "fakeReport") {
+          if (u.insight) { if (TRACE) lg(`　▸ ${u.nm} 洞察免疫偽報`); }
+          else {
+            const newDur = (e.dur ?? 1) + 1;
+            if (newDur > u.fakeReportDur) { u.fakeReportDur = newDur; if (TRACE) lg(`　▸ ${u.nm} 陷入偽報(被動/指揮戰法失效)`); }
+            else if (TRACE) lg(`　▸ ${u.nm} 身上已存在同等或更強的偽報效果，本次不覆蓋`);
+          }
+        }
         // 批16: dispel(驅散/淨化) —— 移除目標 adds/mods/dots/控制欄位中對應方向(buffs/debuffs)的條目,
         // 略過標記 undispellable 的條目(adds/mods 第6欄, dots 第3欄)。
         else if (k === "dispel") dispelUnit(u, e.what || "debuffs");
@@ -786,10 +869,16 @@
         }
     };
     const onHit = (dst, src, isNormal) => {          // 反應式觸發(when.on): 被普攻(attacked)/受任意傷害(damaged) 時掛到 hit() 事件點
-      if (!dst.alive || !dst.onHitTacs.length) return;
+      if (!dst.alive || (!dst.onHitTacs.length && !dst.onHitEffectTacs.length && !dst.onHitEq.length && !dst.onHitBs.length)) return;
       if (dst.fakeReportDur) return;                 // 批16: 偽報 —— 抑制 onHit 反應式觸發(被動/指揮戰法失效)
       for (const t of dst.onHitTacs) {
         if (t.when.on === "attacked" && !isNormal) continue;   // attacked: 限普通攻擊觸發; damaged: 任意傷害都觸發
+        // 批22: when.on 反應式戰法過去完全不檢查 rounds/from/until/parity/every(只認 on 事件本身),
+        // 導致「戰鬥首回合獲得急救(受傷時回血)」這類「反應式觸發+回合窗口限定」的複合語意無法
+        // 表達(如 長健/青囊書: 首回合內受傷才會回血, 而非全程)。roundOk() 對「無 rounds/from/
+        // until/parity/every」的戰法一律回傳 true(見其實作), 故此檢查對絕大多數既有 when.on
+        // 戰法(只帶 on, 無回合欄位)是無副作用的 no-op, 只在新資料明確加上回合窗口時才生效。
+        if (!roundOk(t, CUR_R)) continue;
         if (dst.hitFlags.has(t)) continue;             // 同回合每單位每戰法最多觸發1次(防無限鏈)
         if (rnd() >= t.rate) continue;
         dst.hitFlags.add(t);
@@ -797,6 +886,47 @@
         if (t.coef) hit(dst, src, t.coef, t.kind, false, onHit);
         if (t.extraHits) fireExtraHits(dst, t, src, alliesOf, foesOf, onHit);  // 批13: 受擊觸發類多段傷害(如剛烈不屈 反擊後群體額外段)
         if (t.effects.length) applyEffects(dst, src, t, alliesOf(dst), foesOf(dst));
+      }
+      // 批22: 效果級 e.when.on(急救類反應式治療, 見 onHitEffectTacs 註解) —— 戰法本身無 t.when
+      // (其餘效果如武力/統率平加仍在 prep 正常套用, 不受影響), 只有帶 e.when.on 的個別效果在
+      // 此處反應式結算。用「合成單效果戰法」(effects:[e])呼叫 applyEffects, 讓 heal 分支的
+      // 傷兵池/healBoost/healGiven 邏輯完整適用, 觸發率取 e.rate ?? t.rate ?? 1(效果自身優先,
+      // 無則沿用戰法整體 rate)。去重鍵用效果物件本身(而非戰法物件), 因同一戰法可能有多個
+      // e.when.on 效果, 需各自獨立節流(防同回合多次觸發同一效果)。
+      for (const t of dst.onHitEffectTacs) {
+        for (const e of t.effects) {
+          if (!e.when || !e.when.on) continue;
+          if (e.when.on === "attacked" && !isNormal) continue;
+          if (!roundOk({ when: e.when }, CUR_R)) continue;
+          if (dst.hitFlags.has(e)) continue;
+          const evRate = e.rate ?? t.rate ?? 1;
+          if (rnd() >= evRate) continue;
+          dst.hitFlags.add(e);
+          if (TRACE) lg(`【${dst.side}】${dst.nm} 戰法【${t.nameZh}】急救效果（受擊觸發）發動`);
+          applyEffects(dst, src, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(dst), foesOf(dst));
+        }
+      }
+      // 批22: 裝備效果級 e.when.on(見 onHitEq 註解) —— 同上, 用合成單效果戰法呼叫 applyEffects
+      for (const e of dst.onHitEq) {
+        if (e.when.on === "attacked" && !isNormal) continue;
+        if (!roundOk({ when: e.when }, CUR_R)) continue;
+        if (dst.hitFlags.has(e)) continue;
+        const evRate = e.rate ?? 1;
+        if (rnd() >= evRate) continue;
+        dst.hitFlags.add(e);
+        if (TRACE) lg(`【${dst.side}】${dst.nm}〔特技·${e._eqNm || "?"}〕（受擊觸發）發動`);
+        applyEffects(dst, src, { effects: [e], kind: "phys" }, alliesOf(dst), foesOf(dst));
+      }
+      // 批22: 兵書效果級 e.when.on(見 onHitBs 註解) —— 同上, 用合成單效果戰法呼叫 applyEffects
+      for (const e of dst.onHitBs) {
+        if (e.when.on === "attacked" && !isNormal) continue;
+        if (!roundOk({ when: e.when }, CUR_R)) continue;
+        if (dst.hitFlags.has(e)) continue;
+        const evRate = e.rate ?? 1;
+        if (rnd() >= evRate) continue;
+        dst.hitFlags.add(e);
+        if (TRACE) lg(`【${dst.side}】${dst.nm}〔兵書〕（受擊觸發）發動`);
+        applyEffects(dst, src, { effects: [e], kind: "phys" }, alliesOf(dst), foesOf(dst));
       }
     };
     if (TRACE) {                                    // 準備階段標頭: 兵種 + 城建/陣營

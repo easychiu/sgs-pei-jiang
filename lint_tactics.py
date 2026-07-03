@@ -490,8 +490,12 @@ PER_KIND_FIELDS = {
     "taunt": set(), "shield": {"amt", "pct"}, "dodge": {"prob"}, "surehit": set(),
     "healblock": set(), "lifesteal": {"val"}, "rateup": {"val", "prepOnly", "nativeOnly", "inheritedOnly"},
     "chargeup": {"val", "prepOnly", "nativeOnly", "leaderBonus"}, "healBoost": {"val"},
-    "healGiven": {"val"}, "fakeReport": set(), "dispel": {"what"}, "heal": {"coef", "once"},
+    "healGiven": {"val"}, "fakeReport": set(), "dispel": {"what"}, "heal": {"coef", "once", "rate"},
+    # 批22: heal 的 rate 欄位 —— 效果級 e.when.on(急救類反應式治療, 如陷陣營/雲聚影從/長健/
+    # 三軍之眾)專用的「本次觸發機率」(區分於戰法整體 t.rate), 見 engine.js/sgz.py 的
+    # onHitEffectTacs/onHitEq/onHitBs 註解。
     "redirect": {"guard", "share", "normalOnly"}, "settle": {"init", "max", "base", "per"},
+    "block": {"val", "times"},  # 批22: 次數型格擋(抵禦/警戒同族) —— val:1.0全擋/0.x部分減傷, times:剩餘次數
 }
 # 資料撰寫慣例裡與戰鬥語意無關的雜項欄位(揭露/註解/來源標記), 任何 k 都可能帶, 不算幽靈:
 MISC_DISCLOSURE_FIELDS = {"note", "name"}
