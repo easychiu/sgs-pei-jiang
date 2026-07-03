@@ -27,6 +27,29 @@
   // 兵書/裝備/被動等準備階段效果如 dot/settle 快照造成的傷害仍需計入傷兵池)。
   const WOUNDED_RATES = [0.90, 0.90, 0.90, 0.80, 0.80, 0.80, 0.675, 0.675];  // index 0 = 第1回合
   const woundedRate = r => WOUNDED_RATES[Math.max(0, Math.min(WOUNDED_RATES.length, r || 1) - 1)];
+  // 批33: 治療(heal)絕對量公式全局換裝 —— 舊公式 want = coef×SCALE(scale屬性)×caster.troop×0.10
+  // 疑似系統性高估(見 engine_limitations.md 第18節: 陷陣營樣本高估1.6~2倍, 且形狀錯誤——
+  // 治療量不應隨施放者「當下」兵力增減, 官方戰報顯示同一施放者兵力隨戰鬥推移下降時治療量不變)。
+  // 初版曾裁決 want=506×coef×SCALE(不乘兵力), 但 user 補測華佗2(智力228/準備階段兵力9600/
+  // 青囊96%→實測755)推翻該版本: 506那組樣本(青囊96%/智力284→742)恰好是施放者準備階段兵力
+  // ~8433的巧合摺疊(506≈0.06×8433), 換一個準備兵力不同(9600)的樣本立刻對不上(506版預測
+  // 663, 誤差14%; 而"×準備階段兵力"版預測755.2, 誤差0.03%)。
+  // 最終公式(docs/data/calibration_anchors.json → heal_formula_resolved_20260704, 後續更新):
+  //   want = coef(治療率) × HEAL_TROOP_C(0.06) × 施放者準備階段鎖定兵力 × SCALE(scale屬性,預設intel)
+  // 「準備階段鎖定」語意: 指揮/兵種/兵書/被動類 heal(常駐急救型)的治療量以「開戰準備階段的
+  // 兵力」定格(華佗1當下兵力8611~8781持續變動但治療恆742, 非隨當下兵力浮動), 故用
+  // caster.healBase(prep時存的 troop×HEAL_TROOP_C 快照, 見 Unit 建構)而非 caster.troop×常數。
+  // active主動直療型(如刮骨療毒, 施放當下即時觸發的治療, 非受傷反應式)用施放當下即時兵力
+  // (caster.troop)。刮骨樣本初次核對曾疑似-11%偏差(疑主動型基底常數有異), 後證實該樣本
+  // 傷兵池已耗盡、觀測值為封頂後殘值(非公式未封頂前的真實want), 與公式無關——主動直療型與
+  // 反應式急救型共用同一套公式(HEAL_TROOP_C), 不分型態另設基底常數, 僅兵力取值時點不同。
+  // 驗證樣本: 陷陣營60%/智力379.02/準備兵力8439→546(反解值, 弱錨點); 青囊96%/智力228/
+  // 準備兵力9600→755(強錨點, user新補測, 0.03%誤差)。
+  // 補充參考樣本(第三批戰報, 未落地到具體戰法資料——「離月」在本庫查無此戰法, 疑user口誤/
+  // 待查證, 暫不修改任何tactics資料, 僅記錄公式驗證結果供未來核對): 直療68%/貂蟬智力397/
+  // 開場兵力8580→曹操622×2+陸遜627, v2公式(want=0.68×0.06×8580×SCALE(397))預測647.1,
+  // 殘差約-3%~-4%(可能戰內智力浮動), 在既有容忍帶內, 不阻塞, 亦不改動公式常數。
+  const HEAL_TROOP_C = 0.06;
   const COUNTER = { "騎": "盾", "盾": "弓", "弓": "槍", "槍": "騎" };
   const APT_PCT = { S: 1.20, A: 1.00, B: 0.85, C: 0.70, D: 0.55 };
   const APT_RANK = { S: 4, A: 3, B: 2, C: 1, D: 0 };
@@ -140,6 +163,10 @@
   class Unit {
     constructor(g, ttype, bsName, eqName, add, inherit, season, teamFactions) {
       this.g = g; this.ttype = ttype; this.troop = START_TROOP; this.stun = 0;
+      // 批33: healBase —— 準備階段鎖定的治療基準兵力快照(troop×HEAL_TROOP_C), 供指揮/兵種/
+      // 兵書/被動類 heal(常駐急救型)使用, 使治療量不隨後續戰鬥中兵力增減而變動(見上方
+      // HEAL_TROOP_C 常數註解); 建構時 troop 尚未受戰鬥影響, 此處快照即「開戰準備階段兵力」。
+      this.healBase = this.troop * HEAL_TROOP_C;
       this.silence = 0; this.disarm = 0; this.insight = 0; this.first = 0;  // 控制細分: 計窮/繳械/洞察(免控) + 先攻(優先行動, 剩餘回合數)
       this.chaos = 0;                              // 批12 ModeF: 混亂(不鎖行動, 但普攻/單體主動戰法改為敵我不分隨機選目標), 剩餘回合數
       this.ambush = 0;                              // 批18: 遇襲(先攻的反面, 遲緩) —— 剩餘回合數, 行動排序時與 first 一併算 effFirst(見 fight() 排序鍵)
@@ -466,7 +493,7 @@
   function hit(src, dst, coef, kind, isNormal, onEvent, onDeal, isActive) {  // 批31 A: isActive(可選, 尾端新增, 向後相容既有全部呼叫點)—— 傳入本次傷害是否為主動/突擊戰法所致
     if (!src.surehitDur && dst.dodgeDur && rnd() < dst.dodgeProb) {  // 規避: 完全迴避一次傷害(必中無視)
       if (TRACE) lg(`　→ ${dst.nm} 規避了攻擊`);
-      if (onEvent) onEvent(dst, src, isNormal);
+      if (onEvent) onEvent(dst, src, isNormal, 0);
       return;
     }
     let dmg = damage(src, dst, coef, kind, undefined, isNormal, isActive);  // 批28 B3/批31 A: 傳入isNormal/isActive供amp()過濾normalOnly/activeOnly標記的加成
@@ -501,12 +528,15 @@
       src.troop = Math.min(START_TROOP, src.troop + dmg * ls);
       if (TRACE && src.troop - before >= 1) lg(`　▸ ${src.nm} 倒戈回復 +${Math.round(src.troop - before)}`);
     }
-    if (onEvent) onEvent(dst, src, isNormal);
+    // 批33: onEvent/onDeal 補傳 dmg(本次結算後的實際傷害量, 已經過block/shield/代承折算,
+    // 與寫入 wounded 池的量一致) —— 供 e.ofDamage(傷害比例治療) 反應式heal使用, 見
+    // onHit()/dealtDamage() 呼叫端與 applyEffects() heal 分支(opt.dmg)。
+    if (onEvent) onEvent(dst, src, isNormal, dmg);
     // 批27 A: on:"dealtDamage" —— src(施加本次傷害的一方)反應式觸發, 只在非規避(確實造成
     // 傷害, 含被完全格擋/護盾吸收歸零的情形——「造成傷害」語意上仍是「打出了這一擊」, 只是
     // 傷害量被防禦手段抵銷, 與「規避=攻擊未命中」不同, 故僅 dodge 分支排除, block/shield
     // 歸零不排除)時才觸發, 傳入 kind 供 dmgType(兵刃/謀略)過濾判斷。
-    if (onDeal && src.alive) onDeal(src, dst, isNormal, kind);
+    if (onDeal && src.alive) onDeal(src, dst, isNormal, kind, dmg);
     const c = dst.counter;
     if (c && dst.alive && src.alive && rnd() < (c.prob ?? 1)) {
       const cd = damage(dst, src, c.coef ?? 1, c.kind || "phys"); src.troop -= cd; src.wounded += cd * woundedRate(CUR_R);
@@ -870,16 +900,27 @@
         for (const a of allies) if (a.alive && !a.healblock && (!hurt || a.troop < hurt.troop)) hurt = a;  // 批8: 禁療(healblock) 中的目標跳過, 不參與「最殘一人」篩選
         if (hurt) {
           const before = hurt.troop;
+          // 批33: e.ofDamage —— 傷害比例治療(非屬性公式), 見草船借箭「回復傷害量14%→28%」
+          // 類措辭。opt.dmg 由反應式呼叫端(onHit/dealtDamage, 見批33引擎擴充)傳入「觸發本次
+          // 治療的那一下傷害量」, 與屬性公式互斥擇一, 兩者不疊加。
           const hcoef = (e.coef ?? 0.8) * (e.scale ? scaleOf(caster, e.scale) : 1);
           // 批16: healBoost/healGiven —— 目標受到的治療量×(1+healBoost加總), 施放者施放的治療×(1+healGiven加總)
           const boostMult = Math.max(0, 1 + hurt.addbonus("healBoost")) * Math.max(0, 1 + caster.addbonus("healGiven"));
-          const want = hcoef * caster.troop * 0.10 * boostMult;
+          // 批33: 治療公式換裝 —— want = coef × HEAL_TROOP_C × 施放者兵力 × SCALE(scale屬性)
+          // (見上方 HEAL_TROOP_C 常數註解 / calibration_anchors.json heal_formula_resolved_20260704)。
+          // 「施放者兵力」依戰法型態擇一: active(主動直療型, 施放當下即時觸發, 非受傷反應式)
+          // 用 caster.troop(當下即時兵力); 其餘(指揮/兵種/兵書/被動的常駐急救型, 受傷當下
+          // 反應式觸發)用 caster.healBase(準備階段鎖定兵力快照, 不隨後續兵力增減而變動——
+          // user 實測同一施放者兵力8611~8781持續變動但治療恆742的關鍵佐證)。
+          // e.ofDamage 存在時改用傷害比例治療(want = ofDamage × 本次觸發傷害量), 忽略屬性公式。
+          const healTroopBase = t.type === "active" ? caster.troop * HEAL_TROOP_C : caster.healBase;
+          const want = (e.ofDamage != null && opt.dmg != null) ? e.ofDamage * opt.dmg * boostMult : hcoef * healTroopBase * boostMult;
           // 批18: 傷兵池 —— 治療只能回復傷兵池裡的量(可救援的傷兵), 不是無限回滿。實際回復 =
           // min(想治療量, 傷兵池餘量, 距滿編差額); 回復後從傷兵池扣掉對應量(此人已被救回, 不再
           // 算在池裡)。這會全域削弱治療(尤其後期, 陣亡比例升高、傷兵池餘量變少), 屬預期真實化。
           const actual = Math.max(0, Math.min(want, hurt.wounded, START_TROOP - hurt.troop));
           hurt.troop += actual; hurt.wounded -= actual;
-          if (TRACE && hurt.troop - before >= 1) lg(`　▸ 治療 ${hurt.nm} +${Math.round(hurt.troop - before)}(傷兵池餘${Math.round(hurt.wounded)})` + (e.scale ? `（受${STAT_ZH[e.scale] || e.scale}影響, 實際治療率${Math.round(hcoef * 100)}%）` : "") + (boostMult !== 1 ? `（治療加成×${boostMult.toFixed(2)}）` : ""));
+          if (TRACE && hurt.troop - before >= 1) lg(`　▸ 治療 ${hurt.nm} +${Math.round(hurt.troop - before)}(傷兵池餘${Math.round(hurt.wounded)})` + (e.ofDamage != null && opt.dmg != null ? `（傷害量比例治療×${Math.round(e.ofDamage * 100)}%）` : (e.scale ? `（受${STAT_ZH[e.scale] || e.scale}影響, 實際治療率${Math.round(hcoef * 100)}%）` : "")) + (boostMult !== 1 ? `（治療加成×${boostMult.toFixed(2)}）` : ""));
         }
         continue;
       }
@@ -1140,7 +1181,7 @@
           applyEffects(team[0], null, pt(bd.effects), team, foesOf(team[0]), opt);
         }
     };
-    const onHit = (dst, src, isNormal) => {          // 反應式觸發(when.on): 被普攻(attacked)/受任意傷害(damaged) 時掛到 hit() 事件點
+    const onHit = (dst, src, isNormal, dmg) => {          // 反應式觸發(when.on): 被普攻(attacked)/受任意傷害(damaged) 時掛到 hit() 事件點; 批33: dmg(可選, 尾端新增)—— 本次觸發事件的實際傷害量, 供 e.ofDamage 傷害比例治療使用
       if (!dst.alive || (!dst.onHitTacs.length && !dst.onHitEffectTacs.length && !dst.onHitEq.length && !dst.onHitBs.length)) return;
       if (dst.fakeReportDur) return;                 // 批16: 偽報 —— 抑制 onHit 反應式觸發(被動/指揮戰法失效)
       for (const t0 of dst.onHitTacs) {
@@ -1163,7 +1204,7 @@
         if (TRACE) lg(`【${dst.side}】${dst.nm} 戰法【${t.nameZh}】（受擊觸發）發動`);
         if (t.coef) hit(dst, src, t.coef, t.kind, false, onHit, dealtDamage);
         if (t.extraHits) fireExtraHits(dst, t, src, alliesOf, foesOf, onHit, dealtDamage);  // 批13: 受擊觸發類多段傷害(如剛烈不屈 反擊後群體額外段)
-        if (t.effects.length) applyEffects(dst, src, t, alliesOf(dst), foesOf(dst), { reactive: true });  // 批23: 戰法級when.on本身即反應式, 標記reactive供內部e.when.on效果(若有)一致判定
+        if (t.effects.length) applyEffects(dst, src, t, alliesOf(dst), foesOf(dst), { reactive: true, dmg });  // 批23: 戰法級when.on本身即反應式, 標記reactive供內部e.when.on效果(若有)一致判定; 批33: 傳入dmg供e.ofDamage使用
       }
       // 批22: 效果級 e.when.on(急救類反應式治療, 見 onHitEffectTacs 註解) —— 戰法本身無 t.when
       // (其餘效果如武力/統率平加仍在 prep 正常套用, 不受影響), 只有帶 e.when.on 的個別效果在
@@ -1181,7 +1222,7 @@
           if (rnd() >= evRate) continue;
           dst.hitFlags.add(e);
           if (TRACE) lg(`【${dst.side}】${dst.nm} 戰法【${t.nameZh}】急救效果（受擊觸發）發動`);
-          applyEffects(dst, src, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(dst), foesOf(dst), { rateChecked: true, reactive: true });  // 批23 A4: 這裡已擲過 e.rate, 避免 applyEffects 通用閘門重複擲骰; reactive:true 供內部 e.when.on 閘門判定放行
+          applyEffects(dst, src, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(dst), foesOf(dst), { rateChecked: true, reactive: true, dmg });  // 批23 A4: 這裡已擲過 e.rate, 避免 applyEffects 通用閘門重複擲骰; reactive:true 供內部 e.when.on 閘門判定放行; 批33: dmg供e.ofDamage使用
         }
       }
       // 批22: 裝備效果級 e.when.on(見 onHitEq 註解) —— 同上, 用合成單效果戰法呼叫 applyEffects
@@ -1193,7 +1234,7 @@
         if (rnd() >= evRate) continue;
         dst.hitFlags.add(e);
         if (TRACE) lg(`【${dst.side}】${dst.nm}〔特技·${e._eqNm || "?"}〕（受擊觸發）發動`);
-        applyEffects(dst, src, { effects: [e], kind: "phys" }, alliesOf(dst), foesOf(dst), { rateChecked: true, reactive: true });  // 批23 A4/reactive: 已擲過 e.rate
+        applyEffects(dst, src, { effects: [e], kind: "phys" }, alliesOf(dst), foesOf(dst), { rateChecked: true, reactive: true, dmg });  // 批23 A4/reactive: 已擲過 e.rate; 批33: dmg供e.ofDamage使用
       }
       // 批22: 兵書效果級 e.when.on(見 onHitBs 註解) —— 同上, 用合成單效果戰法呼叫 applyEffects
       for (const e of dst.onHitBs) {
@@ -1204,10 +1245,10 @@
         if (rnd() >= evRate) continue;
         dst.hitFlags.add(e);
         if (TRACE) lg(`【${dst.side}】${dst.nm}〔兵書〕（受擊觸發）發動`);
-        applyEffects(dst, src, { effects: [e], kind: "phys" }, alliesOf(dst), foesOf(dst), { rateChecked: true, reactive: true });  // 批23 A4/reactive: 已擲過 e.rate
+        applyEffects(dst, src, { effects: [e], kind: "phys" }, alliesOf(dst), foesOf(dst), { rateChecked: true, reactive: true, dmg });  // 批23 A4/reactive: 已擲過 e.rate; 批33: dmg供e.ofDamage使用
       }
     };
-    const dealtDamage = (src, dst, isNormal, kind) => {  // 批27 A: 反應式觸發(when.on:"dealtDamage") —— 自己造成傷害(對 dst)後掛到 hit() 事件點, 與 onHit(自己受擊視角)對稱
+    const dealtDamage = (src, dst, isNormal, kind, dmg) => {  // 批27 A: 反應式觸發(when.on:"dealtDamage") —— 自己造成傷害(對 dst)後掛到 hit() 事件點, 與 onHit(自己受擊視角)對稱; 批33: dmg(可選, 尾端新增)—— 本次觸發事件的實際傷害量, 供 e.ofDamage 使用
       if (!src.alive || (!src.onDealTacs.length && !src.onDealEffectTacs.length)) return;
       if (src.fakeReportDur) return;                 // 批16: 偽報 —— 抑制反應式觸發(被動/指揮戰法失效), 與 onHit 同慣例
       const dmgTypeOk = dt => !dt || dt === kind;     // dmgType 過濾: 未指定視為兵刃/謀略皆可觸發(向後相容)
@@ -1228,7 +1269,7 @@
           if (dv) hit(src, dv, t.coef, t.kind, false, onHit, dealtDamage);
         } else if (t.coef) hit(src, dst, t.coef, t.kind, false, onHit, dealtDamage);
         if (t.extraHits) fireExtraHits(src, t, dst, alliesOf, foesOf, onHit, dealtDamage);
-        if (t.effects.length) applyEffects(src, dst, t, alliesOf(src), foesOf(src), { reactive: true });
+        if (t.effects.length) applyEffects(src, dst, t, alliesOf(src), foesOf(src), { reactive: true, dmg });  // 批33: 傳入dmg供e.ofDamage使用
       }
       // 效果級: 戰法本身有其他常駐效果, 只有部分效果段是「造成傷害時」反應式(如白衣渡江本身
       // 是常駐 command, disarm/silence 兩效果各自綁不同 dmgType, 與 onHitEffectTacs 同慣例)
@@ -1242,7 +1283,7 @@
           if (rnd() >= evRate) continue;
           src.hitFlags.add(e);
           if (TRACE) lg(`【${src.side}】${src.nm} 戰法【${t.nameZh}】效果（造成傷害觸發）發動`);
-          applyEffects(src, dst, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(src), foesOf(src), { rateChecked: true, reactive: true });  // 已擲過 e.rate, 避免重複擲骰; reactive 供 e.when.on 閘門放行
+          applyEffects(src, dst, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(src), foesOf(src), { rateChecked: true, reactive: true, dmg });  // 已擲過 e.rate, 避免重複擲骰; reactive 供 e.when.on 閘門放行; 批33: dmg供e.ofDamage使用
         }
       }
     };

@@ -537,10 +537,12 @@ PER_KIND_FIELDS = {
     "taunt": set(), "shield": {"amt", "pct"}, "dodge": {"prob"}, "surehit": set(),
     "healblock": set(), "lifesteal": {"val"}, "rateup": {"val", "prepOnly", "nativeOnly", "inheritedOnly"},
     "chargeup": {"val", "prepOnly", "nativeOnly", "leaderBonus"}, "healBoost": {"val"},
-    "healGiven": {"val"}, "fakeReport": set(), "dispel": {"what"}, "heal": {"coef", "once", "rate"},
+    "healGiven": {"val"}, "fakeReport": set(), "dispel": {"what"}, "heal": {"coef", "once", "rate", "ofDamage"},
     # 批22: heal 的 rate 欄位 —— 效果級 e.when.on(急救類反應式治療, 如陷陣營/雲聚影從/長健/
     # 三軍之眾)專用的「本次觸發機率」(區分於戰法整體 t.rate), 見 engine.js/sgz.py 的
     # onHitEffectTacs/onHitEq/onHitBs 註解。
+    # 批33: heal 的 ofDamage 欄位 —— 傷害比例治療(非屬性公式), 治療量=ofDamage×本次觸發事件的
+    # 實際傷害量(dmg 由反應式呼叫端傳入), 與 coef/scale 屬性公式互斥擇一, 見草船借箭。
     "redirect": {"guard", "share", "normalOnly"}, "settle": {"init", "max", "base", "per"},
     "block": {"val", "times"},  # 批22: 次數型格擋(抵禦/警戒同族) —— val:1.0全擋/0.x部分減傷, times:剩餘次數
 }
@@ -1399,6 +1401,13 @@ ENGINE_CAPABILITY_ALIASES = {
     "目標為敵軍主將": "ifSameTargetIsLeader(批31新增, extraHits 段條件過濾欄位, 見 sgz.py"
                 "fire_extra_hits()/engine.js fireExtraHits() 對 dests 的事後過濾: 只保留"
                 "dests 中恰好是 foes[0] 的目標, 取代舊有 1/3 機率 EV 折算近似)",
+    "回復傷害量": "ofDamage(批33新增, heal 效果欄位 e.ofDamage, 傷害比例治療(非屬性公式): 治療量="
+                "ofDamage×本次觸發事件的實際傷害量, dmg 由 on_hit/dealt_damage 反應式呼叫端傳入"
+                "apply_effects(), 見 sgz.py/engine.js 的 hit() 補傳 dmg 參數 + heal 分支判斷式;"
+                "取代舊近似(coef×SCALE(scale屬性)屬性公式)套用在「回復傷害量X%」這類明確描述"
+                "傷害金額比例的措辭上, 見草船借箭)",
+    "恢復傷害量": "ofDamage(同上)",
+    "傷害量的": "ofDamage(同上; 「傷害量的X%兵力」句型, 如錦帆軍)",
 }
 
 # =============================================================================

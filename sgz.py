@@ -46,6 +46,30 @@ def wounded_rate(r):
     return WOUNDED_RATES[idx]
 
 
+# 批33: 治療(heal)絕對量公式全局換裝 —— 舊公式 want = coef×SCALE(scale屬性)×caster.troop×0.10
+# 疑似系統性高估(見 engine_limitations.md 第18節: 陷陣營樣本高估1.6~2倍, 且形狀錯誤——治療量
+# 不應隨施放者「當下」兵力增減)。初版曾裁決 want=506×coef×SCALE(不乘兵力), 但 user 補測
+# 華佗2(智力228/準備階段兵力9600/青囊96%→實測755)推翻該版本: 506那組樣本(青囊96%/智力284
+# →742)恰好是施放者準備階段兵力~8433的巧合摺疊(506≈0.06×8433), 換一個準備兵力不同(9600)的
+# 樣本立刻對不上(506版預測663, 誤差14%; "×準備階段兵力"版預測755.2, 誤差0.03%)。
+# 最終公式(docs/data/calibration_anchors.json → heal_formula_resolved_20260704, 後續更新):
+#   want = coef(治療率) × HEAL_TROOP_C(0.06) × 施放者準備階段鎖定兵力 × SCALE(scale屬性,預設intel)
+# 「準備階段鎖定」語意: 指揮/兵種/兵書/被動類 heal(常駐急救型)的治療量以「開戰準備階段的
+# 兵力」定格(華佗1當下兵力8611~8781持續變動但治療恆742, 非隨當下兵力浮動), 故用
+# caster.heal_base(prep時存的 troop×HEAL_TROOP_C 快照, 見 Unit 建構)而非 caster.troop×常數。
+# active主動直療型(如刮骨療毒, 施放當下即時觸發的治療, 非受傷反應式)用施放當下即時兵力
+# (caster.troop)。刮骨樣本初次核對曾疑似-11%偏差(疑主動型基底常數有異), 後證實該樣本傷兵池
+# 已耗盡、觀測值為封頂後殘值(非公式未封頂前的真實want), 與公式無關——主動直療型與反應式
+# 急救型共用同一套公式(HEAL_TROOP_C), 不分型態另設基底常數, 僅兵力取值時點不同。
+# 驗證樣本: 陷陣營60%/智力379.02/準備兵力8439→546(反解值, 弱錨點); 青囊96%/智力228/
+# 準備兵力9600→755(強錨點, user新補測, 0.03%誤差)。
+# 補充參考樣本(第三批戰報, 未落地到具體戰法資料——「離月」在本庫查無此戰法, 疑user口誤/
+# 待查證, 暫不修改任何tactics資料, 僅記錄公式驗證結果供未來核對): 直療68%/貂蟬智力397/
+# 開場兵力8580→曹操622×2+陸遜627, v2公式(want=0.68×0.06×8580×SCALE(397))預測647.1,
+# 殘差約-3%~-4%(可能戰內智力浮動), 在既有容忍帶內, 不阻塞, 亦不改動公式常數。
+HEAL_TROOP_C = 0.06
+
+
 def SCALE(v):
     """「受X影響」屬性縮放旋鈕。輸入為戰鬥內即時素質 caster.eff(stat)(已含城建/陣營/適性/
     加點/賽季/戰鬥中buff, 典型值 250~400, 而非卡面裸值)。公式取社群拆解(巴哈姆特高等陣容
@@ -306,6 +330,10 @@ def team_gate_ok(gate, factions):
 class Unit:
     def __init__(self, g, ttype, bingshu=None, equip=None, add=None, inherit=None, season=None, team_factions=None):
         self.g, self.ttype, self.troop, self.stun = g, ttype, START_TROOP, 0
+        # 批33: heal_base —— 準備階段鎖定的治療基準兵力快照(troop×HEAL_TROOP_C), 供指揮/兵種/
+        # 兵書/被動類 heal(常駐急救型)使用, 使治療量不隨後續戰鬥中兵力增減而變動(見上方
+        # HEAL_TROOP_C 常數註解); 建構時 troop 尚未受戰鬥影響, 此處快照即「開戰準備階段兵力」。
+        self.heal_base = self.troop * HEAL_TROOP_C
         self.silence = 0                              # 計窮: 無法發動主動戰法
         self.disarm = 0                                # 繳械: 無法普通攻擊(含連擊/突擊)
         self.chaos = 0                                 # 批12 ModeF: 混亂(不鎖行動, 但普攻/單體主動戰法改為敵我不分隨機選目標), 剩餘回合數
@@ -753,7 +781,7 @@ def damage(src, dst, coef, kind, src_troop=None, is_normal=None, is_active=None)
 def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_active=None):  # 造成傷害(含規避/護盾/代承轉移/反擊), 累積結算層數; 批31 A: is_active(可選, 尾端新增, 向後相容既有全部呼叫點)—— 傳入本次傷害是否為主動/突擊戰法所致
     if not src.surehit_dur and dst.dodge_dur and random.random() < dst.dodge_prob:  # 規避: 完全迴避一次傷害(必中無視)
         if on_event:
-            on_event(dst, src, is_normal)
+            on_event(dst, src, is_normal, 0)
         return
     dmg = damage(src, dst, coef, kind, is_normal=is_normal, is_active=is_active)  # 批28 B3/批31 A: 傳入is_normal/is_active供amp()過濾normalOnly/activeOnly標記的加成
     # 批22: block(次數型格擋, 抵禦/警戒同族) —— 判定順序 dodge→block→shield→傷害(見紅線指示)。
@@ -785,14 +813,17 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_a
     ls = src.addbonus("lifesteal")                    # 批8: 倒戈 —— 造成傷害時按比例回復自身兵力(以本次造成的傷害量 dmg 為基準), 上限 START_TROOP
     if ls > 0 and src.alive:
         src.troop = min(START_TROOP, src.troop + dmg * ls)
+    # 批33: on_event/on_deal 補傳 dmg(本次結算後的實際傷害量, 已經過block/shield/代承折算,
+    # 與寫入 wounded 池的量一致) —— 供 e["ofDamage"](傷害比例治療) 反應式heal使用, 見
+    # on_hit()/dealt_damage() 呼叫端與 apply_effects() heal 分支(dmg 參數)。
     if on_event:
-        on_event(dst, src, is_normal)
+        on_event(dst, src, is_normal, dmg)
     # 批27 A: on:"dealtDamage" —— src(施加本次傷害的一方)反應式觸發, 只在非規避(確實造成
     # 傷害, 含被完全格擋/護盾吸收歸零的情形——「造成傷害」語意上仍是「打出了這一擊」, 只是
     # 傷害量被防禦手段抵銷, 與「規避=攻擊未命中」不同, 故僅 dodge 分支排除, block/shield
     # 歸零不排除)時才觸發, 傳入 kind 供 dmgType(兵刃/謀略)過濾判斷。
     if on_deal and src.alive:
-        on_deal(src, dst, is_normal, kind)
+        on_deal(src, dst, is_normal, kind, dmg)
     c = dst.counter                                   # 反擊: 直接還擊 src(不經 hit, 不遞迴)
     if c and dst.alive and src.alive and random.random() < c.get("prob", 1.0):
         cd = damage(dst, src, c["coef"], c.get("kind", "phys"))
@@ -1030,7 +1061,9 @@ def fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit, on_deal=None):
 
 
 def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=False, skip_when_effects=False,
-                   rate_checked=False, reactive=False):
+                   rate_checked=False, reactive=False, dmg=None):
+    # 批33: dmg(可選)—— 反應式呼叫端(on_hit/dealt_damage)傳入「觸發本次效果結算的那一下傷害
+    # 量」, 供 heal 分支的 e["ofDamage"](傷害比例治療) 使用, 見下方 k=="heal" 分支。
     src = t.get("nameZh")                              # 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → None, 不去重)
     for e in t["effects"]:
         k = e["k"]
@@ -1172,10 +1205,22 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             hurt = min((a for a in allies if a.alive and not a.healblock),  # 批8: 禁療(healblock) 中的目標跳過, 不參與「最殘一人」篩選
                        key=lambda a: a.troop, default=None)
             if hurt:                                  # ponytail: 治療量粗估, 上限不超過初始兵力
+                # 批33: e["ofDamage"] —— 傷害比例治療(非屬性公式), 見草船借箭「回復傷害量
+                # 14%→28%」類措辭。dmg(本次觸發傷害量)由反應式呼叫端傳入, 與屬性公式互斥擇一。
                 hcoef = e.get("coef", 0.8) * (scale_of(caster, e["scale"]) if e.get("scale") else 1.0)
                 # 批16: healBoost/healGiven —— 目標受到的治療量×(1+healBoost加總), 施放者施放的治療×(1+healGiven加總)
                 boost_mult = max(0.0, 1 + hurt.addbonus("healBoost")) * max(0.0, 1 + caster.addbonus("healGiven"))
-                want = hcoef * caster.troop * 0.10 * boost_mult
+                # 批33: 治療公式換裝 —— want = coef × HEAL_TROOP_C × 施放者兵力 × SCALE(scale屬性)
+                # (見上方 HEAL_TROOP_C 常數註解 / calibration_anchors.json
+                # heal_formula_resolved_20260704)。「施放者兵力」依戰法型態擇一: active(主動
+                # 直療型, 施放當下即時觸發)用 caster.troop(當下即時兵力); 其餘(指揮/兵種/兵書/
+                # 被動的常駐急救型, 受傷當下反應式觸發)用 caster.heal_base(準備階段鎖定兵力
+                # 快照, 不隨後續兵力增減而變動)。e["ofDamage"] 存在時改用傷害比例治療。
+                heal_troop_base = caster.troop * HEAL_TROOP_C if t.get("type") == "active" else caster.heal_base
+                if e.get("ofDamage") is not None and dmg is not None:
+                    want = e["ofDamage"] * dmg * boost_mult
+                else:
+                    want = hcoef * heal_troop_base * boost_mult
                 # 批18: 傷兵池 —— 治療只能回復傷兵池裡的量(可救援的傷兵), 不是無限回滿。實際回復 =
                 # min(想治療量, 傷兵池餘量, 距滿編差額); 回復後從傷兵池扣掉對應量。這會全域削弱
                 # 治療(尤其後期, 陣亡比例升高、傷兵池餘量變少), 屬預期真實化。
@@ -1532,7 +1577,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                                   team, foes_of(team[0]), no_heal=no_heal, heal_only=heal_only,
                                   skip_when_effects=skip_when_effects)
 
-    def on_hit(dst, src, is_normal):                  # 反應式觸發(when.on): 被普攻(attacked)/受任意傷害(damaged) 時掛到 hit() 事件點
+    def on_hit(dst, src, is_normal, dmg=None):        # 反應式觸發(when.on): 被普攻(attacked)/受任意傷害(damaged) 時掛到 hit() 事件點; 批33: dmg(可選)—— 本次觸發事件的實際傷害量, 供 e["ofDamage"] 傷害比例治療使用
         if not dst.alive or (not dst.on_hit_tacs and not dst.on_hit_effect_tacs and not dst.on_hit_eq and not dst.on_hit_bs):
             return
         if dst.fake_report_dur:                       # 批16: 偽報 —— 抑制 on_hit 反應式觸發(被動/指揮戰法失效)
@@ -1564,7 +1609,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             if t.get("extraHits"):
                 fire_extra_hits(dst, t, src, allies_of, foes_of, on_hit, dealt_damage)  # 批13: 受擊觸發類多段傷害(如剛烈不屈 反擊後群體額外段)
             if t["effects"]:
-                apply_effects(dst, src, t, allies_of(dst), foes_of(dst), reactive=True)  # 批23: 戰法級when.on本身即反應式, 標記reactive供內部e.when.on效果(若有)一致判定
+                apply_effects(dst, src, t, allies_of(dst), foes_of(dst), reactive=True, dmg=dmg)  # 批23: 戰法級when.on本身即反應式, 標記reactive供內部e.when.on效果(若有)一致判定; 批33: dmg供e["ofDamage"]使用
         # 批22: 效果級 e.when.on(急救類反應式治療, 見 on_hit_effect_tacs 註解) —— 戰法本身無
         # t["when"](其餘效果如武力/統率平加仍在 prep 正常套用, 不受影響), 只有帶 e.when.on 的
         # 個別效果在此處反應式結算。用「合成單效果戰法」(effects=[e])呼叫 apply_effects, 讓
@@ -1587,7 +1632,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     continue
                 dst.hit_flags.add(id(e))
                 apply_effects(dst, src, {"effects": [e], "kind": t.get("kind", "phys"), "nameZh": t.get("nameZh")},
-                             allies_of(dst), foes_of(dst), rate_checked=True, reactive=True)  # 批23 A4/reactive: 上面已擲過 e["rate"], 避免重複擲骰; reactive供e.when.on閘門放行
+                             allies_of(dst), foes_of(dst), rate_checked=True, reactive=True, dmg=dmg)  # 批23 A4/reactive: 上面已擲過 e["rate"], 避免重複擲骰; reactive供e.when.on閘門放行; 批33: dmg供e["ofDamage"]使用
         # 批22: 裝備效果級 e.when.on(見 on_hit_eq 註解) —— 同上, 用合成單效果戰法呼叫 apply_effects
         for e in dst.on_hit_eq:
             ew = e["when"]
@@ -1601,7 +1646,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             if random.random() >= ev_rate:
                 continue
             dst.hit_flags.add(id(e))
-            apply_effects(dst, src, {"effects": [e], "kind": "phys"}, allies_of(dst), foes_of(dst), rate_checked=True, reactive=True)  # 批23 A4/reactive
+            apply_effects(dst, src, {"effects": [e], "kind": "phys"}, allies_of(dst), foes_of(dst), rate_checked=True, reactive=True, dmg=dmg)  # 批23 A4/reactive; 批33: dmg供e["ofDamage"]使用
         # 批22: 兵書效果級 e.when.on(見 on_hit_bs 註解) —— 同上, 用合成單效果戰法呼叫 apply_effects
         for e in dst.on_hit_bs:
             ew = e["when"]
@@ -1615,9 +1660,9 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             if random.random() >= ev_rate:
                 continue
             dst.hit_flags.add(id(e))
-            apply_effects(dst, src, {"effects": [e], "kind": "phys"}, allies_of(dst), foes_of(dst), rate_checked=True, reactive=True)  # 批23 A4/reactive
+            apply_effects(dst, src, {"effects": [e], "kind": "phys"}, allies_of(dst), foes_of(dst), rate_checked=True, reactive=True, dmg=dmg)  # 批23 A4/reactive; 批33: dmg供e["ofDamage"]使用
 
-    def dealt_damage(src, dst, is_normal, kind):        # 批27 A: 反應式觸發(when.on:"dealtDamage") —— 自己造成傷害(對 dst)後掛到 hit() 事件點, 與 on_hit(自己受擊視角)對稱
+    def dealt_damage(src, dst, is_normal, kind, dmg=None):  # 批27 A: 反應式觸發(when.on:"dealtDamage") —— 自己造成傷害(對 dst)後掛到 hit() 事件點, 與 on_hit(自己受擊視角)對稱; 批33: dmg(可選)—— 本次觸發事件的實際傷害量, 供 e["ofDamage"] 使用
         if not src.alive or (not src.on_deal_tacs and not src.on_deal_effect_tacs):
             return
         if src.fake_report_dur:                        # 批16: 偽報 —— 抑制反應式觸發(被動/指揮戰法失效), 與 on_hit 同慣例
@@ -1651,7 +1696,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             if t.get("extraHits"):
                 fire_extra_hits(src, t, dst, allies_of, foes_of, on_hit, dealt_damage)
             if t["effects"]:
-                apply_effects(src, dst, t, allies_of(src), foes_of(src), reactive=True)
+                apply_effects(src, dst, t, allies_of(src), foes_of(src), reactive=True, dmg=dmg)  # 批33: dmg供e["ofDamage"]使用
         # 效果級: 戰法本身有其他常駐效果, 只有部分效果段是「造成傷害時」反應式(如白衣渡江本身
         # 是常駐 command, disarm/silence 兩效果各自綁不同 dmgType, 與 on_hit_effect_tacs 同慣例)
         for t in src.on_deal_effect_tacs:
@@ -1670,7 +1715,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     continue
                 src.hit_flags.add(id(e))
                 apply_effects(src, dst, {"effects": [e], "kind": t.get("kind", "phys"), "nameZh": t.get("nameZh")},
-                             allies_of(src), foes_of(src), rate_checked=True, reactive=True)  # 已擲過 e["rate"], 避免重複擲骰; reactive供e.when.on閘門放行
+                             allies_of(src), foes_of(src), rate_checked=True, reactive=True, dmg=dmg)  # 已擲過 e["rate"], 避免重複擲骰; reactive供e.when.on閘門放行; 批33: dmg供e["ofDamage"]使用
 
     def active_fired(u):                                # 批31 A: 反應式觸發(when.on:"activeFired") —— 自己成功發動主動/突擊戰法時掛到 fight() 主迴圈事件點, 與 dealt_damage(自己造成傷害視角)/on_hit(自己受擊視角)對稱; 只認「自身」戰法成功fire這件事本身, 不要求造成傷害(士爭先赴等戰法可能coef=0純buff, 也可能有coef傷害段)
         if not u.alive or (not u.active_fired_tacs and not u.active_fired_effect_tacs):
@@ -2127,7 +2172,7 @@ def demo():
     assert round_ok({"when": None}, 1), "無 when 應視為每回合皆符合"
 
     # 7) 反應式觸發(when.on): 受到普通攻擊(attacked)時應觸發; damaged 則任意傷害來源都觸發(仿 fight() 內 on_hit 的精簡版)
-    def on_hit_test(dst, src, is_normal):
+    def on_hit_test(dst, src, is_normal, dmg=None):  # 批33: dmg(可選)—— 對稱於正式 on_hit(), 接受 hit() 新增的第4參數
         for t in dst.tactics:
             on = t.get("when", {}).get("on")
             if not on or (on == "attacked" and not is_normal):
@@ -3113,7 +3158,7 @@ def demo():
     CUR_ROUND = 1
     heal67_src = Unit(POOL["呂布"], "騎")
 
-    def on_hit67(dst, s2, is_normal):
+    def on_hit67(dst, s2, is_normal, dmg=None):  # 批33: dmg(可選)—— 對稱於正式 on_hit()
         for t in dst.on_hit_effect_tacs:
             for e in t["effects"]:
                 ew = e.get("when") or {}
@@ -3323,7 +3368,7 @@ def demo():
     # attacked/damaged 是「自己受擊」視角); 用仿 on_hit_test(見上方7) 的精簡版 dealt_damage_test
     # 驗證 hit() 的 on_deal 回呼會在 src(施加傷害者) 身上正確掃描/觸發, 且 dmgType 過濾/hit_flags
     # 節流/coef 段行為與正式 fight() 內 dealt_damage() 邏輯一致(自我一致性測試, 不依賴完整 fight())。
-    def dealt_damage_test(src, dst, is_normal, kind):
+    def dealt_damage_test(src, dst, is_normal, kind, dmg=None):  # 批33: dmg(可選)—— 對稱於正式 dealt_damage(), 接受 hit() 新增的第5參數
         for t in src.tactics:
             w = t.get("when") or {}
             if w.get("on") != "dealtDamage":
@@ -3362,7 +3407,7 @@ def demo():
     # 用計數器(而非stat.add, 見push_stat_add同源刷新慣例/engine_limitations 6.7)驗證觸發次數。
     dd_trigger_count = [0]
 
-    def dealt_damage_count_test(src, dst, is_normal, kind):
+    def dealt_damage_count_test(src, dst, is_normal, kind, dmg=None):  # 批33: dmg(可選)—— 對稱於正式 dealt_damage()
         for t in src.tactics:
             w = t.get("when") or {}
             if w.get("on") != "dealtDamage" or id(t) in src.hit_flags:
@@ -3472,7 +3517,7 @@ def demo():
     # 過去 when.on:"attacked"/"damaged" 的反應式戰法完全不讀 t0["choices"], 資料層寫入choices
     # 形同虛設(魅惑「混亂/計窮/虛弱」三選一即是此缺口的代表案例)。用仿 on_hit_test 的精簡版
     # on_hit_choices_test 驗證修復: 兩個weight=0/999懸殊的分支, 應幾乎必中weight大的那個。
-    def on_hit_choices_test(dst, src, is_normal):
+    def on_hit_choices_test(dst, src, is_normal, dmg=None):  # 批33: dmg(可選)—— 對稱於正式 on_hit()
         for t0 in dst.tactics:
             on = (t0.get("when") or {}).get("on")
             if not on or (on == "attacked" and not is_normal):
@@ -3809,6 +3854,78 @@ def demo():
     assert dd_ts_rounds >= 1, "dealtDamage+targetSel 端到端測試: fight() 應正常跑完至少1回合(未拋例外)"
     # (行為已由 scratchpad/b32_verify_fsz.js 同款 node TRACE 對真實監統震軍資料驗證: 傷害穩定
     # 命中兵力最低的敵方單位, 而非普攻本身的隨機目標, 見批32報告)
+
+    # 89) 批33: 治療公式全局換裝 —— want = coef × HEAL_TROOP_C(0.06) × 施放者兵力(依型態擇一
+    # healBase快照/當下即時) × SCALE(scale屬性), 用 calibration_anchors.json
+    # heal_formula_resolved_20260704(後續更新)兩組錨點樣本直接assert:
+    #   陷陣營60%/智力379.02/準備兵力8439 → 546±1(反解值, 弱錨點)
+    #   青囊96%/智力228/準備兵力9600 → 755±1(強錨點, user補測樣本, 0.03%誤差)
+    # 兩樣本皆為「受傷反應式常駐急救型」heal(when.on:"damaged"), 用 heal_base(準備階段鎖定
+    # 兵力快照)而非 caster.troop(當下即時), 驗證治療量不受戰鬥中兵力變動影響。
+    h89_xzy = Unit(POOL["張飛"], "盾")           # 陷陣營樣本: 施放者(受術者亦為自己, self-heal急救)
+    h89_xzy.intel = 379.02
+    h89_xzy.troop = 8439                          # 建構後改兵力, 需重算 heal_base 快照(建構時已用預設10000算過)
+    h89_xzy.heal_base = h89_xzy.troop * HEAL_TROOP_C
+    h89_xzy.troop = 8439 - 2000                   # 模擬「受傷後當下兵力已下降」——heal_base應忽略此變動
+    h89_xzy.wounded = 3000                        # 傷兵池足夠大, 不觸頂
+    xzy_tac89 = {"nameZh": "測試陷陣營heal89", "type": "command", "kind": "phys", "coef": 0,
+                 "rate": 1.0, "n": 3, "prep": 0,
+                 "effects": [{"k": "heal", "who": "self", "coef": 0.6, "scale": "intel", "dur": 1}]}
+    before89 = h89_xzy.troop
+    apply_effects(h89_xzy, None, xzy_tac89, [h89_xzy], [], no_heal=False)
+    gained89 = h89_xzy.troop - before89
+    assert abs(gained89 - 546) <= 1, f"陷陣營樣本(智力379.02/準備兵力8439/治療率60%)應恢復546±1, 實得{gained89:.1f}"
+
+    h89_qn = Unit(POOL["諸葛亮"], "弓")           # 青囊樣本(user補測, 強錨點): 施放當下兵力已變動, heal_base仍應鎖定準備階段值
+    h89_qn.intel = 228
+    h89_qn.troop = 9600
+    h89_qn.heal_base = h89_qn.troop * HEAL_TROOP_C  # 準備階段快照(9600×0.06=576)
+    h89_qn.troop = 9600 - 969                      # 模擬「準備階段後兵力已因其他傷害下降」(對應user描述8611~8781浮動情境)
+    h89_qn_target = Unit(POOL["張飛"], "盾")
+    h89_qn_target.troop = 5000
+    h89_qn_target.wounded = 3000
+    qn_tac89 = {"nameZh": "測試青囊heal89", "type": "command", "kind": "phys", "coef": 0,
+                "rate": 1.0, "n": 2, "prep": 0,
+                "effects": [{"k": "heal", "who": "ally", "coef": 0.96, "scale": "intel", "dur": 1}]}
+    before89b = h89_qn_target.troop
+    apply_effects(h89_qn, None, qn_tac89, [h89_qn_target], [], no_heal=False)
+    gained89b = h89_qn_target.troop - before89b
+    assert abs(gained89b - 755) <= 1, f"青囊樣本(智力228/準備兵力9600/治療率96%)應恢復755±1, 實得{gained89b:.1f}"
+
+    # 89b) e["ofDamage"] —— 傷害比例治療(草船借箭類「回復傷害量X%」), 與屬性公式(scale/coef×
+    # heal_base)互斥擇一; 用合成單效果戰法直接呼叫 apply_effects 並手動傳入 dmg 驗證比例正確。
+    of_caster89 = Unit(POOL["張飛"], "盾")
+    of_target89 = Unit(POOL["張飛"], "盾")
+    of_target89.troop = 5000
+    of_target89.wounded = 3000
+    of_tac89 = {"nameZh": "測試ofDamage89", "kind": "phys",
+                "effects": [{"k": "heal", "who": "ally", "ofDamage": 0.2857, "dur": 1}]}
+    before89c = of_target89.troop
+    apply_effects(of_caster89, None, of_tac89, [of_target89], [], no_heal=False, dmg=329)
+    gained89c = of_target89.troop - before89c
+    assert abs(gained89c - 329 * 0.2857) < 0.5, \
+        f"e['ofDamage']=0.2857應恢復傷害量329的28.57%(=94), 實得{gained89c:.1f}"
+
+    # 89c) active(主動直療型)heal 用 caster.troop(當下即時兵力), 非 heal_base(準備階段快照)——
+    # 用不同的 troop/heal_base 值驗證兩者確實分流, 對稱驗證 88/89 已涵蓋的「常駐急救型用
+    # heal_base」不會被誤用在 active 型上。
+    ad_caster89 = Unit(POOL["華佗"] if "華佗" in POOL else POOL["張飛"], "弓" if "華佗" in POOL else "盾")
+    ad_caster89.intel = 284
+    ad_caster89.troop = 8000                       # 當下即時兵力(active型應採用此值, 非heal_base)
+    ad_caster89.heal_base = 999999 * HEAL_TROOP_C  # 刻意設一個遠不同的heal_base, 若active型誤用它, 治療量會離譜偏高, 藉此排除誤用
+    ad_target89 = Unit(POOL["張飛"], "盾")
+    ad_target89.troop = 3000
+    ad_target89.wounded = 8000
+    ad_tac89 = {"nameZh": "測試active直療89", "type": "active", "kind": "intel", "coef": 0,
+                "rate": 1.0, "n": 1, "prep": 0,
+                "effects": [{"k": "heal", "who": "ally", "coef": 2.56, "scale": "intel", "dur": 1}]}
+    before89d = ad_target89.troop
+    apply_effects(ad_caster89, None, ad_tac89, [ad_target89], [], no_heal=False)
+    gained89d = ad_target89.troop - before89d
+    expected89d = 2.56 * (8000 * HEAL_TROOP_C) * SCALE(284)
+    assert abs(gained89d - expected89d) < 1.0, \
+        f"active型heal應採用caster.troop(當下即時), 非heal_base, 預期{expected89d:.1f}實得{gained89d:.1f}"
+    assert gained89d < 50000, "active型heal若誤用刻意調大的heal_base會產生離譜高治療量, 此處應遠低於該值"
 
     print("self-check OK")
 

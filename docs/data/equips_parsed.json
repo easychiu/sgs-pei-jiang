@@ -689,10 +689,30 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 0.1,
+    "n": 2,
+    "coef": 0.96,
+    "scale": "intel",
     "dur": 1,
-    "when": {"on": "damaged", "until": 1},
-    "_note": "批22治療時序修正(coordinator供給的治療時序分類學, 急救類): 原文『戰鬥首回合，己方全體獲得急救效果（受傷時回復10%兵力）』是「受傷瞬間反應式回血」, 非「每回合持續治療」——前一輪版本用 heal coef:0.1 dur:1(無when, 走healOnly常駐通道)在首回合治療一次, 但healOnly是無條件常駐治療(每回合對「我方兵力最低一人」治療), 不是「這個特定單位受傷時才觸發」, 語意錯位(且只作用1回合就等同prep後首次healOnly掃描套用一次, 剛好巧合近似但方向仍是錯的)。改用批22新支援的裝備效果級e.when.on(受傷當下觸發)+until:1(限首回合); 原文無觸發機率字樣(不像陷陣營明確寫40%), 保守視為100%觸發(無rate欄位, 見apply_effects的ev_rate= e.get('rate', t.get('rate',1))預設1)。"
+    "rate": 0.5,
+    "when": {"on": "damaged", "until": 4},
+    "_note": "批33: 卡面同步 —— 官方卡最新文字(青囊裝備『2023→09→27更新(增強)』版, 見 data/tactics.json 原文『戰鬥前4回合，使我軍群體（2人）獲得20→40統率（受智力影響）及急救效果，每次受到傷害時有50%機率回復一定兵力（治療率48%→96%，受智力影響）』, 註: 急救治療率由88%提升至96%)與舊版equips_effects_source.json記載的『戰鬥首回合，己方全體獲得急救效果（受傷時回復10%兵力）』差異甚大(舊版無rate/無scale/只1回合/全體而非2人)——採用較新且較精確的calibration_anchors.json qingnang_card 錨點文字改寫: coef 0.1→0.96(滿級96%)+scale:intel(原缺, 治療率明確受智力影響)+rate:1→0.5(原缺, 50%觸發機率)+until:1→4(戰鬥前4回合, 非僅首回合)+who維持ally但補n:2(「我軍群體2人」, 原本無n視為全體, 高估)。統率+40(受智力影響)段為另一特技「回元」, 見同檔案「回元」entry, 二者合稱青囊書『雙特技』(長健=急救/回元=統率), 不合併進同一entry以維持1名稱1entry慣例(同本檔既有奸雄/無懼等單特技entry慣例)。"
+   }
+  ]
+ },
+ {
+  "name": "回元",
+  "type": "寶物",
+  "exclusive": null,
+  "effects": [
+   {
+    "k": "stat",
+    "who": "ally",
+    "n": 2,
+    "stat": "command",
+    "add": 40,
+    "scale": "intel",
+    "dur": 4,
+    "_note": "批33新增: 青囊書『雙特技(長健+回元)』的第二個特技, 過去只有「長健」有entry, 「回元」完全缺失(見calibration_anchors.json heal_firstaid_20260704.qingnang_card校準核對時發現)。原文(data/tactics.json 青囊)『戰鬥前4回合，使我軍群體（2人）獲得20→40統率（受智力影響）』——滿級40點統率平加, scale:intel(stat平加的scale縮放語意同陷陣營force/command平加慣例, 見e.scale用於svAdd), dur:4(戰鬥前4回合), who:ally+n:2(我軍群體2人, 與長健同組人選)。"
    }
   ]
  },

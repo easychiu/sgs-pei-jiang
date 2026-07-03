@@ -318,7 +318,7 @@
     "coef": 0.1,
     "dur": 99,
     "_est": true,
-    "_note": "原文為「自身為主將時,副將造成傷害會為主將恢復其傷害量10%兵力」(依附將傷害量的反應式回復),非固定治療率;engine heal為固定治療率×caster自身兵力公式,無法表達「依副將傷害量」的機制,以coef0.1近似placeholder(數值無實測依據)"
+    "_note": "原文為「自身為主將時,副將造成傷害會為主將恢復其傷害量10%兵力」(依附將傷害量的反應式回復),非固定治療率;engine heal為固定治療率×caster自身兵力公式,無法表達「依副將傷害量」的機制,以coef0.1近似placeholder(數值無實測依據) 批33補記: 本批新增e.ofDamage(heal效果傷害比例治療, 見草船借箭)無法套用於此戰法——ofDamage的dmg取值來自「觸發本次heal結算的那個反應式事件」(on:\"damaged\"=自己受傷/dealtDamage=自己造成傷害), 而本戰法是「副將(非施放者本人)造成傷害時, 治療施放者(主將)」的跨單位觸發(觸發者與受益者是不同人), 現有dealtDamage反應式掛在src(造成傷害的那個人)身上, 若副將掛此戰法會變成「副將造成傷害治療副將自己」而非「治療主將」, 語意方向不符, 需要「跨單位事件監聽」機制(同engine_limitations.md第15節「on_hit()只認受擊者自己」的同類缺口), 非本批範圍, 維持_est placeholder。"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -750,16 +750,17 @@
    {
     "k": "lifesteal",
     "who": "ally",
-    "val": 0.3,
+    "val": 0.2857,
     "dur": 2,
-    "_note": "自身及友軍單體(共2人)30%倒戈;who:ally=全軍3人略高估"
+    "_note": "自身及友軍單體(共2人)倒戈;who:ally=全軍3人略高估(既有已知近似, 本批未動選標範圍)。批33: user三樣本精確實測倒戈=造成傷害×28.57%(329→94/147→42/133→38, 三樣本一致到小數點), 原val=0.3(30%整數估計)修正為精確值0.2857(=2/7)。lifesteal機制本身(hit()內建按本次造成傷害量dmg比例回復, 非反應式when.on掛鉤)已是damage-proportional精確表達, 不需改用e.ofDamage(該欄位用於heal效果的傷害比例治療, 見草船借箭; lifesteal是獨立原語, 語意與觸發點皆與heal不同, 不宜混用)。"
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INNATE",
   "hitsRepeat": true,
-  "_note": "批27 D: 清除stale頂層_src/_real/_conf——這三個欄位是更早批次(rederive_b1之前)對「傷害率300%由敵軍全體平分」舊版官方文字的手工推導殘留(當時_real欄位描述的正是舊版平分機制與300%數值), 2025年7月官方已將此戰法改版為「180%×重複3次, 可集中打同一目標」(見docs/data/tactics_overrides.json的\"刀出如霆\"override, confidence:high, 2026-07-02 agy查證; 本批27 D用grok+agy雙來源交叉確認現行公告與此完全一致, 無進一步變動), rederive_b1早已依新版效果數值(coef1.8/hitsRepeat)修正了effects/set, 但舊_real文字(描述300%平分)從未同步更新, 形成「戰鬥數值已是新版, 揭露文字仍描述舊版邏輯」的stale局面——比engine_limitations.md維護規約既有描述的「_note聲稱數值不一致」更隱蔽, 因為_real本身描述的300%數字與新版coef(1.8=180%)恰好同量級(都是1.x~3.x範圍), 表面上看不出矛盾, 需要對照官方版本歷史才會發現推導邏輯已經過時。清除這三個欄位(set為null=移除), 避免維護者誤讀舊_real以為現行300%平分機制仍是設計依據。"
+  "_note": "批27 D: 清除stale頂層_src/_real/_conf——這三個欄位是更早批次(rederive_b1之前)對「傷害率300%由敵軍全體平分」舊版官方文字的手工推導殘留(當時_real欄位描述的正是舊版平分機制與300%數值), 2025年7月官方已將此戰法改版為「180%×重複3次, 可集中打同一目標」(見docs/data/tactics_overrides.json的\"刀出如霆\"override, confidence:high, 2026-07-02 agy查證; 本批27 D用grok+agy雙來源交叉確認現行公告與此完全一致, 無進一步變動), rederive_b1早已依新版效果數值(coef1.8/hitsRepeat)修正了effects/set, 但舊_real文字(描述300%平分)從未同步更新, 形成「戰鬥數值已是新版, 揭露文字仍描述舊版邏輯」的stale局面——比engine_limitations.md維護規約既有描述的「_note聲稱數值不一致」更隱蔽, 因為_real本身描述的300%數字與新版coef(1.8=180%)恰好同量級(都是1.x~3.x範圍), 表面上看不出矛盾, 需要對照官方版本歷史才會發現推導邏輯已經過時。清除這三個欄位(set為null=移除), 避免維護者誤讀舊_real以為現行300%平分機制仍是設計依據。",
+  "_note2": "批33倒戈精確化: 見上方lifesteal效果_note, val由0.3修正為0.2857(三樣本精確反解, 見calibration_anchors.json heal_formula_resolved_20260704.side_findings.daoge)。"
  },
  {
   "nameZh": "別具匠心",
@@ -801,7 +802,8 @@
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_note": "targetSel=mostDamaged 語意備註: 本戰法heal效果選「我方最殘一人」的邏輯(applyEffects中hurt=allies裡troop最低者)本來就等價於mostDamaged準則, 且heal的目標選擇不經過pickTarget/pickTargets的隨機路徑, 天生不受混亂(chaos)影響——故不需要額外加targetSel欄位改變行為, 此處僅作揭露性標註確認語意已合(批18 user targetSel需求核對: 刮骨療毒既有實作已符合「指定類戰法不受混亂影響」的要求, 無需改動)。"
+  "_note": "targetSel=mostDamaged 語意備註: 本戰法heal效果選「我方最殘一人」的邏輯(applyEffects中hurt=allies裡troop最低者)本來就等價於mostDamaged準則, 且heal的目標選擇不經過pickTarget/pickTargets的隨機路徑, 天生不受混亂(chaos)影響——故不需要額外加targetSel欄位改變行為, 此處僅作揭露性標註確認語意已合(批18 user targetSel需求核對: 刮骨療毒既有實作已符合「指定類戰法不受混亂影響」的要求, 無需改動)。",
+  "_note2": "批33: 治療公式全局換裝後核對——刮骨療毒(coef2.56/scale:intel)為active主動直療型heal(施放當下即時觸發, 非受傷反應式), 引擎採caster.troop(當下即時兵力)而非healBase(準備階段快照)。批33初次核對時user樣本(智力284→實測1758)反解K偏低約11%, 疑似主動直療型基底常數異於反應式急救型; 批33再補: user證實該次樣本傷兵池(wounded pool)當時已耗盡, 1758是傷兵池封頂後的殘值, 非公式未封頂前的真實want值, 該-11%偏差純屬封頂假象, 與公式本身無關——主動直療型與反應式急救型共用同一套公式(HEAL_TROOP_C=0.06, 不分型態另設基底常數), 僅「施放者兵力取值時點」不同(active用caster.troop當下即時 / 其餘用healBase準備階段快照, 見want計算式的t.type==\"active\"分支)。"
  },
  {
   "nameZh": "剛勇無前",
@@ -6253,14 +6255,13 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 0.28,
     "dur": 2,
-    "scale": "command",
     "when": {
      "on": "damaged"
     },
     "rate": 0.8,
-    "_note": "批23: 原文「每次受到傷害時有40%→80%機率回復傷害量14%→28%」是反應式急救狀態(受傷當下觸發), 非常駐每回合治療——過去(0分)完全誤建模成active主動戰法的常駐heal(無when.on, 每次發動100%治療且不折算80%觸發率, 與戰法頂層發動率(0.65)混為一談)。改用批22已支援的效果級e.when.on(damaged)+e.rate=0.8(取滿級80%觸發率, 受統率影響的scale已由scale:command表達)。引擎端需放寬onHitEffectTacs的型別篩選(過去只認passive/command)以涵蓋此type:active戰法, 見批23引擎修改。heal對象仍是engine既有『我方兵力最低者』近似(非嚴格'2人群體')。"
+    "_note": "批23: 原文「每次受到傷害時有40%→80%機率回復傷害量14%→28%」是反應式急救狀態(受傷當下觸發), 非常駐每回合治療——過去(0分)完全誤建模成active主動戰法的常駐heal(無when.on, 每次發動100%治療且不折算80%觸發率, 與戰法頂層發動率(0.65)混為一談)。改用批22已支援的效果級e.when.on(damaged)+e.rate=0.8(取滿級80%觸發率)。引擎端需放寬onHitEffectTacs的型別篩選(過去只認passive/command)以涵蓋此type:active戰法, 見批23引擎修改。heal對象仍是engine既有『我方兵力最低者』近似(非嚴格'2人群體')。批33: 原文『回復傷害量14%→28%』字面即為「受到的那次傷害金額的28%」, 屬傷害比例治療(非屬性公式)——先前誤用coef:0.28+scale:\"command\"(戰報只提『受統率影響』但user校準10張戰報後裁決此類措辭實為ofDamage語意, 見calibration_anchors.json heal_formula_resolved_20260704.side_findings.daoge『屬dealtDamage比例治療, 非屬性公式』的同族歸納), 改用e.ofDamage=0.28(=本次受到的傷害金額×28%, 與lifesteal「造成傷害」方向相反, 這裡是「受到傷害」方向, 透過on:\"damaged\"事件的dmg參數取值)。移除scale:\"command\"(ofDamage語意下不再有「受X影響」縮放, 傷害金額本身已隱含施加者的攻擊強度)。 批33再補: user第三批戰報(7樣本統率280下比例全等: 813→289/515→183/380→135等, 一致到0.1%)推翻先前ofDamage=0.28的假設——0.28是戰法本身「14%→28%」的滿級數值(戰法升級進度, 非統率縮放後的終值), 而『受統率影響』是在28%基礎上再縮放, 統率280時實測=35.5%, 與現行SCALE(v)=1+(v-100)/350(SCALE(280)=1.51, 0.28*1.51=42.4%)和RATE_SCALE_C(0.0026)兩條既有縮放曲線都對不上(單一樣本反推出的f(280)=1.268, 與兩者皆不一致)。因僅有單一統率取值(280)的樣本, 縮放曲線形狀待未來更多不同統率值樣本才能精確反解, 本批直接採用該統率值下的實測終值0.355作為ofDamage常數(而非嘗試套用現有兩條scale曲線硬湊), 誠實記錄「本值僅在統率≈280時驗證, 非通用曲線, 待更多樣本校準scale」。",
+    "ofDamage": 0.355
    }
   ],
   "quality": "S",
@@ -7315,7 +7316,7 @@
     "who": "sameTarget",
     "rate": 0.6,
     "_approx": "prob-ev",
-    "_note": "「若目標已潰逃則造成兵刃攻擊110%並恢復30%傷害量」分支; 穩態已潰逃機率≈1-(0.55)²≈0.6折算; 30%傷害量回血未建模(保守); who改為sameTarget(沿用主段已選定的同一目標, 原文明確是'目標已潰逃'的同一人, 非重新隨機挑選); n欄已移除(sameTarget分支不讀n/nMax)"
+    "_note": "「若目標已潰逃則造成兵刃攻擊110%並恢復30%傷害量」分支; 穩態已潰逃機率≈1-(0.55)²≈0.6折算; 30%傷害量回血未建模(保守); who改為sameTarget(沿用主段已選定的同一目標, 原文明確是'目標已潰逃'的同一人, 非重新隨機挑選); n欄已移除(sameTarget分支不讀n/nMax) 批33補記: 本批新增e.ofDamage(heal效果傷害比例治療)無法直接套用於此extraHits段——ofDamage是heal效果專屬欄位, 掛在on:\"damaged\"/dealtDamage反應式heal上, 而本段「恢復傷害量30%兵力」是extraHits(直接hit()呼叫)造成傷害的同一時刻自我回血, 語意上更接近lifesteal(倒戈, hit()內建按傷害量比例回復), 但lifesteal是「持有者身上的standing addbonus, 對該單位往後所有傷害都生效」, 若無條件掛lifesteal會誤及本戰法主coef段(灼燒DoT)等其他傷害來源, 需要「僅限本extraHits段自身傷害的回復欄位」(如e.lifesteal掛在extraHits條目本身, 只對該段結算的dmg生效), 現有lifesteal/ofDamage皆不支援此顆粒度, 非本批範圍, 維持prob-ev近似placeholder。"
    }
   ],
   "_note": "批23 stale同步修正: coef從未真正set成1.28(過去_note聲稱1.28但parsed.coef仍是0.64, 主段傷害被腰斬近半, 為0分主因之一)。同時n(目標數)從3改為1(對齊t.nMax=0)——原文「部隊普通攻擊時,使目標進入潰逃」是普攻觸發的單體DoT, 過去t.n=3把主coef段(灼燒DoT)與extraHits(潰逃後追打)都誤放大成打全體3名敵軍, 現改為只打1人(普攻命中的同一目標), extraHits改用who:sameTarget精確沿用同一目標(非重新隨機挑3人)。amp(0.06)的「甘寧統領」條件遺漏與「會心→常駐增傷」轉換方式維持既有揭露不變。",
@@ -7483,7 +7484,7 @@
   "cat": "TROOP",
   "src": "INHERITANCE",
   "_note": "批22: 治療時序分類學修正(coordinator供給) —— 急救類(受傷瞬間立即回血)不同於休整/持續恢復類(每回合開始穩定小額), 前一輪版本混用了後者的實作方式(healOnly常駐通道)去表達前者的語意。改用效果級e.when.on(受傷觸發)+rate(觸發機率), 需要引擎最小擴充(onHitEffectTacs, 見engine.js/sgz.py註解)才能讓「戰法本身有其他常駐效果(武力/統率平加)+其中一段是反應式治療」的混合語意共存(不能把整個戰法標成when.on, 那樣會連帶讓平加也不在prep套用)。",
-  "_todo": "「若高順統領，則觸發率和治療率將額外受統率影響」的施放者身份條件(特定武將在場時數值再提升)未建模, 同全庫「受X或Y最高一項影響/受自身最高屬性影響」的既有限制(engine_limitations.md #6.6), 保守取滿級值(40%觸發率/60%治療率)不做高順條件加成。"
+  "_todo": "「若高順統領，則觸發率和治療率將額外受統率影響」的施放者身份條件(特定武將在場時數值再提升)未建模, 同全庫「受X或Y最高一項影響/受自身最高屬性影響」的既有限制(engine_limitations.md #6.6), 保守取滿級值(40%觸發率/60%治療率)不做高順條件加成。批33: user口述錨點已補記(見docs/data/calibration_anchors.json → heal_formula_resolved_20260704.side_findings.xianzhen_gaoshun: 「陷陣營高順統領時=60%+智力+統率雙scale」), 但僅記錄口述、非可覆核的精確數值(無具體加成量/加成公式形狀樣本), 暫不足以反解出高順條件的精確加成係數, 故本批仍不建模高順條件加成, 待更多實測樣本(如高順在場vs不在場的治療量對照)才能精確化。"
  },
  {
   "nameZh": "陷陣突襲",
