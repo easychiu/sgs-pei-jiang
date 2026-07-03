@@ -107,15 +107,18 @@
   "effects": [
    {
     "k": "mitig",
-    "who": "ally",
-    "val": 0.3,
-    "dur": 1
+    "who": "subs",
+    "val": 0.15,
+    "dur": 5,
+    "_approx": "split-ev",
+    "_note": "每回合僅『損失兵力較多的一名副將』受傷-30%,『另一名副將』增傷+25%,兩效果各折半攤到兩副將; 前5回合每回合刷新→dur5(原who:ally套到全軍3人且dur1只蓋首回合)"
    },
    {
     "k": "amp",
-    "who": "ally",
-    "val": 0.25,
-    "dur": 1
+    "who": "subs",
+    "val": 0.125,
+    "dur": 5,
+    "_approx": "split-ev"
    },
    {
     "k": "rateup",
@@ -123,7 +126,7 @@
     "val": 0.16,
     "dur": 5,
     "nativeOnly": true,
-    "_note": "主將自帶主動+16% 前5回合; 陣營各異/主將自帶條件無法表達, 近似恆真"
+    "_note": "主將自帶主動+16% 前5回合; 三陣營各異/主將自帶條件無法表達, 近似恆真"
    },
    {
     "k": "chargeup",
@@ -150,14 +153,15 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 1,
-    "dur": 4
+    "coef": 4.0,
+    "dur": 1,
+    "_approx": "multi-heal-fold",
+    "_note": "『4次治療』×每次est治療率100%折算單次總量; 引擎active heal不讀dur,原coef1/dur4實際只治1次(4倍低估); 原文無治療率,維持_est"
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "EVENT",
-  "_est": true
+  "src": "EVENT"
  },
  {
   "nameZh": "上兵伐謀",
@@ -221,8 +225,7 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "乘敵不虞",
@@ -236,14 +239,17 @@
    {
     "k": "stun",
     "who": "enemy",
-    "dur": 2
+    "dur": 2,
+    "_note": "虛弱(無法造成傷害)以震懾近似(引擎中兩者行為幾乎等價);對象原文為敵軍主將,效果欄無enemyLeader只能隨機單體"
    },
    {
     "k": "heal",
-    "who": "ally",
-    "coef": 1.08,
-    "dur": 2,
-    "scale": "intel"
+    "who": "leader",
+    "coef": 2.16,
+    "dur": 1,
+    "scale": "intel",
+    "_approx": "multi-heal-fold",
+    "_note": "休整2回合×每回合108%折算單次216%(引擎active heal不讀dur,原1.08/dur2實際只治1次=2倍低估);受治對象引擎固定選最殘友軍"
    }
   ],
   "quality": "S",
@@ -256,7 +262,7 @@
   "kind": "intel",
   "coef": 0,
   "rate": 1,
-  "n": 2,
+  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -277,7 +283,9 @@
     "k": "heal",
     "who": "self",
     "coef": 0.1,
-    "dur": 99
+    "dur": 99,
+    "_est": true,
+    "_note": "原文為「自身為主將時,副將造成傷害會為主將恢復其傷害量10%兵力」(依附將傷害量的反應式回復),非固定治療率;engine heal為固定治療率×caster自身兵力公式,無法表達「依副將傷害量」的機制,以coef0.1近似placeholder(數值無實測依據)"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -327,13 +335,15 @@
     "k": "mitig",
     "who": "ally",
     "val": 0.04,
-    "dur": 1,
-    "scale": "intel"
+    "dur": 99,
+    "scale": "intel",
+    "_note": "每回合刷新持續1回合=實質常駐;指揮戰法效果只在準備階段套用一次,dur1只蓋首回合→改99"
    },
    {
     "k": "stun",
     "who": "enemy",
-    "dur": 1
+    "dur": 1,
+    "_note": "虛弱5-10%(主將25%)機率/回合;控制無法折值,保守單建(首回合一次),與慣例同"
    }
   ],
   "_src": " +他AI補全effectText/重解",
@@ -353,21 +363,30 @@
    {
     "k": "heal",
     "who": "self",
-    "coef": 2.88,
+    "coef": 1.08,
     "dur": 1,
-    "scale": "force"
+    "scale": "force",
+    "_approx": "round-fold",
+    "_note": "第2/4/6回合各治288%共3次;引擎被動heal每回合必結算→2.88×3/8=1.08每回合期望"
    },
    {
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "mult": 1.1,
-    "dur": 99
+    "mult": 1.2,
+    "dur": 99,
+    "_approx": "stack-avg",
+    "_note": "第2/4/6回合各+10%武力可疊(終值+30%),取全程均值+20%;when窗口開啟(第5回合)時一次性套用"
    }
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "when": {
+   "rounds": [
+    5
+   ]
+  }
  },
  {
   "nameZh": "以逸待勞",
@@ -431,22 +450,19 @@
     "k": "stat",
     "who": "enemy",
     "stat": "all",
-    "mult": 0.97,
-    "dur": 99
+    "mult": 0.85,
+    "dur": 99,
+    "scale": "intel",
+    "_approx": "ramp-avg",
+    "_note": "破綻逐次-3%可疊(每敵約5層=-15%)+全場全觸發後全體再-20%,取全程漸進均值-15%;原兩條stat同src經pushMod去重互相覆蓋(×0.97被×0.8洗掉),且開場即全額-20%高估前期"
    },
    {
     "k": "amp",
     "who": "enemy",
     "val": 0.15,
     "dur": 2,
-    "scale": "intel"
-   },
-   {
-    "k": "stat",
-    "who": "enemy",
-    "stat": "all",
-    "mult": 0.8,
-    "dur": 99
+    "scale": "intel",
+    "_note": "單體破綻全觸發時受傷+15%持續2回合;觸發時點近似開場"
    }
   ],
   "_src": " +他AI補全effectText/重解",
@@ -584,18 +600,15 @@
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": [
-   {
-    "k": "heal",
-    "who": "self",
-    "coef": 1.8,
-    "dur": 1,
-    "scale": "intel"
-   }
-  ],
+  "effects": [],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "when": {
+   "rounds": [
+    3
+   ]
+  }
  },
  {
   "nameZh": "兵鋒",
@@ -616,7 +629,8 @@
     "k": "extra",
     "who": "ally",
     "val": 1,
-    "dur": 1
+    "dur": 1,
+    "_note": "原文'自己及友軍單體'僅1名隨機友軍, 但non-CTRL的who:ally套用到全體友軍(最多3人含自己), 略高估覆蓋範圍(已知engine限制: 無'隨機挑1名友軍'原語)"
    }
   ],
   "quality": "S",
@@ -634,35 +648,17 @@
   "effects": [
    {
     "k": "amp",
-    "who": "self",
-    "val": 0.3,
-    "dur": 2
-   },
-   {
-    "k": "amp",
-    "who": "ally",
-    "val": 0.3,
-    "dur": 2
-   },
-   {
-    "k": "amp",
     "who": "enemy",
     "val": 0.3,
-    "dur": 99
-   },
-   {
-    "k": "lifesteal",
-    "who": "self",
-    "val": 0.3,
-    "dur": 2,
-    "_note": "30%倒戈(自身)"
+    "dur": 99,
+    "_note": "掠陣疊2層後移除並使目標受兵刃傷害+30%(可疊加),以敵全體易傷+30%常駐近似"
    },
    {
     "k": "lifesteal",
     "who": "ally",
     "val": 0.3,
     "dur": 2,
-    "_note": "30%倒戈(友軍單體)"
+    "_note": "自身及友軍單體(共2人)30%倒戈;who:ally=全軍3人略高估"
    }
   ],
   "_src": "https://m.ali213.net/news/gl2111/721681.html",
@@ -670,7 +666,8 @@
   "_conf": "med",
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "hitsRepeat": true
  },
  {
   "nameZh": "別具匠心",
@@ -743,14 +740,18 @@
    {
     "k": "mitig",
     "who": "ally",
-    "val": 0.06,
-    "dur": 2
+    "val": 0.025,
+    "dur": 99,
+    "_approx": "prob-ev",
+    "_note": "60%機率/回合×6%可疊持續2回合→穩態約7.2%但僅我軍兵力最低單體,攤到全軍3人≈2.5%常駐;『受最高屬性影響』無對應scale,保守不縮放"
    },
    {
     "k": "amp",
     "who": "enemy",
-    "val": -0.06,
-    "dur": 2
+    "val": -0.025,
+    "dur": 99,
+    "_approx": "prob-ev",
+    "_note": "同左:敵軍兵力最高單體造成傷害-6%穩態攤薄"
    }
   ],
   "quality": "S",
@@ -816,8 +817,7 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "功勳克舉",
@@ -857,7 +857,7 @@
   "type": "passive",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.35,
+  "rate": 1,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -870,7 +870,10 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "when": {
+   "on": "damaged"
+  }
  },
  {
   "nameZh": "勇者得前",
@@ -885,21 +888,21 @@
     "k": "amp",
     "who": "self",
     "val": 0.8,
-    "dur": 1
+    "dur": 2,
+    "_note": "『下一個主動戰法』傷害+80%:突擊/普攻後結算,dur1回合末即到期(tick()先於下回合active結算, 導致buff必過期),永遠趕不上下回合才發動的主動戰法→dur2;會連帶增幅次回合普攻,略高估"
    },
    {
-    "k": "mitig",
+    "k": "shield",
     "who": "self",
-    "val": 1.0,
-    "dur": 1,
-    "_approx": "shield-as-mitig",
-    "_note": "'1次抵禦(可免疫傷害)'以單回合100%減傷近似單次全免傷"
+    "pct": 0.12,
+    "dur": 99,
+    "_est": true,
+    "_approx": "1次抵禦(免疫1次傷害)≈一次普攻量級的護盾(自身兵力12%), 改用engine既有shield原語(amt/pct吸收池)取代mitig-as-shield整回合全免傷近似(過度高估); 護盾量級為_est(未有單次普攻均傷校準錨點)"
    }
   ],
   "quality": "S",
   "cat": "BURST",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "勠力同心",
@@ -1050,8 +1053,8 @@
     "k": "amp",
     "who": "ally",
     "val": 0.0225,
-    "dur": 1,
-    "_approx": "prob-ev: 「自身為主將時」條件+基礎15%機率(每多1名蠻族武將+15%)×15%易傷, 取基礎分支15%×15%=2.25%折算(未含隊伍蠻族數疊加, 保守; 且「自身為主將」條件無法建模, 常態近似)"
+    "dur": 99,
+    "_approx": "prob-ev: 主將時15%機率×15%增傷=2.25%/回合期望(未含隊伍蠻族數疊加與受損兵上限80%, 保守)"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -1072,7 +1075,8 @@
     "k": "redirect",
     "who": "ally",
     "guard": "self",
-    "share": 1
+    "share": 1,
+    "_note": "「為我軍主將承擔此次普攻」原文限主將, redirect無法只保護leader, 沿用guard:self近似保護全體(既有慣例, 如千里馳援)"
    },
    {
     "k": "amp",
@@ -1121,6 +1125,14 @@
     "who": "ally",
     "amt": 1,
     "dur": 1
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "speed",
+    "mult": 1.2,
+    "dur": 99,
+    "_note": "「每次發動+10→20%速度可疊」簡化為單次滿級20%常駐(pushAdd同源刷新不疊, 每次發動率-10%遞減無原語, 均未表達)"
    }
   ],
   "quality": "S",
@@ -1152,7 +1164,7 @@
   "type": "active",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.55,
+  "rate": 0.35,
   "n": 2,
   "prep": 0,
   "effects": [
@@ -1211,7 +1223,7 @@
   "effects": [
    {
     "k": "stat",
-    "who": "self",
+    "who": "ally",
     "stat": "command",
     "mult": 1.2,
     "dur": 99
@@ -1316,13 +1328,6 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stat",
-    "who": "self",
-    "stat": "speed",
-    "mult": 1,
-    "dur": 2
-   },
-   {
     "k": "insight",
     "who": "self",
     "dur": 2
@@ -1340,28 +1345,32 @@
   "type": "command",
   "kind": "phys",
   "coef": 1.0,
-  "rate": 0.7,
+  "rate": 0.35,
   "n": 1,
   "prep": 0,
   "effects": [
    {
-    "k": "extra",
-    "who": "ally",
-    "val": 0.35,
-    "dur": 99
-   },
-   {
     "k": "heal",
     "who": "ally",
-    "coef": 2.56,
+    "coef": 0.384,
     "dur": 1,
-    "scale": "intel"
+    "scale": "intel",
+    "_approx": "prob-ev: 未發動分支30%×奇數回合1/2×治療率256%≈38.4%/回合(引擎指揮heal每回合結算)"
    }
   ],
   "_src": " +他AI補全effectText/重解",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "extraHits": [
+   {
+    "coef": 1,
+    "kind": "phys",
+    "who": "enemyLeader",
+    "rate": 0.33,
+    "_note": "目標為敵軍主將時額外一次兵刃傷害(傷害率100%); rate=隨機單體命中主將機率≈1/3"
+   }
+  ]
  },
  {
   "nameZh": "士別三日",
@@ -1419,17 +1428,26 @@
   "nameZh": "夢中弒臣",
   "type": "command",
   "kind": "phys",
-  "coef": 1.5,
-  "rate": 0.5,
+  "coef": 0,
+  "rate": 1,
   "n": 1,
   "prep": 0,
   "effects": [
    {
     "k": "mitig",
-    "who": "ally",
+    "who": "subs",
     "val": 0.1,
     "dur": 2,
-    "_note": "2024-12-11更新版: 戰鬥前2回合我軍副將受到的傷害降低5%→10%"
+    "_note": "2024-12-11更新版:戰鬥前2回合我軍副將受到的傷害降低5%->10%;who由ally修正為subs(僅限副將,非全體我軍)"
+   },
+   {
+    "k": "counter",
+    "who": "self",
+    "coef": 1.5,
+    "kind": "phys",
+    "prob": 0.5,
+    "dur": 99,
+    "_note": "原文為「戰鬥第3回合起,25%->50%機率獲得反擊狀態,傷害率150%,直到戰鬥結束」;engine counter無回合窗(無dur到期機制)且無法與上條mitig(僅前2回合)共用同一when,以「全程生效」近似(較原文提早2回合生效,可能高估)"
    }
   ],
   "quality": "S",
@@ -1566,15 +1584,22 @@
    {
     "k": "lifesteal",
     "who": "self",
-    "val": 0.45,
-    "dur": 99
+    "val": 0.225,
+    "dur": 99,
+    "_approx": "prob-ev: 第5回合起且兵力<50%的條件分支取0.5權重(45%×0.5); 效果級起始回合無法單獨表達(戰法級when會連帶鎖住前4回合的amp)"
+   },
+   {
+    "k": "rateup",
+    "who": "self",
+    "val": 0.03,
+    "dur": 99,
+    "_approx": "prob-ev: else分支(第5回合兵力≥50%)主動戰法發動率+6%×0.5權重"
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE",
-  "_est": true
+  "src": "INNATE"
  },
  {
   "nameZh": "奇施經略",
@@ -1623,8 +1648,9 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 0.4,
-    "dur": 1
+    "coef": 0.07,
+    "dur": 1,
+    "_approx": "prob-ev: 增益延長效果每觸發3次才治療40%; 觸發≈友軍增益獲得~0.5次/回合×35%→約每6回合達成3次→引擎逐回合heal攤平7%/回合"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -1744,8 +1770,7 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE",
-  "_est": true
+  "src": "INNATE"
  },
  {
   "nameZh": "威武並昭",
@@ -1782,17 +1807,24 @@
   "nameZh": "威謀靡亢",
   "type": "active",
   "kind": "phys",
-  "coef": 0,
+  "coef": 1.58,
   "rate": 0.4,
   "n": 2,
   "prep": 1,
   "effects": [
    {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.67,
+    "dur": 2,
+    "_approx": "虛弱(無法造成傷害)=目標傷害-100%, ×2/3目標數折算(引擎amp(enemy)套全體, 原文僅2人)"
+   },
+   {
     "k": "dot",
     "who": "enemy",
     "coef": 0.632,
     "dur": 2,
-    "_approx": "prob-ev: 條件'目標已虛弱'簡化為必定滿足(本戰法自身先致虛弱)，疊加40%觸發機率折算158%×0.4=63.2%"
+    "_approx": "prob-ev: 條件『目標已虛弱』×前次發動40%機率折算158%×0.4=63.2%(沿用原折算)"
    }
   ],
   "quality": "S",
@@ -1889,16 +1921,11 @@
   "prep": 0,
   "effects": [
    {
-    "k": "taunt",
-    "who": "self",
-    "dur": 2,
-    "_note": "敵軍兵力最高者被迫攻擊我方全體，簡化以taunt(反向)近似"
-   },
-   {
     "k": "amp",
     "who": "enemy",
     "val": 0.2,
-    "dur": 2
+    "dur": 2,
+    "_approx": "受到傷害+20%(可疊加)實際僅施於敵兵力最高單體; 引擎amp(enemy,val>0)轉全體易傷, 以此近似『敵單體嘲諷我軍全體=我軍集火該目標』的聚焦價值; 疊加不建模"
    }
   ],
   "quality": "S",
@@ -2009,7 +2036,8 @@
    {
     "k": "stun",
     "who": "enemy",
-    "dur": 1
+    "dur": 1,
+    "_note": "stun原文為條件觸發(目標於虎嗔期間受3次傷害才結算震懾),現引擎版本無條件套用,顯著高估"
    },
    {
     "k": "amp",
@@ -2068,7 +2096,16 @@
   "rate": 0.7,
   "n": 3,
   "prep": 0,
-  "effects": [],
+  "effects": [
+   {
+    "k": "lifesteal",
+    "who": "self",
+    "val": 0.1,
+    "dur": 99,
+    "_est": true,
+    "_note": "攻心狀態近似為倒戈, 原文無明確%數, _est"
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INNATE"
@@ -2192,43 +2229,48 @@
   "type": "passive",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.6,
+  "rate": 1,
   "n": 1,
   "prep": 0,
   "effects": [
    {
     "k": "rateup",
     "who": "self",
-    "val": 0.06,
-    "dur": 1,
-    "scale": "force"
+    "val": 0.036,
+    "dur": 99,
+    "scale": "force",
+    "_approx": "prob-ev: 每回合60%×主動戰法發動率+6%(受武力)"
    },
    {
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "add": 45,
-    "dur": 1
+    "add": 27,
+    "dur": 99,
+    "_approx": "prob-ev: 60%×45點"
    },
    {
     "k": "stat",
     "who": "self",
     "stat": "command",
-    "add": 45,
-    "dur": 1
+    "add": 27,
+    "dur": 99,
+    "_approx": "prob-ev: 60%×45點"
    },
    {
     "k": "stat",
     "who": "self",
     "stat": "intel",
-    "add": 45,
-    "dur": 1
+    "add": 27,
+    "dur": 99,
+    "_approx": "prob-ev: 60%×45點"
    },
    {
     "k": "lifesteal",
     "who": "self",
-    "val": 0.28,
-    "dur": 1
+    "val": 0.168,
+    "dur": 99,
+    "_approx": "prob-ev: 60%×28%倒戈"
    }
   ],
   "quality": "S",
@@ -2295,8 +2337,7 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE",
-  "_est": true
+  "src": "INNATE"
  },
  {
   "nameZh": "扶危定傾",
@@ -2315,8 +2356,22 @@
    },
    {
     "k": "stat",
-    "who": "ally",
-    "stat": "all",
+    "who": "leader",
+    "stat": "force",
+    "mult": 1.03,
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "leader",
+    "stat": "intel",
+    "mult": 1.03,
+    "dur": 2
+   },
+   {
+    "k": "stat",
+    "who": "leader",
+    "stat": "command",
     "mult": 1.03,
     "dur": 2
    }
@@ -2330,23 +2385,16 @@
   "nameZh": "承天靖世",
   "type": "command",
   "kind": "intel",
-  "coef": 0.1,
-  "rate": 0.12,
-  "n": 3,
+  "coef": 0.15,
+  "rate": 1,
+  "n": 2,
   "prep": 0,
   "effects": [
    {
     "k": "silence",
     "who": "enemy",
     "dur": 1,
-    "_approx": "威懾(使目標一個戰法失效,除陣法外)無精確對應原語,以silence(禁主動戰法)近似;原文機率6%→12%受統帥影響,此處取滿級值且未做scale縮放(coef/rate段已用資料層rate表達機率)"
-   },
-   {
-    "k": "dot",
-    "who": "enemy",
-    "coef": 0.1,
-    "dur": 1,
-    "_approx": "每回合結束對敵2-3人造成謀略傷害,基礎5%→10%+5%→10%*威懾次數(無視防禦);疊加項(威懾次數)無法追蹤,僅取基礎值近似,實際傷害會隨戰鬥推進被低估"
+    "_approx": "prob-ev: 威懾12%/回合(受統帥)無per-effect機率欄; 指揮效果於準備階段套用=開場全體1回合計窮, 全場期望~1次與真實EV相近(控制類慣例, 首回合略高估)"
    }
   ],
   "quality": "S",
@@ -2359,7 +2407,7 @@
   "type": "charge",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.25,
+  "rate": 0.45,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -2376,6 +2424,13 @@
     "stat": "intel",
     "dur": 2,
     "add": -100
+   },
+   {
+    "k": "shield",
+    "who": "leader",
+    "amt": 2,
+    "dur": 2,
+    "_note": "「若自己不是主將,則額外使主將獲得2次抵禦」, 引擎無法判斷施放者是否為主將, 簡化為恆定授予(略高估)"
    }
   ],
   "quality": "S",
@@ -2438,8 +2493,7 @@
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "振軍擊營",
@@ -2490,8 +2544,7 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE",
-  "_est": true
+  "src": "INNATE"
  },
  {
   "nameZh": "掣刀斫敵",
@@ -2602,7 +2655,6 @@
   "quality": "S",
   "cat": "BURST",
   "src": "EVENT",
-  "_est": true,
   "hitsRepeat": true
  },
  {
@@ -2716,27 +2768,28 @@
     "k": "mitig",
     "who": "self",
     "val": 0.25,
-    "dur": 1
+    "dur": 99,
+    "_approx": "奇數回合觸發，與偶數回合統智增益互斥，引擎無法建條件分支，近似為常駐(高估)，比照聚石成金/箕形陣既有慣例"
    },
    {
     "k": "stat",
     "who": "self",
     "stat": "command",
     "add": 30,
-    "dur": 1
+    "dur": 99,
+    "_approx": "偶數回合觸發，與奇數回合減傷互斥"
    },
    {
     "k": "stat",
     "who": "self",
     "stat": "intel",
     "add": 30,
-    "dur": 1
+    "dur": 99
    }
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "文武雙全",
@@ -2766,8 +2819,7 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "智計",
@@ -2792,12 +2844,8 @@
     "stat": "intel",
     "dur": 2,
     "scale": "intel",
-    "add": -38
-   },
-   {
-    "k": "stack",
-    "per": 1,
-    "max": 2
+    "add": -38,
+    "_approx": "原文可疊加2次(-19→-38, 累積可達-76); pushStatAdd同src刷新不疊加, 引擎無法表達重複施放疊層, 保守取單次滿值-38, 未建模疊加"
    }
   ],
   "quality": "S",
@@ -2968,7 +3016,7 @@
   "nameZh": "桃園結義",
   "type": "command",
   "kind": "phys",
-  "coef": 0.46,
+  "coef": 0,
   "rate": 0.4,
   "n": 1,
   "prep": 0,
@@ -2978,13 +3026,13 @@
     "who": "ally",
     "coef": 0.36,
     "dur": 1,
-    "scale": "intel"
+    "scale": "intel",
+    "_note": "三選一分支之一(治療我軍單體); 另兩分支(對智力最低敵單體謀略傷害約46%受統率影響 / 對統率最低敵單體兵刃傷害約46%受武力影響)因與本分支互斥, 引擎無法表達三選一, 予以省略"
    }
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "EVENT",
-  "_est": true
+  "src": "EVENT"
  },
  {
   "nameZh": "梳妝擲戟",
@@ -3017,11 +3065,11 @@
  },
  {
   "nameZh": "槊血縱橫",
-  "type": "passive",
+  "type": "charge",
   "kind": "phys",
-  "coef": 0,
+  "coef": 0.6,
   "rate": 1,
-  "n": 2,
+  "n": 1,
   "prep": 0,
   "effects": [
    {
@@ -3029,12 +3077,6 @@
     "who": "self",
     "stat": "force",
     "add": 34,
-    "dur": 99
-   },
-   {
-    "k": "extra",
-    "who": "self",
-    "val": 0.54,
     "dur": 99
    }
   ],
@@ -3053,17 +3095,18 @@
   "prep": 0,
   "effects": [
    {
-    "k": "shield",
+    "k": "dodge",
     "who": "self",
-    "amt": 2,
-    "dur": 1
+    "prob": 1,
+    "dur": 1,
+    "_note": "原文「2次抵禦」為格擋接下來2次攻擊的次數限定,非機率性;engine dodge是機率規避(以回合為單位非次數)。原DSL誤用shield(amt:2)(絕對數值吸收,對應千級傷害幾乎等於0,「抵禦次數」誤當「固定吸收量2點」帶入,shield基本不生效);已修正為dodge(prob:1,dur:1)近似1回合內完全規避(仍非精確次數限定,可能規避多於或少於2次攻擊)"
    },
    {
-    "k": "shield",
+    "k": "dodge",
     "who": "ally",
-    "amt": 2,
+    "prob": 1,
     "dur": 1,
-    "_note": "賦予自身及友軍單體各2次抵禦,持續1回合(若與關興同出必定選關興作為受益友軍,引擎無法表達特定隊友綁定,近似為隨機/固定友軍)"
+    "_note": "同上;原文「若與關興同時出戰,友軍必定選擇關興」為特定隊友綁定,engine無法指定特定武將名稱作為目標,以全體友軍近似(較原文寬鬆)"
    }
   ],
   "_src": "https://m.ali213.net/news/gl2111/721697.html",
@@ -3123,13 +3166,13 @@
     "k": "amp",
     "who": "ally",
     "val": 0.2,
-    "dur": 99
+    "dur": 99,
+    "scale": "speed"
    }
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INHERITANCE",
-  "_est": false
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "橫掃千軍",
@@ -3189,8 +3232,7 @@
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE",
-  "_est": false
+  "src": "INNATE"
  },
  {
   "nameZh": "止戈為武",
@@ -3222,24 +3264,25 @@
   "effects": [
    {
     "k": "mitig",
-    "who": "self",
+    "who": "leader",
     "val": 0.3,
     "dur": 5,
-    "_approx": "「主將80%機率優先成為戰法目標且該戰法傷害降低15%→30%」簡化為主將常駐30%減傷(缺80%機率判定與taunt式目標優先語意, 且mitig對象應限self=主將而非全體)"
+    "scale": "command",
+    "_approx": "80%機率優先成為敵戰法目標的吸怪語意不建模, 僅保留主將受戰法傷害-30%(受統率), 前5回合"
    },
    {
     "k": "heal",
     "who": "ally",
-    "coef": 1.84,
+    "coef": 0.92,
     "dur": 1,
-    "_approx": "原文「奇數回合」限定(治療率92%→184%)簡化為常駐每回合觸發, 且未區分「兵種適性較低的副將」執行者(固定用caster觸發, 非依適性動態指定副將)"
+    "_approx": "奇數回合治療184%→引擎每回合heal結算, 折半為每回合EV 92%"
    },
    {
     "k": "amp",
-    "who": "ally",
+    "who": "subs",
     "val": 0.15,
     "dur": 99,
-    "_approx": "原文「偶數回合」限定(7.5%→15%可疊加)簡化為常駐15%增傷且未疊加,同樣未區分「兵種適性較高的副將」執行者"
+    "_approx": "偶數回合+15%可疊(較高適性副將執行)→單將穩態~2層30%攤平為雙副將常駐15%"
    }
   ],
   "quality": "S",
@@ -3251,25 +3294,10 @@
   "type": "passive",
   "kind": "phys",
   "coef": 1.3,
-  "rate": 0.5,
+  "rate": 0.8033,
   "n": 1,
   "prep": 0,
-  "effects": [
-   {
-    "k": "stack",
-    "who": "self",
-    "per": 1.3,
-    "max": 20
-   },
-   {
-    "k": "extra",
-    "who": "self",
-    "val": 1,
-    "dur": 99,
-    "_approx": "prob-ev",
-    "_note": "原文為80%機率獲得蓄威層,消耗蓄威後50%起遞減8%連續判定最多5次,期望額外攻擊次數約1-2次,以val=1保守折算(原val=5等於保證5次嚴重高估)"
-   }
-  ],
+  "effects": [],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
@@ -3279,9 +3307,9 @@
   "nameZh": "毒泉拒蜀",
   "type": "active",
   "kind": "intel",
-  "coef": 2.7,
+  "coef": 0,
   "rate": 0.6,
-  "n": 3,
+  "n": 0,
   "prep": 0,
   "effects": [
    {
@@ -3365,7 +3393,7 @@
   "kind": "intel",
   "coef": 1.46,
   "rate": 0.5,
-  "n": 3,
+  "n": 1,
   "prep": 0,
   "effects": [
    {
@@ -3373,13 +3401,8 @@
     "who": "enemy",
     "val": 0.04,
     "dur": 99,
-    "scale": "intel"
-   },
-   {
-    "k": "stack",
-    "who": "enemy",
-    "per": 0.02,
-    "max": 99
+    "scale": "intel",
+    "_approx": "原文「可疊加」(每回合+2%→4%,理論無上限), stack原語僅能疊加施放者/持有者自身的『造成傷害』加成(amp()讀取own stack), 無法表達『敵軍受到傷害』的逐回合疊加debuff, 故移除stack, 僅取單次滿值+4%, 未建模疊加成長"
    }
   ],
   "_src": " +他AI補全effectText/重解",
@@ -3407,7 +3430,9 @@
     "k": "amp",
     "who": "enemy",
     "val": 0.3,
-    "dur": 2
+    "dur": 2,
+    "_approx": "prob-ev/scope",
+    "_note": "原文限'自身為主將時,戰鬥前2回合'觸發, 現與主coef同綁在每回合50%機率擲骰上(command/passive非heal效果實際上是prep時套用一次而非跟隨rate擲骰, 故此易傷效果實為battle全程恆定生效, 而非'僅主將且僅前2回合'), 略高估"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -3451,7 +3476,14 @@
   "rate": 0.45,
   "n": 2,
   "prep": 1,
-  "effects": [],
+  "effects": [
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 1.12,
+    "dur": 2
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "EVENT",
@@ -3467,10 +3499,12 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "stat",
     "who": "enemy",
-    "val": -0.3,
-    "dur": 2
+    "stat": "command",
+    "mult": 0.7,
+    "dur": 2,
+    "scale": "intel"
    },
    {
     "k": "stat",
@@ -3502,6 +3536,12 @@
     "who": "enemy",
     "val": 0.25,
     "dur": 2
+   },
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 1.26,
+    "dur": 2
    }
   ],
   "quality": "S",
@@ -3519,7 +3559,7 @@
   "effects": [
    {
     "k": "stat",
-    "who": "ally",
+    "who": "leader",
     "stat": "intel",
     "mult": 1.03,
     "dur": 99,
@@ -3527,7 +3567,7 @@
    },
    {
     "k": "stat",
-    "who": "ally",
+    "who": "leader",
     "stat": "command",
     "mult": 1.03,
     "dur": 99,
@@ -3607,9 +3647,10 @@
     "_approx": "prob-ev: 25%→50%機率(自身為主將時30%→60%)×6%易傷折算為基礎值50%×6%=3%(house convention同傾國傾城, 取非主將基礎分支保守估計)"
    },
    {
-    "k": "stun",
+    "k": "disarm",
     "who": "enemy",
-    "dur": 2
+    "dur": 2,
+    "_approx": "原文為「武力>智力則繳械,否則技窮」二選一(依觸發攻擊者當下屬性動態判定), 引擎無法建條件分支, 取較保守單一分支(disarm禁普攻,範圍窄於原本誤用的stun全禁), 省略另一分支(silence禁主動戰法)"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -3731,24 +3772,37 @@
   "effects": [
    {
     "k": "stat",
+    "who": "self",
+    "stat": "all",
+    "mult": 0.6,
+    "dur": 99,
+    "_note": "「將自身屬性的20%→40%移交給兵力最低友軍」的自身損失面(原解析完全遺漏, 移交≠純增益); 第2回合才生效以prep套用近似"
+   },
+   {
+    "k": "stat",
     "who": "ally",
     "stat": "all",
-    "mult": 1.4,
-    "dur": 99
+    "mult": 1.13,
+    "dur": 99,
+    "_approx": "自身40%屬性移交給單體友軍; engine who:ally=全體, 均攤為每人+13%(總量≈+40%一人份); 原mult 1.4對全體=+120%總量, 高估3×"
    },
    {
     "k": "heal",
     "who": "ally",
-    "coef": 2.84,
+    "coef": 1.07,
     "dur": 1,
-    "scale": "intel"
+    "scale": "intel",
+    "_approx": "prob-ev",
+    "_note": "第3~5回合共3次×284%; command heal每回合tick共8次, 折算284%×3/8≈107%/回合(原coef 2.84=全場22.7倍率, 高估2.7×)"
    },
    {
     "k": "mitig",
     "who": "ally",
-    "val": 0.26,
-    "dur": 1,
-    "scale": "intel"
+    "val": 0.1,
+    "dur": 99,
+    "_approx": "prob-ev",
+    "scale": "intel",
+    "_note": "26%減傷僅第3~5回合且僅兵力最低單體; 時間佔比3/8折算≈0.10常駐(原val 0.26 dur 1只蓋第1回合且窗口全錯); who:ally=全體 vs 單體的高估已知保守未再折"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -3859,24 +3913,17 @@
   "nameZh": "無當飛軍",
   "type": "command",
   "kind": "intel",
-  "coef": 0.8,
+  "coef": 0,
   "rate": 1,
-  "n": 3,
+  "n": 0,
   "prep": 0,
   "effects": [
    {
-    "k": "stat",
-    "who": "ally",
-    "stat": "command",
-    "dur": 99,
-    "add": 22
-   },
-   {
-    "k": "stat",
-    "who": "ally",
-    "stat": "speed",
-    "dur": 99,
-    "add": 22
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.8,
+    "dur": 3,
+    "_note": "首回合對敵軍群體(2人)施加中毒,每回合持續造成傷害(80%),持續3回合; dot引擎限制為全體(非n=2精確計數),沿用資料集既有近似慣例"
    }
   ],
   "quality": "S",
@@ -3951,7 +3998,13 @@
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INNATE"
+  "src": "INNATE",
+  "when": {
+   "rounds": [
+    2,
+    4
+   ]
+  }
  },
  {
   "nameZh": "獅子奮迅",
@@ -4122,7 +4175,7 @@
   "kind": "phys",
   "coef": 0,
   "rate": 1,
-  "n": 3,
+  "n": 1,
   "prep": 0,
   "effects": [
    {
@@ -4177,7 +4230,7 @@
   "nameZh": "百步穿楊",
   "type": "active",
   "kind": "phys",
-  "coef": 1.8,
+  "coef": 2.25,
   "rate": 0.35,
   "n": 3,
   "prep": 1,
@@ -4210,6 +4263,12 @@
     "coef": 0.4,
     "dur": 1,
     "scale": "intel"
+   },
+   {
+    "k": "pierce",
+    "who": "self",
+    "val": 1,
+    "dur": 99
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -4273,7 +4332,7 @@
   "type": "command",
   "kind": "phys",
   "coef": 0,
-  "rate": 0.9,
+  "rate": 1,
   "n": 2,
   "prep": 0,
   "effects": [
@@ -4285,7 +4344,10 @@
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "when": {
+   "until": 2
+  }
  },
  {
   "nameZh": "監統震軍",
@@ -4328,9 +4390,8 @@
    {
     "k": "amp",
     "who": "enemy",
-    "val": -0.18,
-    "dur": 1,
-    "_approx": "prob-ev: 45%機率×40%降傷折算為18%(house convention同傾國傾城)"
+    "val": -0.4,
+    "dur": 1
    }
   ],
   "quality": "S",
@@ -4690,6 +4751,21 @@
     "who": "self",
     "v0": 1,
     "rounds": 8
+   },
+   {
+    "k": "rateup",
+    "who": "self",
+    "val": 0.35,
+    "dur": 99,
+    "prepOnly": true,
+    "_est": true
+   },
+   {
+    "k": "rateup",
+    "who": "self",
+    "val": 0.25,
+    "dur": 99,
+    "_est": true
    }
   ],
   "_src": "https://app.ali213.net/wiki/sgzzlb/zf107.html",
@@ -4726,8 +4802,7 @@
   ],
   "quality": "S",
   "cat": "FORMATION",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "精練策數",
@@ -4756,7 +4831,7 @@
   "kind": "phys",
   "coef": 1.26,
   "rate": 0.5,
-  "n": 2,
+  "n": 3,
   "prep": 1,
   "effects": [
    {
@@ -4778,7 +4853,7 @@
     "who": "ally",
     "stat": "command",
     "add": 80,
-    "dur": 3,
+    "dur": 2,
     "_approx": "限自身為主將時觸發，引擎無條件判斷，暫維持為全隊常態增益(略高估)"
    }
   ],
@@ -4800,8 +4875,7 @@
   "effects": [],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "絕其汲道",
@@ -4862,8 +4936,7 @@
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "經天緯地",
@@ -4905,7 +4978,9 @@
     "who": "self",
     "val": 0.14,
     "dur": 1,
-    "scale": "intel"
+    "scale": "intel",
+    "_est": true,
+    "_note": "原文為「自身造成治療效果時」觸發(反應式),engine無「治療觸發」when.on類型,以常駐套用近似(較原文寬鬆,可能高估;若自身無治療效果則不應觸發)"
    }
   ],
   "quality": "S",
@@ -4918,7 +4993,7 @@
   "kind": "phys",
   "coef": 1.84,
   "rate": 1,
-  "n": 2,
+  "n": 1,
   "prep": 0,
   "effects": [
    {
@@ -4929,18 +5004,20 @@
     "dur": 2
    },
    {
-    "k": "stat",
-    "who": "enemy",
-    "stat": "intel",
-    "add": -34,
-    "dur": 2
-   },
-   {
     "k": "dot",
     "who": "enemy",
     "coef": 0.76,
     "dur": 1,
-    "_note": "偶數回合對敵軍群體(2人)謀略傷害,以dot粗略表示週期性群體傷害(n應設2)"
+    "scale": "intel",
+    "_note": "偶數回合對敵軍群體(2人)謀略傷害(受智力影響),以dot近似週期性群體傷害;dot固定套用全體敵軍(engine dot無法限定2人子集,較原文寬鬆);且與奇數回合單體兵刃傷害(main coef)實際為互斥交替觸發,engine無法表達回合奇偶交替條件,現簡化為兩者同時常駐生效(較原文寬鬆,可能高估)"
+   },
+   {
+    "k": "stat",
+    "who": "enemy",
+    "stat": "intel",
+    "add": -34,
+    "dur": 2,
+    "_note": "偶數回合智力debuff,與奇數回合武力debuff(上條stat force)實際交替觸發,現同時常駐套用(較原文寬鬆)"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -5005,7 +5082,9 @@
     "who": "ally",
     "val": 0.18,
     "dur": 99,
-    "scale": "command"
+    "scale": "command",
+    "_approx": "prob-ev/scope",
+    "_note": "原文限'友軍兵力高於70%時'才觸發增傷, 現簡化為恆定生效(略高估); 若主將為孫權基礎值增至30%的個例未表達"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -5124,10 +5203,11 @@
   "prep": 0,
   "effects": [
    {
-    "k": "silence",
+    "k": "amp",
     "who": "self",
+    "val": -1,
     "dur": 1,
-    "_approx": "虛弱(無法造成傷害)引擎無對應原語，以自身silence(禁主動)近似代價效果，非完全等價"
+    "_note": "虛弱(無法造成傷害)=自身造成傷害-100%, amp -1精確歸零當回合後續傷害(主動先於普攻結算, 可涵蓋當回合普攻); 原用self silence(僅禁主動戰法)無法阻止普攻傷害, 語意錯位"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -5139,8 +5219,8 @@
   "nameZh": "臨機制勝",
   "type": "active",
   "kind": "intel",
-  "coef": 0,
-  "rate": 0.55,
+  "coef": 1.2,
+  "rate": 0.35,
   "n": 2,
   "prep": 0,
   "effects": [
@@ -5150,6 +5230,9 @@
     "coef": 1.2,
     "dur": 2,
     "scale": "intel"
+   },
+   {
+    "_todo": "原文「若敵軍已有中毒狀態,則使其隨機獲得灼燒/叛逃/沙暴狀態中的一種,每回合持續造成傷害(60%→120%),持續2回合」為狀態相依的額外dot疊加分支(同等傷害量再疊一份, 非僅改名不加傷害), 引擎無法判斷目標是否已處於中毒狀態並據此觸發第二份dot, 依全庫慣例(火熾原燎等)省略, 予以揭露(穩態下實際傷害輸出可能被低估)"
    }
   ],
   "quality": "S",
@@ -5180,8 +5263,7 @@
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "EVENT",
-  "_est": true
+  "src": "EVENT"
  },
  {
   "nameZh": "至柔動剛",
@@ -5205,17 +5287,20 @@
     "dur": 99
    },
    {
-    "k": "amp",
-    "who": "enemy",
-    "val": -1.06,
-    "dur": 1
+    "k": "counter",
+    "who": "ally",
+    "coef": 1.06,
+    "kind": "intel",
+    "prob": 0.5
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "intel",
-    "mult": 0.9,
-    "dur": 5
+    "add": -10,
+    "dur": 5,
+    "_approx": "prob-ev/reactive-as-static",
+    "_note": "原文「受到傷害時50%機率偷取來源智/統/速任一屬性10點(可疊加)」為反應式觸發; engine command型無法與恆定mitig光環共存when.on, 簡化為恆定-10點智力(未做50%折算, 且僅代表三選一中的智力分支)"
    }
   ],
   "_src": "http://m.7724.com/sgzzlbyx/news/140110.html",
@@ -5240,22 +5325,52 @@
     "stat": "force",
     "mult": 1.16,
     "dur": 99
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "intel",
+    "mult": 1.16,
+    "dur": 99,
+    "_est": true
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "command",
+    "mult": 1.16,
+    "dur": 99,
+    "_est": true
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "speed",
+    "mult": 1.16,
+    "dur": 99,
+    "_est": true
    }
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "興雲佈雨",
   "type": "command",
   "kind": "intel",
-  "coef": 0.72,
+  "coef": 0,
   "rate": 1,
   "n": 3,
   "prep": 0,
   "effects": [
+   {
+    "k": "dot",
+    "who": "enemy",
+    "coef": 0.72,
+    "dur": 5,
+    "scale": "intel"
+   },
    {
     "k": "amp",
     "who": "enemy",
@@ -5267,14 +5382,20 @@
   "cat": "COMMAND",
   "src": "INNATE",
   "when": {
-   "from": 2
+   "rounds": [
+    2,
+    3,
+    4,
+    5,
+    6
+   ]
   }
  },
  {
   "nameZh": "興雲布雨",
   "type": "command",
   "kind": "intel",
-  "coef": 0.72,
+  "coef": 0,
   "rate": 1,
   "n": 3,
   "prep": 0,
@@ -5284,7 +5405,7 @@
     "who": "enemy",
     "coef": 0.72,
     "dur": 5,
-    "note": "水攻狀態，第2回合起每回合造成謀略傷害，受智力影響，持續5回合（總傷害率360%）"
+    "scale": "intel"
    }
   ],
   "_src": "https://syzs.qq.com/blog/news/20221203A03RAE00",
@@ -5432,13 +5553,14 @@
     "who": "self",
     "val": 0.2,
     "dur": 1,
-    "_approx": "破陣(無視部分減傷)，原文無具體數值，暫以20%近似"
+    "_est": true,
+    "_note": "原文「破陣」無具體數值,暫以20%近似"
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "EVENT",
-  "_est": true
+  "lockTarget": true
  },
  {
   "nameZh": "萬軍奪帥",
@@ -5453,14 +5575,16 @@
     "k": "stun",
     "who": "enemy",
     "dur": 2,
-    "_approx": "22.5%→45%機率使其進入遇襲/破壞/禁療/計窮/繳械，以stun近似綜合控制效果，機率未折算(維持既有近似)"
+    "_approx": "22.5%->45%機率使其進入遇襲/破壞/禁療/計窮/繳械,以stun近似綜合控制效果,機率未折算(維持既有近似)"
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "speed",
     "mult": 0.15,
-    "dur": 2
+    "dur": 2,
+    "_est": true,
+    "_note": "原文僅對「敵軍速度最快的單體」降速,engine stat(who:enemy)非CTRL_K類無法限定單體目標(僅stun/silence/disarm/taunt/chaos可用n/nMax選目標),此處退化為套用全體敵軍(較原文寬鬆,可能高估)"
    }
   ],
   "quality": "S",
@@ -5477,16 +5601,22 @@
   "prep": 0,
   "effects": [
    {
+    "k": "first",
+    "who": "ally",
+    "dur": 99,
+    "_note": "原文明示「全隊先攻」；raw data conflictsWith:\"先攻\" 佐證本戰法本身即是先攻來源"
+   },
+   {
     "k": "dodge",
     "who": "ally",
     "prob": 0.2,
-    "dur": 1
+    "dur": 1,
+    "_est": true
    }
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "EVENT",
-  "_est": true
+  "src": "EVENT"
  },
  {
   "nameZh": "蕙質蘭心",
@@ -5502,7 +5632,9 @@
     "who": "ally",
     "stat": "command",
     "dur": 99,
-    "add": 20
+    "add": 20,
+    "scale": "intel",
+    "_note": "原文「受各自智力影響」, engine scale 以施放者智力近似各自智力"
    },
    {
     "k": "stack",
@@ -5514,16 +5646,19 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 2.22,
-    "dur": 1,
-    "scale": "intel"
+    "coef": 1.11,
+    "dur": 99,
+    "scale": "intel",
+    "_approx": "prob-ev",
+    "_note": "受擊消耗1層蘭心且50%機率治療222%; command heal每回合tick, 以「每回合約受擊1次×50%×222%≈111%」折算每回合期望(原coef 2.22每回合tick=全場17.8倍率, 高估約2.3×); 機率本身受智力影響未建模"
    },
    {
     "k": "mitig",
     "who": "ally",
     "val": 0.2,
     "dur": 99,
-    "scale": "intel"
+    "scale": "intel",
+    "_note": "條件「蘭心首次降至4層時」且僅限兵刃傷害; 原文為敵我全體兵刃-20%(我方輸出同步受損的減益面未建模, 僅建對我有利的敵方減傷面)"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -5545,13 +5680,17 @@
     "who": "self",
     "val": 0.2,
     "dur": 2,
-    "scale": "command"
+    "scale": "command",
+    "_note": "原文限「受到普通攻擊傷害」, engine mitig為全傷害類近似(略高估)"
    },
    {
-    "k": "amp",
+    "k": "pierce",
     "who": "self",
-    "val": 0.2,
-    "dur": 99
+    "val": 0.06,
+    "dur": 99,
+    "scale": "force",
+    "_approx": "prob-ev",
+    "_note": "造成傷害時15%→30%機率(取滿級)附帶10%→20%破陣(取滿級): 期望0.30×0.20=0.06折算(原val 0.2誤植為amp常駐+20%自身增傷, 混淆了破陣pierce(削弱對方減傷)與泛用增傷amp兩種不同機制, 且漏乘機率, 雙重錯誤); 第3回合起生效以常駐近似"
    },
    {
     "k": "rateup",
@@ -5559,19 +5698,19 @@
     "val": 0.08,
     "dur": 99,
     "nativeOnly": true,
-    "scale": "force"
+    "scale": "force",
+    "_note": "第3回合起生效, 以常駐近似"
    }
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "藤甲兵",
   "type": "command",
   "kind": "phys",
-  "coef": 3.0,
+  "coef": 0,
   "rate": 1,
   "n": 3,
   "prep": 0,
@@ -5593,17 +5732,17 @@
   "type": "command",
   "kind": "phys",
   "coef": 0.66,
-  "rate": 0.45,
-  "n": 3,
+  "rate": 1,
+  "n": 1,
   "prep": 0,
   "effects": [
    {
     "k": "stat",
     "who": "ally",
     "stat": "command",
-    "dur": 2,
-    "add": 15,
-    "_approx": "原文疊加5次(單層7.5→15點,滿疊75點);引擎stat.add無疊層機制,取單次觸發滿級值15點(近似低估滿疊情境)"
+    "add": 30,
+    "dur": 99,
+    "_approx": "prob-ev: 45%×(我軍普攻+受普攻≥2事件/回合)≈1觸發/回合, 單層15點dur2可疊5→穩態約2層=30點; 指揮效果僅準備階段套用一次, 以常駐折算"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -5625,13 +5764,14 @@
     "who": "self",
     "val": 0.33,
     "dur": 99,
-    "_note": "自身對鎖定目標傷害+33%(who由enemy修正為self: who=enemy+val>0會被引擎轉成全隊對敵易傷,方向錯誤); 原文無受X影響字樣,不加scale"
+    "_note": "對鎖定目標造成傷害+33%(原文注明固定值, 不加scale); 每回合重選單一目標的鎖定語意以自身常駐增傷近似"
    },
    {
     "k": "pierce",
     "who": "self",
-    "val": 1,
-    "dur": 99
+    "val": 0.5,
+    "dur": 99,
+    "_approx": "prob-ev: 破陣(無視統率智力→以引擎pierce無視減傷近似)需『擊敗鎖定目標』後才獲得, 約後半場生效→val1×0.5折算"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -5643,18 +5783,24 @@
   "nameZh": "虎衛軍",
   "type": "command",
   "kind": "phys",
-  "coef": 0.72,
+  "coef": 0,
   "rate": 1,
   "n": 3,
   "prep": 0,
   "effects": [
    {
+    "k": "counter",
+    "who": "subs",
+    "coef": 0.72,
+    "_approx": "主將受普攻時雙副將各反擊72%→以雙副將受擊反擊近似(每回合攻擊分佈下總EV相當≈1.44/回合); 受各自損失兵力加成(最多+40%)未建模"
+   },
+   {
     "k": "stat",
-    "who": "ally",
+    "who": "subs",
     "stat": "force",
+    "add": 36,
     "dur": 99,
-    "add": 12,
-    "_approx": "最多提高5次,單次6→12點(滿級);引擎無疊層機制,取單次觸發值"
+    "_approx": "每回合最多觸發1次×12點疊至5次→8回合平均約3層=36點(不取滿疊60)"
    }
   ],
   "quality": "S",
@@ -5704,16 +5850,15 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "stack",
     "who": "self",
-    "val": 0.28,
-    "dur": 99
+    "per": 0.07,
+    "max": 4
    }
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "EVENT",
-  "_est": true
+  "src": "EVENT"
  },
  {
   "nameZh": "處茲不惑",
@@ -5754,28 +5899,32 @@
     "stat": "all",
     "mult": 1.08,
     "dur": 99,
-    "note": "主將兵種適性為A時，主將戰鬥屬性+8%（受智力影響）全程"
+    "scale": "intel",
+    "_note": "主將兵種適性為A時，戰鬥屬性+8%(受智力影響);與下條(適性S)依適性擇一,engine無法按適性分支,兩條並列近似(可能同時生效,較原文寬鬆)"
    },
    {
-    "k": "amp",
+    "k": "rateup",
     "who": "ally",
     "val": 0.08,
     "dur": 99,
-    "note": "主將兵種適性為S時，主將自帶主動戰法發動率+8%（受智力影響）全程；與上條互斥依適性選一"
+    "scale": "intel",
+    "_note": "主將兵種適性為S時，自帶主動戰法發動率+8%(受智力影響);原資料誤用amp(增傷)已修正為rateup(發動率)"
    },
    {
-    "k": "mitig",
+    "k": "insight",
     "who": "ally",
-    "val": 0.35,
+    "n": 2,
+    "nMax": 3,
     "dur": 1,
-    "note": "每回合50%機率使我軍群體(2-3人)獲得1回合剛毅（解除/抵抗負面狀態）"
+    "_approx": "prob-ev",
+    "_note": "每回合25%->50%機率(受智力影響)使群體(2-3人)獲得1回合剛毅(解除/抵抗負面狀態);insight為二元效果無法按機率縮放幅度,機率未折算,以dur=1單次授予近似(可能高估)"
    },
    {
-    "k": "mitig",
+    "k": "insight",
     "who": "self",
-    "val": 0.35,
     "dur": 1,
-    "note": "每回合35%機率使持有者不受敵軍負面狀態影響1回合"
+    "_approx": "prob-ev",
+    "_note": "每回合17.5%->35%機率(受智力影響)使持有者不受負面狀態影響1回合;機率未折算,以dur=1單次授予近似(可能高估)"
    }
   ],
   "_src": "https://news.17173.com/content/01162025/013902358.shtml",
@@ -5803,8 +5952,7 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "EVENT",
-  "_est": true
+  "src": "EVENT"
  },
  {
   "nameZh": "裸衣血戰",
@@ -5816,10 +5964,11 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "extra",
     "who": "self",
     "val": 0.9,
-    "dur": 3
+    "dur": 3,
+    "_note": "原文「45%→90%連擊」= 連擊機率, 非增傷; 原val:0.9誤用amp"
    },
    {
     "k": "lifesteal",
@@ -5844,8 +5993,7 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "EVENT",
-  "_est": true
+  "src": "EVENT"
  },
  {
   "nameZh": "西涼鐵騎",
@@ -6137,11 +6285,10 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 0.58,
-    "dur": 3,
-    "when": {
-     "from": 3
-    }
+    "coef": 0.65,
+    "dur": 1,
+    "scale": "intel",
+    "_approx": "休整: 第3~5回合我軍全體各58%/回合(總量3人×3回合×58%≈522%)→引擎逐回合單體heal按8回合攤平0.65"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -6154,28 +6301,37 @@
   "type": "command",
   "kind": "phys",
   "coef": 1.02,
-  "rate": 1,
+  "rate": 0.5,
   "n": 2,
   "prep": 0,
   "effects": [
    {
     "k": "heal",
     "who": "ally",
-    "coef": 0.98,
+    "coef": 1.2,
     "dur": 1,
-    "scale": "intel"
+    "scale": "intel",
+    "_approx": "治療輪替回合98%×2~3人→每回合EV 1.2(引擎heal逐回合單體結算)"
    },
    {
     "k": "dot",
     "who": "enemy",
-    "coef": 0.72,
-    "dur": 1
+    "coef": 0.36,
+    "dur": 99,
+    "_approx": "灼燒72%(1回合)僅傷害輪替回合施加→常駐EV 36%/回合; 引擎dot以t.kind=phys計算, 原文灼燒受智力影響無法逐效果指定"
+   },
+   {
+    "k": "disarm",
+    "who": "self",
+    "dur": 99,
+    "_note": "原文: 無法發動普通攻擊(無法被淨化)——常駐代價, 原資料漏建"
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "nMax": 3
  },
  {
   "nameZh": "鋒矢陣",
@@ -6229,8 +6385,10 @@
    {
     "k": "amp",
     "who": "ally",
-    "val": 0,
-    "dur": 99
+    "val": 0.15,
+    "dur": 99,
+    "_est": true,
+    "_todo": "原文「機率提升會心與奇謀機率，可疊加」為機率型爆發機制(會心/奇謀)，DSL無對應原語(amp僅為固定傷害%非機率觸發加成)，暫以amp+15%粗略折算爆發期望，數值缺乏原文佐證僅為估計佔位"
    }
   ],
   "quality": "S",
@@ -6243,24 +6401,26 @@
   "type": "command",
   "kind": "intel",
   "coef": 0,
-  "rate": 0.535,
+  "rate": 1,
   "n": 1,
   "prep": 0,
   "effects": [
    {
     "k": "rateup",
     "who": "ally",
-    "val": 1.0,
+    "val": 1,
     "dur": 1,
     "nativeOnly": true,
-    "_note": "使友軍單體自帶主動戰法發動率+100%"
+    "_note": "使友軍單體自帶主動戰法發動率+100%; 「17.5%→35%(主將時100%)跳過1回合準備」無對應原語(chargeup=突擊發動率非準備跳過), 未建模"
    },
    {
     "k": "heal",
     "who": "ally",
-    "coef": 1,
+    "coef": 0.54,
     "dur": 1,
-    "scale": "intel"
+    "scale": "intel",
+    "_approx": "prob-ev",
+    "_note": "主將時觸發治療100%; 觸發機率奇數回合32%/偶數75%均53.5%, command heal每回合tick故折算0.535×1.0≈0.54(原coef 1.0=每回合必觸發, 高估約1.9×)"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -6283,22 +6443,22 @@
     "val": 0.65,
     "dur": 99,
     "_approx": "crit-ev",
-    "_note": "50%會心機率+30%會心傷害 期望折算0.5+0.15"
+    "_note": "50%會心機率×(100%基礎會心+30%會心傷害)=0.5×1.3=0.65"
    },
    {
     "k": "amp",
     "who": "ally",
-    "val": 0.25,
+    "val": 0.12,
     "dur": 99,
     "_approx": "crit-ev",
-    "_note": "友軍10%會心機率+15%會心傷害 期望折算0.10+0.15"
+    "_note": "友軍10%會心機率×(100%+15%會心傷害)=0.115≈0.12; 原0.25把「15%會心傷害」當獨立平加項(0.10+0.15)高估約2×—會心傷害僅在會心觸發時生效; 且原文為友軍群體2人, engine who:ally=全體(略高估)"
    },
    {
     "k": "lifesteal",
     "who": "ally",
     "val": 0.15,
     "dur": 99,
-    "_note": "15%倒戈(造成兵刃傷害恢復自身兵力)"
+    "_note": "15%倒戈(造成兵刃傷害恢復自身兵力); 原文限友軍群體2人, engine全體近似; 自身為主將時才有友軍段(條件取真)"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -6310,7 +6470,7 @@
   "nameZh": "錦帆軍",
   "type": "command",
   "kind": "phys",
-  "coef": 0.64,
+  "coef": 1.28,
   "rate": 0.45,
   "n": 3,
   "prep": 0,
@@ -6324,7 +6484,17 @@
   ],
   "quality": "S",
   "cat": "TROOP",
-  "src": "EVENT"
+  "src": "EVENT",
+  "extraHits": [
+   {
+    "coef": 1.1,
+    "kind": "phys",
+    "n": 3,
+    "rate": 0.6,
+    "_approx": "prob-ev",
+    "_note": "「若目標已潰逃則造成兵刃攻擊110%並恢復30%傷害量」分支; 穩態已潰逃機率≈1-(0.55)²≈0.6折算; 30%傷害量回血未建模(保守)"
+   }
+  ]
  },
  {
   "nameZh": "鎮扼防拒",
@@ -6339,14 +6509,18 @@
     "k": "redirect",
     "who": "ally",
     "guard": "max_force",
-    "share": 1
+    "share": 0.5,
+    "_approx": "prob-ev",
+    "_note": "每回合25%→50%機率(受智力影響)使單體副將援護所有友軍1回合; engine redirect為常駐, 以share=觸發機率0.5折算(原share 1=全程全額代承, 高估2×); guard:max_force近似「我軍單體副將」"
    },
    {
     "k": "heal",
     "who": "ally",
-    "coef": 0.96,
+    "coef": 0.48,
     "dur": 1,
-    "scale": "intel"
+    "scale": "intel",
+    "_approx": "prob-ev",
+    "_note": "休整96%×每回合50%觸發機率=48%/回合期望(command heal每回合tick, 原coef 0.96高估2×); 受普攻40%機率移除攻擊者增益未建模(無移除增益原語)"
    }
   ],
   "_src": " +他AI補全effectText/重解",
@@ -6364,16 +6538,18 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stun",
-    "who": "enemy",
-    "dur": 2
+    "k": "first",
+    "who": "ally",
+    "dur": 2,
+    "_note": "遇襲=行動滯後(敵軍行動延後), 非無法行動; 以我軍全體先攻2回合等價近似。原用stun enemy dur 2=敵全體前2回合完全跳過行動, 嚴重高估(全隊2回合AoE硬控)"
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "command",
     "mult": 0.85,
-    "dur": 3
+    "dur": 3,
+    "_note": "條件「該敵軍當前兵力低於我軍主將」+每次我軍主動/突擊後隨機單體可疊加; engine以全體一次性-15%近似(觸發頻率與疊加互抵)"
    }
   ],
   "quality": "S",
@@ -6398,9 +6574,10 @@
    {
     "k": "mitig",
     "who": "ally",
-    "val": 0.16,
-    "dur": 2,
-    "scale": "force"
+    "val": 0.08,
+    "dur": 99,
+    "scale": "force",
+    "_approx": "疊滿5層後(約第5回合起)全體-16%×2回合可反覆刷新≈後半場常駐, 攤平全場8%; 條件式起始無法表達(戰法級when會連帶鎖stack段)"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -6480,7 +6657,7 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "lifesteal",
     "who": "self",
     "val": 0.06,
     "dur": 99,
@@ -6509,8 +6686,7 @@
   "effects": [],
   "quality": "S",
   "cat": "FORMATION",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "離月",
@@ -6524,29 +6700,36 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 0.68,
-    "dur": 2,
-    "scale": "intel"
+    "coef": 0.27,
+    "dur": 99,
+    "scale": "intel",
+    "_approx": "prob-ev",
+    "_note": "自身受治療時40%機率(受智力影響)治療友軍單體68%, 每回合上限5次; 以每回合約1次自身受治療事件折算0.4×0.68≈0.27/回合(原coef 0.68=每回合必發全額, 高估2.5×); heal不受when閘控每回合tick, 不因from:3延誤"
    },
    {
     "k": "mitig",
     "who": "ally",
-    "val": 0.15,
-    "dur": 2,
-    "scale": "intel"
+    "val": 0.06,
+    "dur": 99,
+    "scale": "intel",
+    "_approx": "prob-ev",
+    "_note": "友軍受治療時40%機率+3%減傷×可疊5層×持續2回合: 穩態期望≈2層=6%常駐(原val 0.15 dur 2=開戰滿疊但僅前2回合, 窗口與量值皆偏)"
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "when": {
+   "from": 3
+  }
  },
  {
   "nameZh": "雲聚影從",
   "type": "command",
   "kind": "phys",
-  "coef": 1.0,
-  "rate": 0.5,
+  "coef": 0,
+  "rate": 1,
   "n": 1,
   "prep": 0,
   "effects": [
@@ -6554,14 +6737,19 @@
     "k": "redirect",
     "who": "ally",
     "guard": "max_force",
-    "share": 0.4
+    "share": 1.0,
+    "normalOnly": true,
+    "dur": 99,
+    "_approx": "prob-ev",
+    "_note": "原文(override):即將受到普通攻擊時,50%機率(受武力影響)使武力最高友軍代承此次普通攻擊(逐次事件觸發,非常駐)。engine redirect僅支援prep一次性常駐代承,以normalOnly限定只代承普攻(對應原文僅普攻觸發);50%機率未折算,保守以常駐生效近似(可能高估)"
    },
    {
     "k": "counter",
     "who": "ally",
     "coef": 1,
     "kind": "phys",
-    "prob": 0.5
+    "prob": 1,
+    "_note": "代承普攻的友軍獲得反擊(傷害率100%),持續1回合;engine counter套用對象為team-wide而非僅代承者本人(近似較寬鬆)"
    }
   ],
   "_src": "http://www.7724.com/sggame/news/71486.html",
@@ -6569,8 +6757,7 @@
   "_conf": "med",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE",
-  "_est": true
+  "src": "INNATE"
  },
  {
   "nameZh": "震駭四境",
@@ -6617,7 +6804,7 @@
     "who": "ally",
     "stat": "intel",
     "add": 15,
-    "dur": 2,
+    "dur": 3,
     "scale": "intel"
    },
    {
@@ -6625,7 +6812,7 @@
     "who": "ally",
     "stat": "command",
     "add": 15,
-    "dur": 2,
+    "dur": 3,
     "scale": "intel"
    }
   ],
@@ -6641,21 +6828,23 @@
   "coef": 0,
   "rate": 1,
   "n": 2,
-  "prep": 1,
+  "prep": 0,
   "effects": [
    {
     "k": "stat",
     "who": "ally",
     "stat": "command",
+    "add": 40,
     "dur": 4,
-    "add": 40
+    "scale": "intel"
    },
    {
     "k": "heal",
     "who": "ally",
-    "coef": 0.96,
+    "coef": 0.48,
     "dur": 1,
-    "scale": "intel"
+    "scale": "intel",
+    "_approx": "prob-ev: 急救前4回合、我軍2人各~1次受擊/回合×50%×96%≈0.96/回合×4回合→引擎8回合攤平0.48"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -6667,17 +6856,24 @@
   "nameZh": "青州兵",
   "type": "command",
   "kind": "phys",
-  "coef": 0.72,
+  "coef": 0,
   "rate": 1,
   "n": 3,
   "prep": 0,
   "effects": [
    {
+    "k": "counter",
+    "who": "ally",
+    "coef": 0.12,
+    "_approx": "prob-ev: 前2回合限定×我軍2人×反擊72%→counter原語無dur/人數欄, 以全體常駐低coef折算(真實總量2人×~1受擊/回合×2回合×0.72≈1.44, 對齊全程~3受擊/回合×8回合×0.12的引擎EV量級)"
+   },
+   {
     "k": "heal",
     "who": "ally",
-    "coef": 1.8,
+    "coef": 0.225,
     "dur": 1,
-    "scale": "force"
+    "scale": "force",
+    "_approx": "第3回合單次總治療180%→引擎heal每回合結算, 攤平0.225/回合×8回合=總量1.8"
    }
   ],
   "quality": "S",
@@ -6705,8 +6901,7 @@
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "EVENT",
-  "_est": true
+  "src": "EVENT"
  },
  {
   "nameZh": "韜心惑敵",
@@ -6720,13 +6915,15 @@
    {
     "k": "silence",
     "who": "enemy",
-    "dur": 1
+    "dur": 1,
+    "_note": "首回合17.5%→35%機率(受雙方智力差影響)每目標獨立判定; 機率未建模(silence無per-effect機率欄), 維持近似必定觸發(高估約2.9×), 與橫掃千軍/暗箭難防同慣例"
    },
    {
     "k": "amp",
     "who": "enemy",
     "val": -0.3,
-    "dur": 3
+    "dur": 3,
+    "_note": "限「主動戰法傷害」且僅對智力低於自身的敵將, engine為全傷害全體近似; 原文第2回合起持續3回合(第2~4), 以第1回合起dur 3近似"
    }
   ],
   "quality": "S",
@@ -6746,15 +6943,16 @@
     "k": "stat",
     "who": "enemy",
     "stat": "intel",
-    "mult": 0.82,
+    "add": -36,
     "dur": 2,
-    "scale": "intel"
+    "scale": "intel",
+    "_note": "批13 ModeA慣例: 偷取18→36「點」為flat平加(原mult 0.82隱含基準200)"
    },
    {
     "k": "stat",
     "who": "enemy",
     "stat": "force",
-    "mult": 0.82,
+    "add": -36,
     "dur": 2,
     "scale": "intel"
    },
@@ -6765,7 +6963,7 @@
     "add": 18,
     "dur": 2,
     "scale": "intel",
-    "_approx": "偷取36點平均分配給自己與隨機友軍各半(18點)"
+    "_approx": "偷取36點平均分配給自己和隨機友軍單體各18點; 友軍半份未建(engine who:ally=全體會3倍高估), 保守僅建自身半份"
    },
    {
     "k": "stat",
@@ -6946,7 +7144,7 @@
   "effects": [
    {
     "k": "stat",
-    "who": "ally",
+    "who": "subs",
     "stat": "command",
     "mult": 1.22,
     "dur": 99
@@ -6986,13 +7184,14 @@
     "stat": "command",
     "add": -60,
     "dur": 99,
-    "scale": "intel"
+    "scale": "intel",
+    "_est": true,
+    "_note": "原文(override,高信度)「可無限疊加」,engine pushStatAdd同來源(戰法名)刷新不疊加,無法表達無限疊加語意(每次重新施放僅刷新為-60,非累加);且原文謀略傷害與此debuff為「1回合後」延遲觸發(鴆毒中毒後下回合才發作),engine主coef於施放當回合立即結算,未表達1回合延遲(提前1回合生效,可能高估前期輸出)"
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "INNATE",
-  "_est": true
+  "src": "INNATE"
  },
  {
   "nameZh": "鴆毒",
@@ -7075,20 +7274,24 @@
     "who": "ally",
     "val": 0.8,
     "dur": 1,
-    "_note": "前4回合自身發動主動戰法時50%→100%機率使我軍全體獲得1次1回合80%攻心"
+    "_note": "前4回合自身發動主動戰法時100%使我軍全體獲得1次1回合80%攻心; 與when:{from:5}窗口互斥(engine效果隨窗口第5回合才一次性套用), 量值小保留近似; 精確表達需事件觸發原語"
    },
    {
-    "k": "extra",
+    "k": "amp",
     "who": "self",
     "val": 0.16,
     "dur": 99,
-    "_note": "自身為主將時+16%奇謀機率(取滿級)"
+    "_approx": "crit-ev",
+    "_note": "自身為主將時+8%→16%奇謀機率(觸發時謀略傷害+100%), EV=0.16×1.0折算常駐增傷; 原用extra 0.16=16%機率追加普攻, 原語誤用(奇謀係數作用於謀略傷害非普攻次數)"
    }
   ],
   "_src": " +他AI補全effectText/重解",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "when": {
+   "from": 5
+  }
  },
  {
   "nameZh": "黃天泰平",
@@ -7373,12 +7576,12 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "stack",
     "who": "self",
-    "val": 0.36,
+    "per": 0.06,
+    "max": 3,
     "dur": 99,
-    "_approx": "stack-max",
-    "_note": "6%→12%每次普攻疊加,最多3次,以滿疊值0.36近似(引擎無per-attack疊加原語)"
+    "_note": "6%→12%(滿級每層6%)每回合遞增疊加,最多3層;stack以回合遞增近似逐次普攻疊加"
    },
    {
     "k": "disarm",
@@ -7464,7 +7667,7 @@
   "nameZh": "左右開弓",
   "type": "active",
   "kind": "phys",
-  "coef": 1.8,
+  "coef": 2.03,
   "rate": 0.35,
   "n": 1,
   "prep": 0,
@@ -7495,8 +7698,9 @@
     "k": "stat",
     "who": "self",
     "stat": "command",
-    "mult": 1.18,
-    "dur": 2
+    "add": 44,
+    "dur": 2,
+    "_note": "批13 ModeA慣例: 原文「提高自身22→44統率」為flat平加, 非mult係數(原mult 1.18隱含基準統率245, 對低統將高估/高統將低估)"
    },
    {
     "k": "redirect",
@@ -7528,8 +7732,7 @@
   ],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "彎弓飲羽",
@@ -7604,8 +7807,7 @@
   ],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "挫志怒襲",
@@ -7720,28 +7922,43 @@
   "nameZh": "暗潮洶湧",
   "type": "active",
   "kind": "phys",
-  "coef": 2.72,
+  "coef": 0,
   "rate": 0.4,
-  "n": 1,
+  "n": 0,
   "prep": 1,
   "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_est": true
+  "extraHits": [
+   {
+    "coef": 2.72,
+    "kind": "phys",
+    "n": 1,
+    "who": "enemyLeader"
+   }
+  ]
  },
  {
   "nameZh": "暗潮湧動",
   "type": "active",
   "kind": "phys",
-  "coef": 2.72,
+  "coef": 0,
   "rate": 0.35,
-  "n": 1,
+  "n": 0,
   "prep": 1,
   "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "extraHits": [
+   {
+    "coef": 2.72,
+    "kind": "phys",
+    "n": 1,
+    "who": "enemyLeader"
+   }
+  ]
  },
  {
   "nameZh": "暗藏玄機",
@@ -7754,7 +7971,17 @@
   "effects": [],
   "quality": "A",
   "cat": "BURST",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "extraHits": [
+   {
+    "coef": 0.92,
+    "kind": "intel",
+    "who": "sameTarget",
+    "rate": 0.34,
+    "_approx": "prob-ev",
+    "_note": "原文:若目標(普攻對象)為敵軍主將,額外謀略傷害92%(受智力影響);主段目標隨機非必為主將,以1/3(隊伍3人之一為主將)近似機率折算rate,sameTarget沿用主段目標"
+   }
+  ]
  },
  {
   "nameZh": "暴斂四方",
@@ -7779,24 +8006,16 @@
  },
  {
   "nameZh": "枯木逢春",
-  "type": "command",
+  "type": "none",
   "kind": "phys",
   "coef": 0,
   "rate": 1,
   "n": 1,
   "prep": 0,
-  "effects": [
-   {
-    "k": "heal",
-    "who": "ally",
-    "coef": 0.5,
-    "dur": 99
-   }
-  ],
+  "effects": [],
   "quality": "A",
   "cat": "INTERNAL",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "機略縱橫",
@@ -7825,7 +8044,7 @@
   "kind": "phys",
   "coef": 0,
   "rate": 0.45,
-  "n": 1,
+  "n": 2,
   "prep": 0,
   "effects": [
    {
@@ -7930,14 +8149,13 @@
   ],
   "quality": "A",
   "cat": "PASSIVE",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "矢志不移",
   "type": "passive",
   "kind": "phys",
-  "coef": 1,
+  "coef": 0,
   "rate": 1,
   "n": 3,
   "prep": 0,
@@ -7946,16 +8164,18 @@
     "k": "stat",
     "who": "self",
     "stat": "force",
-    "add": 15,
-    "dur": 99
+    "add": 40,
+    "dur": 99,
+    "_approx": "avg-over-fight",
+    "_note": "第3回合起每回合+15疊加(round3=15,round4=30,...round8=90), 取8回合總量315平均≈39.4取整40"
    },
    {
     "k": "extra",
     "who": "self",
-    "val": 1,
+    "val": 0.5,
     "dur": 2,
     "_approx": "prob-ev",
-    "_note": "前2回合50%機率群攻(普攻時對敵同部隊其他武將造成傷害),引擎extra無機率欄位,以dur=2近似限定回合範圍,未做50%折算(extra為布林式加成非可折算數值)"
+    "_note": "前2回合50%機率群攻(普攻時對同部隊其他武將造成傷害), extra原語支援小數期望擲骰(extraCount函式), val=1→0.5正確反映50%機率(原val=1誤判extra不支援機率折算)"
    }
   ],
   "quality": "A",
@@ -8218,7 +8438,7 @@
   "effects": [
    {
     "k": "chaos",
-    "who": "ally",
+    "who": "self",
     "dur": 1
    },
    {
@@ -8260,20 +8480,14 @@
   "kind": "phys",
   "coef": 0.84,
   "rate": 0.4,
-  "n": 1,
+  "n": 2,
   "prep": 0,
-  "effects": [
-   {
-    "k": "extra",
-    "who": "self",
-    "val": 2,
-    "dur": 1,
-    "_approx": "隨機2~4次攻擊，以期望值3次近似為額外2次連擊(共3次)"
-   }
-  ],
+  "effects": [],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "nMax": 4,
+  "hitsRepeat": true
  },
  {
   "nameZh": "進言",
@@ -8314,7 +8528,7 @@
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "lockTarget": true
+  "lockTarget": null
  },
  {
   "nameZh": "長者之風",
@@ -8342,8 +8556,7 @@
   ],
   "quality": "A",
   "cat": "COMMAND",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "風聲鶴唳",
@@ -8436,7 +8649,7 @@
   "nameZh": "驍健神行",
   "type": "active",
   "kind": "phys",
-  "coef": 1.56,
+  "coef": 0,
   "rate": 0.45,
   "n": 1,
   "prep": 0,
@@ -8450,12 +8663,22 @@
     "k": "surehit",
     "who": "self",
     "dur": 2,
-    "scale": "speed"
+    "_note": "原scale:speed移除—engine surehit不讀scale, 且原文「受速度影響」修飾的是條件傷害段非必中"
    }
   ],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "extraHits": [
+   {
+    "coef": 1.56,
+    "kind": "phys",
+    "rate": 0.45,
+    "who": "sameTarget",
+    "_approx": "prob-ev",
+    "_note": "「如果目標已經被繳械則造成兵刃攻擊156%」為條件段: 傷害在施加繳械前判定, 目標已繳械≈自身上回合觸發(rate 0.45)折算; 傷害受速度影響無scale欄未建模"
+   }
+  ]
  },
  {
   "nameZh": "驍勇善戰",
@@ -8529,8 +8752,7 @@
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "伐木精通",
@@ -8672,8 +8894,7 @@
   ],
   "quality": "B",
   "cat": "PASSIVE",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "妙書銘石",
@@ -8969,8 +9190,7 @@
   ],
   "quality": "B",
   "cat": "BURST",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "砍伐",
@@ -9004,8 +9224,7 @@
   ],
   "quality": "B",
   "cat": "BURST",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "碩果累累",
@@ -9090,8 +9309,7 @@
   ],
   "quality": "B",
   "cat": "ACTIVE",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "識破",
@@ -9104,8 +9322,7 @@
   "effects": [],
   "quality": "B",
   "cat": "ACTIVE",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "踐踏",
@@ -9137,8 +9354,7 @@
   ],
   "quality": "B",
   "cat": "BURST",
-  "src": "INHERITANCE",
-  "_est": true
+  "src": "INHERITANCE"
  },
  {
   "nameZh": "還擊",

@@ -716,9 +716,24 @@ def apply_corrections(parsed, corrections):
         不觸碰其餘欄位。
       - "effects": 完整替換的效果陣列(宣告式最終狀態, 非 add-only); 提供時整組覆寫該戰法的
         effects, 不提供則 effects 維持不動(由前面各步驟或既有資料決定)。
+      - "extraHits": 完整替換的多段傷害陣列(批14新增支援; 語意同 effects, 提供時整組覆寫,
+        不提供則 extraHits 維持不動)。批14首次出現「頂層coef隨機選目標bug, 改用extraHits
+        (who:enemyLeader)鎖定固定目標」這類修正(如暗潮洶湧/暗潮湧動/暗藏玄機), 此前231筆
+        corrections從未用過此欄位, 故此支援為新增而非既有行為的一部分。
     與既有白名單(SCALE_PLAN/BATCH8_TACTIC_EFFECTS/BATCH9_TACTIC_EFFECTS等)衝突時, corrections
     優先(它是批10最新仲裁結果, 已核對過原文與既有白名單的落地是否正確)。天然冪等: 每次重跑
     都是「讀取同一份 corrections.json 覆寫成同一個目標值」, 不會累積變動。
+
+    批14修正: 若 correction 提供完整 effects(宣告式最終狀態, 已人工核對過原文, 非估計值),
+    套用後應清除 p["_est"](若存在)。原因: 主迴圈(item1-15)的 _est 判定是「本輪是否有任何
+    正則抽取步驟改到有意義的值」的啟發式訊號, 而該訊號讀的是「套用 correction 前」的
+    p.effects/p.coef; 當 correction 把某效果的 dur 從 <90 改成 99(如「戰鬥全程」語意)後,
+    下一輪重跑時 item4(持續回合回填) 見到 dur 已經 >=90 便跳過(cur>=90 視為"永久型不動"),
+    導致該輪 touched_meaningful 判定為 False、_est 被誤加 —— 即使 effects 內容與上一輪
+    apply_corrections() 後完全一致(bytes 相同)。這使得「本檔有無 correction 覆蓋」變成
+    run1→run2 才穩定的延遲效應, 破壞 reparse 的 byte 級冪等性。corrections 本身是已核對的
+    最終真相(非未審查估計), 不應被下游啟發式誤標為 _est, 故套用完整 effects 覆寫時一併清掉
+    _est(sparse set-only 覆寫則不受影響, 因為它通常不改變 dur 這類會影響 item4 判定的欄位)。
     回傳: (n_set_changed, n_effects_changed, applied_names) 供報告統計。"""
     n_set_changed = 0
     n_effects_changed = 0
@@ -740,6 +755,14 @@ def apply_corrections(parsed, corrections):
                 p["effects"] = [dict(e) for e in want_effects]
                 n_effects_changed += 1
                 changed_this = True
+            p.pop("_est", None)                       # 批14: completed effects 是審查過的最終狀態, 不是估計值
+        if "extraHits" in corr:                       # 批14新增: extraHits 完整替換(同 effects 慣例)
+            want_extra = corr["extraHits"]
+            if p.get("extraHits") != want_extra:
+                p["extraHits"] = [dict(e) for e in want_extra]
+                n_effects_changed += 1
+                changed_this = True
+            p.pop("_est", None)
         if changed_this:
             applied_names.append(name)
     return n_set_changed, n_effects_changed, applied_names
