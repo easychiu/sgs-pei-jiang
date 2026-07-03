@@ -857,8 +857,14 @@ def main():
     # 直接跳過後續一切抽取(coef/scale/rateup...), 維持 type=none 的「排除戰鬥與選單」語意。
     # no-op 統計口徑: 在 overrides type:none 生效「之前」計 before(與 HEAD 直接比較一致
     # —— 被 overrides 排除的戰法在 before 仍算 no-op 貢獻者, 排除本身即是一種「處理」)。
+    # 批28 B4: 補 choices/extraHits/everyN 排除(同 lint_tactics.py check_r5 的no-op判定口徑)——
+    # 過去只看 coef/effects 兩個欄位, 若戰法的全部payload都搬進choices(如桃園結義三選一重建
+    # 後 coef=0/effects=[], 內容全在choices[]分支自己的coef/effects裡), 會被這個純統計用的
+    # 診斷指標誤算成「no-op」, 但戰法本身完全正常運作(choices機制見sgz.py fight()主迴圈
+    # dispatch, 批16/27已支援)。此為報表口徑修正, 不影響任何實際結算邏輯。
     noop_before = sum(1 for p in parsed if p.get("type") != "none"
-                       and not p.get("coef") and not p.get("effects"))
+                       and not p.get("coef") and not p.get("effects")
+                       and not p.get("choices") and not p.get("extraHits") and not p.get("everyN"))
 
     n_overrides_invalid = 0
     n_overrides_type_none = 0
@@ -1271,7 +1277,8 @@ def main():
     n_corr_set, n_corr_effects, corrections_applied = apply_corrections(parsed, corrections)
 
     noop_after = sum(1 for p in parsed if p.get("type") != "none"
-                      and not p.get("coef") and not p.get("effects"))
+                      and not p.get("coef") and not p.get("effects")
+                      and not p.get("choices") and not p.get("extraHits") and not p.get("everyN"))
 
     with open(PARSED_PATH, "w", encoding="utf-8") as f:
         json.dump(parsed, f, ensure_ascii=False, indent=1)

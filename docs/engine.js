@@ -205,6 +205,12 @@
       if (a.mitig) this.adds.push(["mitig", a.mitig, 9999]);
       this.settle = null; this.guardian = null; this.guardShare = 0; this.guardDur = 0; this.guardNormalOnly = false;  // guardDur: 代承剩餘回合, 歸零清 guardian; guardNormalOnly: 只代承普攻傷害(如 援助), 戰法傷害不轉移
       this.stack = null; this.decay = null; this.swap = 0; this.counter = null;
+      // 批28 B1: 守護式反擊(counter.guardFor) —— 「A受擊時, B代為反擊」的方向(如虎衛軍
+      // 「我軍主將即將受到普攻時, 副將反擊」), 與 this.counter(持有者自己受擊自己反擊)方向
+      // 相反, 掛在「被保護者」(如主將)身上一份清單, 每個元素是{unit(反擊執行者), coef, kind,
+      // prob}, 見 applyEffects 的 guardFor 分支與 hit() 內的觸發判斷。與 guardian(傷害轉移
+      // 代承)是不同機制, 可並存不衝突。
+      this.counterGuards = [];
       this.tauntBy = null; this.tauntDur = 0;      // 嘲諷: 被嘲諷時強制普攻/單體戰法指向 tauntBy, 剩餘回合
       this.shield = null;                          // 護盾: {amt, dur} 吸收固定量傷害, 先於兵力扣減
       this.block = [];                              // 批22: 次數型格擋(抵禦/警戒同族) —— [{val, n, src}], 消耗順序見 hit(); val=1.0全擋/0.x部分減傷, n=剩餘次數
@@ -271,12 +277,16 @@
     // 的 dmgType 相符」的項目, 供 amp/mitig 依「兵刃/謀略」傷害類型過濾(見 damage() 呼叫端)。
     // dmgType 省略(undefined)時完全維持原行為(不分類型全部加總), 向後相容全庫既有未帶
     // dmgType 的 amp/mitig 資料。
-    addbonus(kind, dmgType) {
+    // 批28 B3: isNormal(可選) —— 只加總「該條目未宣告 normalOnly, 或宣告 normalOnly 且本次
+    // isNormal 為 true」的項目, 供 amp 表達「僅普攻傷害提升」(見至柔動剛)。未傳(undefined,
+    // 如dot/counter/settle等非普攻傷害路徑)時安全側不套用 normalOnly 加成。
+    addbonus(kind, dmgType, isNormal) {
       let s = 0;
       for (const a of this.adds) {
         if (a[0] !== kind || this.suppressed(a[3])) continue;
         const f = a[4];
         if (dmgType && f && f.dmgType && f.dmgType !== dmgType) continue;
+        if (f && f.normalOnly && isNormal !== true) continue;
         s += a[1];
       }
       return s;
@@ -354,9 +364,10 @@
     get hpPct() { return this.troop / START_TROOP; }
     // 批24 D2: amp(dmgType) —— dmgType 傳入時只加總該類型(或未宣告類型)的 amp 加成; stack/decay
     // 目前無 dmgType 概念(全庫暫無「僅對特定傷害類型疊層」的戰法), 維持無條件全額計入, 與呼叫端
-    // 的 dmgType 過濾無關(不受影響, 向後相容)。
-    amp(dmgType) {
-      let a = this.addbonus("amp", dmgType);
+    // 的 dmgType 過濾無關(不受影響, 向後相容)。批28 B3: isNormal(可選) —— 過濾 normalOnly
+    // 標記的加成(僅普攻傷害生效, 見至柔動剛)。
+    amp(dmgType, isNormal) {
+      let a = this.addbonus("amp", dmgType, isNormal);
       if (this.stack) a += this.stack.per * this.stack.n;
       if (this.decay) a += this.decay.v0 * this.decay.left / this.decay.total;
       return a;
@@ -398,7 +409,7 @@
   //   錨3 屬性差大負值(保底) → 實測 ≈90  傷害 ⇒ DMG_FLOOR = 90/sqrt(10000) = 0.9
   // 之後有更多實測數據(不同兵力/等級)可再校準, 目前僅50級單一等級係數樣本, 折入常數中。
   const DMG_A = 4.76, DMG_B = 1.44, DMG_FLOOR = 0.9;
-  function damage(src, dst, coef, kind, srcTroop) {
+  function damage(src, dst, coef, kind, srcTroop, isNormal) {
     const troop = srcTroop == null ? src.troop : srcTroop;
     const atk = kind === "intel" ? src.eff("intel") : src.eff("force");
     const def = kind === "intel" ? dst.eff("intel") : dst.eff("command");
@@ -415,9 +426,12 @@
     // 批24 D2: dmgType 過濾 —— amp()/addbonus("mitig") 傳入本次傷害的 kind(phys/intel), 只
     // 加總「未宣告 dmgType 或宣告類型與本次相符」的加成/減傷, 讓「兵刃傷害提高/謀略傷害降低」
     // 這類定向效果不再誤及不該覆蓋的另一種傷害類型(見 e.dmgType 呼叫端, applyEffects k==="amp"/"mitig"分支)。
-    const totalAmp = src.amp(kind);
+    // 批28 B3: isNormal(可選) —— 傳入本次傷害是否為普攻, 供 amp()/addbonus("mitig") 過濾
+    // normalOnly 標記的加成/減傷(僅普攻傷害生效/受影響, 見至柔動剛「降低我軍及敵軍全體普通
+    // 攻擊傷害35%」)。
+    const totalAmp = src.amp(kind, isNormal);
     base *= totalAmp <= -1 ? 0 : 1 + Math.max(-0.9, totalAmp);
-    const mit = dst.addbonus("mitig", kind) * (1 - Math.min(1, src.addbonus("pierce")));
+    const mit = dst.addbonus("mitig", kind, isNormal) * (1 - Math.min(1, src.addbonus("pierce")));
     base *= Math.max(0.1, 1 - mit);
     base *= 0.96 + rnd() * 0.08;   // 隨機帶 0.96~1.04(對稱): rnd()*0.08 涵蓋 [0,0.08), 起點0.96 → 上限0.96+0.08=1.04
     return Math.max(0, base);
@@ -428,7 +442,7 @@
       if (onEvent) onEvent(dst, src, isNormal);
       return;
     }
-    let dmg = damage(src, dst, coef, kind);
+    let dmg = damage(src, dst, coef, kind, undefined, isNormal);  // 批28 B3: 傳入isNormal供amp()過濾normalOnly標記的加成
     // 批22: block(次數型格擋, 抵禦/警戒同族) —— 判定順序 dodge→block→shield→傷害(見紅線指示)。
     // 每次受擊消耗1次(不論本次傷害量多寡), val=1.0(如「抵禦」)完全格擋歸零本次傷害,
     // val=0.x(如「警戒」-75.35%)按比例打折。用光即從陣列移除, 供 TRACE 顯示「剩餘N層」。
@@ -470,6 +484,24 @@
     if (c && dst.alive && src.alive && rnd() < (c.prob ?? 1)) {
       const cd = damage(dst, src, c.coef ?? 1, c.kind || "phys"); src.troop -= cd; src.wounded += cd * woundedRate(CUR_R);
       if (TRACE) lg(`　↩ ${dst.nm} 反擊 ${src.nm} 損兵 ${Math.round(cd)}，剩餘 ${Math.max(0, Math.round(src.troop))}`);
+    }
+    // 批28 B1: 守護式反擊(counterGuards) —— dst(如隊伍主將)受到普攻時, 由登記在
+    // dst.counterGuards 裡的其他單位(如副將)代為反擊 src, 而非 dst 自己還手(見虎衛軍
+    // 「我軍主將即將受到普攻時, 副將...對攻擊者造成兵刃傷害」)。只在普攻(isNormal=true)
+    // 時觸發; 每個守護單位每回合最多觸發1次(對應原文「每回合最多觸發1次」), 用 hitFlags
+    // 以 guardian 自身+效果物件為鍵節流(與 when.on 反應式的既有節流慣例一致)。
+    if (isNormal && dst.alive && src.alive) {
+      for (const g of dst.counterGuards) {
+        const gu = g.unit;
+        if (!gu.alive || gu === dst) continue;
+        if (gu.hitFlags.has(g)) continue;
+        if (rnd() < (g.prob ?? 1)) {
+          gu.hitFlags.add(g);
+          const gd = damage(gu, src, g.coef ?? 1, g.kind || "phys");
+          src.troop -= gd; src.wounded += gd * woundedRate(CUR_R);
+          if (TRACE) lg(`　↩ ${gu.nm}(守護${dst.nm}) 反擊 ${src.nm} 損兵 ${Math.round(gd)}，剩餘 ${Math.max(0, Math.round(src.troop))}`);
+        }
+      }
     }
   }
   function roundOk(t, r) {                          // 條件觸發(when): 回合是否符合戰法的發動窗口
@@ -842,12 +874,16 @@
       // 批24 D2: dmgType 旗標 —— amp/mitig 效果可選填 e.dmgType:"phys"|"intel", 限定只對該類型
       // 傷害生效(damage() 結算時依 kind 過濾, 見 amp()/addbonus() 的 dmgType 參數)。與
       // undispellable 合併進同一個 flags 物件(pushAdd/pushMod 第5參數), 兩者互不干擾。
-      const udFlags = (e.undispellable || e.dmgType) ? { undispellable: !!e.undispellable, dmgType: e.dmgType } : undefined;
+      // 批28 B3: normalOnly 旗標 —— amp/mitig 效果可選填 e.normalOnly:true, 限定只對普攻傷害
+      // 生效/受影響(見至柔動剛「降低我軍及敵軍全體普通攻擊傷害35%」)。
+      const normalOnly = (k === "amp" || k === "mitig") && !!e.normalOnly;
+      const udFlags = (e.undispellable || e.dmgType || normalOnly) ? { undispellable: !!e.undispellable, dmgType: e.dmgType, normalOnly } : undefined;
       // dmgType 存在時, src 附加類型尾碼區分 dedup key(同一戰法內若有兩條不同 dmgType 的
       // amp/mitig, 如暫避其鋒「智力最高者減兵刃傷害」+「武力最高者減謀略傷害」, 兩者若共用
       // 同一個 src(戰法名)會被 pushAdd 的「同kind+同src刷新」去重機制互相蓋掉, 見 rateup 的
-      // 既有 prepOnly/nativeOnly 尾碼慣例同理)。
-      const dtSrc = (src && e.dmgType) ? src + ":" + e.dmgType : src;
+      // 既有 prepOnly/nativeOnly 尾碼慣例同理)。批28 B3: normalOnly 同理附加尾碼。
+      let dtSrc = (src && e.dmgType) ? src + ":" + e.dmgType : src;
+      if (normalOnly && src) dtSrc = (dtSrc || src) + ":normalOnly";
       for (const u of dests) {
         if (k === "amp") { const v = svVal(e.val); who === "enemy" && v > 0 ? u.pushAdd("mitig", -v, e.dur, dtSrc, udFlags) : u.pushAdd("amp", v, e.dur, dtSrc, udFlags); }
         else if (k === "mitig") u.pushAdd("mitig", svVal(e.val), e.dur, dtSrc, udFlags);
@@ -882,7 +918,17 @@
         // 帶時限的反擊被無聲變成常駐/永久, 見還擊/千里走單騎等)。dur 預設99(=常駐被動慣例,
         // 向後相容無 dur 欄位的既有反擊資料)。dur 記在 counter 物件上, tick() 逐回合遞減,
         // 歸零時清除(見 tick() 對應段落)。
-        else if (k === "counter") u.counter = { coef: e.coef ?? 1, kind: e.kind || "phys", prob: e.prob ?? 1, dur: (e.dur ?? 99) + 1 };
+        // 批28 B1: guardFor(守護式反擊) —— e.guardFor === "leader" 時, u(此效果解析出的
+        // who=subs等目標)不掛自己的counter, 改把自己登記進「隊伍主將」的 counterGuards
+        // 清單, 由 hit() 在主將受擊時代為觸發還擊(見虎衛軍「我軍主將即將受到普攻時, 副將
+        // ...對攻擊者造成兵刃傷害」)。只支援 guardFor:"leader", 其餘 who 仍走原本路徑。
+        else if (k === "counter") {
+          if (e.guardFor === "leader" && allies.length && allies[0].alive) {
+            allies[0].counterGuards.push({ unit: u, coef: e.coef ?? 1, kind: e.kind || "phys", prob: e.prob ?? 1 });
+          } else {
+            u.counter = { coef: e.coef ?? 1, kind: e.kind || "phys", prob: e.prob ?? 1, dur: (e.dur ?? 99) + 1 };
+          }
+        }
         else if (k === "taunt") { u.tauntBy = caster; u.tauntDur = Math.max(u.tauntDur, (e.dur ?? 1) + 1); }
         else if (k === "shield") {
           const amt = (e.amt ?? 0) + (e.pct ? e.pct * caster.troop : 0);

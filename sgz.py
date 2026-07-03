@@ -410,6 +410,13 @@ class Unit:
         self.decay = None                             # 衰減增益: {v0, left, total}
         self.swap = 0                                 # 武智互換 剩餘回合
         self.counter = None                           # 反擊: {coef, kind, prob}
+        # 批28 B1: 守護式反擊(counter.guardFor) —— 「A受擊時, B代為反擊」的方向(如虎衛軍
+        # 「我軍主將即將受到普攻時, 副將反擊」), 與既有 self.counter(持有者自己受擊自己反擊)
+        # 語意相反, 不能直接掛在持有者(副將)身上。改掛在「被保護者」(如主將)身上一份清單,
+        # 每個元素是{unit(反擊執行者), coef, kind, prob}, 見 apply_effects 的 guardFor 分支
+        # 與 hit() 內的觸發判斷。與 guardian(傷害轉移代承)是不同機制(guardian轉移傷害承受方,
+        # counter_guards是「受擊者不變, 但由別人代為反擊攻擊者」), 兩者可並存不衝突。
+        self.counter_guards = []
         self.taunt_by = None                          # 嘲諷: 被嘲諷時強制普攻/單體戰法指向 taunt_by
         self.taunt_dur = 0                             # 嘲諷剩餘回合
         self.shield = None                            # 護盾: {amt, dur} 吸收固定量傷害, 先於兵力扣減
@@ -520,10 +527,16 @@ class Unit:
                 v *= m
         return v
 
-    def addbonus(self, kind, dmg_type=None):
+    def addbonus(self, kind, dmg_type=None, is_normal=None):
         """批24 D2: dmg_type(可選) —— 只加總「該條目未宣告 dmgType, 或宣告的 dmgType 與呼叫端
         指定的 dmg_type 相符」的項目, 供 amp/mitig 依「兵刃/謀略」傷害類型過濾(見 damage() 呼叫端)。
-        省略時完全維持原行為(不分類型全部加總), 向後相容全庫既有未帶 dmgType 的 amp/mitig 資料。"""
+        省略時完全維持原行為(不分類型全部加總), 向後相容全庫既有未帶 dmgType 的 amp/mitig 資料。
+        批28 B3: is_normal(可選) —— 只加總「該條目未宣告 normalOnly, 或宣告 normalOnly 且本次
+        is_normal 為 True」的項目, 供 amp 表達「僅普攻傷害提升」(如至柔動剛「提升我軍群體普攻
+        傷害」, 對比redirect既有的normalOnly慣例)。呼叫端傳 is_normal=None(預設, 如dot/counter/
+        settle等非普攻傷害路徑未特別傳入)時, 視為「未知/不適用」——安全側處理: 宣告了
+        normalOnly 的加成一律不計入(避免對非普攻傷害路徑意外套用「僅普攻」限定的加成,
+        比不套用更安全; 未宣告normalOnly的既有全庫資料完全不受影響, 向後相容)。"""
         s = 0.0
         for a in self.adds:
             k, v = a[0], a[1]
@@ -532,6 +545,8 @@ class Unit:
                 continue
             flags = a[4] if len(a) > 4 else None
             if dmg_type and flags and flags.get("dmgType") and flags["dmgType"] != dmg_type:
+                continue
+            if flags and flags.get("normalOnly") and is_normal is not True:
                 continue
             s += v
         return s
@@ -557,8 +572,8 @@ class Unit:
             s += a[1]
         return s
 
-    def amp(self, dmg_type=None):                     # 總增傷 = 一般+疊加層+衰減; 批24 D2: dmg_type過濾amp部分(stack/decay無此概念,全額計入)
-        a = self.addbonus("amp", dmg_type)
+    def amp(self, dmg_type=None, is_normal=None):      # 總增傷 = 一般+疊加層+衰減; 批24 D2: dmg_type過濾amp部分(stack/decay無此概念,全額計入); 批28 B3: is_normal過濾normalOnly標記的amp(僅普攻生效)
+        a = self.addbonus("amp", dmg_type, is_normal)
         if self.stack:
             a += self.stack["per"] * self.stack["n"]
         if self.decay:
@@ -663,7 +678,7 @@ DMG_B = 1.44
 DMG_FLOOR = 0.9
 
 
-def damage(src, dst, coef, kind, src_troop=None):
+def damage(src, dst, coef, kind, src_troop=None, is_normal=None):
     troop = src.troop if src_troop is None else src_troop  # 結算傷害用施毒當下定格兵力
     atk = src.eff("intel") if kind == "intel" else src.eff("force")
     deff = dst.eff("intel") if kind == "intel" else dst.eff("command")
@@ -678,10 +693,15 @@ def damage(src, dst, coef, kind, src_troop=None):
     # 區間套用-90%下限。
     # 批24 D2: dmgType 過濾 —— amp()/addbonus("mitig") 傳入本次傷害的 kind(phys/intel), 只加總
     # 「未宣告 dmgType 或宣告類型與本次相符」的加成/減傷(見 e.dmgType 呼叫端, apply_effects
-    # k=="amp"/"mitig" 分支)。
-    total_amp = src.amp(kind)
+    # k=="amp"/"mitig" 分支)。批28 B3: is_normal(可選) —— 傳入本次傷害是否為普攻, 供 amp()/
+    # addbonus("mitig") 過濾 normalOnly 標記的加成/減傷(僅普攻傷害生效, 見至柔動剛「降低我軍
+    # 及敵軍全體普通攻擊傷害35%」——外部查證確認原文是「降低」非root data摘要文字誤植的「提升」,
+    # 且明確限定「普通攻擊傷害」而非全部傷害, 過去mitig無範圍限定, 誤及戰法傷害, 見批28 B3
+    # 修正說明); 呼叫端未傳(dot/counter/settle等既有呼叫慣例, 見 damage() 各呼叫點)時預設
+    # None, 安全側不套用 normalOnly 加成/減傷(見 addbonus() docstring)。
+    total_amp = src.amp(kind, is_normal)
     base *= 0.0 if total_amp <= -1 else 1 + max(-0.9, total_amp)  # 增傷(疊加/衰減/敵方減益)
-    mit = dst.addbonus("mitig", kind) * (1 - min(1.0, src.addbonus("pierce")))  # 看破: 無視部分減傷
+    mit = dst.addbonus("mitig", kind, is_normal) * (1 - min(1.0, src.addbonus("pierce")))  # 看破: 無視部分減傷
     base *= max(0.1, 1 - mit)
     base *= random.uniform(0.96, 1.04)
     return max(0, base)
@@ -692,7 +712,7 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None):  # 
         if on_event:
             on_event(dst, src, is_normal)
         return
-    dmg = damage(src, dst, coef, kind)
+    dmg = damage(src, dst, coef, kind, is_normal=is_normal)  # 批28 B3: 傳入is_normal供amp()過濾normalOnly標記的加成
     # 批22: block(次數型格擋, 抵禦/警戒同族) —— 判定順序 dodge→block→shield→傷害(見紅線指示)。
     # 每次受擊消耗1次(不論本次傷害量多寡), val=1.0(如「抵禦」)完全格擋歸零本次傷害,
     # val=0.x(如「警戒」-75.35%)按比例打折。用光即從陣列移除。
@@ -735,6 +755,25 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None):  # 
         cd = damage(dst, src, c["coef"], c.get("kind", "phys"))
         src.troop -= cd
         src.wounded += cd * wounded_rate(CUR_ROUND)
+    # 批28 B1: 守護式反擊(counter_guards) —— dst(如隊伍主將)受到普攻時, 由登記在
+    # dst.counter_guards 裡的其他單位(如副將)代為反擊 src, 而非 dst 自己還手(見虎衛軍
+    # 「我軍主將即將受到普攻時, 副將...對攻擊者造成兵刃傷害」)。只在普攻(is_normal=True)
+    # 時觸發(對應原文「即將受到普攻時」, 非任意傷害); 每個守護單位每回合最多觸發1次(對應
+    # 原文「每回合最多觸發1次」), 用 hit_flags 以 guardian 自身 id 為鍵節流(與 when.on 反應式
+    # 的既有節流慣例一致, 見上方 hit_flags 說明)。
+    if is_normal and dst.alive and src.alive:
+        for g in dst.counter_guards:
+            gu = g["unit"]
+            if not gu.alive or gu is dst:
+                continue
+            flag_key = ("counter_guard", id(g))
+            if flag_key in gu.hit_flags:
+                continue
+            if random.random() < g.get("prob", 1.0):
+                gu.hit_flags.add(flag_key)
+                gd = damage(gu, src, g["coef"], g.get("kind", "phys"))
+                src.troop -= gd
+                src.wounded += gd * wounded_rate(CUR_ROUND)
 
 
 def extra_count(ex):                                  # 連擊/追擊次數: 整數部分必定, 小數部分機率
@@ -1145,13 +1184,24 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # 批24 D2: dmgType 旗標 —— amp/mitig 效果可選填 e["dmgType"]="phys"|"intel", 限定只對該
         # 類型傷害生效(damage() 結算時依 kind 過濾, 見 amp()/addbonus() 的 dmg_type 參數)。與
         # undispellable 合併進同一個 flags dict, 兩者互不干擾。
+        # 批28 B3: normalOnly 旗標 —— amp/mitig 效果可選填 e["normalOnly"]=true, 限定只對普攻
+        # 傷害(hit() 傳入 is_normal=True 的情形)生效, 戰法/突擊傷害不受影響(見至柔動剛「降低
+        # 我軍及敵軍全體普通攻擊傷害35%」, 對比redirect既有的normalOnly慣例, 語意不同但欄位
+        # 命名沿用一致性)。damage() 結算時依 is_normal 過濾, 見 amp()/addbonus() 的 is_normal
+        # 參數。
         dmg_type = e.get("dmgType")
-        ud_flags = {"undispellable": bool(e.get("undispellable")), "dmgType": dmg_type} if (e.get("undispellable") or dmg_type) else None
+        normal_only = bool(e.get("normalOnly")) if k in ("amp", "mitig") else False
+        ud_flags = {"undispellable": bool(e.get("undispellable")), "dmgType": dmg_type, "normalOnly": normal_only} \
+            if (e.get("undispellable") or dmg_type or normal_only) else None
         # dmgType 存在時, src 附加類型尾碼區分 dedup key(同一戰法內若有兩條不同 dmgType 的
         # amp/mitig, 如暫避其鋒「智力最高者減兵刃傷害」+「武力最高者減謀略傷害」, 兩者若共用
         # 同一個 src 會被 push_add 的「同kind+同src刷新」去重機制互相蓋掉, 見 rateup 既有
-        # prepOnly/nativeOnly 尾碼慣例同理)。
+        # prepOnly/nativeOnly 尾碼慣例同理)。批28 B3: normalOnly 同理附加尾碼(避免同戰法內
+        # normalOnly與非normalOnly的amp共用同一src互相覆蓋); src 為 None 時(兵書/裝備/緣分
+        # 無 nameZh) 尾碼無意義, 維持 None(不影響去重, 因 push_add 的 src=None 本就不去重)。
         dt_src = (src + ":" + dmg_type) if (src and dmg_type) else src
+        if normal_only and src:
+            dt_src = (dt_src or src) + ":normalOnly"
         for u in dests:
             if k == "amp":
                 v = sv_val(e["val"])
@@ -1218,13 +1268,25 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             elif k == "pierce":                       # 看破: 無視目標 val 比例的減傷
                 u.push_add("pierce", e["val"], e["dur"], src)
             elif k == "counter":                      # 反擊: 受擊時還擊
-                # 批23 A2: counter 讀 e["dur"](過去是幽靈欄位, 從不寫入/遞減 —— 「反擊持續1
-                # 回合」等帶時限的反擊被無聲變成常駐/永久, 見還擊/千里走單騎等)。dur 預設99
-                # (=常駐被動慣例, 向後相容無 dur 欄位的既有反擊資料)。+1 補償: tick 施加當
-                # 回合末即扣1, 與 taunt/dodge/surehit/shield 慣例一致。tick() 逐回合遞減,
-                # 歸零時清除(見 tick() 對應段落)。
-                u.counter = {"coef": e.get("coef", 1.0), "kind": e.get("kind", "phys"),
-                             "prob": e.get("prob", 1.0), "dur": e.get("dur", 99) + 1}
+                # 批28 B1: guardFor(守護式反擊) —— 「A受擊時, B代為反擊」的方向(如虎衛軍
+                # 「我軍主將即將受到普攻時, 副將反擊」)與一般counter(持有者自己受擊自己反擊)
+                # 方向相反。e.get("guardFor")=="leader" 時, u(此效果解析出的who=subs等目標)
+                # 不掛自己的counter, 改把自己登記進「隊伍主將」的 counter_guards 清單, 由
+                # hit() 在主將受擊時代為觸發還擊(見 hit() 內對應段落)。目前只支援
+                # guardFor:"leader"(對應虎衛軍語意), 其餘 who 仍走原本「持有者自己反擊」路徑。
+                if e.get("guardFor") == "leader" and allies and allies[0].alive:
+                    allies[0].counter_guards.append({
+                        "unit": u, "coef": e.get("coef", 1.0), "kind": e.get("kind", "phys"),
+                        "prob": e.get("prob", 1.0),
+                    })
+                else:
+                    # 批23 A2: counter 讀 e["dur"](過去是幽靈欄位, 從不寫入/遞減 —— 「反擊持續1
+                    # 回合」等帶時限的反擊被無聲變成常駐/永久, 見還擊/千里走單騎等)。dur 預設99
+                    # (=常駐被動慣例, 向後相容無 dur 欄位的既有反擊資料)。+1 補償: tick 施加當
+                    # 回合末即扣1, 與 taunt/dodge/surehit/shield 慣例一致。tick() 逐回合遞減,
+                    # 歸零時清除(見 tick() 對應段落)。
+                    u.counter = {"coef": e.get("coef", 1.0), "kind": e.get("kind", "phys"),
+                                 "prob": e.get("prob", 1.0), "dur": e.get("dur", 99) + 1}
             elif k == "taunt":                         # 嘲諷: 中招者普攻/單體戰法強制指向施放者
                 u.taunt_by = caster
                 u.taunt_dur = max(u.taunt_dur, e.get("dur", 1) + 1)
@@ -3265,6 +3327,105 @@ def demo():
     assert seen_kinds == {"chaos", "silence", "weak"}, \
         f"魅惑三選一(choices)應400次取樣內三種效果(混亂/計窮/虛弱)皆至少出現一次, 實際={seen_kinds}" \
         f"(若只出現silence一種, 代表choices退化回批20舊版固定行為)"
+
+    # 81) 批28 B1: counter.guardFor:"leader"(守護式反擊) —— 效果掛在 subs(副將)身上但
+    # guardFor:"leader", 套用後應登記進主將的 counter_guards, 而非副將自己的 counter
+    # (方向反了的舊行為對照組)。主將受到普攻時, 應由副將代為反擊攻擊者(攻擊者掉血), 而非
+    # 主將自己還手(主將本身 counter 應保持 None)。
+    gf_leader = Unit(POOL["典韋"] if "典韋" in POOL else POOL["呂布"], "盾")
+    gf_sub = Unit(POOL["張飛"], "盾")
+    gf_team = [gf_leader, gf_sub]
+    gf_tac = {"nameZh": "測試守護反擊81", "effects": [
+        {"k": "counter", "who": "subs", "coef": 1.0, "kind": "phys", "prob": 1.0, "guardFor": "leader"}]}
+    apply_effects(gf_sub, None, gf_tac, gf_team, [], no_heal=True)
+    assert gf_leader.counter is None, "guardFor:leader 不應讓主將自己掛 counter"
+    assert gf_sub.counter is None, "guardFor:leader 不應讓持有效果的副將自己掛 counter(方向已改為守護式)"
+    assert len(gf_leader.counter_guards) == 1 and gf_leader.counter_guards[0]["unit"] is gf_sub, \
+        "guardFor:leader 應把副將登記進主將的 counter_guards"
+    gf_attacker = Unit(POOL["呂布"], "騎")
+    atk_troop0 = gf_attacker.troop
+    hit(gf_attacker, gf_leader, 1.0, "phys", True)   # 普攻主將(is_normal=True)
+    assert gf_attacker.troop < atk_troop0, "主將受普攻時, 副將應代為反擊攻擊者(攻擊者應掉血)"
+    # 每回合最多觸發1次: 同回合內(未 tick)第二次普攻主將不應再觸發第二次守護反擊
+    atk_troop1 = gf_attacker.troop
+    hit(gf_attacker, gf_leader, 1.0, "phys", True)
+    assert abs(gf_attacker.troop - atk_troop1) < 1e-6, \
+        "guardFor 守護反擊每回合最多觸發1次, 同回合內第二次普攻不應再次觸發"
+    gf_leader.tick(); gf_sub.tick(); gf_attacker.tick()   # 換回合: hit_flags 重置後應能再次觸發
+    atk_troop2 = gf_attacker.troop
+    hit(gf_attacker, gf_leader, 1.0, "phys", True)
+    assert gf_attacker.troop < atk_troop2, "換回合後(hit_flags重置)應能再次觸發守護反擊"
+    # 非普攻(戰法傷害, is_normal=False)不應觸發守護反擊(原文「即將受到普攻時」限定)
+    gf_leader2 = Unit(POOL["典韋"] if "典韋" in POOL else POOL["呂布"], "盾")
+    gf_sub2 = Unit(POOL["張飛"], "盾")
+    apply_effects(gf_sub2, None, gf_tac, [gf_leader2, gf_sub2], [], no_heal=True)
+    gf_attacker2 = Unit(POOL["呂布"], "騎")
+    atk_troop3 = gf_attacker2.troop
+    hit(gf_attacker2, gf_leader2, 1.0, "phys", False)   # 戰法傷害, is_normal=False
+    assert abs(gf_attacker2.troop - atk_troop3) < 1e-6, "guardFor 守護反擊只應在普攻(is_normal=True)時觸發, 戰法傷害不應觸發"
+
+    # 82) 批28 B3: amp/mitig.normalOnly(僅普攻傷害生效/受影響) —— 效果只應在 is_normal=True
+    # (普攻)時對 damage() 產生作用, 突擊/戰法傷害(is_normal=False)不應受影響(見至柔動剛
+    # 「降低我軍及敵軍全體普通攻擊傷害35%」, 外部查證確認root data「提升」為誤植, 應為「降低」)。
+    no_src, no_dst = Unit(POOL["呂布"], "騎"), Unit(POOL["張飛"], "盾")
+    no_dst.push_add("mitig", 0.35, 9, "測試normalOnly82", {"normalOnly": True})
+    d_normal = damage(no_src, no_dst, 1.0, "phys", is_normal=True)
+    d_tactic = damage(no_src, no_dst, 1.0, "phys", is_normal=False)
+    d_baseline = damage(Unit(POOL["呂布"], "騎"), Unit(POOL["張飛"], "盾"), 1.0, "phys", is_normal=False)
+    assert d_normal < d_baseline * 0.8, "normalOnly mitig: is_normal=True 時應套用減傷"
+    assert abs(d_tactic - d_baseline) < d_baseline * 0.15, \
+        f"normalOnly mitig: is_normal=False(戰法傷害) 時不應套用減傷, d_tactic={d_tactic:.1f} baseline={d_baseline:.1f}"
+    # amp 同理(用正值增傷驗證, 避免與上面mitig的效果混淆, 各自獨立unit)
+    no_src2 = Unit(POOL["呂布"], "騎")
+    no_src2.push_add("amp", 0.5, 9, "測試normalOnly82b", {"normalOnly": True})
+    no_dst2 = Unit(POOL["張飛"], "盾")
+    d_amp_normal = damage(no_src2, no_dst2, 1.0, "phys", is_normal=True)
+    d_amp_tactic = damage(no_src2, no_dst2, 1.0, "phys", is_normal=False)
+    d_amp_baseline = damage(Unit(POOL["呂布"], "騎"), Unit(POOL["張飛"], "盾"), 1.0, "phys", is_normal=False)
+    assert d_amp_normal > d_amp_baseline * 1.2, "normalOnly amp: is_normal=True 時應套用增傷"
+    assert abs(d_amp_tactic - d_amp_baseline) < d_amp_baseline * 0.15, \
+        "normalOnly amp: is_normal=False(戰法傷害) 時不應套用增傷"
+
+    # 83) 批28 B4: choices 傷害分支(coef/kind/targetSel) 對 command 型戰法應能端到端造成傷害
+    # (桃園結義三選一重建的可行性基礎) —— fight() 主迴圈既有的 command/passive 派發路徑(見
+    # 批16/27既有機制)讀取 pick_choice() 抽出的分支 t["coef"]/t["kind"]/t["targetSel"] 並呼叫
+    # hit(), 不需要引擎擴充即可支援傷害段。用勝率統計驗證(同78號測試手法): 帶巨額傷害分支
+    # (coef=5.0)的command戰法應比完全no-op的對照組顯著推高勝率。
+    _orig_lb_tactic_83 = POOL["呂布"].tactic
+    noop_tac_83 = {"nameZh": "測試no-op對照83", "type": "command", "kind": "phys", "coef": 0,
+                   "rate": 1.0, "n": 1, "prep": 0, "effects": []}
+    dmg_choice_tac_83 = {
+        "nameZh": "測試choices傷害分支83", "type": "command", "kind": "phys", "coef": 0,
+        "rate": 1.0, "n": 1, "prep": 0, "effects": [],
+        "choices": [
+            {"weight": 1, "coef": 5.0, "kind": "intel", "targetSel": "minIntel", "effects": []},
+        ],
+    }
+    POOL["呂布"].tactic = noop_tac_83
+    try:
+        random.seed(83)
+        win_noop_83 = simulate(["呂布", "張飛", "諸葛亮"], ["曹操", "司馬懿", "周瑜"], n=300)["A勝率"]
+    finally:
+        POOL["呂布"].tactic = _orig_lb_tactic_83
+    POOL["呂布"].tactic = dmg_choice_tac_83
+    try:
+        random.seed(83)
+        win_dmg_83 = simulate(["呂布", "張飛", "諸葛亮"], ["曹操", "司馬懿", "周瑜"], n=300)["A勝率"]
+    finally:
+        POOL["呂布"].tactic = _orig_lb_tactic_83
+    assert win_dmg_83 > win_noop_83 + 0.1, (
+        f"批28 B4: command型戰法choices分支帶coef/kind/targetSel應能造成真實傷害並顯著推高"
+        f"勝率(no-op基準{win_noop_83:.3f}, 帶傷害分支{win_dmg_83:.3f})——若choices的coef傷害段"
+        f"未被main loop讀取/呼叫hit(), 兩者應無顯著差異")
+    # 桃園結義本尊(真實資料): 應有3個choices分支(治療+2個傷害段), 且頂層rate=0.4
+    taoyuan_tac = TACTICS["桃園結義"]
+    assert taoyuan_tac.get("choices") and len(taoyuan_tac["choices"]) == 3, \
+        "桃園結義應重建為3個choices分支(治療我軍最殘/謀略傷害打智力最低敵/兵刃傷打統率最低敵)"
+    assert abs(taoyuan_tac["rate"] - 0.4) < 1e-6, "桃園結義頂層rate應為0.4(20%-40%取滿級)"
+    dmg_branches = [c for c in taoyuan_tac["choices"] if c.get("coef")]
+    assert len(dmg_branches) == 2, "桃園結義應有2個帶coef的傷害分支"
+    assert {c.get("targetSel") for c in dmg_branches} == {"minIntel", "minCommand"}, \
+        "桃園結義2個傷害分支應分別以minIntel(打智力最低敵)/minCommand(打統率最低敵)為targetSel"
 
     print("self-check OK")
 
