@@ -2175,24 +2175,11 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
-    "who": "self",
-    "val": 0.2,
-    "dur": 99
-   },
-   {
-    "k": "stat",
-    "who": "self",
-    "stat": "force",
-    "dur": 99,
-    "add": 18,
-    "_approx": "原文最多疊加5次,單層9→18點;引擎無疊層機制,取單次觸發滿級值"
-   },
-   {
     "k": "stack",
     "who": "self",
     "per": 0.2,
-    "max": 5
+    "max": 5,
+    "_note": "每層+20%最多5層(上限100%); v5盲測抓到舊資料同時存flat amp+0.2造成120%重複計算,已移除僅留stack"
    }
   ],
   "_src": "https://sgz.ejoy.com/second/detail-5298.html",
@@ -6899,7 +6886,7 @@
     "k": "redirect",
     "who": "ally",
     "guard": "max_force",
-    "share": 1.0,
+    "share": 1,
     "normalOnly": true,
     "dur": 99,
     "_approx": "prob-ev",
@@ -7031,7 +7018,7 @@
     "who": "subs",
     "coef": 0.72,
     "kind": "phys",
-    "prob": 1.0,
+    "prob": 1,
     "dur": 2,
     "_note": "「前2回合副將(群體2人)受到普通攻擊時反擊(傷害率72%)」; counter原語無「僅前2回合」的時間窗欄位(counter是常駐狀態非本次heal同款e.when支援對象), 以dur=2近似(較原文「前2回合」寬鬆, counter本身在prep套用後即持續2回合, 與前2回合窗口方向一致但不精確扣回合數)"
    },
@@ -7241,7 +7228,7 @@
   "type": "command",
   "kind": "phys",
   "coef": 0.82,
-  "rate": 1.0,
+  "rate": 1,
   "n": 2,
   "prep": 0,
   "effects": [
@@ -9629,7 +9616,7 @@
   "kind": "intel",
   "coef": 0.77,
   "rate": 0.3,
-  "n": 1,
+  "n": 2,
   "prep": 0,
   "effects": [],
   "quality": "B",

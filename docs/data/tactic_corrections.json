@@ -247,7 +247,7 @@
      "k": "redirect",
      "who": "ally",
      "guard": "self",
-     "share": 1.0,
+     "share": 1,
      "dur": 1,
      "_note": "援護我軍全體分擔普攻"
     },
@@ -662,7 +662,7 @@
     {
      "k": "dot",
      "who": "enemy",
-     "coef": 1.0,
+     "coef": 1,
      "dur": 1,
      "scale": "intel"
     }
@@ -826,7 +826,7 @@
     {
      "k": "dot",
      "who": "enemy",
-     "coef": 1.0,
+     "coef": 1,
      "dur": 1,
      "scale": "intel"
     }
@@ -3036,7 +3036,7 @@
       "coef": 0.84,
       "kind": "phys",
       "n": 2,
-      "rate": 1.0
+      "rate": 1
      }
     ]
    },
@@ -3636,29 +3636,17 @@
   "弓腰姬": {
    "effects": [
     {
-     "k": "amp",
-     "who": "self",
-     "val": 0.2,
-     "dur": 99
-    },
-    {
-     "k": "stat",
-     "who": "self",
-     "stat": "force",
-     "dur": 99,
-     "add": 18,
-     "_approx": "原文最多疊加5次,單層9→18點;引擎無疊層機制,取單次觸發滿級值"
-    },
-    {
      "k": "stack",
      "who": "self",
      "per": 0.2,
-     "max": 5
+     "max": 5,
+     "_note": "每層+20%最多5層(上限100%); v5盲測抓到舊資料同時存flat amp+0.2造成120%重複計算,已移除僅留stack"
     }
    ],
-   "_evidence": "將提高自身9→18點武力，最多疊加5次",
+   "_evidence": "每層+20%傷害最多5層(100%上限)",
    "_bucket": "batch12_modeA_stat_flat",
-   "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正"
+   "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正",
+   "_diff": "v5盲測: amp+stack重複計算移除"
   },
   "引弦力戰": {
    "effects": [
@@ -4266,7 +4254,7 @@
      "k": "counter",
      "coef": 2.38,
      "kind": "phys",
-     "prob": 1.0,
+     "prob": 1,
      "dur": 2,
      "_note": "反擊傷害率119%→238%, 觸發窗為洞察生效期間(2回合); counter原語原生支援prob欄位(非stun/silence/disarm家族的機率限制), 故可精確編碼機率, 但引擎counter為\"受擊時按prob擲骰\"常駐狀態而非\"僅洞察期間\"的時間窗限定——這裡仍受該效果本身dur=2回合限制, 屬合理近似"
     }
@@ -4462,7 +4450,7 @@
      "leaderBonus": {
       "general": "曹純",
       "curve": "quad",
-      "k": 3.2e-05
+      "k": 0.000032
      }
     }
    ],
@@ -4692,7 +4680,7 @@
     {
      "k": "heal",
      "who": "ally",
-     "coef": 4.0,
+     "coef": 4,
      "dur": 1,
      "_approx": "multi-heal-fold",
      "_note": "『4次治療』×每次est治療率100%折算單次總量; 引擎active heal不讀dur,原coef1/dur4實際只治1次(4倍低估); 原文無治療率,維持_est"
@@ -5091,7 +5079,7 @@
   "青州兵": {
    "set": {
     "coef": 0,
-    "rate": 1.0
+    "rate": 1
    },
    "effects": [
     {
@@ -5099,7 +5087,7 @@
      "who": "subs",
      "coef": 0.72,
      "kind": "phys",
-     "prob": 1.0,
+     "prob": 1,
      "dur": 2,
      "_note": "「前2回合副將(群體2人)受到普通攻擊時反擊(傷害率72%)」; counter原語無「僅前2回合」的時間窗欄位(counter是常駐狀態非本次heal同款e.when支援對象), 以dur=2近似(較原文「前2回合」寬鬆, counter本身在prep套用後即持續2回合, 與前2回合窗口方向一致但不精確扣回合數)"
     },
@@ -5339,7 +5327,7 @@
      "k": "redirect",
      "who": "ally",
      "guard": "max_force",
-     "share": 1.0,
+     "share": 1,
      "normalOnly": true,
      "dur": 99,
      "_approx": "prob-ev",
@@ -5659,7 +5647,7 @@
   "高櫓連營": {
    "set": {
     "coef": 0.82,
-    "rate": 1.0,
+    "rate": 1,
     "n": 2,
     "nMax": 3
    },
@@ -5769,6 +5757,13 @@
    ],
    "_evidence": "準備1回合，對我軍群體（2人）造成的謀略傷害提高12.5% → 25%，持續1回合，隨後對敵軍單體造成謀略攻擊（傷害率105% → 210%，受智力影響）",
    "_bucket": "batch15_one_point_disclosure"
+  },
+  "鬥智": {
+   "set": {
+    "n": 2
+   },
+   "_evidence": "對敵軍群體(2人)謀略攻擊38.5→77%",
+   "_diff": "v5盲測: n=1應為2"
   }
  },
  "_batch12_note": "批12: 盲測殘差修正, 在批10(173筆corrections)基礎上新增44筆corrections(217筆總計)。Mode A(stat mult->add修正,36筆) / Mode B(hitsRepeat原語,3筆: 五雷轟頂/摧鋒斷刃/暴斂四方) / Mode C(空effects補完9筆 + heal.who=enemy系統性bug修正5筆) / Mode D(控制/機率修正6筆, 含威震華夏stun->disarm重新編碼+神機妙算coef補完) / Mode E(1分清單次要clause補完6筆) / Mode F(新增chaos原語, 混亂重分類9筆tactics+1筆equips) / Mode G(新增lockTarget原語與引擎機制, 但上兵伐謀/刮骨療毒經核實不符合「目標持久化」語意, 未套用資料, 詳見批12最終報告)。新增雙原語(chaos/hitsRepeat/lockTarget)已於engine.js與sgz.py同步實作並各自新增self-check assertion(38-41)。",
