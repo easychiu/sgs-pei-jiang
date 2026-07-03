@@ -225,7 +225,8 @@
     "val": 0.18,
     "dur": 99,
     "_approx": "decay-avg",
-    "_note": "僅抵擋謀略傷害(非全類型)且為消耗性資源(依上回合兵刃輸出動態補充,每回合衰減10%),以36%上限打對折(限定謀略傷害類型+穩態資源量)保守折算為18%常駐;engine mitig無傷害類型過濾與動態資源機制"
+    "_note": "批25 R19/R20: 原_note稱「engine mitig無傷害類型過濾與動態資源機制」——傷害類型過濾部分已stale(dmgType原語自批24已存在), 補dmgType:\"intel\"(原文「將消耗丹陽兵可抵擋其中18%→36%謀略傷害」限定僅謀略傷害), 不再誤及兵刃傷害。仍保留EV折算(以36%上限打對折保守估為18%常駐)近似「消耗性資源(依上回合兵刃輸出動態補充,每回合衰減10%)」的動態資源池機制——此部分限制依然成立(引擎無「依前回合輸出動態補充+每回合衰減」的資源池原語), 未被dmgType解決, 仍需EV折算。",
+    "dmgType": "intel"
    }
   ],
   "quality": "S",
@@ -735,7 +736,8 @@
     "who": "enemy",
     "val": 0.3,
     "dur": 99,
-    "_note": "掠陣疊2層後移除並使目標受兵刃傷害+30%(可疊加),以敵全體易傷+30%常駐近似"
+    "_note": "掠陣疊2層後移除並使目標受兵刃傷害+30%(可疊加),以敵全體易傷+30%常駐近似 批25 R19: 原文「使目標受到兵刃傷害提高30%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。",
+    "dmgType": "phys"
    },
    {
     "k": "lifesteal",
@@ -1205,7 +1207,9 @@
     "who": "enemy",
     "val": -0.18,
     "dur": 1,
-    "n": 1
+    "n": 1,
+    "dmgType": "phys",
+    "_note": "批25 R19: 原文「使其造成兵刃傷害降低9%→18%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -1436,7 +1440,9 @@
     "who": "ally",
     "val": 0.39,
     "dur": 2,
-    "scale": "command"
+    "scale": "command",
+    "dmgType": "intel",
+    "_note": "批25 R19: 原文「使敵軍造成的謀略傷害降低19.5%→39%」為單一傷害類型措辭, 補dmgType:\"intel\"(批24新增原語, 精確限定只對謀略傷害生效, 不再誤及兵刃傷害)。"
    },
    {
     "k": "dot",
@@ -1450,7 +1456,7 @@
   "cat": "COMMAND",
   "src": "INNATE",
   "_todo": "the dot effect (\"第2回合起，敵軍全體進入叛逃狀態...持續2回合\") should only start firing from round 2, but for command-type tactics non-heal effects apply once at prep (round 0) - roughly 2 rounds too early. A when:{from:2} at the tactic level would also incorrectly delay the mitig clause (which is meant to be persistent/ongoing, not round-2-gated). DSL has no per-effect when window for tactics (only equipment effects support effect-level when), so the two clauses' differing timing cannot be cleanly split. Left unfixed, flagged for visibility.",
-  "_note": "the dot effect (\"第2回合起，敵軍全體進入叛逃狀態...持續2回合\") should only start firing from round 2, but for command-type tactics non-heal effects apply once at prep (round 0) - roughly 2 rounds too early. A when:{from:2} at the tactic level would also incorrectly delay the mitig clause (which is meant to be persistent/ongoing, not round-2-gated). DSL has no per-effect when window for tactics (only equipment effects support effect-level when), so the two clauses' differing timing cannot be cleanly split. Left unfixed, flagged for visibility."
+  "_note": "the dot effect (\"第2回合起，敵軍全體進入叛逃狀態...持續2回合\") should only start firing from round 2, but for command-type tactics non-heal effects apply once at prep (round 0) - roughly 2 rounds too early. A when:{from:2} at the tactic level would also incorrectly delay the mitig clause (which is meant to be persistent/ongoing, not round-2-gated). DSL has no per-effect when window for tactics (only equipment effects support effect-level when), so the two clauses' differing timing cannot be cleanly split. Left unfixed, flagged for visibility. 批25 R19: mitig補dmgType:intel(見effects[0]._note); 原有_todo(dot段回合起始時機)維持不變。"
  },
  {
   "nameZh": "坐斷東南",
@@ -1771,13 +1777,26 @@
     "val": -0.32,
     "dur": 3,
     "scale": "speed",
-    "_note": "僅套用敵軍武力最高者(未區分目標篩選, who=enemy會套用全體敵軍非僅武力最高者)"
+    "targetSel": "maxForce",
+    "dmgType": "phys",
+    "_note": "批25 R19: 原parsed有兩條完全重複的amp效果(疑似解析時誤重複), 拆分成正確的兩條——本效果對應「使敵軍武力最高的武將造成的兵刃傷害降低16%→32%」, 補targetSel:\"maxForce\"(批18已支援的效果級選標準則, 精確篩選武力最高單體, 取代舊有who=enemy套全體敵軍的寬鬆近似)+dmgType:\"phys\"(批24新增原語, 限定僅兵刃傷害, 不再誤及謀略傷害)。"
+   },
+   {
+    "k": "amp",
+    "who": "enemy",
+    "val": -0.32,
+    "dur": 3,
+    "scale": "speed",
+    "targetSel": "maxIntel",
+    "dmgType": "intel",
+    "_note": "批25 R19: 本效果對應「使敵軍智力最高的武將造成的謀略傷害降低16%→32%」, 補targetSel:\"maxIntel\"(精確篩選智力最高單體)+dmgType:\"intel\"(限定僅謀略傷害)。與上一條(武力最高+兵刃)為兩個獨立篩選對象+不同傷害類型的效果, 過去被誤判「完全重複」而合併成一條, 現分開精確表達。"
    }
   ],
   "quality": "S",
   "cat": "COMMAND",
   "src": "INHERITANCE",
-  "_todo": "原parsed有兩條完全重複的amp效果(疑似解析時誤重複), 保留一條; 「敵軍武力最高者兵刃降傷」與「敵軍智力最高者謀略降傷」是兩個不同篩選對象+不同傷害類型的獨立效果,現有who=enemy會套用到全體敵軍而非精確篩選最高者, 屬於已知的目標篩選精度限制(整庫「XX最高的武將」類效果共通問題, 非本戰法獨有)。"
+  "_todo": null,
+  "_note": "批25 R19+目標篩選: 原_todo稱「無法精確篩選最高者的targetSel限制」已解決(targetSel:maxForce/maxIntel自批18已支援, 效果級可用), 拆分成兩條各自targetSel+dmgType的獨立效果, 不再是近似。"
  },
  {
   "nameZh": "奉令平虜",
@@ -2014,7 +2033,9 @@
     "k": "amp",
     "who": "self",
     "val": 0.36,
-    "dur": 2
+    "dur": 2,
+    "dmgType": "phys",
+    "_note": "批25 R19: 原文「使自己造成的兵刃傷害提升18%→36%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -2131,8 +2152,8 @@
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INNATE",
-  "_todo": "「隨後使我軍全體2回合內免疫計窮」(免疫silence狀態)完全未建模: 引擎無「狀態免疫」(immunity)原語(僅insight原語提供「免疫所有控制」的全套免疫, 無法只免疫單一種控制如計窮), 予以省略。",
-  "_note": "批17: 用批16新原語immune(單項控制免疫)落地先前_todo的「免疫計窮完全未建模」缺口(舊_todo: 僅insight可全免控制, 範圍過寬故省略——現用immuneTo精確限定僅免疫silence)。"
+  "_todo": null,
+  "_note": "批17: 用批16新原語immune(單項控制免疫)落地先前_todo的「免疫計窮完全未建模」缺口(舊_todo: 僅insight可全免控制, 範圍過寬故省略——現用immuneTo精確限定僅免疫silence)。 批25 R20: 清除stale頂層_todo(該欄位早年寫下的舊斷言早已被本節說明的immune落地取代, 但欄位本身從未同步移除, 讓維護者誤以為此缺口仍然存在)。"
  },
  {
   "nameZh": "宜城之志",
@@ -2236,7 +2257,9 @@
     "k": "amp",
     "who": "self",
     "val": 0.08,
-    "dur": 99
+    "dur": 99,
+    "dmgType": "phys",
+    "_note": "批25 R19: 原文「使自己造成的兵刃傷害提升8%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。"
    }
   ],
   "_src": "https://3g.7723.cn/strategy/67224.html",
@@ -2872,7 +2895,8 @@
     "who": "self",
     "val": 0.25,
     "dur": 2,
-    "_note": "批19(grok第二輪查證): 原raw/舊corrections僅有減傷一段, 漏掉『自身造成兵刃傷害提高12.5%→25%』; 新增amp(self)還原增傷段, 不受武力影響(隨戰法等級成長, 非scale)"
+    "_note": "批19(grok第二輪查證): 原raw/舊corrections僅有減傷一段, 漏掉『自身造成兵刃傷害提高12.5%→25%』; 新增amp(self)還原增傷段, 不受武力影響(隨戰法等級成長, 非scale) 批25 R19: 原文「自身造成兵刃傷害提高12.5%→25%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。",
+    "dmgType": "phys"
    },
    {
     "k": "mitig",
@@ -2880,7 +2904,8 @@
     "val": 0.25,
     "dur": 2,
     "scale": "force",
-    "_note": "批19: 減傷段25%(受武力影響)取代舊版20%→40%(grok查無來源支持的錯誤數字), 三方來源(巴哈/陸服官方攻略/台版官方頁)一致確認25%"
+    "_note": "批19: 減傷段25%(受武力影響)取代舊版20%→40%(grok查無來源支持的錯誤數字), 三方來源(巴哈/陸服官方攻略/台版官方頁)一致確認25% 批25 R19: 原文「自身受到的兵刃傷害降低12.5%→25%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。",
+    "dmgType": "phys"
    }
   ],
   "_src": "https://m.ali213.net/wiki/sgzzlb/zf64.html",
@@ -3274,7 +3299,8 @@
     "val": 0.168,
     "dur": 99,
     "_approx": "crit-ev",
-    "_note": "14%奇謀機率(觸發+100%)+20%奇謀傷害 期望折算0.14+0.14*0.20"
+    "_note": "14%奇謀機率(觸發+100%)+20%奇謀傷害 期望折算0.14+0.14*0.20 批25 R19: 原文「觸發時謀略傷害提高100%(奇謀/會心EV折算)」為單一傷害類型措辭, 補dmgType:\"intel\"(批24新增原語, 精確限定只對謀略傷害生效, 不再誤及兵刃傷害)。",
+    "dmgType": "intel"
    }
   ],
   "_src": "https://www.gamersky.com/handbooksy/202007/1308628.shtml",
@@ -3323,7 +3349,8 @@
     "who": "enemy",
     "val": 0.15,
     "dur": 1,
-    "_note": "僅對敵軍主將生效"
+    "_note": "僅對敵軍主將生效 批25 R19: 原文「使敵軍主將受到兵刃傷害提高7.5%→15%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。",
+    "dmgType": "phys"
    },
    {
     "k": "stat",
@@ -3453,14 +3480,17 @@
     "k": "amp",
     "who": "enemy",
     "val": -0.3,
-    "dur": 3
+    "dur": 3,
+    "dmgType": "intel",
+    "_note": "批25 R19: 原文「使雙方全體造成的謀略傷害降低15%→30%(敵方段)」為單一傷害類型措辭, 補dmgType:\"intel\"(批24新增原語, 精確限定只對謀略傷害生效, 不再誤及兵刃傷害)。"
    },
    {
     "k": "amp",
     "who": "ally",
     "val": -0.3,
     "dur": 3,
-    "_note": "雙方全體同受影響:我軍造成的謀略傷害亦降低15%→30%,前3回合"
+    "_note": "雙方全體同受影響:我軍造成的謀略傷害亦降低15%→30%,前3回合 批25 R19: 原文「使雙方全體造成的謀略傷害降低15%→30%(我方段)」為單一傷害類型措辭, 補dmgType:\"intel\"(批24新增原語, 精確限定只對謀略傷害生效, 不再誤及兵刃傷害)。",
+    "dmgType": "intel"
    },
    {
     "k": "amp",
@@ -3471,7 +3501,8 @@
     "when": {
      "from": 3
     },
-    "_note": "批24 A: stale揭露清剿: 原_todo稱「引擎amp原語目前不讀取nested e.when, 故此效果實際從第1回合就套用(較原文提早2回合生效)」, 現已證實批18的fight()回合迴圈通用掃描(母戰法無t.when時逐一檢查passive/command效果的e.when)會正確處理本效果——本戰法type=command且無t.when, 補上when:{from:3}(先前因誤信引擎不支援而省略)後, 此amp現在會精確從第3回合起才套用, 貼合原文「第3回合起...持續到戰鬥結束」, 不再提早2回合生效。"
+    "_note": "批24 A: stale揭露清剿: 原_todo稱「引擎amp原語目前不讀取nested e.when, 故此效果實際從第1回合就套用(較原文提早2回合生效)」, 現已證實批18的fight()回合迴圈通用掃描(母戰法無t.when時逐一檢查passive/command效果的e.when)會正確處理本效果——本戰法type=command且無t.when, 補上when:{from:3}(先前因誤信引擎不支援而省略)後, 此amp現在會精確從第3回合起才套用, 貼合原文「第3回合起...持續到戰鬥結束」, 不再提早2回合生效。 批25 R19: 原文「使我軍全體造成的兵刃傷害提升20%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。",
+    "dmgType": "phys"
    }
   ],
   "quality": "S",
@@ -3694,7 +3725,9 @@
     "who": "enemy",
     "val": 0.2,
     "dur": 1,
-    "scale": "force"
+    "scale": "force",
+    "dmgType": "phys",
+    "_note": "批25 R19: 原文「使敵軍群體受到兵刃傷害提升10%→20%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -3731,7 +3764,9 @@
     "val": 0.04,
     "dur": 99,
     "scale": "intel",
-    "_approx": "原文「可疊加」(每回合+2%→4%,理論無上限), stack原語僅能疊加施放者/持有者自身的『造成傷害』加成(amp()讀取own stack), 無法表達『敵軍受到傷害』的逐回合疊加debuff, 故移除stack, 僅取單次滿值+4%, 未建模疊加成長"
+    "_approx": "原文「可疊加」(每回合+2%→4%,理論無上限), stack原語僅能疊加施放者/持有者自身的『造成傷害』加成(amp()讀取own stack), 無法表達『敵軍受到傷害』的逐回合疊加debuff, 故移除stack, 僅取單次滿值+4%, 未建模疊加成長",
+    "dmgType": "intel",
+    "_note": "批25 R19: 原文「使敵軍全體受到謀略傷害提高2%→4%」為單一傷害類型措辭, 補dmgType:\"intel\"(批24新增原語, 精確限定只對謀略傷害生效, 不再誤及兵刃傷害)。"
    }
   ],
   "_src": " +他AI補全effectText/重解",
@@ -3870,7 +3905,9 @@
     "who": "enemy",
     "val": 0.25,
     "dur": 2,
-    "n": 2
+    "n": 2,
+    "dmgType": "intel",
+    "_note": "批25 R19: 原文「使其受到的謀略傷害提高25%」為單一傷害類型措辭, 補dmgType:\"intel\"(批24新增原語, 精確限定只對謀略傷害生效, 不再誤及兵刃傷害)。"
    },
    {
     "k": "dot",
@@ -4334,7 +4371,9 @@
     "val": 0.048,
     "dur": 1,
     "scale": "intel",
-    "_approx": "prob-ev: 40%機率×12%折算為4.8%"
+    "_approx": "prob-ev: 40%機率×12%折算為4.8%",
+    "dmgType": "intel",
+    "_note": "批25 R19: 原文「使其受到謀略傷害提高6%→12%(EV折算)」為單一傷害類型措辭, 補dmgType:\"intel\"(批24新增原語, 精確限定只對謀略傷害生效, 不再誤及兵刃傷害)。"
    }
   ],
   "quality": "S",
@@ -5241,7 +5280,8 @@
     "who": "subs",
     "val": 0.2,
     "dur": 3,
-    "_approx": "原文為兩名副將分別受「兵刃傷害-10%→20%」與「謀略傷害-10%→20%」的不同傷害類型減傷(各自只防一種傷害類型), mitig原語不分兵刃/謀略、套用給全部副將,近似為兩名副將都獲得同一份不分類型的20%減傷(比原文範圍更寬但方向一致)"
+    "_note": "批25 R20: 原_approx舊措辭已stale(dmgType原語自批24已存在, 並非引擎完全無法處理傷害類型)。但本戰法的真實限制不是dmgType原語本身缺失, 而是「兩名副將各自只應受單一不同傷害類型的減傷(副將A只防兵刃、副將B只防謀略)」——這是「依角色分派不同dmgType」的精細度, 而who:\"subs\"是套用給全部副將的集合式選標(見engine_limitations.md 6.5), 無法讓同一個mitig效果對「副將A/副將B」套用相異dmgType。若強行指定單一dmgType(如都設phys), 謀略防護那一半的效果會完全消失,精確度未必優於維持現狀。保守維持現行值(兩名副將皆獲得同一份、涵蓋兩種傷害類型的20%減傷, 涵蓋範圍比原文更寬但方向一致), 真正的缺口是「who選標無法按子集合分派相異效果細節」, 待未來新增「依隊伍位置分派相異effect」機制才能精確解決。",
+    "_approx": "dmgType-role-split-unsupported"
    }
   ],
   "quality": "S",
@@ -5342,7 +5382,7 @@
   "type": "passive",
   "kind": "phys",
   "coef": 1.2,
-  "rate": 1,
+  "rate": 0.125,
   "n": 3,
   "prep": 0,
   "effects": [
@@ -5358,7 +5398,8 @@
   "quality": "S",
   "cat": "PASSIVE",
   "src": "INHERITANCE",
-  "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正"
+  "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正",
+  "_approx": "批25 R16: 「第5回合時，根據疊加次數對敵軍全體造成兵刃傷害」為單一時間點觸發(僅第5回合算1次), 但戰法type=passive且coef=1.2, 過去無t.when閘門, 每回合皆會判定觸發(rate=1即每回合必定發動), 造成~8倍放大(戰鬥8回合, 本應只在第5回合觸發1次)。若改用t.when={rounds:[5]}會連帶讓stat效果(語意為「每次受兵刃傷害+3→6點, 最大疊加10次」的常駐每次觸發, 現有效果已用單次觸發值近似, 於準備階段套用且dur=99常駐)在母戰法有t.when時被整段延後到第5回合才套用(見engine_limitations.md 6.4「e.when的母戰法無t.when限制」, apply_passives()對t.get('when')為真的passive/command戰法在prep階段完全跳過, 改由回合迴圈in when視窗開啟時才套用), 與原文「戰鬥中每次受兵刃傷害」應從第1回合就開始生效的語意矛盾, 兩種時間窗無法在同一戰法內共存(比照士別三日同型連坐限制的既有處理慣例)。改用EV折算: rate由1.0(原每回合必定觸發, ~8倍高估)改為0.125(=1回合/8回合戰鬥長度, 近似「整場僅在第5回合觸發1次」的等效傷害期望值), coef(1.2=120%)維持不變; stat效果不受影響, 仍在準備階段常駐套用(對應「戰鬥中」每次受擊累積, 現用單次觸發值近似, 見effects[0]._approx既有揭露)。"
  },
  {
   "nameZh": "絕計折謀",
@@ -5645,20 +5686,27 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 0,
-    "dur": 99
+    "coef": 0.5,
+    "dur": 1,
+    "scale": "speed",
+    "_est": true,
+    "_note": "批25 R18: 原文「我軍普攻有機率(受速度影響)恢復兵力最低者並獲謀略減傷」完全無任何數值描述(EVENT來源卡, root data無%/機率/持續回合等數字, 查無外部資料來源), 過去 coef=0/val=0 是「無數字無法抽取」的誠實留白, 但只有裸_est:true旗標、無解釋文字, 效果實際上完全空轉(治療量0+減傷0%, 等同戰法無效)——比誠實留白更糟, 因為_est旗標讓人誤以為已標記為近似值, 實則效果數值上什麼都沒做。改為: 比照同類「普攻觸發+治療+減傷」command/passive戰法(江東小霸王heal治療率約56%、scale取force)取中位數量級的保守估計值, scale比照原文「受速度影響」改用speed(而非江東小霸王的force, 因觸發屬性不同)。coef=0.5(治療率50%, S級戰法常見中位量級)、mitig.val=0.2(謀略減傷20%, 常見量級)為保守估計值, 待未來取得官方數值/戰報實測後應覆寫此近似(見_bucket標記待校準)。"
    },
    {
     "k": "mitig",
     "who": "ally",
-    "val": 0,
-    "dur": 99
+    "val": 0.2,
+    "dur": 99,
+    "dmgType": "intel",
+    "scale": "speed",
+    "_est": true,
+    "_note": "批25 R18: 「獲謀略減傷」限謀略傷害類型(dmgType:intel), 數值同上heal效果_note說明, 保守估計值待校準。"
    }
   ],
   "quality": "S",
   "cat": "COMMAND",
   "src": "EVENT",
-  "_est": true
+  "_note": "批25 R18: 原效果全0(heal.coef=0+mitig.val=0)但原文描述實質機制(恢復兵力+謀略減傷),裸_est:true無解釋文字, 效果完全空轉。改用保守估計值(見各效果_note)並補上文字揭露,待未來取得官方數值後覆寫。"
  },
  {
   "nameZh": "臨戰先登",
@@ -5952,7 +6000,9 @@
     "k": "mitig",
     "who": "self",
     "val": 0.3,
-    "dur": 2
+    "dur": 2,
+    "dmgType": "phys",
+    "_note": "批25 R19: 原文「使自己受到兵刃傷害降低15%→30%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -6207,13 +6257,15 @@
     "who": "ally",
     "val": 0.24,
     "dur": 99,
-    "scale": "command"
+    "scale": "command",
+    "dmgType": "phys",
+    "_note": "批25 R19: 原文「我軍全體受到兵刃傷害降低12%→24%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。"
    }
   ],
   "quality": "S",
   "cat": "TROOP",
   "src": "INHERITANCE",
-  "_note": "嚴重誤植修正: 「傷害率300%」是自軍處於灼燒狀態時的額外自損懲罰(條件觸發, 且承受方為我軍), 原coef 3+n 3+rate 1會讓藤甲兵每回合對敵全體造成300%兵刃傷害——完全反向且巨量。懲罰面(僅敵方施放灼燒時生效)無條件分支原語, 保守不建模; 核心價值mitig 0.24常駐保留。"
+  "_note": "嚴重誤植修正: 「傷害率300%」是自軍處於灼燒狀態時的額外自損懲罰(條件觸發, 且承受方為我軍), 原coef 3+n 3+rate 1會讓藤甲兵每回合對敵全體造成300%兵刃傷害——完全反向且巨量。懲罰面(僅敵方施放灼燒時生效)無條件分支原語, 保守不建模; 核心價值mitig 0.24常駐保留。 批25 R19: mitig補dmgType:phys(見effects[0]._note)。"
  },
  {
   "nameZh": "虎侯",
@@ -6635,7 +6687,9 @@
     "who": "enemy",
     "val": 0.25,
     "dur": 2,
-    "scale": "intel"
+    "scale": "intel",
+    "dmgType": "phys",
+    "_note": "批25 R19: 原文「使其受到的兵刃傷害提高25%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。"
    }
   ],
   "quality": "S",
@@ -6963,7 +7017,8 @@
     "val": 0.65,
     "dur": 99,
     "_approx": "crit-ev",
-    "_note": "50%會心機率×(100%基礎會心+30%會心傷害)=0.5×1.3=0.65"
+    "_note": "50%會心機率×(100%基礎會心+30%會心傷害)=0.5×1.3=0.65 批25 R19: 原文「觸發時兵刃傷害提高100%(會心EV折算)」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。",
+    "dmgType": "phys"
    },
    {
     "k": "amp",
@@ -7414,17 +7469,22 @@
    {
     "k": "heal",
     "who": "ally",
-    "coef": 0.48,
+    "coef": 0.96,
     "dur": 1,
     "scale": "intel",
-    "_approx": "prob-ev: 急救前4回合、我軍2人各~1次受擊/回合×50%×96%≈0.96/回合×4回合→引擎8回合攤平0.48"
+    "when": {
+     "on": "damaged",
+     "until": 4
+    },
+    "rate": 0.5,
+    "_note": "批25 R17: 原文「戰鬥前4回合...每次受到傷害時有50%機率回復一定兵力(治療率48%→96%,受智力影響)」是反應式急救(受傷當下觸發), 過去用prob-ev折算(coef=0.48常駐每回合healOnly通道治療)把觸發機率/回合窗口都揉進coef裡, 是批22精確建模能力(e.when.on+e.rate)問世前的舊近似殘留。改用e.when.on='damaged'+until:4(戰鬥前4回合)+e.rate=0.5(50%觸發機率)+coef=0.96(滿級治療率, 不再自行折算), 比照陷陣營/草船借箭已用的精確反應式治療慣例。"
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "_note": "原資料heal 0.96每回合結算8回合=總量7.68(真實期望~3.84)高估2倍; stat缺scale:intel(原文受智力影響); 青囊無準備回合, prep 1→0"
+  "_note": "原資料heal 0.96每回合結算8回合=總量7.68(真實期望~3.84)高估2倍; stat缺scale:intel(原文受智力影響); 青囊無準備回合, prep 1→0 批25 R17: heal改用e.when.on反應式建模, 見effects[1]._note。"
  },
  {
   "nameZh": "青州兵",
@@ -7753,7 +7813,7 @@
      "until": 3
     },
     "_approx": "prob-ev",
-    "_note": "前3回合副將受擊12.5%→25%機率(取滿級)獲得1次抵禦(完全格擋當次傷害), 引擎無「單次格擋」原語, 以mitig(全額機率折算, 這裡直接取25%機率值本身作為减傷比例近似, 比照揮兵謀勝'抵禦'既有近似慣例)套用在前3回合每回合常駐減傷; 受「主將武力和統率影響」的觸發機率縮放未建模(機率縮放非val縮放, 15原語無此機制)"
+    "_note": "批25 R20: 修正一則過時措辭(早年寫下時尚未有對應原語, 該原語已於批22補齊, 但說明文字未同步更新)——真正的限制是「前3回合每回合12.5%→25%機率獲得1次抵禦」屬於持續性機率補充(每回合重新擲骰是否再拿到一次格擋機會), 而現有的次數型格擋計次器只負責「已擁有的格擋次數」記帳, 引擎目前沒有非heal效果的逐回合機率重擲機制(僅heal走healOnly常駐重擲通道), 故仍無法精確表達這種持續性補充語意, 保留以mitig(全額機率折算, 直接取25%機率值本身作為减傷比例近似, 比照揮兵謀勝「抵禦」既有近似慣例)套用在前3回合每回合常駐減傷; 受「主將武力和統率影響」的觸發機率縮放未建模(機率縮放非val縮放, 15原語無此機制)。詳見engine_limitations.md第11節「持續性機率補充」分類。"
    },
    {
     "k": "heal",
@@ -8425,7 +8485,9 @@
     "who": "ally",
     "val": 0.27,
     "dur": 2,
-    "n": 2
+    "n": 2,
+    "dmgType": "intel",
+    "_note": "批25 R19: 原文「使我軍群體造成的謀略傷害提高13.5%→27%」為單一傷害類型措辭, 補dmgType:\"intel\"(批24新增原語, 精確限定只對謀略傷害生效, 不再誤及兵刃傷害)。"
    }
   ],
   "quality": "A",
@@ -9034,7 +9096,9 @@
     "k": "amp",
     "who": "enemy",
     "val": 0.18,
-    "dur": 2
+    "dur": 2,
+    "dmgType": "intel",
+    "_note": "批25 R19: 原文「使其受到的謀略傷害提高9%→18%」為單一傷害類型措辭, 補dmgType:\"intel\"(批24新增原語, 精確限定只對謀略傷害生效, 不再誤及兵刃傷害)。"
    }
   ],
   "quality": "A",
@@ -9692,12 +9756,18 @@
     "who": "ally",
     "coef": 0.75,
     "dur": 1,
-    "scale": "intel"
+    "scale": "intel",
+    "when": {
+     "on": "damaged"
+    },
+    "rate": 0.5,
+    "_note": "批25 R17: 原文「使我軍單體獲得急救狀態, 每次受到傷害時有50%概率回復一定兵力(治療率37.5%→75%, 受智力影響), 持續1回合」是反應式急救(受傷當下觸發), 過去無when.on(常駐每回合healOnly通道治療, 忽略50%觸發機率且時序錯位)。改用批22e.when.on='damaged'+e.rate=0.5(50%觸發機率)+coef=0.75(滿級治療率), dur=1對應原文「持續1回合」(急救狀態本身的有效期), 比照陷陣營/草船借箭已用的精確反應式治療慣例。"
    }
   ],
   "quality": "B",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批25 R17: heal改用e.when.on反應式建模, 取代舊常駐healOnly治療(過去無when, 忽略50%觸發機率, 全額高估)。"
  },
  {
   "nameZh": "放火",
@@ -9847,7 +9917,8 @@
     "val": 0.3,
     "dur": 1,
     "_approx": "crit-ev",
-    "_note": "會心30%(取滿級)×傷害+100%期望值折算=0.3"
+    "_note": "會心30%(取滿級)×傷害+100%期望值折算=0.3 批25 R19: 原文「觸發時兵刃傷害提高100%(會心EV折算)」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。",
+    "dmgType": "phys"
    }
   ],
   "quality": "B",

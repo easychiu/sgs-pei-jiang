@@ -929,11 +929,353 @@ def check_r15(p, txt):
     return violations
 
 
+# ---------------------------------------------------------------------------
+# 文字揭露輔助: 只承認「有實質文字內容」的揭露(_todo/_note/_note2/_note_self/_approx 為
+# 非空字串), 排除裸 bool 旗標(如 _est:true 本身不含任何解釋性文字, 不能拿來當作"任何問題
+# 都已揭露"的萬用通行證)。R16/R17/R18 都吃過"has_disclosure() 太寬鬆導致真違規被無關的
+# 舊揭露文字擋下"的虧(批25診斷: 每批只修被抽中條目, 同類病在未抽中的兄弟條目上原地不動,
+# 根因之一正是這個過寬的豁免判斷), 故新規則一律採用「揭露文字須含主題關鍵字」的窄核對,
+# 不能只看"有沒有任何 disclosure 欄位"。
+# ---------------------------------------------------------------------------
+TEXT_DISC_KEYS = ("_todo", "_note", "_note2", "_note_self", "_approx")
+
+
+def _disclosure_texts(p):
+    """收集戰法頂層 + 所有效果層級的「非空字串」揭露文字(裸 bool 如 _est:true 不算)。"""
+    out = []
+    for k in TEXT_DISC_KEYS:
+        v = p.get(k)
+        if isinstance(v, str) and v.strip():
+            out.append(v)
+    for e in p.get("effects", []) or []:
+        for k in TEXT_DISC_KEYS:
+            v = e.get(k)
+            if isinstance(v, str) and v.strip():
+                out.append(v)
+    return out
+
+
+def _topic_disclosed(p, keywords):
+    """揭露文字(見上)裡, 是否有任一則提到 keywords 中的任一關鍵字。用於「主題相關揭露」
+    判定(而非任何揭露都算數), 避免 R16/R17/R18 被無關主題的舊揭露誤豁免。"""
+    for txt in _disclosure_texts(p):
+        if any(kw in txt for kw in keywords):
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# R16(批25): 回合閘門缺失 —— 原文「第N回合(時)」描述單一時間點爆發效果(非「第N回合起」
+# 的常駐窗口, 那種已由既有 dur/R4 覆蓋, 見下方說明), 但戰法頂層 coef>0 且無 t["when"]
+# (=沒有任何回合閘門, 該傷害段會每回合重複觸發, 而非只在第N回合觸發一次, 典型放大倍數
+# =戰鬥總回合數, 常見8回合戰鬥即~8倍), 且無「主題相關」揭露(揭露文字須提到回合/when/
+# 時機/延後/提前/窗口/視窗, 泛用的其他揭露如"疊層近似"不算數, 見_topic_disclosed)。
+#
+# 範圍界定(低誤報優先):
+# - 只抓「第N回合」+ 非「起/開始」後綴(那是持續窗口語意, 常由 dur=N 或既有 when.from 天然
+#   覆蓋, 不在本規則管轄, 見 engine_limitations.md 6.3/R4 既有機制)。
+# - 只在 coef>0(=有實質傷害段可能被錯誤放大)時觸發; coef==0 的戰法此問題不適用(其 effects
+#   段的回合窗口問題屬於 R1/R4/e.when 既有機制管轄範圍, 不重複)。
+# - 版本區塊感知(split_version_blocks): 只在含該匹配的版本區塊內核對, 避免跨版本誤配。
+# ---------------------------------------------------------------------------
+R16_POINT_ROUND_RE = re.compile(r"第\s*(\d+)\s*回合(?!\s*(?:起|開始))")
+R16_TIMING_KW = ("回合", "when", "時機", "延後", "提前", "窗口", "視窗")
+
+
+def check_r16(p, txt):
+    violations = []
+    coef = p.get("coef") or 0
+    if coef <= 0:
+        return violations
+    if p.get("when"):
+        return violations
+    if p.get("type") not in ("active", "command", "passive", "charge"):
+        return violations
+    for block in split_version_blocks(txt):
+        m = R16_POINT_ROUND_RE.search(block)
+        if not m:
+            continue
+        if _topic_disclosed(p, R16_TIMING_KW):
+            return violations
+        violations.append({
+            "name": p["nameZh"], "rule": "R16",
+            "message": f"原文「{m.group(0)}」描述單一時間點觸發, 但戰法 coef={coef} 且無 t.when 閘門"
+                       f"(command/passive 無 when 時每回合皆會判定觸發, active 無 when 亦不受 prep 以外的窗口限制,"
+                       f"未揭露的~N倍放大, N=戰鬥總回合數)",
+            "evidence": block.strip()[:120],
+        })
+        break
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# R17(批25): 反應式治療缺失 —— 原文「受到(兵刃/謀略)傷害(時/後)...恢復/治療/回復」但
+# heal 效果無 when.on(=常駐每回合無條件治療, 而非受傷當下反應式觸發), 且無「主題相關」
+# 揭露(揭露文字須提到 when.on/反應式/onHit, 純粹的舊式EV折算說明(如"prob-ev")不算數
+# ——那正是本規則要抓的"還沒升級成精確when.on建模"的殘留舊近似, 見 陷陣營/草船借箭 的
+# 批22/23精確重建慣例作為對照組)。
+# ---------------------------------------------------------------------------
+R17_REACTIVE_HEAL_RE = re.compile(r"受到(?:兵刃|謀略)?傷害(?:時|後)[^。；;]{0,20}(?:恢復|治療|回復)")
+R17_WHENON_KW = ("when.on", "反應式", "onHit", "on_hit")
+
+
+def check_r17(p, txt):
+    violations = []
+    if not R17_REACTIVE_HEAL_RE.search(txt):
+        return violations
+    heals = [e for e in (p.get("effects") or []) if e.get("k") == "heal"]
+    if not heals:
+        return violations
+    for h in heals:
+        if (h.get("when") or {}).get("on"):
+            continue
+        if _topic_disclosed(p, R17_WHENON_KW):
+            continue
+        violations.append({
+            "name": p["nameZh"], "rule": "R17",
+            "message": "原文「受到傷害時/後...恢復/治療」描述反應式急救(受傷當下觸發), 但 heal 效果無"
+                       " when.on(=被建模成常駐每回合治療), 且無提及 when.on/反應式 的揭露(可能是尚未"
+                       "升級的舊EV折算殘留, 比照陷陣營/草船借箭已用 e.when.on+e.rate 精確重建的慣例)",
+            "evidence": txt[:100].strip(),
+        })
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# R18(批25): 無效佔位 —— 效果值全為0(heal.coef==0 / mitig.val==0 / amp.val==0 /
+# stat.add==0且mult==1)但原文描述了實質機制動詞(恢復/治療/回復/降低/提高/提升/增加/傷害),
+# 且該效果本身無「文字」揭露(裸 _est:true 不算, 見上方 _disclosure_texts 設計說明——
+# 臨危救主即是"_est:true但兩個效果皆為0且無一字解釋"的典型案例, 過去的 has_disclosure()
+# 誤把裸 _est 當成"已誠實揭露", 實際上完全沒有解釋內容)。
+#
+# 與既有 R5 的差異: R5 要求「原文有明確**數值**描述」(NUM_HINT正則抓百分比/機率等數字),
+# 對「原文本身就沒給數值」(如臨危救主"我軍普攻有機率恢復兵力最低者並獲謀略減傷", 一個
+# 數字都沒有)束手無策; R18 改用「機制動詞」(不要求數字), 專門補這個盲區——原文可以完全
+# 沒有數字, 只要描述了真實機制(不是純裝飾性文字), 效果卻是全0佔位, 就算違規。
+# ---------------------------------------------------------------------------
+R18_MECH_VERB_RE = re.compile(r"恢復|治療|回復|降低|提高|提升|增加|減少|傷害")
+
+
+def _is_zero_effect(e):
+    k = e.get("k")
+    if k == "heal":
+        return (e.get("coef") or 0) == 0
+    if k == "mitig":
+        return (e.get("val") or 0) == 0
+    if k == "amp":
+        return (e.get("val") or 0) == 0
+    if k == "stat":
+        return (e.get("add") or 0) == 0 and e.get("mult", 1) == 1
+    return False
+
+
+def check_r18(p, txt):
+    violations = []
+    effects = p.get("effects") or []
+    if not effects:
+        return violations
+    if not R18_MECH_VERB_RE.search(txt):
+        return violations
+    zeros = [e for e in effects if _is_zero_effect(e)]
+    if not zeros:
+        return violations
+    for e in zeros:
+        # 效果本身或戰法頂層須有「非空字串」的揭露文字才豁免(裸 _est/_todo:true 不算數)。
+        has_text_disc = any(isinstance(p.get(k), str) and p.get(k).strip() for k in TEXT_DISC_KEYS) \
+            or any(isinstance(e.get(k), str) and e.get(k).strip() for k in TEXT_DISC_KEYS)
+        if has_text_disc:
+            continue
+        violations.append({
+            "name": p["nameZh"], "rule": "R18",
+            "message": f"效果 k={e.get('k')} 數值全為0(無效佔位), 但原文描述實質機制動詞, 且無文字揭露"
+                       f"(裸 _est/_todo bool 旗標不算揭露, 需要實際解釋文字)",
+            "evidence": txt[:100].strip(),
+        })
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# R19(批25): dmgType 適用而未用 —— 原文明說「兵刃傷害降低/謀略傷害降低/兵刃傷害提高/
+# 謀略傷害提高」等單一傷害類型措辭(排除「兵刃傷害和/與/及/、謀略傷害」這種雙型並列=
+# 不分類型的合法寫法, 那種本就該讓 amp/mitig 不掛 dmgType, 全類型生效才是正確近似),
+# 但「緊鄰該措辭、且數值最接近」的 amp/mitig 效果缺 dmgType, 且無「主題相關」揭露(揭露
+# 文字須提到 dmgType/傷害類型/兵刃謀略區分等關鍵字; 若揭露文字聲稱"引擎無傷害類型過濾
+# 機制"這類話術, 那本身就是 R20 要抓的 stale 用語, 因為 dmgType 原語自批24已存在——這裡
+# 刻意讓 R19 的揭露豁免用嚴格關鍵字比對, 讓這類 stale 說法無法豁免掉 R19, 兩條規則相輔
+# 相成)。
+#
+# 低誤報設計(比照 R1 的緊鄰數值綁定手法, 修正初版"戰法內任一單型措辭即懷疑全部amp/mitig"
+# 的過寬綁定——長驅直入「使自己造成兵刃傷害提升」實際對應 stack 效果、緊接著另一句「使我軍
+# 全體受到傷害降低」(不分型)才對應 mitig, 若不做數值綁定會誤把 stack 段的型別語意套到不
+# 相關的 mitig 效果上):
+# - 用視窗排除法找出「單一類型」命中(前後10字內若有 X傷害[和與及、]Y傷害 的並列模式,
+#   判定為雙型合寫, 排除)。
+# - 每個命中的「單一類型」措辭, 找該子句(逗號/句界切分)內最近的一個百分比數值(_nearest_pct_
+#   like 邏輯), 只在能找到數值、且該數值與某個 amp/mitig 的 val 相差 <=6%(比照 R1 的綁定
+#   容忍度)時, 才判定「這個效果對應這句話」, 缺 dmgType 才算違規——避免對著整戰法無差別
+#   核對, 只精準核對真正被這句話描述的那一個效果。
+# ---------------------------------------------------------------------------
+R19_TYPED_DMG_RE = re.compile(
+    r"(兵刃|謀略)傷害(?:降低|提高|提升|減少|增加)\s*(\d+(?:\.\d+)?)\s*%?"
+    r"(?:\s*(?:→|~|-)\s*(\d+(?:\.\d+)?)\s*%?)?"
+)
+R19_COMBINED_WINDOW_RE = re.compile(r"(兵刃|謀略)傷害[和與及、](兵刃|謀略)傷害")
+R19_DMGTYPE_DISC_KW = ("dmgType", "傷害類型", "兵刃/謀略", "兵刃謀略", "不分兵刃", "不分類型")
+R19_TYPE_ZH2K = {"兵刃": "phys", "謀略": "intel"}
+
+
+def check_r19(p, txt):
+    violations = []
+    amp_mitig = [e for e in (p.get("effects") or []) if e.get("k") in ("amp", "mitig")]
+    if not amp_mitig:
+        return violations
+    if all(e.get("dmgType") for e in amp_mitig):
+        return violations
+    if _topic_disclosed(p, R19_DMGTYPE_DISC_KW):
+        return violations
+    seen_effect_ids = set()
+    for clause in split_clauses(txt):
+        for m in R19_TYPED_DMG_RE.finditer(clause):
+            window = clause[max(0, m.start() - 10):m.end() + 2]
+            if R19_COMBINED_WINDOW_RE.search(window):
+                continue
+            expect_val = float(m.group(3) if m.group(3) else m.group(2)) / 100 if m.group(2) else None
+            # 就近比對: 該子句內數值與某個缺 dmgType 的 amp/mitig 效果 val 相差 <=6% 才綁定
+            # (同 R1 的容忍度慣例), 找不到明確可比對的效果就不猜, 保守跳過。
+            candidates = [e for e in amp_mitig if not e.get("dmgType")]
+            if not candidates:
+                continue
+            # 會心/奇謀EV折算特例(如 猛擊/校勝帷幄/錦帆百翎): 原文固定寫「觸發時XX傷害提高
+            # 100%」(暴擊倍率本身是100%, 非戰法實際val), 但落地的amp.val是「機率×倍率」EV
+            # 折算後的小數值(如65%機率×130%=0.65), 與文字裡的100%數值相差極大, 一般數值
+            # 綁定會誤判無關聯而放過。用_approx=="crit-ev"辨識這個已知模式, 100%特判直接
+            # 綁定同一子句唯一的crit-ev候選(不比對數值, 因為此模式下文字數值恆為100%不具
+            # 綁定意義)。
+            crit_ev_candidates = [e for e in candidates if e.get("_approx") == "crit-ev"]
+            # 機率折算過的效果(_approx含"prob-ev"或"crit-ev"標記)其 val 已經是"機率×倍率"
+            # 折算後的小數, 與原句子面數字(折算前的單一倍率或觸發機率)不會相等, 數值比對
+            # 天然失效——這類效果只能靠「唯一候選」或「who/身份關鍵字」消歧義, 不能靠數值。
+            folded = {"prob-ev", "crit-ev"}
+            is_fold = lambda e: e.get("_approx") in folded or (
+                isinstance(e.get("_approx"), str) and "prob-ev" in e.get("_approx", ""))
+            bound = None
+            if expect_val is not None and abs(expect_val - 1.0) < 1e-9 and len(crit_ev_candidates) >= 1:
+                # 100%命中crit-ev折算模式(如 猛擊/校勝帷幄/錦帆百翎「觸發時XX傷害提高100%」):
+                # 子句提及「自身」或「友軍/我軍」時用 who 縮小到單一候選; 只有一個候選時
+                # 直接綁定; 多候選且無法消歧義時保守跳過。
+                if len(crit_ev_candidates) == 1:
+                    bound = crit_ev_candidates
+                elif "自身" in clause or "自己" in clause:
+                    who_matched = [e for e in crit_ev_candidates if e.get("who") == "self"]
+                    if len(who_matched) == 1:
+                        bound = who_matched
+                elif "友軍" in clause or "我軍" in clause:
+                    who_matched = [e for e in crit_ev_candidates if e.get("who") in ("ally", "leader", "subs")]
+                    if len(who_matched) == 1:
+                        bound = who_matched
+            elif expect_val is not None:
+                # 一般數值就近比對(候選不論一個或多個, 只要精確對得上才綁定, 避免長驅直入
+                # 這類"唯一候選但數值明顯對不上"的假綁定——若唯一候選本身是機率折算值,
+                # 改用下面的"抽不到可信數值"分支處理)。
+                non_folded = [e for e in candidates if not is_fold(e)]
+                if non_folded:
+                    scored = [(abs(abs(e.get("val", 0)) - expect_val), e) for e in non_folded]
+                    scored.sort(key=lambda x: x[0])
+                    best_diff, best_e = scored[0]
+                    if best_diff <= 0.06:
+                        bound = [best_e]
+                if bound is None:
+                    # 非折算候選裡沒有對得上數值的: 若唯一候選是機率折算值(如焰逐風飛的
+                    # amp, prob-ev折算後與原句"6%→12%"不再一致), 仍可放心綁定(無歧義);
+                    # 有多個折算候選則保守跳過。
+                    folded_candidates = [e for e in candidates if is_fold(e)]
+                    if len(folded_candidates) == 1 and not non_folded:
+                        bound = folded_candidates
+            else:
+                # 抽不到百分比數值(如「提高兵刃傷害」無跟隨數字): 只在該戰法唯一一個
+                # amp/mitig 缺 dmgType 時保守綁定(不需要猜是哪一個), 多個候選時跳過。
+                if len(candidates) == 1:
+                    bound = candidates
+            if bound is None:
+                continue
+            for e in bound:
+                if id(e) in seen_effect_ids:
+                    continue
+                seen_effect_ids.add(id(e))
+                dmg_type_zh = m.group(1)
+                violations.append({
+                    "name": p["nameZh"], "rule": "R19",
+                    "message": f"原文含單一傷害類型措辭「{m.group(0).strip()}」(非兵刃謀略並列), 緊鄰數值綁定到"
+                               f" k={e.get('k')}(val={e.get('val')}) 效果, 該效果缺 dmgType"
+                               f"(應為 dmgType:\"{R19_TYPE_ZH2K.get(dmg_type_zh)}\"), 且無揭露"
+                               f"(dmgType 原語自批24已存在, 應可精確表達)",
+                    "evidence": clause.strip()[:120],
+                })
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# R20(批25): stale 能力聲明總巡檢 —— _todo/_note 等揭露文字聲稱「引擎無X/不支援X/無對應
+# 原語」, 但 X 實際上是引擎已支援的能力(見 ENGINE_CAPABILITIES, 從 engine.js/sgz.py 的
+# apply_effects() k 分派段 + when/targetSel/ifTargetHas/e.n/e.rate/dmgType 等輔助欄位
+# 整理而成)。制度化批24 A項「stale揭露清剿」的手工做法: 把「引擎已支援的能力清單」做成
+# 資料結構, 未來新原語落地時只要更新這份清單, 舊 stale 註記就會被本規則自動抓出來,
+# 不必每批重新人工全庫翻找。
+#
+# 判定: 揭露文字裡若同時出現「否定語氣詞」(引擎無/不支援/無對應原語/無此原語/引擎目前無)
+# 與某個「能力關鍵字」的緊鄰片語(如「引擎無「單次格擋」原語」), 且該能力關鍵字對應
+# ENGINE_CAPABILITIES 裡「已支援」的項目, 判定為 stale。用能力關鍵字→中文別名清單的
+# 對照表, 而非泛用比對, 避免誤傷"能力關鍵字剛好出現在句子裡但語意其實是別的東西"的情形
+# (低誤報優先, 只收錄批25全庫核對後確認的高信度別名)。
+# ---------------------------------------------------------------------------
+NEGATION_KW = ("引擎無", "不支援", "無對應原語", "無此原語", "引擎不支援", "引擎目前無", "不分", "無法區分")
+
+# 能力關鍵字(中文別名) -> 該能力在引擎的實際名稱(供違規訊息顯示); 只收錄「批25核對後
+# 確認引擎確實已支援、且全庫仍可能有 stale 用語提及」的能力, 非全量能力清單(全量能力見
+# engine_limitations.md 附錄; 這裡刻意保守, 只收錄已知會被誤稱「不支援」的高風險別名,
+# 避免用寬鬆關鍵字誤傷措辭相近但語意不同的合法揭露, 如"引擎無per-instance機率原語"
+# 這種語意精確、目前真的不支援的措辭不應命中任何別名)。
+ENGINE_CAPABILITY_ALIASES = {
+    "單次格擋": "block(次數型格擋, 批22新增, val/times欄位, 見 push_block/consume_block)",
+    "狀態免疫": "immune(單項控制免疫, 批16新增, k:\"immune\"+types欄位, 見 push_immune/is_immune_to;"
+                "僅涵蓋 stun/silence/disarm/chaos/ambush 五種控制類型, 不含 healblock/其他非控制狀態,"
+                "故「免疫禁療」等非控制類狀態的免疫聲明不算 stale)",
+    "傷害類型過濾": "dmgType(批24新增, amp/mitig 效果欄位, 見 sgz.py amp()/addbonus() dmg_type 參數)",
+    "傷害類型區分": "dmgType(同上)",
+    "兵刃/謀略": "dmgType(批24新增, amp/mitig 效果欄位, 見 sgz.py amp()/addbonus() dmg_type 參數;"
+                "「不分兵刃/謀略」等措辭應視為 dmgType 落地前的舊近似說明, 落地後需重寫)",
+}
+
+
+def check_r20(p, txt):
+    violations = []
+    for text in _disclosure_texts(p):
+        for alias, capability_desc in ENGINE_CAPABILITY_ALIASES.items():
+            idx = text.find(alias)
+            if idx == -1:
+                continue
+            # 「否定語氣詞」須出現在能力關鍵字前方鄰近處(同一子句, 用 20 字窗口), 確保
+            # 兩者語法上構成「引擎無/不支援 + 這個能力」的否定斷言, 而非各自獨立出現。
+            window = text[max(0, idx - 20):idx]
+            if not any(neg in window for neg in NEGATION_KW):
+                continue
+            violations.append({
+                "name": p["nameZh"], "rule": "R20",
+                "message": f"揭露文字聲稱引擎不支援「{alias}」, 但引擎已支援: {capability_desc}"
+                           f"(stale能力聲明, 應重建或改寫措辭)",
+                "evidence": text[:150].strip(),
+            })
+            break  # 同一則文字只報一次(避免同段落多個別名重複命中洗違規數)
+    return violations
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
     ("R9", check_r9), ("R10", check_r10), ("R11", check_r11), ("R12", check_r12),
     ("R13", check_r13), ("R14", check_r14), ("R15", check_r15),
+    ("R16", check_r16), ("R17", check_r17), ("R18", check_r18), ("R19", check_r19),
+    ("R20", check_r20),
 ]
 
 
