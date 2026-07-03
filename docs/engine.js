@@ -712,7 +712,7 @@
     const src = t.nameZh || null;                     // 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → null, 不去重)
     for (const e of t.effects) {
       const k = e.k;
-      if (opt.healOnly && k !== "heal") continue;
+      if (opt.healOnly && k !== "heal" && !e.everyRound) continue;  // 批30 A: everyRound 效果亦放行(見下方通用閘門)
       // 批18: e.when 泛化(非 heal 種類) —— heal 早已支援效果級 when(見下方 k==="heal" 分支的
       // opt.healOnly 閘門), 但其餘效果種類(amp/settle/stat/…)過去若帶 e.when 而母戰法無 t.when,
       // 會在 prep 階段(opt.skipWhenEffects=true 時, 見 fight() 呼叫端)被無聲當成「無 when 的常駐
@@ -742,6 +742,42 @@
       // 被迫「無條件對所有施放者套用」(高估非主將情形)或完全不建模。allies[0] 是隊伍主將慣例
       // (同 who==="leader" 分支既有假設), 只在 caster 就是 allies[0] 時才放行本效果段。
       if (e.ifLeader && !(allies && allies[0] === caster)) { if (TRACE) lg(`　▸ ${effDesc(k, e, caster)}〔限主將〕${caster.nm}非主將, 未觸發`); continue; }
+      // 批30 A: 非heal效果的逐回合重擲通道(e.everyRound) —— 過去只有 k==="heal" 在
+      // opt.healOnly(見 applyPassives 的逐回合呼叫)這條路徑下逐回合重新掃描/擲骰套用, 其餘
+      // k(amp/mitig/block/stat/...)一旦在 prep 套用一次就不會再被重新判定, 導致「每回合X%
+      // 機率獲得1次抵禦/減傷」類戰法(機鑑先識/揮兵謀勝/魚鱗陣/枕戈坐甲等, 見
+      // engine_limitations.md 第11節/25節)只能 EV 折算或截斷成一次性。修法: 把 heal 既有的
+      // 「when視窗判定 + rounds去重 + rate擲骰」邏輯泛化成任何 k 皆可掛的通用閘門, 用
+      // e.everyRound(效果級旗標, opt-in)標記「這個效果不在 prep 套用一次, 改在每回合常駐
+      // 通道重新判定」。與 heal 共用同一份 healRoundsFired/whenFired 去重狀態(鍵是效果物件
+      // 本身, heal 與 everyRound 不會撞鍵, 因為同一個效果物件只會是其中一種)。
+      //
+      // 語意與 heal 完全對稱: opt.healOnly 模式下, 非 heal 效果只有帶 e.everyRound 才會走到
+      // 這裡(否則在函式開頭的 top-level k!=="heal" 過濾就被跳過); 帶 everyRound 的效果在
+      // **非** opt.healOnly 呼叫路徑(prep/active/charge/when視窗)一律跳過(不套用), 因為它
+      // 只該由 opt.healOnly 常駐通道結算 —— 對稱於 heal 在其他路徑各自決定是否觸發、不依賴
+      // 這裡的慣例。
+      if (e.everyRound && k !== "heal") {
+        if (!opt.healOnly) continue;
+        const hw = e.when || t.when;
+        if (hw) {
+          if (!roundOk({ when: hw }, CUR_R)) continue;
+          if (hw.rounds) {
+            if (!caster.healRoundsFired) caster.healRoundsFired = new Map();
+            let seen = caster.healRoundsFired.get(e);
+            if (!seen) { seen = new Set(); caster.healRoundsFired.set(e, seen); }
+            if (seen.has(CUR_R)) continue;
+            seen.add(CUR_R);
+          }
+        } else if (e.once) {
+          if (caster.whenFired.has(e)) continue;
+          caster.whenFired.add(e);
+        }
+        const evRate = e.rate ?? t.rate ?? 1;
+        if (rnd() >= evRate) { if (TRACE) lg(`　▸ ${caster.nm} 〔${t.nameZh || "?"}〕每回合判定〔${Math.round(evRate * 100)}%機率〕未觸發`); continue; }
+        // 通過閘門後不 continue —— 落到下方通用 who/dests 派發邏輯(amp/mitig/block/...),
+        // 走與 prep 套用相同的效果分派, 只是改成每回合重新判定/套用一次。
+      }
       if (k === "heal") {
         if (opt.noHeal) continue;
         if ((e.coef ?? 0.8) < 0) continue;              // 批10: 資料衛生防禦 —— 負 heal coef(如機略縱橫類 dot 誤標成 heal 負值)一律視為0並跳過, 避免資料錯誤反而扣友軍血
@@ -841,6 +877,13 @@
       else if (who === "self") dests = caster.alive ? [caster] : [];
       else if (who === "leader") dests = (allies[0] && allies[0].alive) ? [allies[0]] : [];  // 批8: 主將限定(隊伍 index 0)
       else if (who === "subs") dests = allies.slice(1).filter(a => a.alive);  // 批13: 副將群限定(隊伍 index 0 以外; 如鋒矢陣/箕形陣副將分化段)
+      // 批30 C: who:"sub1"/"sub2"(副將固定位置分派) —— 「subs」只能讓兩名副將套用同一份效果,
+      // 無法表達「副將A只防兵刃, 副將B只防謀略」這種依隊伍固定位置(而非動態屬性準則)分派相異
+      // 效果的語意(見箕形陣, engine_limitations.md 第25節/16節)。sub1=allies[1](副將A,
+      // index 1), sub2=allies[2](副將B, index 2), 對稱於既有 who:"leader"=allies[0] 慣例。
+      // 三人隊固定編制(index 0=主將/1/2=副將), 若隊伍不足3人或該位置陣亡則 dests 為空陣列。
+      else if (who === "sub1") dests = (allies[1] && allies[1].alive) ? [allies[1]] : [];
+      else if (who === "sub2") dests = (allies[2] && allies[2].alive) ? [allies[2]] : [];
       else if (who === "enemy") {
         if (CTRL_K) {                                 // 群體控制(n>1 或有 nMax)隨機挑不重複目標; 單體優先鎖定 tgt
           // 批26: CTRL類效果優先讀 e.n/e.nMax(效果自身欄位), 無則fallback到t.n/t.nMax(戰法

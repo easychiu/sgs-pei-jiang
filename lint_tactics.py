@@ -525,6 +525,7 @@ KNOWN_EFFECT_FIELDS = {
     "k", "who", "dur", "durMax", "scale", "when", "targetSel", "ifTargetHas",
     "undispellable", "_est", "_todo", "_note", "_note2", "_approx", "_src",
     "n", "nMax", "rate", "ifLeader",  # ifLeader: 批26 B1, 施放者須為隊伍主將(index 0)才套用該效果段
+    "everyRound",  # 批30 A: 非heal效果的逐回合重擲通道旗標, 跨所有k種類通用(見 apply_effects 的 e.everyRound 通用閘門判斷)
 }
 PER_KIND_FIELDS = {
     "amp": {"val", "dmgType", "normalOnly"}, "mitig": {"val", "dmgType", "normalOnly"}, "stun": set(), "silence": set(), "disarm": set(),  # dmgType: 批24 D2, 兵刃/謀略傷害類型過濾; normalOnly: 批28 B3, 僅普攻傷害生效/受影響
@@ -1374,6 +1375,12 @@ ENGINE_CAPABILITY_ALIASES = {
     "已有該狀態": "ifTargetHas(批16新增, 效果/extraHits級條件欄位, 只對「已具備該狀態」的目標"
                 "生效/結算, 見 engine.js targetHas()/ifTargetHas 過濾)",
     "既有狀態": "ifTargetHas(同上)",
+    "每回合機率": "everyRound(批30新增, 效果級旗標 e.everyRound:true, 非heal效果的逐回合重擲通道,"
+                "與既有heal_only常駐通道對稱, 見 engine.js/sgz.py applyEffects 的 e.everyRound 判斷式;"
+                "「引擎只有heal逐回合重擲/其餘k在prep套用後不會逐回合重新判定」這類措辭是 everyRound"
+                "落地前的舊近似說明, 落地後應改寫並補上 e.everyRound:true)",
+    "逐回合重擲": "everyRound(同上)",
+    "逐回合重新判定": "everyRound(同上)",
 }
 
 # =============================================================================

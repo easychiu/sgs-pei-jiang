@@ -379,7 +379,8 @@
     "category": "始計",
     "type": "主兵書",
     "effects": [
-      {"k": "mitig", "who": "self", "val": 0.15, "dur": 99}
+      {"k": "block", "who": "self", "val": 1.0, "times": 1, "everyRound": true, "rate": 0.25, "when": {"from": 2, "until": 6},
+       "_note": "批30 A: 原文『戰鬥第2-6回合，自身每回合有25%概率獲得1次抵禦』改用e.everyRound(新原語, 非heal效果的逐回合重擲通道)+block(次數型格擋, val=1.0全擋)精確表達, 取代前一版mitig(val=0.15, 機率×常駐減傷比例的EV折算)近似。when.from:2/until:6對應原文『第2-6回合』視窗, 每回合獨立擲骰rate=0.25(原文無滿級/低級區間字樣, 視為固定值), 命中則授予1次抵禦(完全格擋)。"}
     ]
   },
   {

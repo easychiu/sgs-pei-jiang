@@ -979,7 +979,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
     src = t.get("nameZh")                              # 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → None, 不去重)
     for e in t["effects"]:
         k = e["k"]
-        if heal_only and k != "heal":                 # 指揮/被動逐回合只跑治療
+        if heal_only and k != "heal" and not e.get("everyRound"):  # 指揮/被動逐回合只跑治療 + 批30 A: everyRound 效果亦放行
             continue
         # 批18: e.when 泛化(非 heal 種類) —— heal 早已支援效果級 when(見下方 k=="heal" 分支的
         # heal_only 閘門), 但其餘效果種類(amp/settle/stat/…)過去若帶 e["when"] 而母戰法無
@@ -1016,6 +1016,43 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # 皆可掛), 置於 e["rate"] 判定之後(若戰法同時有機率也要求主將, 兩者皆需通過)。
         if e.get("ifLeader") and not (allies and allies[0] is caster):
             continue
+        # 批30 A: 非heal效果的逐回合重擲通道(e["everyRound"]) —— 過去只有 k=="heal" 在
+        # heal_only(見 apply_passives 的逐回合呼叫)這條路徑下逐回合重新掃描/擲骰套用, 其餘
+        # k(amp/mitig/block/stat/...)一旦在 prep 套用一次就不會再被重新判定, 導致「每回合
+        # X%機率獲得1次抵禦/減傷」類戰法(機鑑先識/揮兵謀勝/魚鱗陣/枕戈坐甲等, 見
+        # engine_limitations.md 第11節/25節)只能 EV 折算或截斷成一次性。修法: 把 heal 既有
+        # 的「when視窗判定 + rounds去重 + rate擲骰」邏輯泛化成任何 k 皆可掛的通用閘門, 用
+        # e["everyRound"](效果級旗標, opt-in)標記「這個效果不在 prep 套用一次, 改在每回合
+        # 常駐通道重新判定」。與 heal 共用同一份 heal_rounds_fired/when_fired 去重狀態(鍵是
+        # id(e), heal 與 everyRound 不會撞鍵, 因為同一個效果物件只會是其中一種)。刻意不新增
+        # 獨立的 dedup dict, 沿用既有慣例、降低維護面。
+        #
+        # 語意與 heal 完全對稱: heal_only 模式下, 非 heal 效果只有帶 e["everyRound"] 才會走
+        # 到這裡(否則在上面的 top-level k!=heal 過濾就被跳過, 見函式開頭); 帶 everyRound 的
+        # 效果在**非** heal_only 呼叫路徑(prep/active/charge/when視窗)一律跳過(不套用),
+        # 因為它只該由 heal_only 常駐通道結算 —— 對稱於 heal 在其他路徑各自決定是否觸發、
+        # 不依賴這裡的慣例。
+        if e.get("everyRound") and k != "heal":
+            if not heal_only:
+                continue
+            hw = e.get("when") or t.get("when")
+            if hw:
+                if not round_ok({"when": hw}, CUR_ROUND):
+                    continue
+                if hw.get("rounds"):
+                    seen = caster.heal_rounds_fired.setdefault(id(e), set())
+                    if CUR_ROUND in seen:
+                        continue
+                    seen.add(CUR_ROUND)
+            elif e.get("once"):
+                if id(e) in caster.when_fired:
+                    continue
+                caster.when_fired.add(id(e))
+            ev_rate = e.get("rate", t.get("rate", 1))
+            if random.random() >= ev_rate:
+                continue
+            # 通過閘門後不 continue —— 落到下方通用 who/dests 派發邏輯(amp/mitig/block/...),
+            # 走與 prep 套用相同的效果分派, 只是改成每回合重新判定/套用一次。
         if k == "heal":                               # 治療: 補我方最殘一人(指揮/被動每回合觸發)
             if no_heal:
                 continue
@@ -1123,6 +1160,15 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             dests = [allies[0]] if allies and allies[0].alive else []
         elif who == "subs":                           # 批13: 副將群限定(隊伍 index 0 以外; 如鋒矢陣/箕形陣副將分化段)
             dests = [a for a in allies[1:] if a.alive]
+        # 批30 C: who=="sub1"/"sub2"(副將固定位置分派) —— 「subs」只能讓兩名副將套用同一份
+        # 效果, 無法表達「副將A只防兵刃, 副將B只防謀略」這種依隊伍固定位置(而非動態屬性準則)
+        # 分派相異效果的語意(見箕形陣, engine_limitations.md 第25節/16節)。sub1=allies[1]
+        # (副將A, index 1), sub2=allies[2](副將B, index 2), 對稱於既有 who=="leader"=allies[0]
+        # 慣例。三人隊固定編制(index 0=主將/1/2=副將), 若隊伍不足3人或該位置陣亡則 dests 為空。
+        elif who == "sub1":
+            dests = [allies[1]] if len(allies) > 1 and allies[1].alive else []
+        elif who == "sub2":
+            dests = [allies[2]] if len(allies) > 2 and allies[2].alive else []
         elif who == "enemy":
             if ctrl_k:                                # 群體控制隨機挑不重複目標; 單體優先鎖定 tgt
                 # 批26: CTRL類效果優先讀 e["n"]/e["nMax"](效果自身欄位), 無則 fallback 到
@@ -3426,6 +3472,74 @@ def demo():
     assert len(dmg_branches) == 2, "桃園結義應有2個帶coef的傷害分支"
     assert {c.get("targetSel") for c in dmg_branches} == {"minIntel", "minCommand"}, \
         "桃園結義2個傷害分支應分別以minIntel(打智力最低敵)/minCommand(打統率最低敵)為targetSel"
+
+    # 84) 批30 A: e["everyRound"](非heal效果的逐回合重擲通道) —— block效果帶everyRound+rate,
+    # 應在 apply_passives(heal_only=True) 的每回合常駐通道重新擲骰/套用(而非prep套用一次),
+    # 未命中的回合不新增次數。同時驗證: (a) 不帶everyRound的效果行為零變化(prep套用一次,
+    # heal_only通道不重複套用); (b) everyRound效果在prep(heal_only=False)呼叫時完全不套用。
+    er_u = Unit(POOL["呂布"], "盾")
+    er_ally = Unit(POOL["張飛"], "盾")
+    er_team = [er_u, er_ally]
+    er_tac_flagged = {"nameZh": "測試everyRound84", "rate": 1.0, "effects": [
+        {"k": "block", "who": "self", "val": 1.0, "times": 1, "everyRound": True}]}
+    # (b) prep(heal_only=False)呼叫: everyRound效果不應套用
+    apply_effects(er_u, None, er_tac_flagged, er_team, [], no_heal=True, skip_when_effects=True)
+    assert not er_u.block, "everyRound效果不應在prep(heal_only=False)路徑套用"
+    # (a) heal_only常駐通道: rate=1.0應每次都命中, 每回合各自新增1次(block同源疊次語意)
+    CUR_ROUND = 1
+    apply_effects(er_u, None, er_tac_flagged, er_team, [], heal_only=True)
+    assert er_u.block and sum(b["n"] for b in er_u.block) == 1, \
+        "everyRound效果應在heal_only常駐通道套用一次(第1回合, rate=1.0必中)"
+    CUR_ROUND = 2
+    apply_effects(er_u, None, er_tac_flagged, er_team, [], heal_only=True)
+    assert sum(b["n"] for b in er_u.block) == 2, \
+        "everyRound效果應逐回合重新擲骰/套用(第2回合再命中一次, 同源block應疊次成2, 而非停留在prep的一次性套用)"
+    # rate=0時不應新增(驗證擲骰真的生效, 非無條件套用)
+    er_u2 = Unit(POOL["呂布"], "盾")
+    er_team2 = [er_u2, Unit(POOL["張飛"], "盾")]
+    er_tac_norate = {"nameZh": "測試everyRound無命中84", "rate": 0.0, "effects": [
+        {"k": "block", "who": "self", "val": 1.0, "times": 1, "everyRound": True}]}
+    CUR_ROUND = 1
+    apply_effects(er_u2, None, er_tac_norate, er_team2, [], heal_only=True)
+    assert not er_u2.block, "everyRound效果rate=0.0時不應套用(擲骰應真的生效, 非無條件通過)"
+    # 對照組: 不帶everyRound的block效果(既有行為) —— prep套用一次, heal_only常駐通道不應重複套用
+    er_u3 = Unit(POOL["呂布"], "盾")
+    er_team3 = [er_u3, Unit(POOL["張飛"], "盾")]
+    er_tac_plain = {"nameZh": "測試無everyRound對照84", "rate": 1.0, "effects": [
+        {"k": "block", "who": "self", "val": 1.0, "times": 1}]}
+    apply_effects(er_u3, None, er_tac_plain, er_team3, [], no_heal=True, skip_when_effects=True)
+    assert er_u3.block and sum(b["n"] for b in er_u3.block) == 1, "不帶everyRound的效果應維持既有行為: prep套用一次"
+    CUR_ROUND = 1
+    apply_effects(er_u3, None, er_tac_plain, er_team3, [], heal_only=True)
+    assert sum(b["n"] for b in er_u3.block) == 1, \
+        "不帶everyRound的非heal效果在heal_only常駐通道不應被重複套用(零回歸: 既有行為不受本次改動影響)"
+    CUR_ROUND = 0
+
+    # 85) 批30 C: who=="sub1"/"sub2"(副將固定位置分派) —— 三人隊(leader/sub1/sub2), 兩段效果
+    # 分別指定 who:"sub1"(只防兵刃)/who:"sub2"(只防謀略), 應精確命中 allies[1]/allies[2],
+    # 不誤中主將(allies[0]), 不互相污染。
+    sp_leader = Unit(POOL["呂布"], "盾")
+    sp_sub1 = Unit(POOL["張飛"], "盾")
+    sp_sub2 = Unit(POOL["關羽"], "盾")
+    sp_team = [sp_leader, sp_sub1, sp_sub2]
+    sp_tac = {"nameZh": "測試箕形陣85", "effects": [
+        {"k": "mitig", "who": "sub1", "val": 0.2, "dur": 9, "dmgType": "phys"},
+        {"k": "mitig", "who": "sub2", "val": 0.2, "dur": 9, "dmgType": "intel"},
+    ]}
+    apply_effects(sp_leader, None, sp_tac, sp_team, [], no_heal=True, skip_when_effects=True)
+    sub1_mitig = [a for a in sp_sub1.adds if a[0] == "mitig"]
+    sub2_mitig = [a for a in sp_sub2.adds if a[0] == "mitig"]
+    leader_mitig = [a for a in sp_leader.adds if a[0] == "mitig"]
+    assert len(sub1_mitig) == 1 and sub1_mitig[0][4] and sub1_mitig[0][4].get("dmgType") == "phys", \
+        "who=='sub1' 應精確命中 allies[1](副將A), 且 dmgType=phys 應正確傳遞"
+    assert len(sub2_mitig) == 1 and sub2_mitig[0][4] and sub2_mitig[0][4].get("dmgType") == "intel", \
+        "who=='sub2' 應精確命中 allies[2](副將B), 且 dmgType=intel 應正確傳遞"
+    assert len(leader_mitig) == 0, "who=='sub1'/'sub2' 不應誤中主將(allies[0])"
+    # 隊伍不足3人時 sub2 應為空(不應報錯/誤選)
+    sp_team2 = [Unit(POOL["呂布"], "盾"), Unit(POOL["張飛"], "盾")]
+    sp_tac2 = {"nameZh": "測試箕形陣85b", "effects": [{"k": "mitig", "who": "sub2", "val": 0.2, "dur": 9}]}
+    apply_effects(sp_team2[0], None, sp_tac2, sp_team2, [], no_heal=True, skip_when_effects=True)
+    assert not any(a[0] == "mitig" for a in sp_team2[1].adds), "隊伍不足3人時 who=='sub2' 應為空目標, 不應誤套用到sub1身上"
 
     print("self-check OK")
 
