@@ -126,8 +126,19 @@
     return { POOL, TAC };
   }
 
+  // 批24 D1: teamGate(隊伍構成前提) —— 判斷隊伍陣營組成是否符合戰法宣告的前提。
+  // "allDiff": 三名武將陣營兩兩不同(潛龍陣「我軍三名武將陣營均不相同時」); "allSame":
+  // 三名武將陣營皆相同(供未來同類戰法使用, 目前全庫無此案例但一併支援對稱語意)。
+  // factions 為隊伍全體(含自己)的陣營陣列, 已在 fight() 建構 Unit 前準備好傳入。
+  function teamGateOk(gate, factions) {
+    if (!gate || !gate.factions) return true;
+    const uniq = new Set(factions).size;
+    if (gate.factions === "allDiff") return uniq === factions.length;
+    if (gate.factions === "allSame") return uniq === 1;
+    return true;                                    // 未知 gate 種類: 保守放行(不擋), 避免資料錯字導致戰法整組消失
+  }
   class Unit {
-    constructor(g, ttype, bsName, eqName, add, inherit, season) {
+    constructor(g, ttype, bsName, eqName, add, inherit, season, teamFactions) {
       this.g = g; this.ttype = ttype; this.troop = START_TROOP; this.stun = 0;
       this.silence = 0; this.disarm = 0; this.insight = 0; this.first = 0;  // 控制細分: 計窮/繳械/洞察(免控) + 先攻(優先行動, 剩餘回合數)
       this.chaos = 0;                              // 批12 ModeF: 混亂(不鎖行動, 但普攻/單體主動戰法改為敵我不分隨機選目標), 剩餘回合數
@@ -136,7 +147,15 @@
       // 自帶 + 傳承; 自帶戰法(g.tactic)淺拷貝附加 native:true 旗標(供 rateup/chargeup 的 nativeOnly
       // 修飾判斷「這是不是自帶戰法」, 如太平道法只加成張角自帶的五雷轟頂)。淺拷貝而非直接改
       // TACTICS 共享物件, 避免多個武將共用同一戰法物件時互相污染(如兩人都自帶白眉)。
-      this.tactics = (g.tactic ? [Object.assign({}, g.tactic, { native: true })] : []).concat((inherit || []).map(nm => TACTICS[nm]).filter(Boolean));
+      // 批24 D1: teamGate —— 開戰時(建構Unit當下, teamFactions已由fight()備妥)判定一次,
+      // 不滿足前提的戰法整條從 this.tactics 過濾掉(不進入後續 cmdPassiveSrcs/onHitTacs/
+      // onHitEffectTacs 等衍生快取, 亦不會被 applyPassives/回合迴圈讀到, 等同整戰法不生效)。
+      this.tactics = (g.tactic ? [Object.assign({}, g.tactic, { native: true })] : []).concat((inherit || []).map(nm => TACTICS[nm]).filter(Boolean))
+        .filter(t => {
+          const ok = teamGateOk(t.teamGate, teamFactions || []);
+          if (!ok && TRACE) lg(`【${g.name}】戰法【${t.nameZh}】不滿足隊伍構成前提(teamGate), 整戰法不生效`);
+          return ok;
+        });
       // 批18: fakeReport(偽報) 加強 —— 記錄「自己的指揮/被動戰法」名稱集合, 供 eff()/addbonus()
       // 判斷某條 adds/mods/statAdds 是否來自「本單位自己的指揮/被動戰法」(而非兵書/裝備/緣分/
       // 隊友戰法, 這些沒有 src 或 src 不在此集合中, 不受偽報影響)。user 實測: 偽報命中後,
@@ -226,7 +245,12 @@
     // 或不在 cmdPassiveSrcs 中(隊友戰法/傳承戰法皆有各自 nameZh, 但這裡只關心「自己」的指揮/
     // 被動, 傳承戰法若也是 command/passive 型態一樣會被記入 cmdPassiveSrcs, 符合 user 描述的
     // 「指揮/被動戰法」泛用語意, 不分自帶/傳承)不受影響。
-    suppressed(src) { return this.fakeReportDur > 0 && src && this.cmdPassiveSrcs.has(src); }
+    // 批24: src 可能帶「:尾碼」區分同源多條目(rateup 的 :prepOnly/nativeOnly、dmgType 的
+    // :phys/:intel, 見 pushAdd 呼叫端), 但 cmdPassiveSrcs 只存純戰法名(nameZh, 不含尾碼)。
+    // 比對前先去除尾碼(取第一個':'之前的部分)還原成純戰法名, 避免帶尾碼的 src 永遠比對不到
+    // cmdPassiveSrcs、讓偽報(fakeReport)抑制對這類條目完全失效(修正批16 rateup/chargeup
+    // 尾碼慣例引入時就存在的潛在比對錯位, 批24新增的 dmgType 尾碼沿用同一約定一併受益)。
+    suppressed(src) { if (!src || this.fakeReportDur <= 0) return false; const base = src.includes(":") ? src.slice(0, src.indexOf(":")) : src; return this.cmdPassiveSrcs.has(base); }
     eff(stat) {
       if (this.swap && (stat === "force" || stat === "intel")) stat = stat === "force" ? "intel" : "force";
       let v = this[stat];
@@ -234,7 +258,20 @@
       for (const [s, m, , src] of this.mods) if ((s === stat || s === "all") && !this.suppressed(src)) v *= m;
       return v;
     }
-    addbonus(kind) { let s = 0; for (const a of this.adds) if (a[0] === kind && !this.suppressed(a[3])) s += a[1]; return s; }
+    // 批24 D2: dmgType(可選) —— 只加總「該條目未宣告 dmgType, 或宣告的 dmgType 與呼叫端指定
+    // 的 dmgType 相符」的項目, 供 amp/mitig 依「兵刃/謀略」傷害類型過濾(見 damage() 呼叫端)。
+    // dmgType 省略(undefined)時完全維持原行為(不分類型全部加總), 向後相容全庫既有未帶
+    // dmgType 的 amp/mitig 資料。
+    addbonus(kind, dmgType) {
+      let s = 0;
+      for (const a of this.adds) {
+        if (a[0] !== kind || this.suppressed(a[3])) continue;
+        const f = a[4];
+        if (dmgType && f && f.dmgType && f.dmgType !== dmgType) continue;
+        s += a[1];
+      }
+      return s;
+    }
     // rateup/chargeup 專用: 依戰法 t 的 prep/native 屬性, 只加總「修飾旗標吻合」的 adds 項。
     // adds[4] = flags({prepOnly,nativeOnly,inheritedOnly}|undefined, 見 pushAdd)。無旗標
     // (undefined/{}) 的加成一律計入(如虎豹騎的 chargeup 沒有 prepOnly/nativeOnly 限制)。
@@ -300,8 +337,11 @@
     }
     // 批16: hpPct —— 自身兵力百分比(troop/START_TROOP), 供 when.hpBelow/hpAbove 檢查
     get hpPct() { return this.troop / START_TROOP; }
-    amp() {
-      let a = this.addbonus("amp");
+    // 批24 D2: amp(dmgType) —— dmgType 傳入時只加總該類型(或未宣告類型)的 amp 加成; stack/decay
+    // 目前無 dmgType 概念(全庫暫無「僅對特定傷害類型疊層」的戰法), 維持無條件全額計入, 與呼叫端
+    // 的 dmgType 過濾無關(不受影響, 向後相容)。
+    amp(dmgType) {
+      let a = this.addbonus("amp", dmgType);
       if (this.stack) a += this.stack.per * this.stack.n;
       if (this.decay) a += this.decay.v0 * this.decay.left / this.decay.total;
       return a;
@@ -357,9 +397,12 @@
     // 精確歸零當回合傷害(克敵制勝/威謀靡亢/臨戰先登, 見批15/17/19), 這是「無法造成傷害」的
     // 二元語意, 不是「%減益疊加」, 故 amp 總和 <= -1.0 時維持完全歸零(不受-90%封頂影響),
     // 只在 -1.0 < 總和 < -0.9 這個「多重%減益疊加但尚未到虛弱程度」的區間套用-90%下限。
-    const totalAmp = src.amp();
+    // 批24 D2: dmgType 過濾 —— amp()/addbonus("mitig") 傳入本次傷害的 kind(phys/intel), 只
+    // 加總「未宣告 dmgType 或宣告類型與本次相符」的加成/減傷, 讓「兵刃傷害提高/謀略傷害降低」
+    // 這類定向效果不再誤及不該覆蓋的另一種傷害類型(見 e.dmgType 呼叫端, applyEffects k==="amp"/"mitig"分支)。
+    const totalAmp = src.amp(kind);
     base *= totalAmp <= -1 ? 0 : 1 + Math.max(-0.9, totalAmp);
-    const mit = dst.addbonus("mitig") * (1 - Math.min(1, src.addbonus("pierce")));
+    const mit = dst.addbonus("mitig", kind) * (1 - Math.min(1, src.addbonus("pierce")));
     base *= Math.max(0.1, 1 - mit);
     base *= 0.96 + rnd() * 0.08;   // 隨機帶 0.96~1.04(對稱): rnd()*0.08 涵蓋 [0,0.08), 起點0.96 → 上限0.96+0.08=1.04
     return Math.max(0, base);
@@ -766,10 +809,18 @@
       const svMult = m => e.scale ? 1 + (m - 1) * scaleOf(caster, e.scale) : m;
       const svAdd = a => e.scale ? a * scaleOf(caster, e.scale) : a;  // 屬性平加縮放(如未來 scale 平加); 一般裝備平加無 scale 直接用原值
       // 批16: undispellable 旗標 —— 效果加此欄則 dispel 略過(附加進 pushAdd/pushMod 的 flags, 供 dispelUnit 讀取)
-      const udFlags = e.undispellable ? { undispellable: true } : undefined;
+      // 批24 D2: dmgType 旗標 —— amp/mitig 效果可選填 e.dmgType:"phys"|"intel", 限定只對該類型
+      // 傷害生效(damage() 結算時依 kind 過濾, 見 amp()/addbonus() 的 dmgType 參數)。與
+      // undispellable 合併進同一個 flags 物件(pushAdd/pushMod 第5參數), 兩者互不干擾。
+      const udFlags = (e.undispellable || e.dmgType) ? { undispellable: !!e.undispellable, dmgType: e.dmgType } : undefined;
+      // dmgType 存在時, src 附加類型尾碼區分 dedup key(同一戰法內若有兩條不同 dmgType 的
+      // amp/mitig, 如暫避其鋒「智力最高者減兵刃傷害」+「武力最高者減謀略傷害」, 兩者若共用
+      // 同一個 src(戰法名)會被 pushAdd 的「同kind+同src刷新」去重機制互相蓋掉, 見 rateup 的
+      // 既有 prepOnly/nativeOnly 尾碼慣例同理)。
+      const dtSrc = (src && e.dmgType) ? src + ":" + e.dmgType : src;
       for (const u of dests) {
-        if (k === "amp") { const v = svVal(e.val); who === "enemy" && v > 0 ? u.pushAdd("mitig", -v, e.dur, src, udFlags) : u.pushAdd("amp", v, e.dur, src, udFlags); }
-        else if (k === "mitig") u.pushAdd("mitig", svVal(e.val), e.dur, src, udFlags);
+        if (k === "amp") { const v = svVal(e.val); who === "enemy" && v > 0 ? u.pushAdd("mitig", -v, e.dur, dtSrc, udFlags) : u.pushAdd("amp", v, e.dur, dtSrc, udFlags); }
+        else if (k === "mitig") u.pushAdd("mitig", svVal(e.val), e.dur, dtSrc, udFlags);
         // 批16: immuneTo(單項控制免疫) —— isImmuneTo(k) 只免疫清單內控制類型, 與 insight(全免) 並列判斷
         else if (k === "stun") { if (!u.insight && !u.isImmuneTo("stun")) { u.stun = Math.max(u.stun, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入震懾(全禁)`); } else if (TRACE) lg(`　▸ ${u.nm} 免疫震懾`); }
         else if (k === "silence") { if (!u.insight && !u.isImmuneTo("silence")) { u.silence = Math.max(u.silence, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入計窮(禁主動戰法)`); } else if (TRACE) lg(`　▸ ${u.nm} 免疫計窮`); }
@@ -885,8 +936,9 @@
     addB = addB || teamB.map(() => null);
     inhA = inhA || teamA.map(() => null);
     inhB = inhB || teamB.map(() => null);
-    const A = teamA.map((n, i) => Object.assign(new Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i], seasonModsFor(POOL, POOL[n], i, teamA, scenario)), { nm: n, side: "我" }));
-    const B = teamB.map((n, i) => Object.assign(new Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i], seasonModsFor(POOL, POOL[n], i, teamB, scenario)), { nm: n, side: "敵" }));
+    const factionsA = teamA.map(n => POOL[n].faction), factionsB = teamB.map(n => POOL[n].faction);  // 批24 D1: teamGate 判定依據(隊伍全體陣營陣列)
+    const A = teamA.map((n, i) => Object.assign(new Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i], seasonModsFor(POOL, POOL[n], i, teamA, scenario), factionsA), { nm: n, side: "我" }));
+    const B = teamB.map((n, i) => Object.assign(new Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i], seasonModsFor(POOL, POOL[n], i, teamB, scenario), factionsB), { nm: n, side: "敵" }));
     const setA = new Set(A);
     const alliesOf = u => setA.has(u) ? A : B, foesOf = u => setA.has(u) ? B : A;
     const bondsA = activeBonds(teamA), bondsB = activeBonds(teamB);

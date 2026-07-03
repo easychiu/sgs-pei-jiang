@@ -487,7 +487,7 @@ KNOWN_EFFECT_FIELDS = {
     "n", "nMax", "rate",
 }
 PER_KIND_FIELDS = {
-    "amp": {"val"}, "mitig": {"val"}, "stun": set(), "silence": set(), "disarm": set(),
+    "amp": {"val", "dmgType"}, "mitig": {"val", "dmgType"}, "stun": set(), "silence": set(), "disarm": set(),  # dmgType: 批24 D2, 兵刃/謀略傷害類型過濾
     "chaos": set(), "ambush": set(), "insight": set(), "immune": {"types"}, "first": set(),
     "stat": {"stat", "add", "mult"},
     "dot": {"coef", "kind"},  # 批23 A3: e.kind(dot段自帶傷害類型, 優先於t.kind, 見damage()呼叫端)
@@ -875,11 +875,65 @@ def check_r14(p, txt):
     return violations
 
 
+# ---------------------------------------------------------------------------
+# R15(批24 C): 屬性點數(stat add)主效果遺漏 —— 原文含「提高/降低/提升/減少 N點
+# 統率/武力/智力/速度」(或「統率/速度提高N點」語序相反寫法), 但 effects 沒有對應
+# stat 效果(k=="stat"且stat欄位匹配, add或mult皆可能, 只要求"有對應這個屬性的stat
+# 效果存在", 不要求add的精確數值——精確數值比對已有既有的欄位回填/人工核對流程,
+# R15只抓"完全遺漏, 主效果整段消失"這種最嚴重的情形), 且無揭露。
+#
+# 兩種常見語序皆需支援(見批24全庫核對, 28筆樣本):
+#   (a) 「提高/降低/提升/減少 N[→M] 點 X」(動詞在前, 如"降低100點統率")
+#   (b) 「X(、X2...) 提高/降低/提升/減少 N[→M] 點」(屬性名在前, 逗號/頓號分隔多個
+#       屬性共用同一動詞+數值, 如"統率、速度提高11→22點")
+#
+# 低誤報設計: 只在"完全沒有任何一個stat效果匹配該屬性"時才報(不要求add數值精確,
+# 那是其他既有流程的職責); type=="none"(內政類)由lint()主迴圈統一跳過; 有揭露
+# (_todo/_note/_approx等, 常見於"caster-is-leader條件式疊加"一類複雜情境如威武並昭)
+# 一律豁免。
+# ---------------------------------------------------------------------------
+STAT_NAME_ALT = "武力|智力|統率|統帥|速度|魅力"
+STAT_ZH2K = {"武力": "force", "智力": "intel", "統率": "command", "統帥": "command", "速度": "speed", "魅力": "charm"}
+R15_VERB_FIRST_RE = re.compile(
+    rf"(?:提高|提升|增加|降低|減少)\s*\d+(?:\.\d+)?\s*(?:→|~|-)?\s*(?:\d+(?:\.\d+)?)?\s*點\s*({STAT_NAME_ALT})"
+)
+R15_STAT_FIRST_RE = re.compile(
+    rf"(({STAT_NAME_ALT})(?:[、,，](?:{STAT_NAME_ALT}))*)\s*(?:提高|提升|增加|降低|減少)\s*\d+(?:\.\d+)?\s*(?:→|~|-)?\s*(?:\d+(?:\.\d+)?)?\s*點"
+)
+
+
+def check_r15(p, txt):
+    violations = []
+    effects = p.get("effects", []) or []
+    stat_effect_attrs = {e.get("stat") for e in effects if e.get("k") == "stat" and e.get("stat")}
+    expect_attrs = set()
+    for block in split_version_blocks(txt):
+        for m in R15_VERB_FIRST_RE.finditer(block):
+            expect_attrs.add(m.group(1))
+        for m in R15_STAT_FIRST_RE.finditer(block):
+            for name in re.split(r"[、,，]", m.group(1)):
+                if name:
+                    expect_attrs.add(name)
+    if not expect_attrs:
+        return violations
+    missing = sorted({name for name in expect_attrs if STAT_ZH2K.get(name) not in stat_effect_attrs})
+    if not missing:
+        return violations
+    if has_disclosure(p):
+        return violations
+    violations.append({
+        "name": p["nameZh"], "rule": "R15",
+        "message": f"原文含屬性點數描述({'/'.join(missing)}), 但 effects 無對應 stat 效果(k=='stat'且stat欄位匹配), 且無揭露(疑似主效果遺漏)",
+        "evidence": txt[:100].strip(),
+    })
+    return violations
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
     ("R9", check_r9), ("R10", check_r10), ("R11", check_r11), ("R12", check_r12),
-    ("R13", check_r13), ("R14", check_r14),
+    ("R13", check_r13), ("R14", check_r14), ("R15", check_r15),
 ]
 
 

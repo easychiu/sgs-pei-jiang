@@ -288,8 +288,23 @@ def recommend(pool=None, k=3, top=8):
 # ---------------------------------------------------------------------------
 # 引擎
 # ---------------------------------------------------------------------------
+def team_gate_ok(gate, factions):
+    """批24 D1: teamGate(隊伍構成前提) —— 判斷隊伍陣營組成是否符合戰法宣告的前提。
+    "allDiff": 三名武將陣營兩兩不同(潛龍陣「我軍三名武將陣營均不相同時」); "allSame":
+    三名武將陣營皆相同(供未來同類戰法使用, 目前全庫無此案例但一併支援對稱語意)。
+    factions 為隊伍全體(含自己)的陣營陣列, 已在 fight() 建構 Unit 前準備好傳入。"""
+    if not gate or not gate.get("factions"):
+        return True
+    uniq = len(set(factions))
+    if gate["factions"] == "allDiff":
+        return uniq == len(factions)
+    if gate["factions"] == "allSame":
+        return uniq == 1
+    return True                                       # 未知 gate 種類: 保守放行(不擋), 避免資料錯字導致戰法整組消失
+
+
 class Unit:
-    def __init__(self, g, ttype, bingshu=None, equip=None, add=None, inherit=None, season=None):
+    def __init__(self, g, ttype, bingshu=None, equip=None, add=None, inherit=None, season=None, team_factions=None):
         self.g, self.ttype, self.troop, self.stun = g, ttype, START_TROOP, 0
         self.silence = 0                              # 計窮: 無法發動主動戰法
         self.disarm = 0                                # 繳械: 無法普通攻擊(含連擊/突擊)
@@ -301,8 +316,16 @@ class Unit:
         # 自帶 + 傳承; 自帶戰法(g.tactic)淺拷貝附加 native:True 旗標(供 rateup/chargeup 的 nativeOnly
         # 修飾判斷「這是不是自帶戰法」, 如太平道法只加成張角自帶的五雷轟頂)。淺拷貝而非直接改
         # TACTICS 共享物件, 避免多個武將共用同一戰法物件時互相污染(如兩人都自帶白眉)。
-        self.tactics = ([dict(g.tactic, native=True)] if g.tactic else []) + \
+        # 批24 D1: teamGate —— 開戰時(建構Unit當下, team_factions已由fight()備妥)判定一次,
+        # 不滿足前提的戰法整條從 self.tactics 過濾掉(不進入後續 cmd_passive_srcs/on_hit_tacs/
+        # on_hit_effect_tacs 等衍生快取, 亦不會被 apply_passives/回合迴圈讀到, 等同整戰法不生效)。
+        # sgz.py 無 TRACE/日誌機制(僅 docs/engine.js 供瀏覽器UI推演明細用), 此處純過濾不列印。
+        def _gate_ok(t):
+            return team_gate_ok(t.get("teamGate"), team_factions or [])
+        self.tactics = [t for t in (
+            ([dict(g.tactic, native=True)] if g.tactic else []) +
             [TACTICS[nm] for nm in (inherit or []) if nm in TACTICS]  # 自帶 + 傳承戰法
+        ) if _gate_ok(t)]
         # 批18: fakeReport(偽報) 加強 —— 記錄「自己的指揮/被動戰法」名稱集合, 供 eff()/addbonus()
         # 判斷某條 adds/mods/stat_adds 是否來自「本單位自己的指揮/被動戰法」(見 engine.js 同名欄位註解)。
         self.cmd_passive_srcs = {t.get("nameZh") for t in self.tactics
@@ -454,8 +477,15 @@ class Unit:
         """批18: fakeReport(偽報) 期間, 來源為「自己的指揮/被動戰法」(src in cmd_passive_srcs) 的
         條目暫停參與計算(到期自動恢復, 不刪除條目本身 —— 條目仍在 adds/mods/stat_adds 陣列裡,
         tick() 到期照舊遞減/移除, 只是這裡讀取時跳過)。src 為 None(兵書/裝備/緣分/其他來源)或
-        不在 cmd_passive_srcs 中不受影響。"""
-        return self.fake_report_dur > 0 and bool(src) and src in self.cmd_passive_srcs
+        不在 cmd_passive_srcs 中不受影響。
+        批24: src 可能帶「:尾碼」區分同源多條目(rateup 的 :prepOnly/nativeOnly、dmgType 的
+        :phys/:intel, 見 push_add 呼叫端), 但 cmd_passive_srcs 只存純戰法名(nameZh, 不含
+        尾碼)。比對前先去除尾碼還原成純戰法名, 避免帶尾碼的 src 永遠比對不到 cmd_passive_srcs
+        (修正批16 rateup/chargeup 尾碼慣例引入時就存在的潛在比對錯位)。"""
+        if not src or self.fake_report_dur <= 0:
+            return False
+        base = src.split(":", 1)[0]
+        return base in self.cmd_passive_srcs
 
     def eff(self, stat):
         if self.swap and stat in ("force", "intel"):  # 武智互換
@@ -469,8 +499,21 @@ class Unit:
                 v *= m
         return v
 
-    def addbonus(self, kind):
-        return sum(v for k, v, _dur, src, *_ in self.adds if k == kind and not self.suppressed(src))
+    def addbonus(self, kind, dmg_type=None):
+        """批24 D2: dmg_type(可選) —— 只加總「該條目未宣告 dmgType, 或宣告的 dmgType 與呼叫端
+        指定的 dmg_type 相符」的項目, 供 amp/mitig 依「兵刃/謀略」傷害類型過濾(見 damage() 呼叫端)。
+        省略時完全維持原行為(不分類型全部加總), 向後相容全庫既有未帶 dmgType 的 amp/mitig 資料。"""
+        s = 0.0
+        for a in self.adds:
+            k, v = a[0], a[1]
+            src = a[3] if len(a) > 3 else None
+            if k != kind or self.suppressed(src):
+                continue
+            flags = a[4] if len(a) > 4 else None
+            if dmg_type and flags and flags.get("dmgType") and flags["dmgType"] != dmg_type:
+                continue
+            s += v
+        return s
 
     def addbonus_for(self, kind, t):
         """rateup/chargeup 專用: 依戰法 t 的 prep/native 屬性, 只加總「修飾旗標吻合」的 adds 項。
@@ -493,8 +536,8 @@ class Unit:
             s += a[1]
         return s
 
-    def amp(self):                                    # 總增傷 = 一般+疊加層+衰減
-        a = self.addbonus("amp")
+    def amp(self, dmg_type=None):                     # 總增傷 = 一般+疊加層+衰減; 批24 D2: dmg_type過濾amp部分(stack/decay無此概念,全額計入)
+        a = self.addbonus("amp", dmg_type)
         if self.stack:
             a += self.stack["per"] * self.stack["n"]
         if self.decay:
@@ -612,9 +655,12 @@ def damage(src, dst, coef, kind, src_troop=None):
     # 靡亢/臨戰先登), 這是「無法造成傷害」的二元語意, 不是「%減益疊加」, 總和<=-1時維持完全
     # 歸零(不受-90%封頂影響), 只在 -1 < 總和 < -0.9 這個「多重%減益疊加但尚未到虛弱程度」的
     # 區間套用-90%下限。
-    total_amp = src.amp()
+    # 批24 D2: dmgType 過濾 —— amp()/addbonus("mitig") 傳入本次傷害的 kind(phys/intel), 只加總
+    # 「未宣告 dmgType 或宣告類型與本次相符」的加成/減傷(見 e.dmgType 呼叫端, apply_effects
+    # k=="amp"/"mitig" 分支)。
+    total_amp = src.amp(kind)
     base *= 0.0 if total_amp <= -1 else 1 + max(-0.9, total_amp)  # 增傷(疊加/衰減/敵方減益)
-    mit = dst.addbonus("mitig") * (1 - min(1.0, src.addbonus("pierce")))  # 看破: 無視部分減傷
+    mit = dst.addbonus("mitig", kind) * (1 - min(1.0, src.addbonus("pierce")))  # 看破: 無視部分減傷
     base *= max(0.1, 1 - mit)
     base *= random.uniform(0.96, 1.04)
     return max(0, base)
@@ -1047,16 +1093,25 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             return ad * scale_of(caster, e["scale"]) if e.get("scale") else ad
 
         # 批16: undispellable 旗標 —— 效果加此欄則 dispel 略過(附加進 push_add/push_mod/push_stat_add 的 flags, 供 dispel_unit 讀取)
-        ud_flags = {"undispellable": True} if e.get("undispellable") else None
+        # 批24 D2: dmgType 旗標 —— amp/mitig 效果可選填 e["dmgType"]="phys"|"intel", 限定只對該
+        # 類型傷害生效(damage() 結算時依 kind 過濾, 見 amp()/addbonus() 的 dmg_type 參數)。與
+        # undispellable 合併進同一個 flags dict, 兩者互不干擾。
+        dmg_type = e.get("dmgType")
+        ud_flags = {"undispellable": bool(e.get("undispellable")), "dmgType": dmg_type} if (e.get("undispellable") or dmg_type) else None
+        # dmgType 存在時, src 附加類型尾碼區分 dedup key(同一戰法內若有兩條不同 dmgType 的
+        # amp/mitig, 如暫避其鋒「智力最高者減兵刃傷害」+「武力最高者減謀略傷害」, 兩者若共用
+        # 同一個 src 會被 push_add 的「同kind+同src刷新」去重機制互相蓋掉, 見 rateup 既有
+        # prepOnly/nativeOnly 尾碼慣例同理)。
+        dt_src = (src + ":" + dmg_type) if (src and dmg_type) else src
         for u in dests:
             if k == "amp":
                 v = sv_val(e["val"])
                 if who == "enemy" and v > 0:          # 修正: 敵方正amp(誤幫敵增傷)→ 視為敵方易傷
-                    u.push_add("mitig", -v, e["dur"], src, ud_flags)
+                    u.push_add("mitig", -v, e["dur"], dt_src, ud_flags)
                 else:
-                    u.push_add("amp", v, e["dur"], src, ud_flags)
+                    u.push_add("amp", v, e["dur"], dt_src, ud_flags)
             elif k == "mitig":
-                u.push_add("mitig", sv_val(e["val"]), e["dur"], src, ud_flags)
+                u.push_add("mitig", sv_val(e["val"]), e["dur"], dt_src, ud_flags)
             # 批16: immuneTo(單項控制免疫) —— is_immune_to(k) 只免疫清單內控制類型, 與 insight(全免) 並列判斷
             elif k == "stun":
                 if not u.insight and not u.is_immune_to("stun"):
@@ -1198,9 +1253,11 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
     addB = addB or [None] * len(teamB)
     inhA = inhA or [None] * len(teamA)
     inhB = inhB or [None] * len(teamB)
-    A = [Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i], season_mods(POOL[n], i, teamA, scenario))
+    factions_a = [POOL[n].faction for n in teamA]      # 批24 D1: teamGate 判定依據(隊伍全體陣營陣列)
+    factions_b = [POOL[n].faction for n in teamB]
+    A = [Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i], season_mods(POOL[n], i, teamA, scenario), factions_a)
          for i, n in enumerate(teamA)]
-    B = [Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i], season_mods(POOL[n], i, teamB, scenario))
+    B = [Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i], season_mods(POOL[n], i, teamB, scenario), factions_b)
          for i, n in enumerate(teamB)]
     setA = set(map(id, A))
     allies_of = lambda u: A if id(u) in setA else B
@@ -2768,6 +2825,52 @@ def demo():
             apply_effects(a5_u, None, a5_tac, [a5_u], [], no_heal=True)
     assert abs(a5_u.eff("force") - a5_u.force) < 1e-6, "A5: rate=0.0 的when-gated戰法不應觸發effects(過去此路徑從不讀t['rate'], 必定觸發)"
     CUR_ROUND = 0
+
+    # 73) 批24 D1: teamGate(隊伍構成前提) —— 開戰建構Unit時依team_factions過濾tactics
+    assert team_gate_ok({"factions": "allDiff"}, ["魏", "蜀", "吳"]) is True, "teamGate: allDiff 三方不同陣營應通過"
+    assert team_gate_ok({"factions": "allDiff"}, ["魏", "魏", "吳"]) is False, "teamGate: allDiff 有重複陣營應擋下"
+    assert team_gate_ok({"factions": "allSame"}, ["魏", "魏", "魏"]) is True, "teamGate: allSame 三方同陣營應通過"
+    assert team_gate_ok({"factions": "allSame"}, ["魏", "蜀", "魏"]) is False, "teamGate: allSame 有不同陣營應擋下"
+    assert team_gate_ok(None, ["魏", "魏", "魏"]) is True, "teamGate: 無gate應一律放行(向後相容)"
+    d1_tac = {"nameZh": "測試teamGate73", "type": "passive", "cat": "FORMATION", "coef": 0, "rate": 1,
+              "effects": [{"k": "stat", "who": "self", "stat": "force", "add": 999, "dur": 99}],
+              "teamGate": {"factions": "allDiff"}}
+    TACTICS[d1_tac["nameZh"]] = d1_tac
+    d1_u_pass = Unit(POOL["張飛"], "盾", None, None, None, [d1_tac["nameZh"]], None, ["魏", "蜀", "吳"])
+    assert any(t["nameZh"] == d1_tac["nameZh"] for t in d1_u_pass.tactics), "teamGate: 隊伍陣營皆不同時, 戰法應保留在tactics中"
+    d1_u_block = Unit(POOL["張飛"], "盾", None, None, None, [d1_tac["nameZh"]], None, ["魏", "魏", "吳"])
+    assert not any(t["nameZh"] == d1_tac["nameZh"] for t in d1_u_block.tactics), "teamGate: 隊伍陣營有重複時, 戰法應被整條過濾掉"
+    del TACTICS[d1_tac["nameZh"]]
+
+    # 74) 批24 D2: dmgType(兵刃/謀略傷害類型過濾) —— amp/mitig 效果可選填 e["dmgType"],
+    # 只對該類型傷害生效, 不影響另一類型
+    d2_src = Unit(POOL["張飛"], "盾")
+    d2_dst_phys = Unit(POOL["諸葛亮"], "盾")
+    d2_dst_intel = Unit(POOL["諸葛亮"], "盾")
+    d2_tac = {"nameZh": "測試dmgType74", "effects": [
+        {"k": "mitig", "who": "ally", "val": 0.5, "dur": 5, "dmgType": "phys"},
+    ]}
+    apply_effects(d2_dst_phys, None, d2_tac, [d2_dst_phys], [], no_heal=True)
+    apply_effects(d2_dst_intel, None, d2_tac, [d2_dst_intel], [], no_heal=True)
+    random.seed(99)
+    dmg_phys_with_mitig = damage(d2_src, d2_dst_phys, 1.0, "phys")
+    random.seed(99)
+    dmg_phys_baseline = damage(d2_src, Unit(POOL["諸葛亮"], "盾"), 1.0, "phys")
+    assert dmg_phys_with_mitig < dmg_phys_baseline * 0.6, "dmgType: dmgType='phys'的mitig應對兵刃傷害生效(打折)"
+    random.seed(99)
+    dmg_intel_with_mitig = damage(d2_src, d2_dst_intel, 1.0, "intel")
+    random.seed(99)
+    dmg_intel_baseline = damage(d2_src, Unit(POOL["諸葛亮"], "盾"), 1.0, "intel")
+    assert abs(dmg_intel_with_mitig - dmg_intel_baseline) < 1e-6, "dmgType: dmgType='phys'的mitig不應影響謀略傷害(intel)"
+    # 同一戰法內兩條不同dmgType的mitig應各自獨立生效(不因同src刷新去重互相覆蓋, 見dt_src尾碼機制)
+    d2_dual_tac = {"nameZh": "測試dmgType雙段74b", "effects": [
+        {"k": "mitig", "who": "self", "val": 0.3, "dur": 5, "dmgType": "phys"},
+        {"k": "mitig", "who": "self", "val": 0.4, "dur": 5, "dmgType": "intel"},
+    ]}
+    d2_dual_u = Unit(POOL["諸葛亮"], "盾")
+    apply_effects(d2_dual_u, None, d2_dual_tac, [d2_dual_u], [], no_heal=True)
+    assert abs(d2_dual_u.addbonus("mitig", "phys") - 0.3) < 1e-6, "dmgType: 兩條不同dmgType的mitig不應互相覆蓋(phys段應保留0.3)"
+    assert abs(d2_dual_u.addbonus("mitig", "intel") - 0.4) < 1e-6, "dmgType: 兩條不同dmgType的mitig不應互相覆蓋(intel段應保留0.4)"
 
     print("self-check OK")
 
