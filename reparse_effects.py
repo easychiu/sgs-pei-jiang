@@ -713,13 +713,31 @@ def apply_corrections(parsed, corrections):
     """批10: 在所有既有步驟之後(最末)套用 corrections —— 全庫驗證findings仲裁的最終結果。
     宣告式覆寫(讀檔, 非增量 patch): 每個戰法的 correction 物件可含:
       - "set": {欄位: 目標值} 的 sparse dict, 只覆寫列出的頂層欄位(coef/rate/n/nMax/prep等),
-        不觸碰其餘欄位。
+        不觸碰其餘欄位。批15修正: main() 是以「讀取現有 tactics_parsed.json 為起點, 逐步疊加
+        修改」運作(非每次從 raw 重新生成的純函數), 若某一版 correction 曾用 set 寫入過某欄位
+        (如 when), 之後改版拿掉該欄位, 舊值會停留在 parsed 檔案裡「卡住」不會自動消失(因為
+        set 只覆寫列出的鍵, 不會清除不在列表中但過去寫過的鍵)。故 set 裡把某欄位的值設為
+        Python None(JSON null) 時, 視為「清除此欄位」指令(用 dict.pop 移除, 而非寫入 None字面
+        值), 讓 correction 需要撤回某個曾經 set 過的欄位時有乾淨的做法, 不必擔心殘留。
       - "effects": 完整替換的效果陣列(宣告式最終狀態, 非 add-only); 提供時整組覆寫該戰法的
         effects, 不提供則 effects 維持不動(由前面各步驟或既有資料決定)。
       - "extraHits": 完整替換的多段傷害陣列(批14新增支援; 語意同 effects, 提供時整組覆寫,
         不提供則 extraHits 維持不動)。批14首次出現「頂層coef隨機選目標bug, 改用extraHits
         (who:enemyLeader)鎖定固定目標」這類修正(如暗潮洶湧/暗潮湧動/暗藏玄機), 此前231筆
         corrections從未用過此欄位, 故此支援為新增而非既有行為的一部分。
+      - "_addTopLevel": {欄位: 值} 的 sparse dict, 直接把揭露性中繼資料(_todo/_note/_approx/
+        _est等, 非戰鬥語意欄位)寫到 parsed 戰法物件頂層。
+      - 揭露性中繼資料鍵(_todo/_note/_note2/_note_self/_approx/_est) 若直接以「裸」頂層鍵的
+        形式出現在 correction 物件本身(不透過 _addTopLevel 包一層), 同樣視為要寫入 parsed
+        頂層的揭露內容。
+    批15修正: 上述兩種寫法(_addTopLevel 包一層 / 裸頂層鍵)在批10~14的278筆corrections中
+    並存(前者5筆, 後者27筆用裸_todo等), 但 apply_corrections() 從未真正讀取套用過任一種
+    ——導致這些戰法的揭露文字只存在於 tactic_corrections.json 原始檔, 從未進入
+    tactics_parsed.json(下游UI/盲測審查讀的是 parsed 檔), 形成「看似已誠實揭露, 實際上
+    揭露文字從未落地」的靜默遺失(v4盲測「驅散: 主要效果no-op且未揭露」即為此因, 並非
+    沒寫揭露, 而是揭露寫了但沒接上)。現在補上讀取與套用, 兩種寫法都支援: 逐欄寫入(不
+    覆蓋同名戰鬥語意欄位; _evidence/_diff/_bucket/_conflict_note/_issue 屬修正過程的內部
+    稽核軌跡, 非戰法本身的揭露內容, 不寫入 parsed)。
     與既有白名單(SCALE_PLAN/BATCH8_TACTIC_EFFECTS/BATCH9_TACTIC_EFFECTS等)衝突時, corrections
     優先(它是批10最新仲裁結果, 已核對過原文與既有白名單的落地是否正確)。天然冪等: 每次重跑
     都是「讀取同一份 corrections.json 覆寫成同一個目標值」, 不會累積變動。
@@ -745,6 +763,12 @@ def apply_corrections(parsed, corrections):
             continue                                  # corrections 提到但 parsed 沒有此戰法(不應發生, 保守跳過不報錯)
         changed_this = False
         for fld, val in (corr.get("set") or {}).items():
+            if val is None:                               # 批15: set 裡的 None(JSON null) = 清除該欄位(見上方docstring), 而非寫入 null 字面值
+                if fld in p:
+                    del p[fld]
+                    n_set_changed += 1
+                    changed_this = True
+                continue
             if p.get(fld) != val:
                 p[fld] = val
                 n_set_changed += 1
@@ -763,6 +787,18 @@ def apply_corrections(parsed, corrections):
                 n_effects_changed += 1
                 changed_this = True
             p.pop("_est", None)
+        # 批15: 揭露性中繼資料寫到 parsed 頂層(見上方docstring) —— 放在 effects/extraHits 的
+        # _est清除之後, 確保若 correction 同時提供完整effects又想保留/補寫自己的_est(如
+        # 「已核對但仍是近似值」的情境), 不會被上面 p.pop("_est", None) 誤清掉。
+        DISCLOSURE_KEYS = ("_todo", "_note", "_note2", "_note_self", "_approx", "_est")
+        disclosure_src = dict(corr.get("_addTopLevel") or {})
+        for k in DISCLOSURE_KEYS:
+            if k in corr:                                  # 裸頂層鍵寫法(較常見, 27筆); _addTopLevel 包一層寫法(5筆)已在上面併入
+                disclosure_src.setdefault(k, corr[k])
+        for fld, val in disclosure_src.items():
+            if p.get(fld) != val:
+                p[fld] = val
+                changed_this = True
         if changed_this:
             applied_names.append(name)
     return n_set_changed, n_effects_changed, applied_names

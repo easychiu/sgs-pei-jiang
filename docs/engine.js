@@ -165,6 +165,7 @@
       this.surehitDur = 0;                          // 必中: 無視對方 dodge
       this.healblock = 0;                           // 批8: 禁療(healblock) 剩餘回合, >0 時 heal 效果對其無效
       this.whenFired = new Set();                   // 條件觸發(when.rounds/from/until) 已套用效果的戰法(一次性), 依戰法物件去重; 批8: delayedEq(裝備效果級when)共用同一個 Set(效果物件本身去重, 不與戰法物件撞)
+      this.healRoundsFired = null;                  // 批15: heal 效果 e.when.rounds(明確列出的特定回合)的「每回合各觸發一次」去重, Map<效果物件, Set<已觸發回合數>>, 惰性建立(見 applyEffects 的 heal 分支)
       this.hitFlags = new Set();                    // 反應式觸發(when.on) 本回合已觸發的戰法, 每回合重置(防無限鏈)
       this.onHitTacs = this.tactics.filter(t => (t.type === "passive" || t.type === "command") && t.when && t.when.on);  // 預篩: 絕大多數單位為空, hit 熱路徑 O(0)
       this.lockedTargets = new Map();               // 批12 ModeG: lockTarget:true 戰法的鎖定目標, 鍵=戰法物件本身(同一戰法物件跨回合重用同一 Map)
@@ -416,6 +417,48 @@
       if (k === "heal") {
         if (opt.noHeal) continue;
         if ((e.coef ?? 0.8) < 0) continue;              // 批10: 資料衛生防禦 —— 負 heal coef(如機略縱橫類 dot 誤標成 heal 負值)一律視為0並跳過, 避免資料錯誤反而扣友軍血
+        // 批15: 指揮/被動的 heal 在 opt.healOnly(每回合無條件常駐掃描, 見 applyPassives 的
+        // 逐回合呼叫)這條路徑下, 過去無視 t.when/t.rate/e.once, 每回合必定結算 —— 「第N回合
+        // 治療一次」類戰法(如撫輯軍民/桃園結義/士別三日)被無聲放大成每回合治療(~8倍/回合數倍)。
+        // 修正: 僅在 healOnly 常駐路徑套用下列語意閘門(其餘呼叫路徑, 如 when 視窗一次性套用/
+        // active主動/charge突擊/onHit反應式, 呼叫前已各自決定是否該觸發, 不應再被此處二次過濾):
+        //   1) e.when(效果級, 優先) 或 t.when(戰法級) 存在 → 用 roundOk 檢查回合是否落在視窗
+        //      內, 不符合則本回合不治療。e.when 用途: 同一戰法內其餘效果(如撫輯軍民的
+        //      mitig/amp)是「前3回合就生效」的常駐buff(無 when, 準備階段套用), 但 heal 段是
+        //      「第4回合單次觸發」—— 兩者時間窗不同, 不能共用同一個 t.when(會連帶把 mitig/amp
+        //      也延後到第4回合才套用), 故 heal 效果自己帶 e.when 覆蓋, 不影響同戰法其他效果
+        //      的準備階段套用時機。
+        //      - when.rounds(明確列出的單一/多個回合, 如「第4回合」「第3、5回合」): 語意是
+        //        「只在這些特定回合各觸發一次」, 用 whenFired(效果+回合組合去重, 同 delayedEq
+        //        慣例)確保 rounds:[3,5] 這種多回合列表在第3、第5回合各自觸發一次、不重複、
+        //        也不會在其他回合誤觸發。
+        //      - when.from/until(範圍視窗, 如「第3回合起, 持續3回合」「第5回合起」): 語意是
+        //        「這幾回合每回合都要治療」(休整/持續恢復類戰法, 如金丹秘術/詐降/魚鱗陣),
+        //        故只用 roundOk 檢查是否在窗內, 不做 whenFired 去重(讓窗內每回合都能重新
+        //        擲骰/治療)。
+        //   2) e.once === true(單次治療語意, 無 when 亦適用) → 觸發過一次即不再結算, 同樣用
+        //      whenFired 去重。
+        //   3) 無 when(e.when/t.when 皆無)且無 e.once → 維持原行為: 每回合持續治療(急救/
+        //      休整類戰法本意如此)。
+        //   以上都通過後才擲 t.rate 骰(rate<1 時只有部分回合真正治療, 而非年年必中)。
+        if (opt.healOnly) {
+          const hw = e.when || t.when;
+          if (hw) {
+            if (!roundOk({ when: hw }, CUR_R)) continue;
+            if (hw.rounds) {                              // 明確列出的特定回合: 每個列出的回合各觸發一次(回合特定去重鍵, 而非整場只觸發一次)
+              if (!caster.healRoundsFired) caster.healRoundsFired = new Map();  // Map<effect物件, Set<已觸發的回合數>>, 惰性建立(僅 rounds 型 heal 需要)
+              let seen = caster.healRoundsFired.get(e);
+              if (!seen) { seen = new Set(); caster.healRoundsFired.set(e, seen); }
+              if (seen.has(CUR_R)) continue;
+              seen.add(CUR_R);
+            }
+            // from/until(範圍視窗): 不去重, 窗內每回合都可能治療(休整類戰法本意如此, 如金丹秘術/詐降/魚鱗陣)
+          } else if (e.once) {
+            if (caster.whenFired.has(e)) continue;
+            caster.whenFired.add(e);
+          }
+          if (rnd() >= (t.rate ?? 1)) continue;
+        }
         let hurt = null;
         for (const a of allies) if (a.alive && !a.healblock && (!hurt || a.troop < hurt.troop)) hurt = a;  // 批8: 禁療(healblock) 中的目標跳過, 不參與「最殘一人」篩選
         if (hurt) {
@@ -601,7 +644,11 @@
           if ((t.type === "passive" || t.type === "command") && t.when && !t.when.on && roundOk(t, r) && !u.whenFired.has(t)) {
             u.whenFired.add(t);
             if (TRACE) lg(`【${u.side}】${u.nm}（第${r}回合條件）發動【${t.nameZh}】`);
-            applyEffects(u, null, t, alliesOf(u), foesOf(u), { noHeal: false });
+            // 批15: noHeal:true —— heal 效果改由上面 applyPassives({healOnly:true}) 統一處理
+            // (它自己會檢查 t.when/roundOk, 見 applyEffects 內 opt.healOnly 分支), 避免此處與
+            // healOnly 常駐通道用不同的去重鍵(t vs e)各自判定, 造成同一 when 視窗開啟的回合
+            // heal 被套用兩次(雙倍治療)。
+            applyEffects(u, null, t, alliesOf(u), foesOf(u), { noHeal: true });
           }
       }
       // 批8: 裝備效果級回合窗(delayedEq) —— 與戰法 when 窗口同一時點檢查; 效果物件本身(非戰法)
