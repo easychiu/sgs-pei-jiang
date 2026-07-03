@@ -15,8 +15,15 @@
   "name": "無懼",
   "type": "武器",
   "exclusive": "張遼",
-  "effects": [],
-  "_todo": "戰鬥前2回合自身免疫繳械狀態; 引擎唯一'免疫控制'原語是insight(同時免疫stun/silence/disarm三種,範圍過大於'僅免疫繳械'),套用insight會意外連帶免疫震懾與計窮,失真過大,故不落地,留待引擎新增細分免疫原語"
+  "effects": [
+   {
+    "k": "immune",
+    "who": "self",
+    "types": ["disarm"],
+    "dur": 2,
+    "_note": "批17: 原文「戰鬥前2回合，自身免疫繳械狀態」批16新增immuneTo(單項控制免疫)原語精確對應(僅免疫繳械/disarm, 不像insight會連帶誤免震懾/計窮); 無when子句, 於prep階段一次性套用dur:2(對應前2回合); 先前因insight範圍過寬而完全未落地, 現用immuneTo精確落地"
+   }
+  ]
  },
  {
   "name": "雄烈",
@@ -449,7 +456,7 @@
   "type": "防具",
   "exclusive": null,
   "effects": [],
-  "_todo": "自身兵力首次低於70%時獲得9%倒戈,持續2回合(倒戈=陣營反轉機制,引擎無此原語,且需兵力閾值觸發條件)"
+  "_todo": "批17核對更正: 原_todo誤稱「倒戈=陣營反轉機制」——經核對engine.js/sgz.py, 倒戈實際語意是lifesteal(造成兵刃傷害時按比例回復自身兵力), 引擎確有lifesteal原語可精確表達此部分, 並非機制本身缺失。真正的缺口是觸發條件「自身兵力首次低於70%」(hpBelow, 批16新增)——但批16的hpBelow/hpAbove(hpOk)判定僅整合進「戰法」(u.tactics)的回合迴圈條件觸發區塊, 裝備效果(u.eq/u.delayedEq)的條件觸發窗口(delayedEq)只透過roundOk(回合數/parity/every)判定, 並未呼叫hpOk, 故裝備效果目前無法使用hpBelow/hpAbove(engine需另外擴充delayedEq的hp門檻檢查, 屬引擎改動, 本次紅線不可動engine.js/sgz.py, 故不落地)。9%倒戈數值本身若忽略觸發條件可用lifesteal(val:0.09,dur:2)表達, 但脫離「兵力<70%」觸發條件會嚴重失真(等同於全程恆定9%倒戈, 高估), 保守不強行落地, 維持_todo。"
  },
  {
   "name": "榮光",
@@ -768,11 +775,11 @@
   "exclusive": null,
   "effects": [
    {
-    "k": "heal",
+    "k": "healGiven",
     "who": "self",
-    "coef": 0.08,
+    "val": 0.08,
     "dur": 99,
-    "_note": "治療效果提升8%; 用heal係數近似體現(嚴格說應為對他人治療量的加成,而非自身治療行為)"
+    "_note": "批17: 原文「自身造成的治療效果提升8%」批16新增healGiven原語精確對應(施放的治療×(1+val), 修飾自身發動的其他治療效果, 非直接治療自己); 取代先前誤用的heal(who:self,coef:0.08)——舊版把「治療量修飾」誤映射成「每回合直接自我治療8%」, 語意錯誤(該note本身已承認'嚴格說應為對他人治療量的加成,而非自身治療行為'), 現用healGiven精確落地"
    }
   ]
  },

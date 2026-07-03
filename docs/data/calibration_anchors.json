@@ -1,49 +1,136 @@
 {
-  "_note": "實測校準錨點集。來源: user 遊戲實測 / 社群拆解。引擎旋鈕以此為準, 新增實測往這裡記。",
-  "damage_formula": {
-    "source": "櫻謀詭計實測+菜頭模型 (agy研究 2026-07-02)",
-    "anchors": [
-      {"troop": 10000, "diff": 0, "coef": 1.0, "morale": 100, "dmg": 476},
-      {"troop": 10000, "diff": 200, "coef": 1.0, "morale": 100, "dmg": 764},
-      {"troop": 10000, "diff": "大負值", "coef": 1.0, "morale": 100, "dmg": 90},
-      {"troop": 10000, "diff": 0, "coef": 1.0, "morale": 90, "dmg": 430}
-    ],
-    "fitted": {"DMG_A": 4.76, "DMG_B": 1.44, "DMG_FLOOR": 0.9}
-  },
-  "morale": {
-    "source": "user 實戰報截圖 2026-07-02",
-    "anchors": [
-      {"morale": 99.20, "dmg_mod": "-0.56%"},
-      {"morale": 110.40, "dmg_mod": "不變(>100封頂)"}
-    ],
-    "fitted": "0.007×(100-m), m clamp 100 — 與引擎 moraleMult 分毫不差"
-  },
-  "stat_scale": {
-    "source": "巴哈/NGA 社群拆解 (agy研究)",
-    "anchors": [{"stat": 300, "base": "40%", "actual": "62.86%", "tactic": "暫避其鋒"}],
-    "fitted": "SCALE(v)=1+(v-100)/350"
-  },
-  "hubaoqi_caochun": {
-    "source": "user 遊戲實測 2026-07-02",
-    "desc": "虎豹騎: 曹純統領時, 突擊發動率額外提升, 受武力影響",
-    "anchors": [
-      {"force": 373.83, "extra": "4.46%"},
-      {"force": 145.78, "extra": "0.63%"},
-      {"force": 123.78, "extra": "0.53%"}
-    ],
-    "fitted": "二次曲線 extra% ≈ force² × 3.2e-5 (高點誤差0.3%, 低點±8%, _est 待更多樣本)",
-    "rejected_fits": "線性過原點(高點差2.8x)/線性(v-100)(不一致)"
-  },
-  "rate_scale": {
-    "source": "user 遊戲實測(太平道法, 張角) 2026-07-02",
-    "desc": "「受智力影響」的『發動機率』類縮放(rateup/chargeup 的 scale), 與傷害/增減益類的全域 SCALE(stat_scale, 1+(v-100)/350, 450翻倍) 是不同的獨立常數 —— 發動率縮放曲線更平緩, 智力需到 484.6 才翻倍(對比 SCALE 只要450)。",
-    "formula": "額外發動率 = 基礎加成 × (1 + (智力eff − 100) × RATE_SCALE_C), RATE_SCALE_C = 0.0026",
-    "fit_method": "user 6 組獨立實測點反解 c, 一致到小數第6位(c=0.002598), 本檔僅記錄可覆核的具體錨點; 其餘樣本的原始(智力,加成)數對未留檔, 僅保留反解出的常數與下列可驗證錨點。",
-    "anchors": [
-      {"intel": 426.57, "desc": "太平道法(6%→12%準備戰法發動率, 12%基礎)在智力426.57時的總加成", "predicted_total": 0.2219, "note": "12%×(1+(426.57-100)×0.0026)=12%×1.849≈22.19%, 與實測一致(容差<1%)"},
-      {"intel": 383.75, "extra_observed": "3.17%", "predicted": "4.43%", "outlier": true, "note": "預測4.43%不符實測3.17%, 疑似該次條件不同(如當時基礎加成非6%/12%滿級, 或另有其他加成疊加), 未採用此點參與擬合"}
-    ],
-    "fitted": "RATE_SCALE_C = 0.0026 (智力484.6時發動率加成翻倍, 對比全域 SCALE 的 450 翻倍點, 曲線更平緩)",
-    "used_by": ["太平道法(rateup, self/nativeOnly)", "chargeup(未有實測前共用同常數, 假設同曲線, 見 engine.js/sgz.py 註解)"]
+ "_note": "實測校準錨點集。來源: user 遊戲實測 / 社群拆解。引擎旋鈕以此為準, 新增實測往這裡記。",
+ "damage_formula": {
+  "source": "櫻謀詭計實測+菜頭模型 (agy研究 2026-07-02)",
+  "anchors": [
+   {
+    "troop": 10000,
+    "diff": 0,
+    "coef": 1,
+    "morale": 100,
+    "dmg": 476
+   },
+   {
+    "troop": 10000,
+    "diff": 200,
+    "coef": 1,
+    "morale": 100,
+    "dmg": 764
+   },
+   {
+    "troop": 10000,
+    "diff": "大負值",
+    "coef": 1,
+    "morale": 100,
+    "dmg": 90
+   },
+   {
+    "troop": 10000,
+    "diff": 0,
+    "coef": 1,
+    "morale": 90,
+    "dmg": 430
+   }
+  ],
+  "fitted": {
+   "DMG_A": 4.76,
+   "DMG_B": 1.44,
+   "DMG_FLOOR": 0.9
   }
+ },
+ "morale": {
+  "source": "user 實戰報截圖 2026-07-02",
+  "anchors": [
+   {
+    "morale": 99.2,
+    "dmg_mod": "-0.56%"
+   },
+   {
+    "morale": 110.4,
+    "dmg_mod": "不變(>100封頂)"
+   }
+  ],
+  "fitted": "0.007×(100-m), m clamp 100 — 與引擎 moraleMult 分毫不差"
+ },
+ "stat_scale": {
+  "source": "巴哈/NGA 社群拆解 (agy研究)",
+  "anchors": [
+   {
+    "stat": 300,
+    "base": "40%",
+    "actual": "62.86%",
+    "tactic": "暫避其鋒"
+   }
+  ],
+  "fitted": "SCALE(v)=1+(v-100)/350"
+ },
+ "hubaoqi_caochun": {
+  "source": "user 遊戲實測 2026-07-02",
+  "desc": "虎豹騎: 曹純統領時, 突擊發動率額外提升, 受武力影響",
+  "anchors": [
+   {
+    "force": 373.83,
+    "extra": "4.46%"
+   },
+   {
+    "force": 145.78,
+    "extra": "0.63%"
+   },
+   {
+    "force": 123.78,
+    "extra": "0.53%"
+   }
+  ],
+  "fitted": "二次曲線 extra% ≈ force² × 3.2e-5 (高點誤差0.3%, 低點±8%, _est 待更多樣本)",
+  "rejected_fits": "線性過原點(高點差2.8x)/線性(v-100)(不一致)"
+ },
+ "rate_scale": {
+  "source": "user 遊戲實測(太平道法, 張角) 2026-07-02",
+  "desc": "「受智力影響」的『發動機率』類縮放(rateup/chargeup 的 scale), 與傷害/增減益類的全域 SCALE(stat_scale, 1+(v-100)/350, 450翻倍) 是不同的獨立常數 —— 發動率縮放曲線更平緩, 智力需到 484.6 才翻倍(對比 SCALE 只要450)。",
+  "formula": "額外發動率 = 基礎加成 × (1 + (智力eff − 100) × RATE_SCALE_C), RATE_SCALE_C = 0.0026",
+  "fit_method": "user 6 組獨立實測點反解 c, 一致到小數第6位(c=0.002598), 本檔僅記錄可覆核的具體錨點; 其餘樣本的原始(智力,加成)數對未留檔, 僅保留反解出的常數與下列可驗證錨點。",
+  "anchors": [
+   {
+    "intel": 426.57,
+    "desc": "太平道法(6%→12%準備戰法發動率, 12%基礎)在智力426.57時的總加成",
+    "predicted_total": 0.2219,
+    "note": "12%×(1+(426.57-100)×0.0026)=12%×1.849≈22.19%, 與實測一致(容差<1%)"
+   },
+   {
+    "intel": 383.75,
+    "extra_observed": "3.17%",
+    "predicted": "4.43%",
+    "outlier": true,
+    "note": "預測4.43%不符實測3.17%, 疑似該次條件不同(如當時基礎加成非6%/12%滿級, 或另有其他加成疊加), 未採用此點參與擬合"
+   }
+  ],
+  "fitted": "RATE_SCALE_C = 0.0026 (智力484.6時發動率加成翻倍, 對比全域 SCALE 的 450 翻倍點, 曲線更平緩)",
+  "used_by": [
+   "太平道法(rateup, self/nativeOnly)",
+   "chargeup(未有實測前共用同常數, 假設同曲線, 見 engine.js/sgz.py 註解)"
+  ]
+ },
+ "wounded_pool": {
+  "source": "user 遊戲實測/機制說明 2026-07-03",
+  "desc": "傷兵機制: 受到的傷害按回合轉化為 可救援(傷兵,治療只能回復這部分) vs 陣亡(不可救援)。治療上限=累積傷兵池。",
+  "rates": [
+   {
+    "rounds": "1-3",
+    "recoverable": 0.9
+   },
+   {
+    "rounds": "4-6",
+    "recoverable": 0.8
+   },
+   {
+    "rounds": "7-8",
+    "recoverable": 0.675,
+    "note": "約65~70%取中值"
+   }
+  ]
+ },
+ "crit": {
+  "source": "user 確認 2026-07-03",
+  "desc": "會心/奇謀 觸發=傷害+100%(多一倍), 遊戲日誌紅字顯示。EV折算假設證實。"
+ }
 }

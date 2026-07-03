@@ -725,6 +725,17 @@ def apply_corrections(parsed, corrections):
         不提供則 extraHits 維持不動)。批14首次出現「頂層coef隨機選目標bug, 改用extraHits
         (who:enemyLeader)鎖定固定目標」這類修正(如暗潮洶湧/暗潮湧動/暗藏玄機), 此前231筆
         corrections從未用過此欄位, 故此支援為新增而非既有行為的一部分。
+      - "everyN": 完整替換的{count,on}計數觸發設定(批17新增支援; 語意同 extraHits, 提供時
+        整組覆寫, 提供 None 則清除該欄位)。批16原語擴充包(engine.js/sgz.py)已支援
+        t.everyN(自身第N次普攻觸發 effects/extraHits), 但 apply_corrections() 直到批17
+        才補上讀取——批17首批寫入everyN的2筆corrections(奮矛英姿/兵無常勢)在補上此支援前
+        測試時發現完全沒進 tactics_parsed.json(與下方_addTopLevel同類「宣告了但沒接上」的
+        靜默遺失, 已在本次一併修正)。
+      - "choices": 完整替換的擇一分支陣列(批17新增支援; 語意同 effects, 提供 None 則清除該
+        欄位)。批16已支援 t.choices(發動時按權重隨機選一組效果), 同上一併補上讀取支援
+        (本輪暫無實際使用choices的corrections案例, 因逐一核對候選戰法後發現皆不適用
+        choices的派發前提——見 tactic_corrections.json 內各戰法_todo的核對紀錄, 此支援
+        為前瞻性補齊, 供未來新戰法使用)。
       - "_addTopLevel": {欄位: 值} 的 sparse dict, 直接把揭露性中繼資料(_todo/_note/_approx/
         _est等, 非戰鬥語意欄位)寫到 parsed 戰法物件頂層。
       - 揭露性中繼資料鍵(_todo/_note/_note2/_note_self/_approx/_est) 若直接以「裸」頂層鍵的
@@ -784,6 +795,32 @@ def apply_corrections(parsed, corrections):
             want_extra = corr["extraHits"]
             if p.get("extraHits") != want_extra:
                 p["extraHits"] = [dict(e) for e in want_extra]
+                n_effects_changed += 1
+                changed_this = True
+            p.pop("_est", None)
+        # 批17新增: everyN(戰法級計數觸發設定, {count,on}) 完整替換(同 extraHits 慣例, dict而非list)。
+        # 修 bug: 批16原語擴充包上線後, corrections 已有多筆(如奮矛英姿/兵無常勢)在頂層宣告
+        # "everyN"/"choices" 鍵期望寫入 parsed, 但 apply_corrections() 從未讀取這兩個鍵
+        # ——與批15 docstring 記載的「_addTopLevel/裸頂層鍵曾經寫了但沒接上」同一類靜默遺失,
+        # 這次是新原語擴充後忘記同步更新此函式支援清單, 導致 everyN/choices 完全沒進
+        # tactics_parsed.json(engine 端 t.everyN/t.choices 讀不到, 该戰法的新原語完全不會觸發)。
+        if "everyN" in corr:
+            want_everyN = corr["everyN"]
+            if p.get("everyN") != want_everyN:
+                p["everyN"] = dict(want_everyN) if want_everyN is not None else None
+                if want_everyN is None:
+                    p.pop("everyN", None)
+                n_effects_changed += 1
+                changed_this = True
+            p.pop("_est", None)
+        # 批17新增: choices(擇一分支陣列) 完整替換(同 effects 慣例, list of dict)。
+        if "choices" in corr:
+            want_choices = corr["choices"]
+            if p.get("choices") != want_choices:
+                if want_choices is None:
+                    p.pop("choices", None)
+                else:
+                    p["choices"] = [dict(c) for c in want_choices]
                 n_effects_changed += 1
                 changed_this = True
             p.pop("_est", None)
