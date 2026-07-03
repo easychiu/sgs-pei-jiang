@@ -372,10 +372,38 @@ class Unit:
         self.on_hit_tacs = [t for t in self.tactics    # 預篩: 絕大多數單位為空, hit 熱路徑 O(0)
                             if t["type"] in ("passive", "command") and (t.get("when") or {}).get("on")]
         self.locked_targets = {}                       # 批12 ModeG: lockTarget:true 戰法的鎖定目標, 鍵=id(戰法dict)(dict不可雜湊, 用id())
+        # 批16: 原語擴充包 —— 新增狀態欄位(現有資料無新欄位, 皆維持0/{}/set()預設值, 行為零變化)
+        self.atk_count = {}                            # everyN: 自身普攻次數計數器, 鍵=id(戰法dict)
+        self.immune = []                               # immuneTo: [type, dur] 陣列(單項控制免疫, 對比 insight 全免)
+        self.hp_below_fired = set()                    # hpPct: when.hpBelow(一次性, 首次跨越即觸發) 已觸發的戰法, 用 id(t) 去重
+        self.fake_report_dur = 0                       # fakeReport(偽報): 剩餘回合數, >0 時指揮/被動 coef 擲骰段與 on_hit 反應式觸發受抑制
 
     @property
     def alive(self):
         return self.troop > 0
+
+    def is_immune_to(self, ctype):                     # 批16: immuneTo —— 單項控制免疫查詢(對比 insight 全免)
+        return any(ty == ctype for ty, _ in self.immune)
+
+    def push_immune(self, types, dur):
+        for ty in (types or []):
+            self.immune.append([ty, dur if dur is not None else 1])
+
+    def tick_every_n(self, t):                          # 批16: everyN —— 自身每第N次普攻觸發; 傳回是否達標(達標即歸零重計)
+        cfg = t.get("everyN")
+        if not cfg:
+            return False
+        key = id(t)
+        cnt = self.atk_count.get(key, 0) + 1
+        if cnt >= cfg.get("count", 1):
+            self.atk_count[key] = 0
+            return True
+        self.atk_count[key] = cnt
+        return False
+
+    @property
+    def hp_pct(self):                                   # 批16: hpPct —— 自身兵力百分比(troop/START_TROOP), 供 when.hpBelow/hpAbove 檢查
+        return self.troop / START_TROOP
 
     def eff(self, stat):
         if self.swap and stat in ("force", "intel"):  # 武智互換
@@ -428,23 +456,23 @@ class Unit:
             self.adds = [a for a in self.adds if not (a[0] == kind and a[3] == src)]
         self.adds.append([kind, val, dur, src, flags])
 
-    def push_mod(self, stat, mult, dur, src=None):
+    def push_mod(self, stat, mult, dur, src=None, flags=None):
         if src:
             self.mods = [m for m in self.mods if not (m[0] == stat and m[3] == src)]
-        self.mods.append([stat, mult, dur, src])
+        self.mods.append([stat, mult, dur, src, flags])
 
-    def push_stat_add(self, stat, add, dur, src=None):  # 屬性平加(裝備 stat.add): 同 push_mod 慣例, 同來源刷新不疊
+    def push_stat_add(self, stat, add, dur, src=None, flags=None):  # 屬性平加(裝備 stat.add): 同 push_mod 慣例, 同來源刷新不疊
         if src:
             self.stat_adds = [a for a in self.stat_adds if not (a[0] == stat and a[3] == src)]
-        self.stat_adds.append([stat, add, dur, src])
+        self.stat_adds.append([stat, add, dur, src, flags])
 
     def tick(self):
-        for dmg, _ in self.dots:                      # 持續傷害結算
+        for dmg, *_ in self.dots:                      # 持續傷害結算(dots[2]為undispellable旗標, 不影響結算量)
             self.troop -= dmg
-        self.dots = [[d, l - 1] for d, l in self.dots if l - 1 > 0]
-        self.mods = [[s, m, l - 1, src] for s, m, l, src in self.mods if l - 1 > 0]
+        self.dots = [[d, l - 1] + rest for d, l, *rest in self.dots if l - 1 > 0]
+        self.mods = [[s, m, l - 1, src, flags] for s, m, l, src, flags in self.mods if l - 1 > 0]
         self.adds = [[k, v, l - 1, src, flags] for k, v, l, src, flags in self.adds if l - 1 > 0]
-        self.stat_adds = [[s, ad, l - 1, src] for s, ad, l, src in self.stat_adds if l - 1 > 0]  # 裝備平加到期移除(如 疾馳 speed+25 dur:2)
+        self.stat_adds = [[s, ad, l - 1, src, flags] for s, ad, l, src, flags in self.stat_adds if l - 1 > 0]  # 裝備平加到期移除(如 疾馳 speed+25 dur:2)
         self.stun = max(0, self.stun - 1)
         self.silence = max(0, self.silence - 1)
         self.disarm = max(0, self.disarm - 1)
@@ -535,6 +563,62 @@ def extra_count(ex):                                  # 連擊/追擊次數: 整
     return int(ex) + (1 if random.random() < (ex - int(ex)) else 0)
 
 
+def target_has(u, ctype):
+    """批16: ifTargetHas —— 效果/extraHits 段條件: 只對「已有該狀態」的目標生效/結算。
+    dot: dots 陣列非空(=正在持續掉血); 控制類(stun/silence/disarm/chaos/insight): 對應欄位>0。"""
+    if not u:
+        return False
+    if ctype == "dot":
+        return len(u.dots) > 0
+    if ctype in ("stun", "silence", "disarm", "chaos", "insight"):
+        return getattr(u, ctype) > 0
+    return False
+
+
+def pick_choice(choices):
+    """批16: choices(擇一分支) —— 戰法欄 choices:[{weight, effects,...}], 發動時按權重隨機選一組
+    效果套用(預設均分, 無 weight 視為1)。回傳中選分支物件本身(供合併覆寫基礎戰法的 coef/kind/
+    effects/extraHits/n/nMax 等欄位; 分支未提供的欄位保留基礎戰法原值)。"""
+    ws = [c.get("weight", 1) for c in choices]
+    total = sum(ws)
+    x = random.random() * total
+    for c, w in zip(choices, ws):
+        x -= w
+        if x <= 0:
+            return c
+    return choices[-1]
+
+
+def dispel_unit(u, what):
+    """批16: dispel(驅散/淨化) —— 移除目標身上對應方向(buffs=正向增益/debuffs=負向減益)的條目,
+    略過帶 undispellable 旗標(flags.undispellable, 見 push_add/push_mod/push_stat_add 呼叫端 ud_flags)
+    的條目。buffs: amp(正值)/mitig(正值)/stat mult>=1或add>=0/rateup/chargeup/shield/dodge/surehit/
+    lifesteal/healBoost/healGiven/counter/pierce/extra/first/insight。
+    debuffs: amp(負值)/mitig(負值)/stat mult<1或add<0 + 控制欄位(stun/silence/disarm/chaos/dot/
+    healblock/fakeReport/swap)。只挪動「數值型」adds/mods/stat_adds 依正負號分類; 控制欄位
+    (debuffs專屬)直接歸零/清空。"""
+    def not_ud(entry):
+        flags = entry[4] if len(entry) > 4 else None
+        return not (flags and flags.get("undispellable"))
+
+    def is_buff(a):                                    # 除 amp/mitig 外的 adds 種類一律視為buff
+        return a[1] > 0 if a[0] in ("amp", "mitig") else True
+
+    if what == "buffs":
+        u.adds = [a for a in u.adds if not (is_buff(a) and not_ud(a))]
+        u.mods = [m for m in u.mods if not (m[1] >= 1 and not_ud(m))]
+        u.stat_adds = [a for a in u.stat_adds if not (a[1] >= 0 and not_ud(a))]
+        if u.shield and not u.shield.get("undispellable"):
+            u.shield = None
+    else:                                              # debuffs
+        u.adds = [a for a in u.adds if not (a[0] in ("amp", "mitig") and a[1] < 0 and not_ud(a))]
+        u.mods = [m for m in u.mods if not (m[1] < 1 and not_ud(m))]
+        u.stat_adds = [a for a in u.stat_adds if not (a[1] < 0 and not_ud(a))]
+        u.dots = [d for d in u.dots if len(d) > 2 and d[2]]   # 保留 undispellable(dots[2]=True)的 dot, 清除其餘
+        u.stun = u.silence = u.disarm = u.chaos = u.healblock = 0
+        u.fake_report_dur = 0
+
+
 def round_ok(t, r):                                    # 條件觸發(when): 回合是否符合戰法的發動窗口
     w = t.get("when")
     if not w:
@@ -544,6 +628,27 @@ def round_ok(t, r):                                    # 條件觸發(when): 回
     if w.get("from") is not None and r < w["from"]:
         return False
     if w.get("until") is not None and r > w["until"]:
+        return False
+    # 批16: parity(奇偶回合) + every(每N回合) —— 與 rounds/from/until 可並存(皆通過才算符合)
+    if w.get("parity") == "odd" and r % 2 != 1:
+        return False
+    if w.get("parity") == "even" and r % 2 != 0:
+        return False
+    if w.get("every") and r % w["every"] != 0:
+        return False
+    return True
+
+
+def hp_ok(t, u):
+    """批16: hpPct 觸發 —— 每回合窗口檢查自身兵力百分比(troop/START_TROOP)。hpBelow: 首次跨越即
+    觸發(一次性, when_fired慣例); hpAbove: 持續窗(只要條件成立, 每回合都可能觸發, 不去重)。
+    與 round_ok 分開的獨立判定(hpPct 條件不是回合數, 需讀 unit.troop, 故不塞進 round_ok)。"""
+    w = t.get("when")
+    if not w:
+        return True
+    if w.get("hpBelow") is not None and not (u.hp_pct < w["hpBelow"]):
+        return False
+    if w.get("hpAbove") is not None and not (u.hp_pct > w["hpAbove"]):
         return False
     return True
 
@@ -614,6 +719,8 @@ def fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit):
             dests = [tgt]                                    # 未指定who且單體: 沿用主段目標(向後相容預設行為)
         else:
             dests = pick_targets(foes_of(u), cnt)
+        if eh.get("ifTargetHas"):                         # 批16: ifTargetHas —— extraHits 段結算前檢查, 只對「已有該狀態」的目標結算此段傷害
+            dests = [v for v in dests if target_has(v, eh["ifTargetHas"])]
         for v in dests:
             hit(u, v, eh["coef"], eh.get("kind", "phys"), False, on_hit)
 
@@ -675,7 +782,9 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                        key=lambda a: a.troop, default=None)
             if hurt:                                  # ponytail: 治療量粗估, 上限不超過初始兵力
                 hcoef = e.get("coef", 0.8) * (scale_of(caster, e["scale"]) if e.get("scale") else 1.0)
-                hurt.troop = min(START_TROOP, hurt.troop + hcoef * caster.troop * 0.10)
+                # 批16: healBoost/healGiven —— 目標受到的治療量×(1+healBoost加總), 施放者施放的治療×(1+healGiven加總)
+                boost_mult = max(0.0, 1 + hurt.addbonus("healBoost")) * max(0.0, 1 + caster.addbonus("healGiven"))
+                hurt.troop = min(START_TROOP, hurt.troop + hcoef * caster.troop * 0.10 * boost_mult)
             continue
         if k == "settle":                             # 結算傷害(猛毒): 掛統率最高敵將, 觸發見 fight
             tg = max((x for x in enemies if x.alive),
@@ -718,6 +827,9 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 dests = [x for x in enemies if x.alive]
         else:
             dests = [a for a in allies if a.alive]
+        # 批16: ifTargetHas —— 效果段條件, 只對「已有該狀態」的目標生效; 選目標後過濾(不影響選目標邏輯本身)
+        if e.get("ifTargetHas"):
+            dests = [u for u in dests if target_has(u, e["ifTargetHas"])]
         # scale="intel"|"force"|"command"|"speed"|"charm" 縮放(以施放者戰鬥內即時素質為準):
         # amp/mitig 的 val 直接乘 SCALE, clamp 到 ±SCALE_CLAMP 防止極端值; stat 的 mult 對
         # 1.0 的偏移量(增益/削弱幅度)乘 SCALE, 1.0 本身(無效果)不受縮放影響。
@@ -734,40 +846,45 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         def sv_add(ad):                                  # 屬性平加縮放(一般裝備平加無 scale 直接用原值)
             return ad * scale_of(caster, e["scale"]) if e.get("scale") else ad
 
+        # 批16: undispellable 旗標 —— 效果加此欄則 dispel 略過(附加進 push_add/push_mod/push_stat_add 的 flags, 供 dispel_unit 讀取)
+        ud_flags = {"undispellable": True} if e.get("undispellable") else None
         for u in dests:
             if k == "amp":
                 v = sv_val(e["val"])
                 if who == "enemy" and v > 0:          # 修正: 敵方正amp(誤幫敵增傷)→ 視為敵方易傷
-                    u.push_add("mitig", -v, e["dur"], src)
+                    u.push_add("mitig", -v, e["dur"], src, ud_flags)
                 else:
-                    u.push_add("amp", v, e["dur"], src)
+                    u.push_add("amp", v, e["dur"], src, ud_flags)
             elif k == "mitig":
-                u.push_add("mitig", sv_val(e["val"]), e["dur"], src)
+                u.push_add("mitig", sv_val(e["val"]), e["dur"], src, ud_flags)
+            # 批16: immuneTo(單項控制免疫) —— is_immune_to(k) 只免疫清單內控制類型, 與 insight(全免) 並列判斷
             elif k == "stun":
-                if not u.insight:
+                if not u.insight and not u.is_immune_to("stun"):
                     u.stun = max(u.stun, e["dur"] + 1)
             elif k == "silence":
-                if not u.insight:
+                if not u.insight and not u.is_immune_to("silence"):
                     u.silence = max(u.silence, e["dur"] + 1)
             elif k == "disarm":
-                if not u.insight:
+                if not u.insight and not u.is_immune_to("disarm"):
                     u.disarm = max(u.disarm, e["dur"] + 1)
             elif k == "chaos":                        # 批12 ModeF: 混亂(敵我不分), 同 insight 免疫規則
-                if not u.insight:
+                if not u.insight and not u.is_immune_to("chaos"):
                     u.chaos = max(u.chaos, e.get("dur", 1) + 1)
             elif k == "insight":                      # 洞察: 免疫控制, 施加時同時解除既有控制
                 u.insight = max(u.insight, e.get("dur", 1) + 1)
                 u.stun = u.silence = u.disarm = u.chaos = 0
+            elif k == "immune":                       # 批16: immuneTo —— 單項控制免疫
+                u.push_immune(e.get("types"), e.get("dur"))
             elif k == "first":                        # 先攻: 本回合旗標, 優先於速度排序
                 u.first = max(u.first, e.get("dur", 1))
             elif k == "stat":                         # 裝備平加(add)與乘算(mult)擇一; add 為戰報所示「裝備獨立平加階段」
                 if e.get("add") is not None:
-                    u.push_stat_add(e["stat"], sv_add(e["add"]), e["dur"], src)
+                    u.push_stat_add(e["stat"], sv_add(e["add"]), e["dur"], src, ud_flags)
                 else:
-                    u.push_mod(e["stat"], sv_mult(e.get("mult", 1.0)), e["dur"], src)
-            elif k == "dot":                          # 持續傷害: 套用時定格每回合傷害
+                    u.push_mod(e["stat"], sv_mult(e.get("mult", 1.0)), e["dur"], src, ud_flags)
+            elif k == "dot":                          # 持續傷害: 套用時定格每回合傷害; dots[2]=undispellable旗標
                 u.dots.append([damage(caster, u, e.get("coef", 0.5),
-                                      t.get("kind", "intel")), e["dur"]])
+                                      t.get("kind", "intel")), e["dur"], bool(e.get("undispellable"))])
             elif k == "extra":                        # 連擊/追擊: 普攻後追加普攻的預算
                 u.push_add("extra", e["val"], e["dur"], src)
             elif k == "stack":                        # 疊加增益: 每回合+1層, 每層加 per 增傷
@@ -788,7 +905,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             elif k == "shield":                        # 護盾: 固定量+按施放者兵力係數, 吸滿或到期為止
                 amt = e.get("amt", 0) + (e.get("pct", 0) * caster.troop if e.get("pct") else 0)
                 prev = u.shield["amt"] if u.shield else 0
-                u.shield = {"amt": prev + amt, "dur": e.get("dur", 99) + 1}  # +1 補償: tick 施加當回合末即扣1, 與 taunt/dodge/surehit 慣例一致
+                u.shield = {"amt": prev + amt, "dur": e.get("dur", 99) + 1, "undispellable": bool(e.get("undispellable"))}  # +1 補償: tick 施加當回合末即扣1, 與 taunt/dodge/surehit 慣例一致
             elif k == "dodge":                         # 規避: 機率完全迴避一次傷害
                 u.dodge_prob = e.get("prob", 0.2)
                 u.dodge_dur = max(u.dodge_dur, e.get("dur", 1) + 1)
@@ -831,6 +948,20 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     extra = (u.eff("force") ** 2) * lb["k"] / 100
                     lb_src = (src + ":leaderBonus") if src else "leaderBonus"
                     u.push_add("chargeup", extra, e["dur"], lb_src)
+            # 批16: healBoost(受到的治療×(1+val)) / healGiven(施放的治療×(1+val)) —— 掛加成值, 實際套用在 heal 結算處(apply_effects 開頭 heal 分支)
+            elif k == "healBoost":
+                u.push_add("healBoost", e["val"], e["dur"], src)
+            elif k == "healGiven":
+                u.push_add("healGiven", e["val"], e["dur"], src)
+            # 批16: fakeReport(偽報) —— 中招者被動+指揮戰法失效: 每回合擲骰的coef段與on_hit反應被抑制
+            # (prep已套用效果不回收, 近似)。insight 可免(同其他控制類慣例)。
+            elif k == "fakeReport":
+                if not u.insight:
+                    u.fake_report_dur = max(u.fake_report_dur, e.get("dur", 1) + 1)
+            # 批16: dispel(驅散/淨化) —— 移除目標 adds/mods/dots/控制欄位中對應方向(buffs/debuffs)的條目,
+            # 略過標記 undispellable 的條目。
+            elif k == "dispel":
+                dispel_unit(u, e.get("what", "debuffs"))
 
 
 def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, eqB=None,
@@ -883,6 +1014,8 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
     def on_hit(dst, src, is_normal):                  # 反應式觸發(when.on): 被普攻(attacked)/受任意傷害(damaged) 時掛到 hit() 事件點
         if not dst.alive or not dst.on_hit_tacs:
             return
+        if dst.fake_report_dur:                       # 批16: 偽報 —— 抑制 on_hit 反應式觸發(被動/指揮戰法失效)
+            return
         for t in dst.on_hit_tacs:
             if t["when"]["on"] == "attacked" and not is_normal:  # attacked: 限普通攻擊觸發; damaged: 任意傷害都觸發
                 continue
@@ -914,6 +1047,20 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             for t in u.tactics:
                 if t["type"] in ("passive", "command") and t.get("when") and not t["when"].get("on") \
                         and round_ok(t, rnd) and id(t) not in u.when_fired:
+                    w = t["when"]
+                    # 批16: hpPct —— when.hpBelow(一次性, 首次跨越即觸發, 用when_fired/hp_below_fired去重)
+                    # / when.hpAbove(持續窗, 不去重, 每回合條件成立都可能觸發, 故不進when_fired)。
+                    if w.get("hpBelow") is not None or w.get("hpAbove") is not None:
+                        if not hp_ok(t, u):
+                            continue
+                        if w.get("hpBelow") is not None:
+                            if id(t) in u.hp_below_fired:
+                                continue
+                            u.hp_below_fired.add(id(t))
+                        apply_effects(u, None, t, allies_of(u), foes_of(u), no_heal=True)
+                        if w.get("hpBelow") is not None:
+                            u.when_fired.add(id(t))     # hpBelow 一次性: 同時標記 when_fired 供其他路徑一致查詢
+                        continue
                     u.when_fired.add(id(t))
                     # 批15: no_heal=True —— heal 效果改由上面 apply_passives(heal_only=True) 統一
                     # 處理(它自己會檢查 t["when"]/round_ok, 見 apply_effects 內 heal_only 分支),
@@ -945,15 +1092,24 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             if pick_target(foes_of(u)) is None:
                 break
             if not u.silence:                             # 計窮: 跳過主動/指揮/被動(不影響普攻)
-                for t in u.tactics:                       # 自帶 + 傳承: 各自獨立附加發動(不占普攻)
+                for t0 in u.tactics:                       # 自帶 + 傳承: 各自獨立附加發動(不占普攻)
+                    # 批16: fakeReport(偽報) —— 抑制指揮/被動每回合擲骰的coef段(prep已套用效果不回收, 不影響主動戰法)
+                    if t0["type"] in ("command", "passive") and u.fake_report_dur:
+                        continue
                     fire = False
-                    if t["type"] == "active" and (t["coef"] or t["effects"]) \
-                            and not (t["prep"] and rnd == 1):
-                        fire = random.random() < t["rate"] + u.addbonus_for("rateup", t)  # rateup: 提高自身主動戰法發動機率(如白眉); addbonus_for 依 t["prep"]/t["native"] 篩選 prepOnly/nativeOnly 修飾的加成(批7: 太平道法)
-                    elif t["type"] in ("command", "passive") and t["coef"] \
-                            and not (t.get("when") and t["when"].get("on")) and round_ok(t, rnd):
-                        fire = random.random() < t["rate"]  # 每回合以資料 rate 擲骰; when.rounds/from/until 只在符合回合才擲骰; when.on(反應式) 改由 on_hit 事件點觸發
+                    if t0["type"] == "active" and (t0["coef"] or t0["effects"]) \
+                            and not (t0["prep"] and rnd == 1):
+                        fire = random.random() < t0["rate"] + u.addbonus_for("rateup", t0)  # rateup: 提高自身主動戰法發動機率(如白眉); addbonus_for 依 t["prep"]/t["native"] 篩選 prepOnly/nativeOnly 修飾的加成(批7: 太平道法)
+                    elif t0["type"] in ("command", "passive") and t0["coef"] \
+                            and not (t0.get("when") and t0["when"].get("on")) and round_ok(t0, rnd):
+                        fire = random.random() < t0["rate"]  # 每回合以資料 rate 擲骰; when.rounds/from/until 只在符合回合才擲骰; when.on(反應式) 改由 on_hit 事件點觸發
                     if fire:
+                        # 批16: choices(擇一分支) —— 發動時按權重隨機選一組效果(coef/kind/effects/
+                        # extraHits/n/nMax 可各自覆寫基礎戰法)套用到本次發動; 未中選的分支本次不生效。
+                        # 權重預設均分。t0 為原始戰法物件(供 addbonus_for/when_fired/lockTarget 等以
+                        # id(t0) 為鍵的邏輯保持穩定, 不因選分支而變動), t 為「本次觸發實際使用」的
+                        # 合成視圖(不修改 t0 本身)。
+                        t = dict(t0, **pick_choice(t0["choices"])) if t0.get("choices") else t0
                         main_hit_tgt = None  # 批13: 記錄主 coef 段命中的(單體)目標, 供 extraHits 同目標段沿用
                         if t["coef"]:
                             cnt = t["n"]
@@ -966,7 +1122,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                             # (首次發動 pick_target 選定後, 之後每次發動重用同一目標); 群體(cnt>1)/
                             # hitsRepeat 不套用鎖定語意(lockTarget 資料上僅用於單體戰法)。
                             if t.get("lockTarget") and cnt <= 1 and not t.get("hitsRepeat"):
-                                v = resolve_locked_target(u, t, foes_of(u))
+                                v = resolve_locked_target(u, t0, foes_of(u))  # lockTarget 鍵用 t0(原始戰法物件), 避免 choices 每次合成新dict破壞跨回合鎖定
                                 if v:
                                     hit(u, v, t["coef"], t["kind"], False, on_hit)
                                     main_hit_tgt = v
@@ -991,7 +1147,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                             # 此參數影響(近似, 群體戰法混亂下仍只打敵方)。
                             # 批12 ModeG: lockTarget 的 apply_effects 目標(單體效果destination)同樣改用
                             # 鎖定目標(與混亂互斥: lockTarget 戰法目前資料上未與 chaos 共存)。
-                            active_dst = resolve_locked_target(u, t, foes_of(u)) if t.get("lockTarget") else pick_target_chaos(u, allies_of(u), foes_of(u))
+                            active_dst = resolve_locked_target(u, t0, foes_of(u)) if t.get("lockTarget") else pick_target_chaos(u, allies_of(u), foes_of(u))
                             apply_effects(u, active_dst, t, allies_of(u), foes_of(u))
             tgt = pick_target_chaos(u, allies_of(u), foes_of(u))  # 普攻(每回合常駐) + 連擊 + 突擊(繳械時跳過); 嘲諷: 強制指向施放者; 混亂: 敵我不分(批12 ModeF)
             if tgt and not u.disarm:
@@ -1000,6 +1156,15 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     nt = pick_target_chaos(u, allies_of(u), foes_of(u))
                     if nt:
                         hit(u, nt, 1.0, "phys", True, on_hit)
+                # 批16: everyN(計數觸發) —— 自身每第N次普攻觸發該戰法的 effects/extraHits(不含 coef
+                # 主傷段, 資料上 everyN 戰法目前皆為輔助效果類)。計數只算「本次真正命中的普攻」
+                # (disarm 時不會走到這裡, 故繳械回合不計數, 合理)。
+                for t in u.tactics:
+                    if t.get("everyN") and t["everyN"].get("on") == "attack" and u.tick_every_n(t):
+                        if t.get("extraHits"):
+                            fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit)
+                        if t.get("effects"):
+                            apply_effects(u, tgt, t, allies_of(u), foes_of(u))
                 # 突擊(charge)擲骰: chargeup(突擊發動率加成, 如虎豹騎)只對真突擊戰法生效, 排除
                 # t.get("proc") is True 的特技偽戰法(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲)。
                 for t in u.tactics:
@@ -1814,6 +1979,133 @@ def demo():
             healed_rounds_f.append(_r)
     CUR_ROUND = 0
     assert healed_rounds_f == [3, 5], f"when rounds:[3,5] 應在第3回合與第5回合各觸發一次, 實際={healed_rounds_f}"
+
+    # --- 批16: 原語擴充包(v5盲測殘差) --------------------------------------------
+    # 45) ifTargetHas: 效果段只對「已有該狀態」的目標生效; dot/控制類各驗一次
+    assert target_has(None, "dot") is False, "target_has 對 None 應回傳 False(防禦)"
+    ith_dotted = Unit(POOL["張飛"], "盾")
+    ith_dotted.dots.append([100, 3, False])
+    ith_clean = Unit(POOL["張飛"], "盾")
+    assert target_has(ith_dotted, "dot") is True and target_has(ith_clean, "dot") is False, \
+        "ifTargetHas=dot 應只認定 dots 非空的目標"
+    ith_stunned = Unit(POOL["張飛"], "盾")
+    ith_stunned.stun = 2
+    assert target_has(ith_stunned, "stun") is True and target_has(ith_clean, "stun") is False, \
+        "ifTargetHas=stun 應只認定 stun>0 的目標"
+    ith_tac = {"nameZh": "測試ifTargetHas45", "type": "active", "kind": "phys", "coef": 0,
+               "rate": 1.0, "n": 1, "prep": 0,
+               "effects": [{"k": "amp", "who": "enemy", "val": 0.3, "dur": 3, "ifTargetHas": "dot"}]}
+    ith_caster = Unit(POOL["諸葛亮"], "弓")
+    apply_effects(ith_caster, None, ith_tac, [], [ith_dotted, ith_clean], no_heal=True)
+    assert ith_dotted.addbonus("mitig") < 0, "ifTargetHas=dot 應對帶dot的目標生效(此處amp who=enemy>0轉為易傷/mitig負值)"
+    assert ith_clean.addbonus("mitig") == 0, "ifTargetHas=dot 不應對無dot的目標生效"
+
+    # 46) everyN: 自身每第N次普攻觸發戰法 effects(用 tick_every_n 直接驗證計數器行為)
+    en_tac = {"nameZh": "測試everyN46", "type": "passive", "kind": "phys", "coef": 0,
+              "rate": 1.0, "n": 1, "prep": 0, "everyN": {"count": 3, "on": "attack"},
+              "effects": [{"k": "amp", "who": "self", "val": 0.1, "dur": 2}]}
+    en_u = Unit(POOL["呂布"], "騎")
+    fired = [en_u.tick_every_n(en_tac) for _ in range(6)]
+    assert fired == [False, False, True, False, False, True], \
+        f"everyN count=3 應在第3、6次普攻觸發, got={fired}"
+
+    # 47) immuneTo: 單項控制免疫應只擋清單內的控制類型, 不像 insight 全免
+    im_u = Unit(POOL["呂布"], "騎")
+    im_u.push_immune(["stun"], 3)
+    assert im_u.is_immune_to("stun") is True and im_u.is_immune_to("silence") is False, \
+        "immuneTo=['stun'] 應只免疫 stun, 不免疫 silence"
+    stun_tac47 = {"nameZh": "測試immune47stun", "type": "active", "kind": "phys", "coef": 0,
+                  "rate": 1.0, "n": 1, "prep": 0, "effects": [{"k": "stun", "who": "enemy", "dur": 2}]}
+    silence_tac47 = {"nameZh": "測試immune47silence", "type": "active", "kind": "phys", "coef": 0,
+                     "rate": 1.0, "n": 1, "prep": 0, "effects": [{"k": "silence", "who": "enemy", "dur": 2}]}
+    caster47 = Unit(POOL["諸葛亮"], "弓")
+    apply_effects(caster47, im_u, stun_tac47, [caster47], [im_u], no_heal=True)
+    assert im_u.stun == 0, "immuneTo=['stun'] 應成功免疫震懾施加"
+    apply_effects(caster47, im_u, silence_tac47, [caster47], [im_u], no_heal=True)
+    assert im_u.silence > 0, "immuneTo=['stun'] 不應免疫計窮(非清單內類型)"
+
+    # 48) when 擴充: parity(奇偶回合) + every(每N回合)
+    assert round_ok({"when": {"parity": "odd"}}, 1) and not round_ok({"when": {"parity": "odd"}}, 2), \
+        "when.parity=odd 應只在奇數回合符合"
+    assert round_ok({"when": {"parity": "even"}}, 4) and not round_ok({"when": {"parity": "even"}}, 5), \
+        "when.parity=even 應只在偶數回合符合"
+    assert round_ok({"when": {"every": 3}}, 3) and round_ok({"when": {"every": 3}}, 6) and not round_ok({"when": {"every": 3}}, 4), \
+        "when.every=3 應只在3的倍數回合符合"
+    assert round_ok({"when": {"every": 2, "from": 4}}, 4) and not round_ok({"when": {"every": 2, "from": 4}}, 3), \
+        "when.every 應可與 from/until 並存(皆通過才符合)"
+
+    # 49) hpPct 觸發: hpBelow(一次性首次跨越) / hpAbove(持續窗)
+    assert hp_ok({"when": {"hpBelow": 0.5}}, type("U", (), {"hp_pct": 0.4})()) is True
+    assert hp_ok({"when": {"hpBelow": 0.5}}, type("U", (), {"hp_pct": 0.6})()) is False
+    assert hp_ok({"when": {"hpAbove": 0.5}}, type("U", (), {"hp_pct": 0.6})()) is True
+    hp_u = Unit(POOL["張飛"], "盾")
+    hp_u.troop = 3000                                  # 30% 兵力, 低於50%門檻
+    hp_tac49 = {"nameZh": "測試hpBelow49", "type": "passive", "kind": "phys", "coef": 0,
+                "rate": 1.0, "n": 1, "prep": 0, "when": {"hpBelow": 0.5},
+                "effects": [{"k": "amp", "who": "self", "val": 0.2, "dur": 3}]}
+    assert hp_ok(hp_tac49, hp_u) is True, "兵力30%應通過hpBelow=0.5門檻"
+    hp_u.troop = 8000
+    assert hp_ok(hp_tac49, hp_u) is False, "兵力80%不應通過hpBelow=0.5門檻"
+
+    # 50) healBoost/healGiven: 受到的治療×(1+val), 施放的治療×(1+val), 可疊乘
+    hb_caster = Unit(POOL["諸葛亮"], "弓")
+    hb_caster.push_add("healGiven", 0.5, 9)             # 施放的治療+50%
+    hb_target_boost = Unit(POOL["張飛"], "盾")
+    hb_target_boost.troop = 3000
+    hb_target_boost.push_add("healBoost", 0.5, 9)       # 受到的治療+50%
+    hb_target_plain = Unit(POOL["張飛"], "盾")
+    hb_target_plain.troop = 3000
+    heal_tac50 = {"nameZh": "測試healBoost50", "type": "active", "kind": "intel", "coef": 0,
+                  "rate": 1.0, "n": 1, "prep": 0,
+                  "effects": [{"k": "heal", "who": "ally", "coef": 0.8, "dur": 1}]}
+    plain_caster50 = Unit(POOL["諸葛亮"], "弓")
+    apply_effects(plain_caster50, None, heal_tac50, [hb_target_plain], [], no_heal=False)
+    apply_effects(hb_caster, None, heal_tac50, [hb_target_boost], [], no_heal=False)
+    gain_plain = hb_target_plain.troop - 3000
+    gain_boost = hb_target_boost.troop - 3000
+    assert abs(gain_boost - gain_plain * 1.5 * 1.5) < 1.0, \
+        f"healBoost+healGiven應各自+50%並疊乘(合計×2.25), plain={gain_plain:.1f} boost={gain_boost:.1f}"
+
+    # 51) dispel: buffs 應清除正向增益(略過undispellable), debuffs 應清除負向減益+控制欄位(略過undispellable)
+    dp_u = Unit(POOL["呂布"], "騎")
+    dp_u.push_add("amp", 0.3, 9, src="測試增益51")
+    dp_u.push_add("amp", 0.2, 9, src="測試護體51", flags={"undispellable": True})
+    dispel_unit(dp_u, "buffs")
+    assert abs(dp_u.addbonus("amp") - 0.2) < 1e-9, "dispel buffs 應清除可驅散的正向amp, 保留undispellable那條"
+    dp_u2 = Unit(POOL["呂布"], "騎")
+    dp_u2.push_add("amp", -0.25, 9, src="測試減益51")
+    dp_u2.stun = 2
+    dp_u2.dots.append([50, 3, False])
+    dp_u2.dots.append([80, 3, True])                    # undispellable dot, 應保留
+    dispel_unit(dp_u2, "debuffs")
+    assert dp_u2.addbonus("amp") == 0, "dispel debuffs 應清除負向amp"
+    assert dp_u2.stun == 0, "dispel debuffs 應清除控制欄位(stun)"
+    assert len(dp_u2.dots) == 1 and dp_u2.dots[0][2] is True, "dispel debuffs 應清除可驅散的dot, 保留undispellable的dot"
+
+    # 52) choices: 擇一分支應按權重隨機選一組效果套用; weight=0的分支不應被選中
+    ch_choices = [{"weight": 1, "effects": [{"k": "amp", "who": "self", "val": 0.11, "dur": 1}]},
+                  {"weight": 0, "effects": [{"k": "amp", "who": "self", "val": 0.99, "dur": 1}]}]
+    picked_vals = {pick_choice(ch_choices)["effects"][0]["val"] for _ in range(50)}
+    assert picked_vals == {0.11}, f"weight=0的分支不應被pick_choice選中, got={picked_vals}"
+    ch_two_choices = [{"weight": 1, "effects": [{"k": "amp", "who": "self", "val": 0.1, "dur": 1}]},
+                      {"weight": 1, "effects": [{"k": "amp", "who": "self", "val": 0.2, "dur": 1}]}]
+    picked_two = {pick_choice(ch_two_choices)["effects"][0]["val"] for _ in range(200)}
+    assert picked_two == {0.1, 0.2}, f"均分權重下200次抽樣應兩個分支都出現過, got={picked_two}"
+
+    # 53) fakeReport: 中招者被動+指揮戰法coef段擲骰應被抑制; on_hit反應式觸發也應被抑制; insight可免
+    fr_u = Unit(POOL["張飛"], "盾")
+    fr_u.fake_report_dur = 2
+    assert fr_u.fake_report_dur > 0, "fakeReport施加後 fake_report_dur 應>0(供 fight() 主迴圈/on_hit 檢查抑制)"
+    fr_tac = {"nameZh": "測試fakeReport53", "type": "active", "kind": "phys", "coef": 0,
+              "rate": 1.0, "n": 1, "prep": 0, "effects": [{"k": "fakeReport", "who": "enemy", "dur": 2}]}
+    fr_caster = Unit(POOL["諸葛亮"], "弓")
+    fr_target = Unit(POOL["張飛"], "盾")
+    apply_effects(fr_caster, fr_target, fr_tac, [fr_caster], [fr_target], no_heal=True)
+    assert fr_target.fake_report_dur > 0, "fakeReport 應成功施加(dur>0)"
+    fr_insight = Unit(POOL["張飛"], "盾")
+    fr_insight.insight = 3
+    apply_effects(fr_caster, fr_insight, fr_tac, [fr_caster], [fr_insight], no_heal=True)
+    assert fr_insight.fake_report_dur == 0, "insight(洞察)應免疫偽報"
 
     print("self-check OK")
 
