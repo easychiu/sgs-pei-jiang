@@ -817,6 +817,182 @@ byte-diff 為空(冪等); `sgz.py` self-check 全數通過(含新增84/85)。
 
 ---
 
+## 27. 批31: `when.on:"activeFired"`(自身主動/突擊戰法發動事件) + `e.activeOnly` + `extraHits.ifSameTargetIsLeader`
+
+**背景**: 盲測v14(78分)唯一0分(士爭先赴)+4筆「條件觸發簡化為無條件」1分, 同屬一族——
+效果須綁定「自身主動戰法發動」這個事件本身, 現行卻各自獨立擲骰, 與是否真的有主動戰法
+成功發動完全脫鉤。
+
+### A. `when.on:"activeFired"`(反應式觸發, 施放者「自己成功發動主動/突擊戰法」視角)
+
+**設計**: 與批27 `dealtDamage`(自己造成傷害視角)/既有 `on_hit`(自己受擊視角)完全對稱的
+第三種反應式事件, 對比前兩者是「傷害結算」相關事件, `activeFired` 純粹是「自身某個
+`type:"active"`(或 `type:"charge"`)戰法本次擲骰命中 `fire===true`」這件事本身, 不要求
+真的造成傷害(該戰法可能 `coef` 為0純buff)。
+
+`Unit` 新增預篩陣列 `active_fired_tacs`(戰法級, 整個戰法 `t.type` 為 `passive`/`command`
+且 `t.when.on=="activeFired"`)/`active_fired_effect_tacs`(效果級, 母戰法無 `t.when`、但
+至少一個效果帶 `e.when.on=="activeFired"`), 與 `on_deal_tacs`/`on_deal_effect_tacs` 完全
+對稱(同一套設計模式, 只是掃描的 `on` 字面值不同)。`fight()` 主迴圈新增 `active_fired(u)`
+函式(與 `dealt_damage()`/`on_hit()` 同一層級的內部閉包), 在 `type:"active"` 戰法
+`fire===true` 判定通過(`apply_stack_cast()` 之後、實際套用觸發戰法本身效果**之前**)、
+以及 `type:"charge"` 戰法擲骰命中(`hit()`/`applyEffects()` 之後)兩個既有發動點各呼叫一次
+`active_fired(u)`。`command`/`passive` 型戰法的常駐每回合擲骰**不**觸發此事件(那是「每回合
+固定擲骰」而非「發動主動戰法」, 語意不同)。
+
+`when.timing`(選填, `"before"`/`"after"`): 士爭先赴原文「成功發動...**前**」, 但引擎在
+同一回合內對「前/後」無實質結算順序差異(觸發本體戰法與本反應式效果都在同一次 `fire`
+判定之後才有意義, 沒有跨回合的「發動前」窗口可插入)——統一在 `fire===true` 判定通過、
+實際套用觸發戰法效果之前呼叫 `active_fired()` 廣播(貼近 `before` 語意), `after` 措辭的
+戰法一律視同無差別, 不細分兩種處理路徑, 只記錄於資料 `_note` 供文件語意保留。
+
+同回合節流沿用既有 `hit_flags`(與 `on_hit`/`dealt_damage` 共用同一個 set, 不同方向的
+觸發各自用不同 `id(t)`/`id(e)` 鍵, 不會互相誤判)。
+
+**方向限制(重要)**: `activeFired` 只覆蓋「**自身**成功發動主動/突擊戰法」這一種方向——
+掃描與觸發對象都是同一個 `Unit`(自己監聽自己的發動事件)。原文常見的另外兩種方向:
+「**敵軍**發動主動戰法時」(神機妙算/舌戰群儒)、「**我軍全體(含隊友)**發動主動/突擊戰法
+時」(經天緯地/十二奇策「下次發動」)皆是跨單位廣播事件(監聽別人的戰法發動, 而非自己的),
+`activeFired` 完全無法表達, 仍是未解決的缺口(需要「跨單位事件監聽」基礎設施, 屬於與
+第15節「`allyAttacked` 廣播」/批29 D 第1類「狀態鏡射/廣播事件」同一大類但觸發點不同的
+子情形, 建議未來合併評估, 一次性擴充事件廣播基礎設施而非各打各的補丁)。
+
+**落地遷移(1筆確認同族)**: 士爭先赴——頂層改用 `t.when:{on:"activeFired", timing:"before"}`
+(取代舊版常駐 `coef:1.2`+`rate:0.5` 與「是否真的有主動戰法成功發動」完全脫鉤的近似,
+v14盲測0分主因), 仍是同一組 `rate:0.5` 擲骰+`coef:1.2`(120%)對敵軍2人兵刃傷害, 只是
+觸發時機點改成「自身某個 `type:"active"` 戰法成功 `fire` 時」才判定, 而非每回合獨立判定。
+
+**評估但排除(非同族, 已確認並修正措辭)**: 將門虎女/萬軍奪帥/暴斂四方/驍健神行(brief
+點名的4筆v14「條件觸發簡化為無條件」1分戰法)逐筆讀原文核對後確認**皆非** `activeFired`
+家族——四者皆是 `type:"active"` 本身, 內部的條件鏈(虎嗔DoT期間受3次傷害才結算震懾/
+目標已處於震懾狀態才禁療/目標已被繳械才觸發額外傷害)是**同一次戰法效果內部的先後順序
+依賴**(如「造成傷害的同時附加DoT, DoT期間再受擊3次才觸發強控」), 不是「監聽自身另一次
+獨立的主動戰法發動」這種跨事件耦合, 與士爭先赴的「一個獨立被動戰法綁定另一個主動戰法
+是否成功發動」形狀不同, 沿用既有 `_note`/`_todo` 揭露(維持既有近似)不變。
+
+**全庫掃描候選(9筆, 逐筆判定)**:
+| 戰法 | 方向 | 結論 |
+|---|---|---|
+| 士爭先赴 | 自身 | 同族, 已用 `activeFired` 精確重建 |
+| 鷹視狼顧 | 自身(前4回合) | 同族但受6.4節「母戰法有`t.when`」限制阻塞(見下方), 維持近似 |
+| 十二奇策 | 我軍全體「下次發動」 | 非同族(跨單位廣播), 已更正措辭誠實揭露 |
+| 陷陣突襲 | 自身(突擊戰法本體) | 同族但受「`type:"charge"`效果不在prep套用」限制阻塞(見下方), 維持近似 |
+| 神機妙算 | 敵軍 | 非同族(跨單位廣播), 已更正措辭誠實揭露 |
+| 舌戰群儒 | 敵軍 | 非同族(跨單位廣播), 既有措辭已準確, 不變 |
+| 經天緯地 | 我軍全體 | 非同族(跨單位廣播), 已更正措辭誠實揭露 |
+| 白衣渡江/威震華夏/出其不意/誓守無降/坐斷東南/裸衣血戰/水淹七軍/震駭四境 | — | 假陽性(措辭描述「無法發動主動戰法」等控制效果本身, 非事件觸發條件)或已由其他機制(dealtDamage/stackPer)正確表達 |
+| 十勝十敗 | 我軍主將(隊伍固定位置) | 全庫掃描額外發現(非brief點名), 監聽對象是「隊伍index 0」而非「自己」, 一般情形(持有者非主將)仍需跨單位廣播, 已補 `_todo` 誠實揭露, heal段維持缺失 |
+
+**同族但受既有限制阻塞、無法直接遷移的2筆(記錄供未來擴充參考)**:
+- **鷹視狼顧**: `lifesteal`(前4回合自身發動主動戰法時100%全軍攻心) 若改掛
+  `e.when.on:"activeFired"`, 因母戰法本身已有 `t.when:{from:5}`(供主 `coef` 傷害段使用),
+  依第6.4節「母戰法無 `t.when` 限制」, 效果級 `activeFired` 掛鉤(沿用批27 `dealtDamage`
+  同款設計)要求母戰法無 `t.when` 才會被預篩收錄——本戰法不滿足此前提, 若強行套用該效果
+  會完全不觸發(比現況更糟)。維持既有近似不變。
+- **陷陣突襲**: 本體(`chargeup`+`stack` 為常駐自我buff, 傷害段 `coef:0.95` 應綁定「自身
+  成功發動突擊戰法」) 若改 `type:"charge"` 讓傷害段走 charge 原生擲骰通道(理論上比掛
+  `activeFired` 更輕量, 因為 charge 本身的成功發動就是這個事件), 會導致 `chargeup`/`stack`
+  兩個效果從「開戰即生效的常駐buff」退化成「必須先成功發動過一次charge才會套用」(因為
+  `apply_passives()` 的 prep 套用迴圈只對 `t.type in ("passive","command")` 套用該戰法
+  effects, `type:"charge"` 的 effects 只在 `fire===true` 那一刻套用)——這是比現有「每回合
+  無條件95%傷害」近似更嚴重的迴歸, 已評估後撤回, 維持 `type:"passive"` 現況不變。真正的
+  修法需要「一份JSON戰法在Unit建構時展開成主體(passive, 常駐buff)+ 附掛的偽charge子戰法
+  (傷害段, 走charge擲骰通道)」雙態機制(類似裝備 `proc` 的一次性硬編碼實作, 但需要通用化
+  成戰法JSON層可調用), 超出本批範圍。
+
+### B. `e.activeOnly`(amp 效果欄位, 對稱於既有 `normalOnly`)
+
+**設計**: `amp` 效果新增選填欄位 `e.activeOnly`, 限定該增傷只在**主動/突擊戰法造成的
+傷害**上生效, 一般普通攻擊傷害不受影響(與批28 `normalOnly` 方向相反的對稱概念:
+`normalOnly` 限定「僅普攻」, `activeOnly` 限定「僅主動/突擊」)。實作: `hit()`/`damage()`/
+`Unit.amp()`/`Unit.addbonus()` 新增尾端可選參數 `is_active`(Python)/`isActive`(JS,
+與既有 `is_normal`/`isNormal` 對稱), 只在明確為 `True` 時才計入宣告 `activeOnly` 的
+加成項(呼叫端未傳入時預設 `None`/`undefined`, 安全側不套用, 向後相容全部既有呼叫點
+不受影響)。`type:"active"` 主迴圈與 `type:"charge"` 迴圈的傷害呼叫點皆已補上
+`is_active=True`(或 `t0.type=="active"` 時為 `True`, 否則 `None`), `activeFired()`
+反應式觸發的傷害段同樣標記 `is_active=True`。
+
+**落地**: 士爭先赴的 `amp`(val:0.2, 原文「傷害率60%→120%」的10%→20%增傷)補
+`activeOnly:true`, 取代原本無條件套用到自身全部傷害(含普通攻擊)的近似, 精確限定僅對
+主動/突擊戰法造成的傷害生效。
+
+### C. `extraHits.ifSameTargetIsLeader`(事後過濾: 主段隨機目標是否恰為敵軍主將)
+
+**發現於**: 批31 A 遷移掃描過程中核對暗藏玄機, 原文「若目標(普攻對象)為敵軍主將,額外
+謀略傷害92%」是條件分支(目標是否恰為敵軍主將), 過去因無法直接判斷「主 `coef` 段隨機
+選定的 `sameTarget` 是否為主將」, 用 1/3(隊伍3人之一為主將)EV 折算近似觸發率
+(`rate:0.34`)。
+
+**設計**: `extraHits[]` 新增選填欄位 `ifSameTargetIsLeader`(布林), 在 `dests` 解析完成
+(含既有 `who`/`targetSel`/`ifTargetHas` 過濾)後, 額外過濾只保留 `dests` 中恰好等於
+`foes[0]`(敵方隊伍固定主將位)的目標。與批16 `ifTargetHas`(檢查「目標身上是否已有某個
+狀態」)是不同概念但同一層級的條件過濾器: `ifTargetHas` 檢查動態狀態, `ifSameTargetIsLeader`
+檢查隊伍固定位置身份, 概念上更接近既有 `who:"enemyLeader"` 的固定位置判斷, 但用於「事後
+過濾已選定的隨機目標」而非「主動選定目標」, 是不同的判斷時機(前者發生在主段目標已經隨機
+選定之後, 後者是 extraHits 段自己主動指定選標準則)。
+
+**落地(1筆確認候選)**: 暗藏玄機——`extraHits[0]` 改用 `who:"sameTarget"`+
+`ifSameTargetIsLeader:true`(移除 `rate:0.34` EV折算欄位), 精確表達「若目標恰為敵軍主將,
+必定觸發此額外段」的確定性條件分支, 取代舊有機率折算近似。全庫掃描確認除暗藏玄機外,
+目前無其他戰法同時具備「隨機選定的sameTarget目標身份判斷」措辭(垂心萬物的同類舊近似
+已於批29 C確認為錯誤版本文字並移除, 非本批範圍內的活躍候選)。
+
+**驗收**: `sgz.py` self-check 86(a~c, 涵蓋士爭先赴真實資料端到端驗證: 無主動戰法成功
+發動時不觸發/rate=0.5統計上約半數觸發/activeOnly amp判定/hit_flags同回合節流)、87
+(ifSameTargetIsLeader 精確命中主將位/不誤中副將位)。`engine.js` 用合成 `Unit`+
+`applyEffects`/`fireExtraHits`/`hit`/`damage` 直接呼叫驗證同款行為(activeFired 預篩
+陣列正確收錄/rate統計/activeOnly amp過濾/hit_flags節流/ifSameTargetIsLeader過濾五項
+皆PASS)。
+
+**R20 能力別名登記**: `lint_tactics.py` `ENGINE_CAPABILITY_ALIASES` 新增「自帶主動戰法」
+「成功發動」→`activeFired`(刻意不用方向中性的「發動主動戰法」當別名鍵, 避免把神機妙算/
+經天緯地等貨真價實的跨單位廣播缺口誤判成 stale 揭露)、「僅主動戰法傷害」→`activeOnly`、
+「目標為敵軍主將」→`ifSameTargetIsLeader`。`KNOWN_EFFECT_FIELDS`/`PER_KIND_FIELDS`
+新增 `amp` 的 `activeOnly`(供 R9 幽靈欄位檢查辨識為已知欄位)。
+
+### D. 批31修復: `onHitTacs`/`onHitEffectTacs` 預篩範圍過寬(潛伏bug, 由本批新增
+`activeFired` 首次暴露)
+
+**發現**: 落地 `activeFired` 後跑真實資料 TRACE 抽驗(士爭先赴), 發現除了正確的
+「（自身發動主動戰法觸發）發動」日誌行外, 士爭先赴還會在自己**受到攻擊**時額外多發動
+一次(日誌顯示錯誤的「（受擊觸發）發動」標籤)。追查發現 `onHitTacs`(`sgz.py` 對應
+`on_hit_tacs`)/`onHitEffectTacs`(`on_hit_effect_tacs`) 的預篩陣列過去只用
+`t.when.on`(或 `e.when.on`) 是否為**真值**(truthy)判斷是否收錄, `onHit()`/`on_hit()`
+內部迴圈也只顯式排除 `on==="attacked"` 且非普攻的情形, 對其餘任何 `on` 字面值(包括批27
+新增的 `"dealtDamage"`、本批新增的 `"activeFired"`)一概放行當成 `"damaged"`(任意傷害
+觸發)處理。
+
+全庫過去只有 `attacked`/`damaged` 兩種戰法級 `when.on` 值, 從未真正踩中此漏洞; 效果級
+`e.when.on` 過去除 `attacked`/`damaged` 外也有3筆 `dealtDamage`(深謀遠慮/白衣渡江/
+非攻制勝), 這3筆**其實從批27上線起就已經受到影響**——它們的 `heal`/`disarm`/`silence`
+效果除了透過正確的 `onDealEffectTacs` 反應式路徑觸發外, 還會在單位**受到任意傷害時**
+被 `onHitEffectTacs` 誤判成 `damaged` 事件額外多結算一次, 造成比預期更高頻的雙重觸發
+(白衣渡江: 受擊時也可能誤觸發繳械/計窮; 深謀遠慮/非攻制勝: 受擊時也可能誤觸發治療) ——
+此問題規模比本批直接動到的士爭先赴更廣, 是全庫既有資料的隱性高估, 本批一併修復。
+
+**修復**: `onHitTacs`/`on_hit_tacs`、`onHitEffectTacs`/`on_hit_effect_tacs` 兩處預篩,
+從 truthy 檢查收斂為明確白名單 `{"attacked", "damaged"}`(`e.when.on in ("attacked",
+"damaged")`), 只有這兩種事件值才會被收進「受擊反應式」預篩陣列——`dealtDamage`/
+`activeFired` 各自有專屬的 `onDealTacs`/`onDealEffectTacs`/`activeFiredTacs`/
+`activeFiredEffectTacs` 預篩與獨立事件掛鉤點, 不應該也落入受擊反應式路徑。
+
+**驗收**: 修復後 `sgz.py` self-check 全數重跑仍通過(既有77/78等測試皆用獨立合成 `Unit`,
+未觸發此雙重計算場景, 故修復前測試皆綠燈, 不代表沒有bug——這正是為何需要跑**真實資料**
+TRACE 抽驗才發現此問題, 純合成單元測試對「多個 `when.on` 值共存於同一 `Unit`」的交叉
+污染場景覆蓋不足的教訓)。真實資料 TRACE 抽驗(node 直接呼叫 `engine.js` 的
+`buildPool`+`trace()`, 樂進持有真實 `type:"active"` 戰法臨戰先登 + 傳承士爭先赴, 50場
+戰鬥400個回合逐回合核對): 修復前「士爭先赴」日誌行同時出現「（自身發動主動戰法觸發）」
+與「（受擊觸發）」兩種標籤(雙重觸發); 修復後 400 回合中僅出現「（自身發動主動戰法觸發）」
+標籤, 且每次出現都與同回合「發動戰法【臨戰先登】」共同出現(0 違規), 統計觸發率
+(122/400回合中觸發, 且與臨戰先登實際發動次數的比值≈0.5)精確符合 `rate:0.5` 設計值。
+
+**驗收基準(批31更新)**: 全庫 R1-R22 應維持零違規常態; `reparse_effects.py` 兩輪
+byte-diff 為空(冪等); `sgz.py` self-check 全數通過(含新增86/87); `lint_tactics.py
+--selftest` 全數通過(含 `CAPABILITY_INVENTORY_IGNORE` 新增 `damaged`, 因白名單化後
+`"damaged"` 字面值首次出現在原始碼被 R20 drift 掃描器盤點到, 非新原語)。
+
+---
+
 ## 附錄: 全部引擎支援的效果原語(k)一覽
 
 供對照哪些機制已有原語、哪些仍是缺口。見 `sgz.py` `apply_effects()` 的 k 分支
@@ -844,7 +1020,14 @@ byte-diff 為空(冪等); `sgz.py` self-check 全數通過(含新增84/85)。
 `e.everyRound`(批30新增, 見上方第26節A項, 非heal效果的逐回合重擲通道, 任何 `k` 皆可掛,
 只在 `heal_only`/`healOnly` 常駐路徑套用, 對稱於既有 `heal` 逐回合重擲慣例) /
 `who:"sub1"/"sub2"`(批30新增, 見上方第26節C項, 副將固定位置選標, 對稱於既有
-`who:"leader"`=`allies[0]`, `sub1`=`allies[1]`/`sub2`=`allies[2]`)
+`who:"leader"`=`allies[0]`, `sub1`=`allies[1]`/`sub2`=`allies[2]`) /
+`when.on:"activeFired"`(批31新增, 見上方第27節A項, 施放者自身成功發動主動/突擊戰法後
+反應式觸發, 對稱於既有 `"attacked"`/`"damaged"`/`"dealtDamage"`, 只覆蓋「自身」發動這一
+方向, 選填 `when.timing`(`"before"`/`"after"`, 引擎不細分兩者結算順序)) /
+`e.activeOnly`(批31新增, 見上方第27節B項, `amp` 效果欄位, 限定只對主動/突擊戰法造成的
+傷害生效, 對稱於既有 `normalOnly`) /
+`extraHits.ifSameTargetIsLeader`(批31新增, 見上方第27節C項, 事後過濾主段隨機選定的
+`sameTarget` 目標是否恰為敵軍隊伍固定主將位 `foes[0]`)
 
 **批23新增: 效果級 `e.n`/`e.nMax`(A1) 與 `e.rate`(A4)** —— 過去非CTRL效果(`amp`/`mitig`/
 `stat`/`dot`/`healblock`/`rateup`/`insight`/`extra`/`lifesteal`/`healBoost`/`healGiven`/

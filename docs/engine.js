@@ -220,7 +220,13 @@
       this.whenFired = new Set();                   // 條件觸發(when.rounds/from/until) 已套用效果的戰法(一次性), 依戰法物件去重; 批8: delayedEq(裝備效果級when)共用同一個 Set(效果物件本身去重, 不與戰法物件撞)
       this.healRoundsFired = null;                  // 批15: heal 效果 e.when.rounds(明確列出的特定回合)的「每回合各觸發一次」去重, Map<效果物件, Set<已觸發回合數>>, 惰性建立(見 applyEffects 的 heal 分支)
       this.hitFlags = new Set();                    // 反應式觸發(when.on) 本回合已觸發的戰法, 每回合重置(防無限鏈)
-      this.onHitTacs = this.tactics.filter(t => (t.type === "passive" || t.type === "command") && t.when && t.when.on);  // 預篩: 絕大多數單位為空, hit 熱路徑 O(0)
+      // 批31 A 修復: 過去只檢查 t.when.on 是否為真(truthy), 未限定具體事件值, onHit() 內部
+      // 迴圈也只用 t0.when.on==="attacked" 排除普攻限定的不符情形, 對其餘任何 on 值(包含
+      // 批27新增的"dealtDamage"/本批"activeFired")一概放行當成"damaged"處理——潛伏bug,
+      // 全庫過去只有 attacked/damaged 兩種 t.when.on 值從未真正暴露, 本批新增 activeFired
+      // 後士爭先赴首次踩中(除正確的「自身發動主動戰法觸發」外, 還被 onHit() 誤判成「受擊
+      // 觸發」額外多發動一次)。收斂為明確白名單。
+      this.onHitTacs = this.tactics.filter(t => (t.type === "passive" || t.type === "command") && t.when && (t.when.on === "attacked" || t.when.on === "damaged"));  // 預篩: 絕大多數單位為空, hit 熱路徑 O(0)
       // 批22: 效果級 e.when.on(急救類反應式治療, 如陷陣營/長健/雲聚影從「受到傷害時XX%機率
       // 獲得治療」) —— 與上面 t.when.on(戰法級, 整個戰法都是反應式)不同: 這類戰法本身有其他
       // 常駐效果(如陷陣營的武力/統率平加)需要在 prep 階段就套用, 只有其中的 heal 效果段是
@@ -235,7 +241,10 @@
       // 放寬後active戰法帶e.when.on的效果同樣走onHit()反應式結算, 該戰法主coef/其餘無when
       // 效果仍照常經由主動擲骰路徑(t0.rate)發動觸發(兩者互不干擾, 見applyEffects內新增的
       // opt.reactive閘門, 確保e.when.on效果不會在active擲骰命中時被重複套用)。
-      this.onHitEffectTacs = this.tactics.filter(t => !t.when && (t.type === "passive" || t.type === "command" || t.type === "active") && (t.effects || []).some(e => e.when && e.when.on));
+      // 批31 A 修復: 同上(onHitTacs)——過去用 truthy 檢查, 導致帶 e.when.on:"dealtDamage"
+      // (批27)的效果(深謀遠慮/白衣渡江/非攻制勝)被誤收進 onHitEffectTacs, 在 onHit() 的效果級
+      // 迴圈裡又額外多觸發一次, 與正確的 onDealEffectTacs 觸發路徑重複結算。收斂為明確白名單。
+      this.onHitEffectTacs = this.tactics.filter(t => !t.when && (t.type === "passive" || t.type === "command" || t.type === "active") && (t.effects || []).some(e => e.when && (e.when.on === "attacked" || e.when.on === "damaged")));
       // 批27 A: on:"dealtDamage" —— 「自身造成傷害時/後」反應式掛鉤(對比 onHitTacs 的
       // attacked/damaged 是「自己受擊」視角, 這裡是「自己打人」視角, 如白衣渡江「造成兵刃
       // 傷害時25%→50%機率使敵軍單體繳械」)。掛在 hit() 傷害結算後對 src(施加傷害的一方)
@@ -245,6 +254,18 @@
       // amp/mitig 既有 dmgType 欄位命名慣例, 無此欄位視為兩種傷害類型皆可觸發(向後相容)。
       this.onDealTacs = this.tactics.filter(t => (t.type === "passive" || t.type === "command") && t.when && t.when.on === "dealtDamage");
       this.onDealEffectTacs = this.tactics.filter(t => !t.when && (t.type === "passive" || t.type === "command" || t.type === "active") && (t.effects || []).some(e => e.when && e.when.on === "dealtDamage"));
+      // 批31 A: on:"activeFired" —— 「自身成功發動主動(或突擊)戰法時/後」反應式掛鉤(對比
+      // onDealTacs 的「造成傷害」視角, 這裡是「戰法本身成功擲骰命中fire」視角, 不要求真的造成
+      // 傷害, 如士爭先赴「成功發動自帶主動戰法前，50%機率對敵軍2人造成兵刃傷害」——現行版本把
+      // 這條獨立成一個常駐coef+rate的passive戰法, 與「是否真的有主動戰法成功發動」完全脫鉤,
+      // 屬v14盲測抓到的「條件觸發簡化為無條件」同族缺口)。掛在 fight() 主迴圈 active/charge
+      // 型戰法 fire===true 判定通過後, 對施放者 u 自身掃描其 activeFiredTacs(戰法級)/
+      // activeFiredEffectTacs(效果級), 與 onDealTacs/onDealEffectTacs 完全對稱(戰法級 vs
+      // 效果級 兩種顆粒度), 只是事件觸發點不同(自身戰法命中 vs 自身造成傷害)。when.timing
+      // (選填, "before"/"after"): 統一在 fire 判定通過、實際套用觸發戰法效果之前廣播(貼近
+      // before 語意, after 措辭的戰法一律視同無差別, 見 engine_limitations.md 新增節)。
+      this.activeFiredTacs = this.tactics.filter(t => (t.type === "passive" || t.type === "command") && t.when && t.when.on === "activeFired");
+      this.activeFiredEffectTacs = this.tactics.filter(t => !t.when && (t.type === "passive" || t.type === "command" || t.type === "active") && (t.effects || []).some(e => e.when && e.when.on === "activeFired"));
       this.lockedTargets = new Map();               // 批12 ModeG: lockTarget:true 戰法的鎖定目標, 鍵=戰法物件本身(同一戰法物件跨回合重用同一 Map)
       // 批16: 原語擴充包 —— 新增狀態欄位(現有資料無新欄位, 皆維持0/null預設值, 行為零變化)
       this.atkCount = new Map();                     // everyN: 自身普攻次數計數器, 鍵=戰法物件本身(同一戰法物件跨回合重用同一 Map)
@@ -280,13 +301,17 @@
     // 批28 B3: isNormal(可選) —— 只加總「該條目未宣告 normalOnly, 或宣告 normalOnly 且本次
     // isNormal 為 true」的項目, 供 amp 表達「僅普攻傷害提升」(見至柔動剛)。未傳(undefined,
     // 如dot/counter/settle等非普攻傷害路徑)時安全側不套用 normalOnly 加成。
-    addbonus(kind, dmgType, isNormal) {
+    // 批31 A: isActive(可選, 對稱於 isNormal) —— 只加總「該條目未宣告 activeOnly, 或宣告
+    // activeOnly 且本次 isActive 為 true」的項目, 供 amp 表達「僅主動(或突擊)戰法傷害提升」
+    // (如士爭先赴)。未傳(undefined)時安全側不套用 activeOnly 加成。
+    addbonus(kind, dmgType, isNormal, isActive) {
       let s = 0;
       for (const a of this.adds) {
         if (a[0] !== kind || this.suppressed(a[3])) continue;
         const f = a[4];
         if (dmgType && f && f.dmgType && f.dmgType !== dmgType) continue;
         if (f && f.normalOnly && isNormal !== true) continue;
+        if (f && f.activeOnly && isActive !== true) continue;
         s += a[1];
       }
       return s;
@@ -365,9 +390,10 @@
     // 批24 D2: amp(dmgType) —— dmgType 傳入時只加總該類型(或未宣告類型)的 amp 加成; stack/decay
     // 目前無 dmgType 概念(全庫暫無「僅對特定傷害類型疊層」的戰法), 維持無條件全額計入, 與呼叫端
     // 的 dmgType 過濾無關(不受影響, 向後相容)。批28 B3: isNormal(可選) —— 過濾 normalOnly
-    // 標記的加成(僅普攻傷害生效, 見至柔動剛)。
-    amp(dmgType, isNormal) {
-      let a = this.addbonus("amp", dmgType, isNormal);
+    // 標記的加成(僅普攻傷害生效, 見至柔動剛)。批31 A: isActive(可選) —— 過濾 activeOnly
+    // 標記的加成(僅主動/突擊戰法傷害生效, 見士爭先赴)。
+    amp(dmgType, isNormal, isActive) {
+      let a = this.addbonus("amp", dmgType, isNormal, isActive);
       if (this.stack) a += this.stack.per * this.stack.n;
       if (this.decay) a += this.decay.v0 * this.decay.left / this.decay.total;
       return a;
@@ -409,7 +435,7 @@
   //   錨3 屬性差大負值(保底) → 實測 ≈90  傷害 ⇒ DMG_FLOOR = 90/sqrt(10000) = 0.9
   // 之後有更多實測數據(不同兵力/等級)可再校準, 目前僅50級單一等級係數樣本, 折入常數中。
   const DMG_A = 4.76, DMG_B = 1.44, DMG_FLOOR = 0.9;
-  function damage(src, dst, coef, kind, srcTroop, isNormal) {
+  function damage(src, dst, coef, kind, srcTroop, isNormal, isActive) {
     const troop = srcTroop == null ? src.troop : srcTroop;
     const atk = kind === "intel" ? src.eff("intel") : src.eff("force");
     const def = kind === "intel" ? dst.eff("intel") : dst.eff("command");
@@ -428,21 +454,22 @@
     // 這類定向效果不再誤及不該覆蓋的另一種傷害類型(見 e.dmgType 呼叫端, applyEffects k==="amp"/"mitig"分支)。
     // 批28 B3: isNormal(可選) —— 傳入本次傷害是否為普攻, 供 amp()/addbonus("mitig") 過濾
     // normalOnly 標記的加成/減傷(僅普攻傷害生效/受影響, 見至柔動剛「降低我軍及敵軍全體普通
-    // 攻擊傷害35%」)。
-    const totalAmp = src.amp(kind, isNormal);
+    // 攻擊傷害35%」)。批31 A: isActive(可選, 對稱於 isNormal) —— 傳入本次傷害是否為主動/
+    // 突擊戰法所致, 供 amp() 過濾 activeOnly 標記的加成(僅主動/突擊戰法傷害生效, 見士爭先赴)。
+    const totalAmp = src.amp(kind, isNormal, isActive);
     base *= totalAmp <= -1 ? 0 : 1 + Math.max(-0.9, totalAmp);
     const mit = dst.addbonus("mitig", kind, isNormal) * (1 - Math.min(1, src.addbonus("pierce")));
     base *= Math.max(0.1, 1 - mit);
     base *= 0.96 + rnd() * 0.08;   // 隨機帶 0.96~1.04(對稱): rnd()*0.08 涵蓋 [0,0.08), 起點0.96 → 上限0.96+0.08=1.04
     return Math.max(0, base);
   }
-  function hit(src, dst, coef, kind, isNormal, onEvent, onDeal) {
+  function hit(src, dst, coef, kind, isNormal, onEvent, onDeal, isActive) {  // 批31 A: isActive(可選, 尾端新增, 向後相容既有全部呼叫點)—— 傳入本次傷害是否為主動/突擊戰法所致
     if (!src.surehitDur && dst.dodgeDur && rnd() < dst.dodgeProb) {  // 規避: 完全迴避一次傷害(必中無視)
       if (TRACE) lg(`　→ ${dst.nm} 規避了攻擊`);
       if (onEvent) onEvent(dst, src, isNormal);
       return;
     }
-    let dmg = damage(src, dst, coef, kind, undefined, isNormal);  // 批28 B3: 傳入isNormal供amp()過濾normalOnly標記的加成
+    let dmg = damage(src, dst, coef, kind, undefined, isNormal, isActive);  // 批28 B3/批31 A: 傳入isNormal/isActive供amp()過濾normalOnly/activeOnly標記的加成
     // 批22: block(次數型格擋, 抵禦/警戒同族) —— 判定順序 dodge→block→shield→傷害(見紅線指示)。
     // 每次受擊消耗1次(不論本次傷害量多寡), val=1.0(如「抵禦」)完全格擋歸零本次傷害,
     // val=0.x(如「警戒」-75.35%)按比例打折。用光即從陣列移除, 供 TRACE 顯示「剩餘N層」。
@@ -651,6 +678,11 @@
       else dests = pickTargets(foesOf(u), cnt);
       // 批16: ifTargetHas —— extraHits 段結算前檢查, 只對「已有該狀態」的目標結算此段傷害
       if (eh.ifTargetHas) dests = dests.filter(v => targetHas(v, eh.ifTargetHas));
+      // 批31 B: ifSameTargetIsLeader —— extraHits 段結算前檢查, 只對「(主coef段隨機選定的)
+      // 目標剛好就是敵方隊伍固定位置的主將(foes[0])」時才結算此段傷害, 精確表達原文「若目標
+      // (普攻/主傷段隨機選定的對象)為敵軍主將，額外造成傷害」這種條件分支。取代舊有EV折算
+      // 近似(如暗藏玄機過去用1/3機率折算「隊伍3人之一為主將」的近似觸發率)。
+      if (eh.ifSameTargetIsLeader) { const fl = foesOf(u)[0]; const leader = (fl && fl.alive) ? fl : null; dests = dests.filter(v => v === leader); }
       if (TRACE && dests.length) lg(`　▸ ${t.nameZh || "?"}〔額外段${eh.targetSel ? "·" + eh.targetSel : ""}〕${eh.kind === "intel" ? "謀略" : "兵刃"}傷害 → ${dests.map(v => v.nm).join("、")}` + (eh._note ? `（${eh._note}）` : ""));
       for (const v of dests) hit(u, v, eh.coef, eh.kind || "phys", false, onHit, onDeal);
     }
@@ -919,14 +951,19 @@
       // undispellable 合併進同一個 flags 物件(pushAdd/pushMod 第5參數), 兩者互不干擾。
       // 批28 B3: normalOnly 旗標 —— amp/mitig 效果可選填 e.normalOnly:true, 限定只對普攻傷害
       // 生效/受影響(見至柔動剛「降低我軍及敵軍全體普通攻擊傷害35%」)。
+      // 批31 A: activeOnly 旗標(僅 amp 支援, 對稱於 normalOnly) —— 效果可選填 e.activeOnly:true,
+      // 限定只對主動/突擊戰法傷害生效(見士爭先赴)。
       const normalOnly = (k === "amp" || k === "mitig") && !!e.normalOnly;
-      const udFlags = (e.undispellable || e.dmgType || normalOnly) ? { undispellable: !!e.undispellable, dmgType: e.dmgType, normalOnly } : undefined;
+      const activeOnly = k === "amp" && !!e.activeOnly;
+      const udFlags = (e.undispellable || e.dmgType || normalOnly || activeOnly) ? { undispellable: !!e.undispellable, dmgType: e.dmgType, normalOnly, activeOnly } : undefined;
       // dmgType 存在時, src 附加類型尾碼區分 dedup key(同一戰法內若有兩條不同 dmgType 的
       // amp/mitig, 如暫避其鋒「智力最高者減兵刃傷害」+「武力最高者減謀略傷害」, 兩者若共用
       // 同一個 src(戰法名)會被 pushAdd 的「同kind+同src刷新」去重機制互相蓋掉, 見 rateup 的
-      // 既有 prepOnly/nativeOnly 尾碼慣例同理)。批28 B3: normalOnly 同理附加尾碼。
+      // 既有 prepOnly/nativeOnly 尾碼慣例同理)。批28 B3: normalOnly 同理附加尾碼。批31 A:
+      // activeOnly 同理附加尾碼。
       let dtSrc = (src && e.dmgType) ? src + ":" + e.dmgType : src;
       if (normalOnly && src) dtSrc = (dtSrc || src) + ":normalOnly";
+      if (activeOnly && src) dtSrc = (dtSrc || src) + ":activeOnly";
       for (const u of dests) {
         if (k === "amp") { const v = svVal(e.val); who === "enemy" && v > 0 ? u.pushAdd("mitig", -v, e.dur, dtSrc, udFlags) : u.pushAdd("amp", v, e.dur, dtSrc, udFlags); }
         else if (k === "mitig") u.pushAdd("mitig", svVal(e.val), e.dur, dtSrc, udFlags);
@@ -1190,6 +1227,39 @@
         }
       }
     };
+    const activeFired = (u) => {  // 批31 A: 反應式觸發(when.on:"activeFired") —— 自己成功發動主動/突擊戰法時掛到 fight() 主迴圈事件點, 與 dealtDamage(自己造成傷害視角)/onHit(自己受擊視角)對稱; 只認「自身」戰法成功fire這件事本身, 不要求造成傷害
+      if (!u.alive || (!u.activeFiredTacs.length && !u.activeFiredEffectTacs.length)) return;
+      if (u.fakeReportDur) return;                   // 批16: 偽報 —— 抑制反應式觸發(被動/指揮戰法失效), 與 onHit/dealtDamage 同慣例
+      for (const t of u.activeFiredTacs) {            // 戰法級: 整個戰法都是「自身成功發動主動戰法時」反應式(如士爭先赴)
+        if (!roundOk(t, CUR_R)) continue;
+        if (u.hitFlags.has(t)) continue;              // 同回合每單位每戰法最多觸發1次(防無限鏈), 與 onHit/dealtDamage 共用同一 hitFlags
+        if (rnd() >= t.rate) continue;
+        u.hitFlags.add(t);
+        if (TRACE) lg(`【${u.side}】${u.nm} 戰法【${t.nameZh}】（自身發動主動戰法觸發）發動`);
+        let mainHitTgt = null;
+        if (t.coef) {
+          const cnt = t.nMax ? (t.n + Math.floor(rnd() * (t.nMax - t.n + 1))) : t.n;
+          const vs = pickTargets(foesOf(u), cnt);
+          for (const v of vs) hit(u, v, t.coef, t.kind, false, onHit, dealtDamage, true);  // 批31 A: 本段傷害本身即「主動戰法發動觸發的反應式傷害」, isActive=true供同戰法/其他戰法的e.activeOnly amp判定
+          if (vs.length === 1) mainHitTgt = vs[0];
+        }
+        if (t.extraHits) fireExtraHits(u, t, mainHitTgt, alliesOf, foesOf, onHit, dealtDamage);
+        if (t.effects.length) applyEffects(u, mainHitTgt, t, alliesOf(u), foesOf(u), { reactive: true });
+      }
+      // 效果級: 戰法本身有其他常駐效果, 只有部分效果段是「自身成功發動主動戰法時」反應式
+      for (const t of u.activeFiredEffectTacs) {
+        for (const e of t.effects) {
+          if (!e.when || e.when.on !== "activeFired") continue;
+          if (!roundOk({ when: e.when }, CUR_R)) continue;
+          if (u.hitFlags.has(e)) continue;
+          const evRate = e.rate ?? t.rate ?? 1;
+          if (rnd() >= evRate) continue;
+          u.hitFlags.add(e);
+          if (TRACE) lg(`【${u.side}】${u.nm} 戰法【${t.nameZh}】效果（自身發動主動戰法觸發）發動`);
+          applyEffects(u, null, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(u), foesOf(u), { rateChecked: true, reactive: true });  // 已擲過 e.rate, 避免重複擲骰; reactive 供 e.when.on 閘門放行
+        }
+      }
+    };
     if (TRACE) {                                    // 準備階段標頭: 兵種 + 城建/陣營
       CUR_R = 0;
       lg(`〔採用兵種〕我方 ${troopA}兵　·　敵方 ${troopB}兵`);
@@ -1309,6 +1379,13 @@
             // stackPer=="cast" 的疊層狀態則遞增1層(見 applyStackCast() 定義)。與round模式
             // (上方主迴圈逐回合遞增)互斥判斷, 不會重複遞增。
             u.applyStackCast();
+            // 批31 A: on:"activeFired" —— 只有 type==="active"(真正的主動戰法)才算「成功發動
+            // 主動戰法」事件, command/passive 常駐擲骰(fire 判定式共用同一 if 區塊, 但語意是
+            // 「每回合固定擲骰」而非「發動主動戰法」)不觸發此事件。置於 applyStackCast() 之後、
+            // 實際套用觸發戰法本身效果之前, 讓士爭先赴一類「成功發動...前」的反應式效果搶在
+            // 本次觸發戰法的傷害/效果結算前廣播(見 activeFired() 定義處對 before/after 語意
+            // 取捨的說明)。
+            if (t0.type === "active") activeFired(u);
             // 批16: choices(擇一分支) —— 發動時按權重隨機選一組效果(coef/kind/effects/extraHits/n/nMax
             // 可各自覆寫基礎戰法), 套用到本次發動; 未中選的分支本次不生效。權重預設均分。t0 為原始
             // 戰法物件(供 addbonusFor/whenFired 等以物件本身為鍵的邏輯保持穩定, 不因選分支而變動),
@@ -1329,10 +1406,11 @@
               // 批18: targetSel(指定選標準則) —— 戰法級欄位, 主coef段按準則選單一目標(如避實擊虛
               // 「統率最低」), 優先於 lockTarget/hitsRepeat/隨機群體(不受混亂影響, 每次發動當下依
               // 準則重新篩選, 與 lockTarget 的「首次選定後鎖定沿用」語意方向相反, 不可混用)。
-              if (t.targetSel) { const v = pickByCriterion(foesOf(u), t.targetSel); if (v) { hit(u, v, t.coef, t.kind, false, onHit, dealtDamage); _mainHitTgt = v; } }
-              else if (t.lockTarget && cnt <= 1 && !t.hitsRepeat) { const v = resolveLockedTarget(u, t0, foesOf(u)); if (v) { hit(u, v, t.coef, t.kind, false, onHit, dealtDamage); _mainHitTgt = v; } }  // lockTarget 鍵用 t0(原始戰法物件), 避免 choices 每次合成新物件破壞跨回合鎖定
-              else if (t.hitsRepeat) { for (let i = 0; i < cnt; i++) { const v = pickTarget(foesOf(u), u); if (v) { hit(u, v, t.coef, t.kind, false, onHit, dealtDamage); _mainHitTgt = v; } } }
-              else { const vs = pickTargets(foesOf(u), cnt); for (const v of vs) hit(u, v, t.coef, t.kind, false, onHit, dealtDamage); if (vs.length === 1) _mainHitTgt = vs[0]; }
+              const isActiveDmg = t0.type === "active" ? true : undefined;  // 批31 A: 供e.activeOnly amp判定「本段傷害是否為主動戰法所致」; command/passive走同一段程式碼但非主動戰法, 傳undefined(安全側不套用activeOnly加成, 見addbonus()註解)
+              if (t.targetSel) { const v = pickByCriterion(foesOf(u), t.targetSel); if (v) { hit(u, v, t.coef, t.kind, false, onHit, dealtDamage, isActiveDmg); _mainHitTgt = v; } }
+              else if (t.lockTarget && cnt <= 1 && !t.hitsRepeat) { const v = resolveLockedTarget(u, t0, foesOf(u)); if (v) { hit(u, v, t.coef, t.kind, false, onHit, dealtDamage, isActiveDmg); _mainHitTgt = v; } }  // lockTarget 鍵用 t0(原始戰法物件), 避免 choices 每次合成新物件破壞跨回合鎖定
+              else if (t.hitsRepeat) { for (let i = 0; i < cnt; i++) { const v = pickTarget(foesOf(u), u); if (v) { hit(u, v, t.coef, t.kind, false, onHit, dealtDamage, isActiveDmg); _mainHitTgt = v; } } }
+              else { const vs = pickTargets(foesOf(u), cnt); for (const v of vs) hit(u, v, t.coef, t.kind, false, onHit, dealtDamage, isActiveDmg); if (vs.length === 1) _mainHitTgt = vs[0]; }
             }
             if (t.extraHits) fireExtraHits(u, t, _mainHitTgt, alliesOf, foesOf, onHit, dealtDamage);  // 批13: 多段傷害(兵刃+謀略雙段/主傷+補刀等)
             // 批12 ModeF: 混亂下單體主動戰法目標改敵我不分(pickTargetChaos); 群體/AoE(who=enemy 全體/
@@ -1376,7 +1454,7 @@
             }
             // 突擊(charge)擲骰: chargeup(突擊發動率加成, 如虎豹騎)只對真突擊戰法生效, 排除 t.proc===true 的
             // 特技偽戰法(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲proc本身無此欄)。
-            for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate + (t.proc ? 0 : u.addbonusFor("chargeup", t))) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind, false, onHit, dealtDamage); if (t.extraHits) fireExtraHits(u, t, tgt, alliesOf, foesOf, onHit, dealtDamage); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); }
+            for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate + (t.proc ? 0 : u.addbonusFor("chargeup", t))) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind, false, onHit, dealtDamage, true); if (t.extraHits) fireExtraHits(u, t, tgt, alliesOf, foesOf, onHit, dealtDamage); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); activeFired(u); }  // 批31 A: 突擊戰法成功發動同樣觸發 activeFired(如陷陣突襲監聽同單位另一個 type:"charge" 戰法的發動); isActive=true供e.activeOnly amp判定
           }
         }
       }

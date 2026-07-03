@@ -1072,7 +1072,8 @@
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INNATE",
-  "_note": "批20 lint R2修正: n由3(誤用effectTarget「我軍群體3人」描述的rateup受眾人數)改為1(傷害段「對敵軍單體」明確為單一目標)。"
+  "_note": "批20 lint R2修正: n由3(誤用effectTarget「我軍群體3人」描述的rateup受眾人數)改為1(傷害段「對敵軍單體」明確為單一目標)。",
+  "_todo": "批31 A評估: 頂層coef(1.02)/rate(0.45)目前把「並使其(我軍全體)下次發動主動戰法後，對敵軍單體造成謀略攻擊」誤建模成「十二奇策自己發動時直接造成102%謀略傷害」——這是與士爭先赴同族但方向相反的activeFired缺口: 士爭先赴是「自身主動戰法發動」觸發自己的反應效果(本批已用when.on:\"activeFired\"精確重建), 十二奇策則是「(施放者以外的)我軍全體任一人下次發動主動戰法」觸發傷害, 屬跨單位廣播事件(監聽的是隊友, 不是自己), 與經天緯地「我軍全體發動主動/突擊戰法時」同一類缺口(engine_limitations.md 21節前身, 及本批新增節)。本批新增的when.on:\"activeFired\"只掛在施放者自己身上監聽自己的發動事件(active_fired_tacs/active_fired_effect_tacs的預篩與觸發對象皆是同一個Unit), 沒有「監聽其他單位」的廣播機制, 無法表達本戰法「先由A授予buff, 之後由A或隊友B任一人觸發主動戰法時, 由A造成傷害」的跨單位延遲觸發語意。維持頂層coef/rate近似不變(高估: 把機率性的『下次發動觸發』簡化成『自己主動戰法本身的無條件擲骰觸發』, 觸發者也從『我軍任一人』限縮成『十二奇策施放者自己』), 已誠實記錄, 修法需要新增「隊伍級事件廣播」基礎設施(供多個單位互相監聽彼此的战法發動/受擊/造成傷害事件), 超出本批範圍。"
  },
  {
   "nameZh": "十勝十敗",
@@ -1098,7 +1099,8 @@
   "_src": " +他AI補全effectText/重解",
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_todo": "批31 A全庫掃描新發現(非brief原點名清單, 見tactics_overrides.json「十勝十敗」effectText): 「若我軍主將發動主動或突擊戰法時，自身有30%概率治療我軍單體」heal段完全未建模——本批新增的when.on:\"activeFired\"只監聽「施放者自己」的主動/突擊戰法發動事件(active_fired_tacs/active_fired_effect_tacs皆以持有者u自身為預篩與觸發對象), 本戰法要監聽的卻是「我軍主將」(隊伍index 0, 可能是另一個單位, 持有本戰法者未必是主將本人), 與神機妙算(監聽敵方)/經天緯地/十二奇策(監聽我軍全體任一人)同屬「監聽非自己單位的戰法發動事件」缺口, 只是這裡監聽對象限定「隊伍固定位置(主將)」——若持有者u自己剛好就是主將(allies[0])則會退化成u監聽自己, 這種特殊情形本批activeFired其實可以表達(u.active_fired_tacs命中u自己的active/charge發動), 但一般情形(持有者是副將, 監聽主將)仍需要跨單位廣播機制, 現有活動未建模, 誠實維持現況(heal段完全缺失, 較現有mitig/insight兩段更保守但未涵蓋原文全部機制), 供未來批次評估是否值得為「監聽隊伍固定位置(主將)的戰法發動」新增專門機制。"
  },
  {
   "nameZh": "十面埋伏",
@@ -1572,12 +1574,19 @@
     "k": "amp",
     "who": "self",
     "val": 0.2,
-    "dur": 99
+    "dur": 99,
+    "activeOnly": true,
+    "_note": "批31 A: 原文「傷害率60%→120%」的amp(10%→20%)僅描述本戰法自身觸發的這段兵刃傷害, 非「自身造成的全部傷害」——用e.activeOnly(批31新增, 對稱於既有normalOnly, 見sgz.py/engine.js的is_active/isActive參數穿透hit()→damage()→amp()/addbonus())精確限定此增傷只對「主動(或突擊)戰法造成的傷害」生效, 一般普通攻擊傷害不受影響。"
    }
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "when": {
+   "on": "activeFired",
+   "timing": "before"
+  },
+  "_note": "批31 A: 原文「成功發動自帶主動戰法前,有50%機率對敵軍群體(2人)造成兵刃傷害」為\"activeFired\"反應式事件(綁定自身主動戰法成功發動這件事本身, 非每回合獨立擲骰)——過去頂層coef(1.2)+rate(0.5)是與「是否真的有主動戰法成功發動」完全脫鉤的常駐passive擲骰(v14盲測0分主因: 「條件觸發簡化為無條件」), 現改用when.on:\"activeFired\"(批31新增原語, 見sgz.py/engine.js的active_fired_tacs+active_fired()/activeFired())精確綁定: 只在u自己的某個type:\"active\"戰法本次成功fire時, 才由本戰法擲骰(仍是rate=0.5)判定是否觸發兵刃傷害段。timing:\"before\"對應原文「...前」, 但引擎在同一回合內對「前/後」無實質結算順序差異(active_fired()呼叫點置於觸發戰法本身效果套用之前, 貼近before語意, 見engine_limitations.md新增節), 僅供文件語意保留, 不影響實際判定順序; amp效果補e.activeOnly精確限定僅主動戰法傷害增傷(取代原本無條件套用到全部自身傷害的近似)。"
  },
  {
   "nameZh": "夢中弒臣",
@@ -1602,7 +1611,10 @@
     "kind": "phys",
     "prob": 0.5,
     "dur": 99,
-    "_note": "原文為「戰鬥第3回合起,25%->50%機率獲得反擊狀態,傷害率150%,直到戰鬥結束」;engine counter無回合窗(無dur到期機制)且無法與上條mitig(僅前2回合)共用同一when,以「全程生效」近似(較原文提早2回合生效,可能高估)"
+    "when": {
+     "from": 3
+    },
+    "_note": "批31 B: 原文「戰鬥第3回合起,25%->50%機率獲得反擊狀態,傷害率150%,直到戰鬥結束」——舊_note誤稱「engine counter無回合窗(無dur到期機制)且無法與上條mitig(僅前2回合)共用同一when」, 實際上本戰法母戰法本身無t.when(mitig效果沒有掛在戰法層級, 是效果層級各自獨立套用), 依engine_limitations.md 6.4節「e.when的母戰法無t.when限制」, 效果級e.when只在「母戰法本身無t.when」時才會生效——本戰法恰好符合這個前提條件, 故mitig(無when, 常駐前2回合)與counter(補e.when:{from:3})可在同一戰法內用不同視窗獨立生效, 並非互斥, 此前是誤判限制範圍(誤以為需要t.when才能表達視窗, 實則e.when本身已足夠, 與批29 C「先前誤判需要新原語, 實際既有原語組合已足夠」同型教訓)。改用e.when:{from:3}(回合迴圈通用e.when泛化掃描, from/until視窗每回合重新套用, u.counter為單純狀態賦值, 重複套用等同刷新, 不會累積或出錯)精確表達「第3回合起才生效」, 取代前2回合就提早套用的高估近似。dur:99維持不變(語意「直到戰鬥結束」, 配合from:3窗口每回合重新賦值刷新, 效果等同持續到終局)。"
    }
   ],
   "quality": "S",
@@ -5184,14 +5196,14 @@
     "k": "silence",
     "who": "enemy",
     "dur": 1,
-    "_note": "原文「敵軍發動主動戰法時25%→35%機率令其發動失敗」為反應式觸發(敵方嘗試發動主動戰法瞬間), 引擎when.on僅支援attacked/damaged(受擊)事件點, 無「敵方嘗試發動主動戰法」的反應式掛鉤; 改用command型戰法既有的每回合rate擲骰機制近似(已由頂層rate=0.35代表機率), 效果本身用silence(禁主動戰法1回合)近似「令其發動失敗」的效果(方向正確: 都是讓對方無法用主動戰法, 但語意上「發動失敗」是單次瞬間, silence是接下來1回合皆禁, 略高估持續性)"
+    "_note": "原文「敵軍發動主動戰法時25%→35%機率令其發動失敗」為反應式觸發(敵方嘗試發動主動戰法瞬間), 引擎when.on目前支援attacked/damaged(受擊)/dealtDamage(批27, 自己造成傷害)/activeFired(批31, 自身成功發動主動/突擊戰法)四種事件, 皆是「以自己為中心」的視角(自己受擊/自己造成傷害/自己發動戰法), 沒有「監聽敵方(另一單位)嘗試發動主動戰法」這種跨單位廣播事件掛鉤(與經天緯地「我軍全體發動主動戰法時」、十二奇策「我軍全體下次發動主動戰法後」同屬一類「監聽別人的戰法發動事件」缺口, 只是監聽對象是敵方而非友方); 改用command型戰法既有的每回合rate擲骰機制近似(已由頂層rate=0.35代表機率), 效果本身用silence(禁主動戰法1回合)近似「令其發動失敗」的效果(方向正確: 都是讓對方無法用主動戰法, 但語意上「發動失敗」是單次瞬間, silence是接下來1回合皆禁, 略高估持續性)"
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "_note": "批12 ModeD: 原coef=1缺失主將128%謀略傷害數值, 修正coef=1.28+kind=intel(取主將分支滿級值); 新增silence效果近似「發動失敗」控制clause(見效果_note詳述引擎限制)。批23 stale同步修正: 上述_note/_todo早已聲稱coef=1.28, 但correction從未真正在set裡寫入, parsed.coef實際停留在1.0(與文字描述矛盾, 且方向相反地低估而非高估), 現補set.coef=1.28落地。",
+  "_note": "批12 ModeD: 原coef=1缺失主將128%謀略傷害數值, 修正coef=1.28+kind=intel(取主將分支滿級值); 新增silence效果近似「發動失敗」控制clause(見效果_note詳述引擎限制)。批23 stale同步修正: 上述_note/_todo早已聲稱coef=1.28, 但correction從未真正在set裡寫入, parsed.coef實際停留在1.0(與文字描述矛盾, 且方向相反地低估而非高估), 現補set.coef=1.28落地。批31 A核對: 本戰法「敵軍發動主動戰法時」是監聽敵方視角, 與本批新增的when.on:\"activeFired\"(僅監聽自身視角)不同族, 不遷移, 見效果_note更新後的準確描述。",
   "_todo": "coef=1.28取「自身為主將時」的分支數值(基礎傷害率128%), 但原文明確此為條件分支(僅主將時適用), 非主將時應為基礎值100%(即該分支對應數值1.0, 而非目前set的1.28)——條件判斷未建模, 統一按主將版取值(高估非主將持有者的傷害輸出, 批23已修正stale set落地, 此高估方向現在才真正生效)。「並基於雙方智力差額外提高」的智力差加成機制亦完全未建模。"
  },
  {
@@ -5631,8 +5643,8 @@
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "_todo": "原文為「我軍全體發動主動/突擊戰法時,自身35%->70%機率(受智力影響)對敵單體謀略攻擊(50%->100%)」,為受「友軍發動戰法」觸發的反應式效果,engine when.on僅支援attacked/damaged(受擊觸發),無「友軍發動戰法時」的觸發點;現用command每回合固定rate(0.7,取智力影響上限)擲骰coef1.0(取傷害率上限100%)近似為「每回合一次」而非「每次友軍發動戰法」(次數上大幅低估,尤其多主動戰法隊伍);另「攻心」(謀略傷害轉自身回兵,5%->20%可疊加3次)完全未表達(無傷害轉治療的攻心原語)",
-  "_note": "(bucket6原標記tactic-level _est: 部分數值為估計,詳見_diff/effects內個別_est/_note)"
+  "_todo": "原文為「我軍全體發動主動/突擊戰法時,自身35%->70%機率(受智力影響)對敵單體謀略攻擊(50%->100%)」,為受「友軍發動戰法」觸發的反應式效果。批31 A評估: engine when.on目前支援attacked/damaged(受擊觸發)/dealtDamage(批27, 自己造成傷害觸發)/activeFired(批31, 自身成功發動主動/突擊戰法觸發)四種事件, 皆是「以自己為中心」的視角(自己受擊/自己造成傷害/自己發動戰法), 仍無「監聽隊友(除自己以外的其他單位)發動戰法」這種跨單位廣播事件掛鉤(與神機妙算「敵軍發動主動戰法時」、十二奇策「我軍全體下次發動主動戰法後」同屬一類「監聽別人的戰法發動事件」缺口, 只是監聽對象是友方而非敵方); 現用command每回合固定rate(0.7,取智力影響上限)擲骰coef1.0(取傷害率上限100%)近似為「每回合一次」而非「每次友軍發動戰法」(次數上大幅低估,尤其多主動戰法隊伍);另「攻心」(謀略傷害轉自身回兵,5%->20%可疊加3次)完全未表達(無傷害轉治療的攻心原語)",
+  "_note": "(bucket6原標記tactic-level _est: 部分數值為估計,詳見_diff/effects內個別_est/_note)。批31 A核對: 「友軍發動戰法時」與本批新增的when.on:\"activeFired\"(僅監聽自身視角)不同族, 不遷移, 已更新_todo措辭避免誤稱engine.when.on能力範圍過時。"
  },
  {
   "nameZh": "經術政要",
@@ -5968,15 +5980,19 @@
     "dur": 1
    },
    {
-    "k": "insight",
+    "k": "immune",
     "who": "self",
+    "types": [
+     "disarm"
+    ],
     "dur": 1,
-    "_approx": "原文僅免疫繳械單一控制，insight為免疫全部控制的近似(略高估)"
+    "_note": "批31 B: 原文「免疫繳械效果」僅單一控制類型(繳械), 過去用insight(全免5種控制)近似, 略高估(連帶免疫震懾/計窮/混亂/遇襲, 原文只提到繳械)。改用immune(批16新增, 單項控制免疫原語, k:\"immune\"+types欄位)精確表達types:[\"disarm\"], 取代insight全免近似。"
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
-  "src": "EVENT"
+  "src": "EVENT",
+  "_note": "批31 B: insight(全免5種控制)→immune(僅繳械單項)精確化, 見效果_note。"
  },
  {
   "nameZh": "至柔動剛",
@@ -7494,7 +7510,7 @@
   "quality": "S",
   "cat": "PASSIVE",
   "src": "INNATE",
-  "_todo": "「自身成功發動突擊戰法後，對目標發動1次兵刃攻擊（傷害率95%）」本體傷害段仍待用coef/extraHits精確建模(本批專注stack.stackPer新原語落地, 未動此戰法的傷害段主體結構, 沿用既有近似); 「自身為主將時，普通攻擊有68%機率鎖定敵軍主將」的目標鎖定機制未建模(engine_limitations.md 13節「普通攻擊不讀targetSel/lockTarget」已知限制的同類案例, 且此處還疊加ifLeader條件, 現有lockTarget/targetSel皆只作用於戰法本身的coef/effects段, 不影響普通攻擊本身的目標選擇邏輯)。"
+  "_todo": "批31 A評估後維持現況, 未動 coef/rate/type(見_note2說明阻塞原因): 「自身成功發動突擊戰法後，對目標發動1次兵刃攻擊（傷害率95%）」本體傷害段原本規劃直接把type改為\"charge\"讓coef走charge原生擲骰通道(取代目前type:\"passive\"+coef+rate:1的每回合無條件套用近似), 但排查後發現這會產生新的迴歸: apply_passives()準備階段的prep套用迴圈只對 t[\"type\"] in (\"passive\",\"command\") 套用該戰法的 effects(見sgz.py/engine.js applyPassives 的 cat_of 迴圈), type:\"charge\"戰法的effects只在fight()主迴圈charge擲骰命中fire===true那一刻才套用——本戰法的chargeup(自身突擊發動率+15%常駐)與stack(每次發動+3%突擊率, stackPer:cast)兩個效果依原文語意都應該是「戰鬥開始就持續生效的常駐自我buff」, 若改type:\"charge\"會導致這兩個效果從「開戰即生效」退化成「必須先成功發動過一次charge才會套用」(而且套用時機也不對, chargeup應該在觸發前就已經生效才能實際影響rate擲骰, 不能等fire之後才補套用), 屬於比現有近似更嚴重的退化。維持type:\"passive\"+coef+rate:1不變(仍是「每回合無條件95%傷害」的近似, 高估「須自身成功發動突擊戰法」這個條件, 但至少chargeup/stack兩個常駐buff正確生效)。真正的修法需要類似裝備proc的「一份JSON戰法在Unit建構時展開成主體(passive, 常駐buff) + 附掛的偽charge子戰法(傷害段, 走charge擲骰通道)」雙態機制, 目前無此通用原語(僅裝備proc有一次性硬編碼實作, 非戰法JSON層可調用), 誠實維持現況揭露, 供未來批次評估是否要新增此雙態原語。「自身為主將時，普通攻擊有68%機率鎖定敵軍主將」的目標鎖定機制未建模(engine_limitations.md 13節「普通攻擊不讀targetSel/lockTarget」已知限制的同類案例, 且此處還疊加ifLeader條件, 現有lockTarget/targetSel皆只作用於戰法本身的coef/effects段, 不影響普通攻擊本身的目標選擇邏輯)。"
  },
  {
   "nameZh": "雁行陣",
@@ -8209,7 +8225,7 @@
     "who": "ally",
     "val": 0.8,
     "dur": 1,
-    "_note": "前4回合自身發動主動戰法時100%使我軍全體獲得1次1回合80%攻心; 與when:{from:5}窗口互斥(engine效果隨窗口第5回合才一次性套用), 量值小保留近似; 精確表達需事件觸發原語"
+    "_note": "批31 A評估: 前4回合自身發動主動戰法時100%使我軍全體獲得1次1回合80%攻心——本批新增 when.on:\"activeFired\"(見engine_limitations.md新增節)原則上正是為此類語意設計, 但無法在本戰法套用: activeFired的效果級掛鉤(active_fired_effect_tacs)沿用批27 dealtDamage同款設計, 要求母戰法無t.when(engine_limitations.md 6.4「e.when的母戰法無t.when限制」)才會被預篩收錄——本戰法頂層已有when:{from:5}(供coef主傷段使用), 若lifesteal效果改掛e.when.on:\"activeFired\"+until:4, 因母戰法t.when為真, 整個戰法在fight()回合迴圈的effect級activeFired掃描路徑會被排除在外(不會被收錄進active_fired_effect_tacs), 效果完全不會觸發, 比現況(維持既有近似)更糟。此為與heal機制不同的結構性差異: heal透過獨立的heal_only通道特批繞過此限制(engine_limitations.md 6.4末段說明), lifesteal無對應特批通道。維持既有EV式簡化近似(與when:{from:5}窗口互斥, 效果隨窗口第5回合才一次性套用, 而非原文「前4回合」的獨立時窗)不變, 量值小(0.8×1次性)暫不強行修復, 若未來要解需先擴充「母戰法可有t.when、效果級when.on仍獨立生效」的通用能力(超出本批範圍)。"
    },
    {
     "k": "amp",
@@ -8961,9 +8977,8 @@
     "coef": 0.92,
     "kind": "intel",
     "who": "sameTarget",
-    "rate": 0.34,
-    "_approx": "prob-ev",
-    "_note": "原文:若目標(普攻對象)為敵軍主將,額外謀略傷害92%(受智力影響);主段目標隨機非必為主將,以1/3(隊伍3人之一為主將)近似機率折算rate,sameTarget沿用主段目標"
+    "ifSameTargetIsLeader": true,
+    "_note": "批31 B: 原文「若目標(普攻對象)為敵軍主將,額外謀略傷害92%(受智力影響)」為條件分支(目標是否恰為敵軍主將), 過去因無法直接判斷「主coef段隨機選定的sameTarget是否為主將」, 用1/3(隊伍3人之一為主將)EV折算近似觸發率(rate:0.34)。改用ifSameTargetIsLeader(批31新增, extraHits段條件過濾欄位, 見sgz.py fire_extra_hits()/engine.js fireExtraHits()對dests的事後過濾: 只保留dests中恰好是foes[0]的目標)精確表達, 移除rate折算欄位——本段不再是機率性的, 而是「每次主coef段選定的目標若恰好是主將, 必定觸發此額外段」的確定性條件分支(sameTarget邏輯不變, 仍沿用主coef段已選定的目標, 只是新增了「是否恰為主將」的過濾)。"
    }
   ]
  },

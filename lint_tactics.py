@@ -528,7 +528,7 @@ KNOWN_EFFECT_FIELDS = {
     "everyRound",  # 批30 A: 非heal效果的逐回合重擲通道旗標, 跨所有k種類通用(見 apply_effects 的 e.everyRound 通用閘門判斷)
 }
 PER_KIND_FIELDS = {
-    "amp": {"val", "dmgType", "normalOnly"}, "mitig": {"val", "dmgType", "normalOnly"}, "stun": set(), "silence": set(), "disarm": set(),  # dmgType: 批24 D2, 兵刃/謀略傷害類型過濾; normalOnly: 批28 B3, 僅普攻傷害生效/受影響
+    "amp": {"val", "dmgType", "normalOnly", "activeOnly"}, "mitig": {"val", "dmgType", "normalOnly"}, "stun": set(), "silence": set(), "disarm": set(),  # dmgType: 批24 D2, 兵刃/謀略傷害類型過濾; normalOnly: 批28 B3, 僅普攻傷害生效/受影響; activeOnly: 批31 A, 僅主動/突擊戰法傷害生效(amp限定)
     "chaos": set(), "ambush": set(), "insight": set(), "immune": {"types"}, "first": set(),
     "stat": {"stat", "add", "mult"},
     "dot": {"coef", "kind"},  # 批23 A3: e.kind(dot段自帶傷害類型, 優先於t.kind, 見damage()呼叫端)
@@ -1381,6 +1381,24 @@ ENGINE_CAPABILITY_ALIASES = {
                 "落地前的舊近似說明, 落地後應改寫並補上 e.everyRound:true)",
     "逐回合重擲": "everyRound(同上)",
     "逐回合重新判定": "everyRound(同上)",
+    # 批31: activeFired 只覆蓋「自身」成功發動主動/突擊戰法這個方向的事件廣播(見
+    # active_fired_tacs/active_fired_effect_tacs + active_fired()/activeFired())。刻意不用
+    # 「發動主動戰法」這種方向中性的片語當別名鍵——舌戰群儒/神機妙算「敵軍發動主動戰法時」、
+    # 經天緯地「友軍發動戰法時」是相反方向(監聽別人發動, 而非自己發動)的廣播事件, 仍是
+    # 未解決的缺口(需要「跨單位事件監聽」機制, 比 activeFired 的「自己監聽自己」複雜),
+    # 若用方向中性片語當別名鍵, 會把這些貨真價實的缺口誤判成 stale 揭露。只用「自身/自帶/
+    # 成功發動」這類天然帶第一人稱語意、且全庫核對後確認皆為自身方向的片語。
+    "自帶主動戰法": "activeFired(批31新增, when.on==\"activeFired\", 見 sgz.py/engine.js 的"
+                "active_fired_tacs/active_fired_effect_tacs + active_fired()/activeFired() 掛在"
+                "fight() 主迴圈 active/charge 型戰法 fire===true 判定通過後對施放者自身掃描)",
+    "成功發動": "activeFired(同上; 「成功發動自帶主動戰法前/後」「自身成功發動突擊戰法後」這類"
+                "第一人稱措辭若指的是自身主動/突擊戰法發動事件, 是 activeFired 的落地範圍;"
+                "「敵軍/友軍發動戰法時」是相反方向的跨單位廣播, 不算 stale, 仍是未解決缺口)",
+    "僅主動戰法傷害": "activeOnly(批31新增, amp 效果欄位, 對稱於既有 normalOnly, 見 sgz.py/"
+                "engine.js 的 is_active/isActive 參數穿透 hit()→damage()→amp()/addbonus())",
+    "目標為敵軍主將": "ifSameTargetIsLeader(批31新增, extraHits 段條件過濾欄位, 見 sgz.py"
+                "fire_extra_hits()/engine.js fireExtraHits() 對 dests 的事後過濾: 只保留"
+                "dests 中恰好是 foes[0] 的目標, 取代舊有 1/3 機率 EV 折算近似)",
 }
 
 # =============================================================================
@@ -1414,8 +1432,11 @@ CAPABILITY_INVENTORY_IGNORE = {
     "init", "base", "prepOnly", "nativeOnly", "inheritedOnly", "leaderBonus", "proc",
     "name", "type", "_eqNm",
     # when.on 基礎字面值: attack(自身普攻次數計數, everyN機制)/attacked(受擊反應式,
-    # 批8即存在的既有機制, R17已管轄「反應式治療缺失」不需要R20額外重複警示)
-    "attack", "attacked",
+    # 批8即存在的既有機制, R17已管轄「反應式治療缺失」不需要R20額外重複警示)/damaged
+    # (受任意傷害反應式, 與attacked同批既有機制, 批31 A修復onHitTacs/onHitEffectTacs預篩
+    # 從truthy檢查收斂為明確白名單後, "damaged"字面值首次出現在原始碼裡被R20掃描器盤點到,
+    # 非新原語, 補進忽略清單避免誤報)
+    "attack", "attacked", "damaged",
 }
 
 
