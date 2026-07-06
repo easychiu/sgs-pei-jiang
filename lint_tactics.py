@@ -526,6 +526,10 @@ KNOWN_EFFECT_FIELDS = {
     "undispellable", "_est", "_todo", "_note", "_note2", "_approx", "_src",
     "n", "nMax", "rate", "ifLeader",  # ifLeader: 批26 B1, 施放者須為隊伍主將(index 0)才套用該效果段
     "everyRound",  # 批30 A: 非heal效果的逐回合重擲通道旗標, 跨所有k種類通用(見 apply_effects 的 e.everyRound 通用閘門判斷)
+    "scaleDiv", "capVal",  # 批35: 曲線族原語泛化 —— 與 scale 同層級的跨k通用欄位(任何帶 scale
+    # 的效果都可選配), scaleDiv覆蓋SCALE縮放除數(預設350), capVal為縮放後值上限clamp,
+    # 見 engine.js/sgz.py 的 SCALE_G/scale_of/cap_val_of + lockedScaleOf/locked_scale_of。
+    # 現階段全庫只有機鑑先識(block)實際使用, 但欄位本身語意不限定k=="block"。
 }
 PER_KIND_FIELDS = {
     "amp": {"val", "dmgType", "normalOnly", "activeOnly"}, "mitig": {"val", "dmgType", "normalOnly"}, "stun": set(), "silence": set(), "disarm": set(),  # dmgType: 批24 D2, 兵刃/謀略傷害類型過濾; normalOnly: 批28 B3, 僅普攻傷害生效/受影響; activeOnly: 批31 A, 僅主動/突擊戰法傷害生效(amp限定)
@@ -1408,6 +1412,19 @@ ENGINE_CAPABILITY_ALIASES = {
                 "傷害金額比例的措辭上, 見草船借箭)",
     "恢復傷害量": "ofDamage(同上)",
     "傷害量的": "ofDamage(同上; 「傷害量的X%兵力」句型, 如錦帆軍)",
+    # 批35: 曲線族原語泛化 —— scaleDiv(效果級可選欄位, 覆蓋 SCALE 縮放除數, 預設350) +
+    # capVal(效果級可選欄位, 縮放後值上限 clamp)。錨點: docs/data/calibration_anchors.json →
+    # status_scale_375_20260704(user 機鑑先識警戒六點實測), 見 engine.js/sgz.py 的
+    # SCALE_G/scale_of(scale_div參數)/cap_val_of。
+    "曲線族": "scaleDiv/capVal(批35新增, 效果級可選欄位, scaleDiv覆蓋SCALE縮放除數(預設350,"
+                "狀態效果類走375, 見calibration_anchors status_scale_375_20260704), capVal為縮放後"
+                "值上限clamp, 見 engine.js/sgz.py 的 SCALE_G/scale_of/cap_val_of)",
+    "375": "scaleDiv(同上; 「除數375」「375曲線」等措辭指此欄位)",
+    "值上限": "capVal(批35新增, 效果級可選欄位, 縮放後clamp, 見 cap_val_of/capValOf; "
+                "「狀態效果上限=基礎值×2」慣例不自動套用, 逐效果顯式標)",
+    "準備階段鎖定": "lockedScaleOf/locked_scale_of(批35新增, 見 engine.js/sgz.py 對 block 效果"
+                "scale 縮放值的準備階段鎖定快取, caster.scaleLock/scale_lock, 效果物件本身當鍵;"
+                "「開戰後智力變動會重新計算」這類措辭若指 block 是 stale 的, 落地後應改寫)",
 }
 
 # =============================================================================

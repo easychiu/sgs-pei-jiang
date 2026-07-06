@@ -34,6 +34,12 @@ APT_PCT = {"S": 1.20, "A": 1.00, "B": 0.85, "C": 0.70, "D": 0.55, None: 0.85}
 APT_RANK = {"S": 4, "A": 3, "B": 2, "C": 1, "D": 0, None: -1}
 SCALE_CLAMP = 1.5                                    # amp/mitig 縮放後上限保護: |val| <= 1.5
 
+# 批35 D: block(抵禦/警戒) 消耗門檻 —— grok查證機鑑先識原文「受到的傷害超過自身可攜帶最大
+# 兵力的6%時(最低100兵力)」才消耗1次警戒。max(START_TROOP×6%, 100) —— 本引擎START_TROOP
+# 恆為10000(單一兵力池常數), 6%=600本身已遠大於100下限, 下限條款只在極端自訂規模才會生效,
+# 此處仍照原文寫出以求精確。
+BLOCK_CONSUME_THRESHOLD = max(START_TROOP * 0.06, 100)
+
 # 批18: 傷兵池(治療上限) —— user 遊戲實測: 受到的傷害按「當時回合數」轉化為「可救援(計入
 # 傷兵池, 治療只能回這部分)」vs「不可救援(直接陣亡, 治療無法挽回)」, 轉化率隨回合遞減
 # (見 docs/data/calibration_anchors.json -> wounded_pool)。1~3回合90%、4~6回合80%、
@@ -70,18 +76,52 @@ def wounded_rate(r):
 HEAL_TROOP_C = 0.06
 
 
+def SCALE_G(v, div=350):
+    """批35: 曲線族原語泛化。除數預設350(向後相容, 傷害/治療/多數增減益類走這條), 但
+    docs/data/calibration_anchors.json → status_scale_375_20260704(user 機鑑先識警戒六點實測,
+    荀彧智力478.84~389.72, 六點小數點後兩位精確吻合)證實「狀態效果」(block/部分%值狀態類)
+    這一族走除數375的獨立曲線(375點翻倍, 而非350)。呼叫端傳 div 覆蓋預設(逐效果 e.scaleDiv
+    透傳), 不擅自把全域 SCALE 從350改成375。"""
+    return max(0.0, 1 + (v - 100) / (div or 350))
+
+
 def SCALE(v):
     """「受X影響」屬性縮放旋鈕。輸入為戰鬥內即時素質 caster.eff(stat)(已含城建/陣營/適性/
     加點/賽季/戰鬥中buff, 典型值 250~400, 而非卡面裸值)。公式取社群拆解(巴哈姆特高等陣容
     戰法論/NGA數據貼): 屬性100=面板基準值(SCALE=1.0), 每+350點效果翻倍(v=450時SCALE=2.0)。
     仍是可調校準旋鈕, 之後有更多實測數據可再調整斜率/錨點。"""
-    return max(0.0, 1 + (v - 100) / 350)
+    return SCALE_G(v, 350)
 
 
-def scale_of(caster, scale):
+def scale_of(caster, scale, scale_div=None):
+    """批35: scale_div(可選) —— 效果級 e["scaleDiv"] 透傳, 預設350(SCALE 向後相容)。"""
     if not scale:
         return 1.0
-    return SCALE(caster.charm) if scale == "charm" else SCALE(caster.eff(scale))
+    return SCALE_G(caster.charm, scale_div) if scale == "charm" else SCALE_G(caster.eff(scale), scale_div)
+
+
+def cap_val_of(v, cap_val):
+    """批35: 效果級可選欄位 e["capVal"](值上限), 縮放後 clamp。慣例「狀態效果上限=基礎值×2」
+    (錨點: 機鑑先識 40%→80% cap)不自動套用, 逐效果顯式標 e["capVal"]。未標則不 clamp。"""
+    return min(v, cap_val) if cap_val is not None else v
+
+
+def locked_scale_of(caster, e):
+    """批35 B: 「受X影響」狀態值類效果(block 為主, 現行機鑑先識警戒) 的「準備階段鎖定」語意
+    —— 效果的 scale 縮放值在 prep 階段(第一次掃描到該效果, 不論它本身是否於 prep 就實際套用)
+    算定並鎖住, 之後(如 everyRound 補層段延後到第2/3回合才擲骰命中)一律沿用鎖定值, 不因戰鬥中
+    智力浮動重新計算。與 heal_base 準備階段鎖定兵力快照同一慣例(第二次獨立確認)。用「效果物件
+    本身」當快取鍵(caster.scale_lock: dict[id(e), value], 惰性建立)。只用於帶 scale 的 block,
+    不擴大到其餘 k(目前無對應實測樣本佐證其餘k同樣適用, 見 engine.js 對應註解)。"""
+    scale = e.get("scale")
+    if not scale:
+        return 1.0
+    if caster.scale_lock is None:
+        caster.scale_lock = {}
+    key = id(e)
+    if key not in caster.scale_lock:
+        caster.scale_lock[key] = scale_of(caster, scale, e.get("scaleDiv"))
+    return caster.scale_lock[key]
 
 
 # 批7: 發動率類「受X影響」縮放 —— 獨立常數, 與上面 SCALE(每+350翻倍) 不是同一條曲線。
@@ -454,6 +494,7 @@ class Unit:
         self.surehit_dur = 0                           # 必中: 無視對方 dodge, 剩餘回合
         self.healblock = 0                             # 批8: 禁療(healblock) 剩餘回合, >0 時 heal 效果對其無效
         self.when_fired = set()                        # 條件觸發(when.rounds/from/until) 已套用效果的戰法(一次性, 用 id() 去重); 批8: delayed_eq(裝備效果級when)共用同一個 set(效果物件本身 id() 去重, 不與戰法物件撞)
+        self.scale_lock = None                          # 批35 B: 「準備階段鎖定」的 scale 縮放值快取, dict[id(效果物件) -> scale_of結果], 惰性建立(見 locked_scale_of)
         self.heal_rounds_fired = {}                     # 批15: heal 效果 e["when"]["rounds"](明確列出的特定回合)的「每回合各觸發一次」去重, dict[id(效果物件) -> set(已觸發回合數)], 見 apply_effects 的 heal 分支
         self.hit_flags = set()                         # 反應式觸發(when.on) 本回合已觸發的戰法, 每回合重置(防無限鏈)
         # 批31 A 修復: 過去 on_hit_tacs 只檢查 t.when.on 是否為真(truthy), 沒有限定具體事件值,
@@ -787,7 +828,10 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_a
     # 批22: block(次數型格擋, 抵禦/警戒同族) —— 判定順序 dodge→block→shield→傷害(見紅線指示)。
     # 每次受擊消耗1次(不論本次傷害量多寡), val=1.0(如「抵禦」)完全格擋歸零本次傷害,
     # val=0.x(如「警戒」-75.35%)按比例打折。用光即從陣列移除。
-    if dst.block:
+    # 批35 D: BLOCK_CONSUME_THRESHOLD —— grok查證機鑑先識原文「受到的傷害超過自身可攜帶
+    # 最大兵力的6%時(最低100兵力)」才消耗1次警戒並減傷。未達門檻的傷害不消耗、不減傷,
+    # 照常全額打進去(見 engine.js 同段註解/engine_limitations.md 第30節)。
+    if dst.block and dmg > BLOCK_CONSUME_THRESHOLD:
         block_val = dst.consume_block()
         dmg *= max(0.0, 1 - block_val)
     if dst.shield and dst.shield["amt"] > 0:          # 護盾: 先於兵力扣減吸收傷害
@@ -1067,6 +1111,16 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
     src = t.get("nameZh")                              # 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → None, 不去重)
     for e in t["effects"]:
         k = e["k"]
+        # 批35 B: block 的「準備階段鎖定」scale 值優先算定, 放在所有 continue 閘門(heal_only/
+        # skip_when_effects/when.on/rate/ifLeader/everyRound...)之前 —— 必須確保 prep 呼叫
+        # (fight() 開場的 apply_passives(no_heal=True, skip_when_effects=True))第一次掃描到
+        # 帶 e["when"](如機鑑先識 everyRound 段的 when:{until:3})的 block 效果時就把鎖算好,
+        # 否則若鎖定邏輯放在 skip_when_effects/everyRound 等後面的閘門之後, 帶 e["when"] 的
+        # everyRound block 效果會在 prep 呼叫被 skip_when_effects 閘門提前 continue 掉,
+        # 導致 locked_scale_of 從未在 prep 階段被呼叫過、鎖定值錯誤地延後到未來真正命中的
+        # 那一回合才用當時(可能已變動)的即時智力算定, 違反「準備階段鎖定」語意本身。
+        if k == "block" and e.get("scale"):
+            locked_scale_of(caster, e)
         if heal_only and k != "heal" and not e.get("everyRound"):  # 指揮/被動逐回合只跑治療 + 批30 A: everyRound 效果亦放行
             continue
         # 批18: e.when 泛化(非 heal 種類) —— heal 早已支援效果級 when(見下方 k=="heal" 分支的
@@ -1121,6 +1175,8 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # 因為它只該由 heal_only 常駐通道結算 —— 對稱於 heal 在其他路徑各自決定是否觸發、
         # 不依賴這裡的慣例。
         if e.get("everyRound") and k != "heal":
+            # 批35 B: block 的「準備階段鎖定」scale 值已在函式最頂端(所有 continue 閘門之前)
+            # 算定, 此處不需重複呼叫 locked_scale_of(見上方新增的閘門與其註解)。
             if not heal_only:
                 continue
             hw = e.get("when") or t.get("when")
@@ -1464,7 +1520,11 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             elif k == "block":                         # 批22: block(次數型格擋, 抵禦/警戒同族) —— times:N(剩餘次數), val:1.0全擋/0.x部分減傷
                 # val 的 scale 縮放用 0~1 專屬 clamp(非 sv_val 的 ±SCALE_CLAMP, 因 block val 是
                 # 「減傷比例」語意, 不應為負值或超過1.0全擋)。
-                b_val = max(0.0, min(1.0, e.get("val", 1.0) * scale_of(caster, e["scale"]))) if e.get("scale") else e.get("val", 1.0)
+                # 批35 B: 改用 locked_scale_of(準備階段鎖定, 見該函式註解) 取代直接呼叫
+                # scale_of —— 同一效果物件不論在 prep 或稍後 everyRound 補層才實際套用, 縮放
+                # 倍率都固定用第一次掃描到該效果時(prep 階段)算出的值。
+                # 批35 A: cap_val_of 套用 e["capVal"](值上限), 在既有 0~1 clamp 之前先夾一次。
+                b_val = max(0.0, min(1.0, cap_val_of(e.get("val", 1.0) * locked_scale_of(caster, e), e.get("capVal")))) if e.get("scale") else e.get("val", 1.0)
                 u.push_block(b_val, e.get("times", 1), src)
             elif k == "surehit":                       # 必中: 無視對方 dodge
                 u.surehit_dur = max(u.surehit_dur, e.get("dur", 1) + 1)
@@ -3926,6 +3986,100 @@ def demo():
     assert abs(gained89d - expected89d) < 1.0, \
         f"active型heal應採用caster.troop(當下即時), 非heal_base, 預期{expected89d:.1f}實得{gained89d:.1f}"
     assert gained89d < 50000, "active型heal若誤用刻意調大的heal_base會產生離譜高治療量, 此處應遠低於該值"
+
+    # --- 批35: 狀態屬性曲線375族 + 準備階段鎖定 + block消耗門檻 ---
+    # 90) SCALE_G(v, 375) 六點precise assert —— docs/data/calibration_anchors.json →
+    # status_scale_375_20260704(user 機鑑先識警戒六點實測, 荀彧準備階段智力478.84~389.72):
+    # 警戒減傷 = 40% × (1+(智力-100)/375), cap 80%(=基礎×2)。六點全部小數點後兩位精確吻合。
+    anchors90 = [
+        (486.69, 0.80), (478.84, 0.80), (439.38, 0.7620),
+        (432.18, 0.7543), (417.46, 0.7386), (394.88, 0.7145), (389.72, 0.7090),
+    ]
+    for intel90, expect90 in anchors90:
+        got90 = min(0.4 * SCALE_G(intel90, 375), 0.8)
+        assert abs(got90 - expect90) < 0.0001, \
+            f"機鑑先識警戒錨點 智力{intel90}: 預期{expect90:.4f}, 算得{got90:.4f}"
+    # 對照: 用全域350除數算同一批智力值不應精確吻合(佐證375是獨立曲線, 非350的誤差範圍內)
+    assert abs(min(0.4 * SCALE(439.38), 0.8) - 0.7620) > 0.001, "350曲線不應與375曲線在此錨點精確重合(否則兩曲線無法區分)"
+
+    # 91) locked_scale_of: 「準備階段鎖定」語意 —— 效果物件首次被算定(prep階段)的 scale 值,
+    # 之後即使 caster 智力改變也應沿用鎖定值, 不重新計算(對應機鑑先識 everyRound 補層段
+    # 在第2/3回合才真正命中套用, 但縮放倍率仍固定用開戰當下的智力)。
+    lk91_caster = Unit(POOL["張飛"], "盾")
+    lk91_caster.intel = 439.38
+    lk91_e = {"k": "block", "scale": "intel", "scaleDiv": 375, "val": 0.4, "capVal": 0.8}
+    v91_first = locked_scale_of(lk91_caster, lk91_e)
+    assert abs(v91_first - SCALE_G(439.38, 375)) < 1e-9, "首次呼叫應等於當下即時 scale_of"
+    lk91_caster.intel = 900.0                      # 模擬戰鬥中智力大幅變動(如中途獲得buff)
+    v91_second = locked_scale_of(lk91_caster, lk91_e)
+    assert v91_second == v91_first, f"鎖定後應沿用首次算定值, 不隨caster.intel變動重算: 首次{v91_first:.4f} 之後{v91_second:.4f}"
+    # 不同效果物件(即使同caster)各自獨立上鎖, 不互相污染
+    lk91_e2 = {"k": "block", "scale": "intel", "scaleDiv": 375, "val": 0.4, "capVal": 0.8}
+    v91_e2 = locked_scale_of(lk91_caster, lk91_e2)
+    assert abs(v91_e2 - SCALE_G(900.0, 375)) < 1e-9, "不同效果物件應各自獨立鎖定(用當時intel=900算), 不共用lk91_e的鎖"
+
+    # 92) cap_val_of clamp —— 縮放後上限保護, e["capVal"] 未達上限時不影響原值
+    assert abs(cap_val_of(0.762, 0.8) - 0.762) < 1e-9, "未超過capVal時應維持原值"
+    assert abs(cap_val_of(0.95, 0.8) - 0.8) < 1e-9, "超過capVal時應clamp到capVal"
+    assert cap_val_of(0.5, None) == 0.5, "capVal未設(None)時應原樣通過, 不clamp"
+
+    # 93) block(k=="block") 的 apply_effects 路徑實際套用: val×scale_of(375曲線)+capVal clamp
+    # 端到端驗證(取代直接算術, 走真實 apply_effects→push_block 路徑)
+    bk93_caster = Unit(POOL["張飛"], "盾")
+    bk93_caster.intel = 439.38
+    bk93_dst = Unit(POOL["張飛"], "盾")
+    bk93_tac = {"nameZh": "測試機鑑先識93", "effects": [
+        {"k": "block", "who": "ally", "val": 0.4, "times": 2, "scale": "intel", "scaleDiv": 375, "capVal": 0.8}]}
+    apply_effects(bk93_caster, None, bk93_tac, [bk93_dst], [], no_heal=True)
+    assert len(bk93_dst.block) == 1 and abs(bk93_dst.block[0]["val"] - 0.7620) < 0.0001, \
+        f"端到端: 智力439.38應套用警戒減傷76.20%, 實得{bk93_dst.block[0]['val']*100:.2f}%"
+
+    # 94) BLOCK_CONSUME_THRESHOLD —— 傷害未超過 START_TROOP×6%(=600) 時不應消耗警戒層/不減傷;
+    # 超過門檻時正常消耗+減傷。用直接構造低/高傷害兩種情境比較(非倚賴 damage() 隨機量級)。
+    bk94_lo = Unit(POOL["張飛"], "盾")
+    bk94_lo.push_block(0.4, 2, src="測試門檻94低")
+    # 直接檢查常數本身(hit() 內部條件為 dmg > BLOCK_CONSUME_THRESHOLD 才消耗)
+    assert BLOCK_CONSUME_THRESHOLD == max(START_TROOP * 0.06, 100) == 600.0, \
+        f"BLOCK_CONSUME_THRESHOLD應為max(10000×6%,100)=600, 實得{BLOCK_CONSUME_THRESHOLD}"
+    # 低傷害(<=門檻)不應消耗: 用極低coef讓damage()大機率落在門檻以下, 多次嘗試取一個確定案例
+    random.seed(7)
+    bk94_hit_src = Unit(POOL["張飛"], "盾")
+    bk94_lo_dmg = damage(bk94_hit_src, bk94_lo, 0.05, "phys")   # 極低coef, 預期遠低於600
+    assert bk94_lo_dmg <= BLOCK_CONSUME_THRESHOLD, f"測試前提: 本次構造傷害應低於門檻600, 實際{bk94_lo_dmg:.1f}(若失敗需調整coef/種子)"
+    before94lo = bk94_lo.troop
+    hit(bk94_hit_src, bk94_lo, 0.05, "phys")  # 注意: hit()內部會重新算一次damage(), 種子已消耗一次, 這裡只驗證block層數是否被消耗
+    assert len(bk94_lo.block) == 1 and bk94_lo.block[0]["n"] == 2, "低於門檻的傷害不應消耗警戒層(次數應維持2不變)"
+    # 高傷害(>門檻)應正常消耗: 用高coef確保dmg>600
+    bk94_hi = Unit(POOL["張飛"], "盾")
+    bk94_hi.push_block(0.4, 2, src="測試門檻94高")
+    hit(bk94_hit_src, bk94_hi, 3.0, "phys")   # 高coef, 傷害應遠超600(基準coef=1.0時已476)
+    assert bk94_hi.block and bk94_hi.block[0]["n"] == 1, "超過門檻的傷害應正常消耗1層警戒(2→1)"
+
+    # 95) 迴歸測試: 準備階段鎖定必須在 skip_when_effects 閘門「之前」算定, 否則帶 e["when"]
+    # (如機鑑先識 everyRound 段的 when:{until:3})且母戰法無 t["when"] 的 block 效果, 在
+    # prep 呼叫(skip_when_effects=True)會被該閘門提前 continue 掉、根本沒機會鎖定, 導致
+    # 鎖定值錯誤地延後到未來真正命中(heal_only常駐通道)的那一回合才用當時intel現算——
+    # 這正是本批實作過程中一度真實發生的bug(用直接呼叫locked_scale_of的90/91號測試測不出來,
+    # 因為那是繞過apply_effects閘門直接呼叫, 必須走真實apply_effects(prep語意的呼叫參數
+    # 組合)才能重現)。
+    er95_caster = Unit(POOL["張飛"], "盾")
+    er95_caster.intel = 439.38
+    er95_dst = Unit(POOL["張飛"], "盾")
+    er95_tac = {"nameZh": "測試機鑑先識95", "effects": [
+        {"k": "block", "who": "ally", "val": 0.4, "times": 1, "scale": "intel", "scaleDiv": 375,
+         "capVal": 0.8, "everyRound": True, "rate": 1.0, "when": {"until": 3}}]}
+    # 模擬 fight() 的 prep 呼叫: apply_passives(no_heal=True, skip_when_effects=True) 對應
+    # apply_effects(..., no_heal=True, skip_when_effects=True)(global CUR_ROUND 已在本函式
+    # 較早的測試段宣告過, 此處沿用同一個 global 宣告範圍, 不需重複宣告)
+    CUR_ROUND = 0
+    apply_effects(er95_caster, None, er95_tac, [er95_dst], [], no_heal=True, skip_when_effects=True)
+    assert not er95_dst.block, "prep呼叫時everyRound效果本身不應套用(維持既有行為, 只是鎖定值應已算好)"
+    er95_caster.intel = 900.0                      # 模擬戰鬥中智力大幅變動
+    CUR_ROUND = 1
+    apply_effects(er95_caster, None, er95_tac, [er95_dst], [], heal_only=True)  # 模擬第1回合的 apply_passives(heal_only=True)
+    assert er95_dst.block, "everyRound效果應在heal_only常駐通道套用"
+    assert abs(er95_dst.block[0]["val"] - 0.7620) < 0.0001, \
+        f"迴歸: 即使套用當下(第1回合)intel已變成900, block的scale值仍應沿用prep階段(intel 439.38)鎖定值76.20%, 實得{er95_dst.block[0]['val']*100:.2f}%(若得到用900算出的80.00%即代表鎖定被skip_when_effects閘門繞過的bug重現)"
 
     print("self-check OK")
 

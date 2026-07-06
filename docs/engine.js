@@ -7,13 +7,48 @@
   const ROUNDS = 8, START_TROOP = 10000, MORALE = 100;
   const CITY = 20, FACTION = 1.10;                   // 城建滿(武智統速各+20) + 陣營滿(全屬性+10%), 雙方皆有
   const CAMP = 4;                                     // 兵種營: 戰報「弓兵營全屬性提升了4」→ 全屬性平加(獨立階段, 在陣營乘算之後), 雙方皆有
+  // 批35 D: block(抵禦/警戒) 消耗門檻 —— grok查證機鑑先識原文「受到的傷害超過自身可攜帶
+  // 最大兵力的6%時(最低100兵力)」才消耗1次警戒。max(START_TROOP×6%, 100) —— 本引擎
+  // START_TROOP恆為10000(單一兵力池常數, 無「可攜帶最大兵力」與「當下兵力」之分), 6%=600
+  // 本身已遠大於100下限, 下限條款只在極端自訂規模才會生效, 此處仍照原文寫出以求精確。
+  const BLOCK_CONSUME_THRESHOLD = Math.max(START_TROOP * 0.06, 100);
   // 「受X影響」屬性縮放旋鈕。輸入為戰鬥內即時素質 caster.eff(stat)(已含城建/陣營/適性/
   // 加點/賽季/戰鬥中buff, 典型值 250~400, 而非卡面裸值)。公式取社群拆解(巴哈姆特高等陣容
   // 戰法論/NGA數據貼): 屬性100=面板基準值(SCALE=1.0), 每+350點效果翻倍(v=450時SCALE=2.0)。
   // 仍是可調校準旋鈕, 之後有更多實測數據可再調整斜率/錨點。
-  const SCALE = v => Math.max(0, 1 + (v - 100) / 350);
+  // 批35: SCALE_G(v, div) —— 曲線族原語泛化。除數預設350(向後相容, 傷害/治療/多數增減益類走
+  // 這條), 但 docs/data/calibration_anchors.json → status_scale_375_20260704(user 機鑑先識
+  // 警戒六點實測, 荀彧智力478.84~389.72, 六點小數點後兩位精確吻合)證實「狀態效果」(block/
+  // 部分%值狀態類)這一族走除數375的獨立曲線(375點翻倍, 而非350)。e.scaleDiv(效果級可選欄位)
+  // 覆蓋預設除數, 供逐效果標記走哪條曲線 —— 不擅自把全域 SCALE 從350改成375, 只有明確有實測
+  // 錨點佐證的效果才標 scaleDiv:375(見 tactics_parsed.json「機鑑先識」)。
+  const SCALE_G = (v, div) => Math.max(0, 1 + (v - 100) / (div || 350));
+  const SCALE = v => SCALE_G(v, 350);
   const SCALE_CLAMP = 1.5;                            // amp/mitig 縮放後上限保護: |val| <= 1.5
-  const scaleOf = (caster, scale) => scale === "charm" ? SCALE(caster.charm) : (scale ? SCALE(caster.eff(scale)) : 1);
+  // 批35: scaleOf 第三參數 scaleDiv(可選) —— 效果級 e.scaleDiv 透傳, 預設350(SCALE 向後相容)。
+  const scaleOf = (caster, scale, scaleDiv) => scale === "charm" ? SCALE_G(caster.charm, scaleDiv) : (scale ? SCALE_G(caster.eff(scale), scaleDiv) : 1);
+  // 批35: capValOf(v, capVal) —— 效果級可選欄位 e.capVal(值上限), 縮放後 clamp。慣例「狀態效果
+  // 上限=基礎值×2」(錨點: 機鑑先識 40%→80% cap)不自動套用(每個效果的「基礎值」需自行定義,
+  // 無法在此泛化推得), 逐效果顯式標 e.capVal(如機鑑先識 val:0.4 → capVal:0.8)。未標則不 clamp
+  // (向後相容既有資料, 只受既有 SCALE_CLAMP/block 0~1 clamp 等既有保護)。
+  const capValOf = (v, capVal) => capVal != null ? Math.min(v, capVal) : v;
+  // 批35 B: 「受X影響」狀態值類效果(block 為主, 現行機鑑先識警戒) 的「準備階段鎖定」語意
+  // —— 效果的 scale 縮放值(scaleOf 結果)在 prep 階段(第一次掃描到該效果, 不論它本身是否於
+  // prep 就實際套用)算定並鎖住, 之後(如 everyRound 補層段延後到第2/3回合才擲骰命中)一律沿用
+  // 鎖定值, 不因戰鬥中智力浮動(如中途獲得的 stat buff)重新計算。見 docs/data/
+  // calibration_anchors.json → status_scale_375_20260704 laws: 「數值鎖定準備階段: 裝備
+  // (出奇馬)在戰法計算前生效算入, 開戰後智力變動不影響」——與 heal 的 healBase 準備階段鎖定
+  // 兵力快照同一慣例(第二次獨立確認)。用「效果物件本身」當 Map 鍵(同一效果物件的 prep 掃描與
+  // 之後任何回合的重新套用共用同一把鎖, 天然對應同一戰法同一效果段); 只用於帶 e.scale 的
+  // block(機鑑先識等狀態值類效果的代表原語), 不擴大到其餘所有 k(amp/mitig/stat 等目前無
+  // 對應實測樣本佐證「準備階段鎖定」是否同樣適用, 保守只鎖 block, 見批35 brief B段)。
+  function lockedScaleOf(caster, e) {
+    if (!e.scale) return 1;
+    if (!caster.scaleLock) caster.scaleLock = new Map();
+    let v = caster.scaleLock.get(e);
+    if (v === undefined) { v = scaleOf(caster, e.scale, e.scaleDiv); caster.scaleLock.set(e, v); }
+    return v;
+  }
   // 批7: 發動率類「受X影響」縮放 —— 獨立常數, 與上面 SCALE(每+350翻倍) 不是同一條曲線。
   // user 實測太平道法(黃巾/張角, docs/data/calibration_anchors.json → rate_scale): 智力484.6
   // 才翻倍(對比 SCALE 只要+350即450), 反解 c=0.002598(6組獨立點一致到小數第6位, 取0.0026)。
@@ -245,6 +280,7 @@
       this.surehitDur = 0;                          // 必中: 無視對方 dodge
       this.healblock = 0;                           // 批8: 禁療(healblock) 剩餘回合, >0 時 heal 效果對其無效
       this.whenFired = new Set();                   // 條件觸發(when.rounds/from/until) 已套用效果的戰法(一次性), 依戰法物件去重; 批8: delayedEq(裝備效果級when)共用同一個 Set(效果物件本身去重, 不與戰法物件撞)
+      this.scaleLock = null;                        // 批35 B: 「準備階段鎖定」的 scale 縮放值快取, Map<效果物件, scaleOf結果>, 惰性建立(見 lockedScaleOf)
       this.healRoundsFired = null;                  // 批15: heal 效果 e.when.rounds(明確列出的特定回合)的「每回合各觸發一次」去重, Map<效果物件, Set<已觸發回合數>>, 惰性建立(見 applyEffects 的 heal 分支)
       this.hitFlags = new Set();                    // 反應式觸發(when.on) 本回合已觸發的戰法, 每回合重置(防無限鏈)
       // 批31 A 修復: 過去只檢查 t.when.on 是否為真(truthy), 未限定具體事件值, onHit() 內部
@@ -500,7 +536,13 @@
     // 批22: block(次數型格擋, 抵禦/警戒同族) —— 判定順序 dodge→block→shield→傷害(見紅線指示)。
     // 每次受擊消耗1次(不論本次傷害量多寡), val=1.0(如「抵禦」)完全格擋歸零本次傷害,
     // val=0.x(如「警戒」-75.35%)按比例打折。用光即從陣列移除, 供 TRACE 顯示「剩餘N層」。
-    if (dst.block.length) {
+    // 批35 D: BLOCK_CONSUME_THRESHOLD —— grok查證機鑑先識原文「受到的傷害超過自身可攜帶
+    // 最大兵力的6%時(最低100兵力)」才消耗1次警戒並減傷(見 engine_limitations.md 第30節/
+    // tactic_corrections.json「機鑑先識」)。過去版本無門檻, 每次受擊必消耗, 高估警戒觸發
+    // 頻率(低傷害的普攻/持續傷害也會誤耗掉寶貴的警戒層數)。用本次「格擋前原始傷害」dmg
+    // 與 BLOCK_CONSUME_THRESHOLD(=START_TROOP×6%, 下限100)比較, 未達門檻則不消耗、不減傷,
+    // 照常全額打進去(與抵禦/警戒完全跳過同義)。
+    if (dst.block.length && dmg > BLOCK_CONSUME_THRESHOLD) {
       const b = dst.block[0];
       const blockVal = dst.consumeBlock();
       dmg *= Math.max(0, 1 - blockVal);
@@ -722,9 +764,12 @@
   function effDesc(k, e, caster) {                  // 把15原語效果翻成可讀中文(供日誌); caster 供 scale 縮放後實際值顯示
     const p = v => Math.round(Math.abs(v) * 100) + "%";
     const d = e.dur && e.dur < 90 ? `(${e.dur}回合)` : "";
-    const sfx = e.scale && caster ? `〔受${STAT_ZH[e.scale] || e.scale}影響, ×${scaleOf(caster, e.scale).toFixed(2)}〕` : "";
-    const val = (e.scale && caster) ? Math.max(-SCALE_CLAMP, Math.min(SCALE_CLAMP, e.val * scaleOf(caster, e.scale))) : e.val;
-    const mult = (e.scale && caster) ? 1 + ((e.mult ?? 1) - 1) * scaleOf(caster, e.scale) : e.mult;
+    // 批35 B: k==="block" 顯示用 lockedScaleOf(準備階段鎖定值, 與實際套用時一致), 其餘 k 維持
+    // scaleOf 即時值(現階段僅 block 有實測樣本佐證鎖定語意, 見 lockedScaleOf 註解)。
+    const scOf = k === "block" ? lockedScaleOf : (c, ee) => scaleOf(c, ee.scale, ee.scaleDiv);
+    const sfx = e.scale && caster ? `〔受${STAT_ZH[e.scale] || e.scale}影響, ×${scOf(caster, e).toFixed(2)}〕` : "";
+    const val = (e.scale && caster) ? Math.max(-SCALE_CLAMP, Math.min(SCALE_CLAMP, e.val * scOf(caster, e))) : e.val;
+    const mult = (e.scale && caster) ? 1 + ((e.mult ?? 1) - 1) * scOf(caster, e) : e.mult;
     switch (k) {
       case "amp": return (e.who === "enemy" && val > 0 ? `易傷+${p(val)}${d}` : (val >= 0 ? `增傷+${p(val)}${d}` : `減傷${p(val)}${d}`)) + sfx;
       case "mitig": return (val >= 0 ? `減傷+${p(val)}${d}` : `易傷+${p(val)}${d}`) + sfx;
@@ -749,7 +794,7 @@
       case "taunt": return `嘲諷·強制指向施放者${d || "(1回合)"}`;
       case "shield": return `護盾${e.amt ? "+" + Math.round(e.amt) : ""}${e.pct ? "(相當於" + p(e.pct) + "兵力)" : ""}${d}`;
       case "dodge": return `規避${p(e.prob ?? 0)}${d}`;
-      case "block": { const bv = (e.scale && caster) ? Math.max(0, Math.min(1, (e.val ?? 1.0) * scaleOf(caster, e.scale))) : (e.val ?? 1.0); return `${bv >= 1 ? "抵禦" : `警戒(減傷${p(bv)})`}(${e.times ?? 1}次)` + sfx; }
+      case "block": { const bv = (e.scale && caster) ? Math.max(0, Math.min(1, capValOf((e.val ?? 1.0) * lockedScaleOf(caster, e), e.capVal))) : (e.val ?? 1.0); return `${bv >= 1 ? "抵禦" : `警戒(減傷${p(bv)})`}(${e.times ?? 1}次)` + sfx; }
       case "surehit": return `必中·無視規避${d}`;
       case "healblock": return `禁療·無法被治療${d || "(1回合)"}`;
       case "lifesteal": return `倒戈·造成傷害回復${p(val)}${d}` + sfx;
@@ -774,6 +819,15 @@
     const src = t.nameZh || null;                     // 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → null, 不去重)
     for (const e of t.effects) {
       const k = e.k;
+      // 批35 B: block 的「準備階段鎖定」scale 值優先算定, 放在所有 continue 閘門(healOnly/
+      // skipWhenEffects/when.on/rate/ifLeader/everyRound...)之前 —— 必須確保 prep 呼叫
+      // (fight() 開場的 applyPassives({prep:true, skipWhenEffects:true}))第一次掃描到
+      // 帶 e.when(如機鑑先識 everyRound 段的 when:{until:3})的 block 效果時就把鎖算好,
+      // 否則若鎖定邏輯放在 skipWhenEffects/everyRound 等後面的閘門之後, 帶 e.when 的
+      // everyRound block 效果會在 prep 呼叫被 skipWhenEffects 閘門提前 continue 掉,
+      // 導致 lockedScaleOf 從未在 prep 階段被呼叫過、鎖定值錯誤地延後到未來真正命中
+      // 的那一回合才用當時(可能已變動)的即時智力算定, 违反「準備階段鎖定」語意本身。
+      if (k === "block" && e.scale) lockedScaleOf(caster, e);
       if (opt.healOnly && k !== "heal" && !e.everyRound) continue;  // 批30 A: everyRound 效果亦放行(見下方通用閘門)
       // 批18: e.when 泛化(非 heal 種類) —— heal 早已支援效果級 when(見下方 k==="heal" 分支的
       // opt.healOnly 閘門), 但其餘效果種類(amp/settle/stat/…)過去若帶 e.when 而母戰法無 t.when,
@@ -820,6 +874,8 @@
       // 只該由 opt.healOnly 常駐通道結算 —— 對稱於 heal 在其他路徑各自決定是否觸發、不依賴
       // 這裡的慣例。
       if (e.everyRound && k !== "heal") {
+        // 批35 B: block 的「準備階段鎖定」scale 值已在函式最頂端(所有 continue 閘門之前)
+        // 算定, 此處不需重複呼叫 lockedScaleOf(見上方新增的閘門與其註解)。
         if (!opt.healOnly) continue;
         const hw = e.when || t.when;
         if (hw) {
@@ -1073,7 +1129,13 @@
         // 的疊次語意。val 的 scale 縮放用 0~1 專屬 clamp(非 svVal 的 ±SCALE_CLAMP, 因 block
         // val 是「減傷比例」語意, 不應為負值或超過1.0全擋)。
         else if (k === "block") {
-          const bVal = e.scale ? Math.max(0, Math.min(1, (e.val ?? 1.0) * scaleOf(caster, e.scale))) : (e.val ?? 1.0);
+          // 批35 B: block 的 scale 縮放改用 lockedScaleOf(準備階段鎖定, 見上方常數區註解) 取代
+          // 直接呼叫 scaleOf —— 同一效果物件(e)不論在 prep 或稍後 everyRound 補層才實際套用,
+          // 縮放倍率都固定用「第一次掃描到該效果時」(即 prep 階段, 見 applyEffects 內
+          // e.everyRound 閘門的 primeScaleLock 呼叫)算出的值, 不隨戰鬥中智力變動重算。
+          // 批35 A: capValOf 套用 e.capVal(值上限, 縮放後 clamp), 在既有 0~1 clamp 之前先夾一次
+          // (機鑑先識 val:0.4 capVal:0.8 → 最終仍受 min(1) 保護, 但 capVal 通常更嚴格先生效)。
+          const bVal = e.scale ? Math.max(0, Math.min(1, capValOf((e.val ?? 1.0) * lockedScaleOf(caster, e), e.capVal))) : (e.val ?? 1.0);
           u.pushBlock(bVal, e.times ?? 1, src);
           if (TRACE) lg(`　▸ ${u.nm} 獲得${bVal >= 1 ? "抵禦" : `警戒(減傷${Math.round(bVal * 100)}%)`}(${e.times ?? 1}次)`);
         }
