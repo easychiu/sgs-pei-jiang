@@ -89,6 +89,15 @@
   const APT_PCT = { S: 1.20, A: 1.00, B: 0.85, C: 0.70, D: 0.55 };
   const APT_RANK = { S: 4, A: 3, B: 2, C: 1, D: 0 };
   const TROOPS = ["騎", "盾", "弓", "槍", "器"];
+  // 批36: 兵種營建築(Lv0~10) —— 錨點 docs/data/calibration_anchors.json → troop_camp「三合一」
+  // 拆解: (1) 全屬性+4(=既有CAMP常數, 全域已無條件套用, 非本批新增) (2) 每級+0.25%該兵種造成
+  // 傷害(本批新增, 滿級+2.5%) (3) Lv10附贈對應兵種戰法(本批新增attach邏輯)。CAMP_DMG_PER_LV
+  // 直接作用在 amp 原語(「造成傷害提升」, 與現有進階/典藏 a.amp 同慣例, 見下方 Unit 建構)。
+  const CAMP_DMG_PER_LV = 0.0025;
+  // 兵種(隊伍) → 該兵種營Lv10附贈戰法名稱(見 tactics_parsed.json cat/src:"BUILDING" 五筆)。
+  // 器械營「負重」無戰鬥內效果(type:"none", 已被 buildPool 的 t.type!=="none" 過濾, 不進
+  // TACTICS 表), 故器械不掛(對稱書寫仍列出, 值為 null, 供 attach 邏輯統一走同一張表)。
+  const CAMP_TROOP_TACTIC = { "槍": "破軍", "盾": "守禦", "弓": "齊射", "騎": "疾馳", "器": null };
   let BINGSHU = {}, MAIN_BY_CAT = {}, SUB_BY_CAT = {};  // 兵書: 名稱→效果; 類別→主/副兵書們
   let TACTICS = {};                                 // 名稱→戰法(供傳承查詢)
   let BONDS = [], EQUIPS = {};                       // 緣分(隊伍級) / 裝備(自身)
@@ -196,8 +205,9 @@
     return true;                                    // 未知 gate 種類: 保守放行(不擋), 避免資料錯字導致戰法整組消失
   }
   class Unit {
-    constructor(g, ttype, bsName, eqName, add, inherit, season, teamFactions) {
+    constructor(g, ttype, bsName, eqName, add, inherit, season, teamFactions, campLv, isCampHolder) {
       this.g = g; this.ttype = ttype; this.troop = START_TROOP; this.stun = 0;
+      this.campLv = campLv || 0;                   // 批36: 兵種營等級(0~10, 隊伍級, 見 fight() 呼叫端), 0=不啟用(向後相容既有全部呼叫點)
       // 批33: healBase —— 準備階段鎖定的治療基準兵力快照(troop×HEAL_TROOP_C), 供指揮/兵種/
       // 兵書/被動類 heal(常駐急救型)使用, 使治療量不隨後續戰鬥中兵力增減而變動(見上方
       // HEAL_TROOP_C 常數註解); 建構時 troop 尚未受戰鬥影響, 此處快照即「開戰準備階段兵力」。
@@ -218,6 +228,23 @@
           if (!ok && TRACE) lg(`【${g.name}】戰法【${t.nameZh}】不滿足隊伍構成前提(teamGate), 整戰法不生效`);
           return ok;
         });
+      // 批36: 兵種營Lv10附贈戰法 attach —— 原文是「我軍隨機單體/群體」觸發(一整隊只發生一次),
+      // 而非「隊上每個單位各自獨立擁有這個被動」。故只有 fight() 指定的單一「持有者」
+      // (isCampHolder===true, 每隊隨機挑1人, 見 fight() 呼叫端)才實際 push 進 this.tactics;
+      // 其餘同隊隊友仍受 campLv 的屬性%加成(下方amp段, 對每個Unit都算, 因原文那一支是「全隊
+      // 造成傷害」的隊伍級加成, 與Lv10戰法是三合一裡各自獨立的兩支), 但不會各自重複攻得
+      // Lv10戰法(避免3人隊「破軍/守禦」各自觸發3次的過量bug——已用鏡像對局實測驗證修正前後
+      // 差異, 見sgz.py demo() 97-101號assert)。依「本隊實際兵種(ttype, 隊伍級)」查表
+      // CAMP_TROOP_TACTIC, 命中且 TACTICS 已載入該名稱(器械營"負重"因 type:"none" 被
+      // buildPool 過濾, 表中值為 null 或查無則不掛)才 push。必須在此處(cmdPassiveSrcs/
+      // onHitTacs/onHitEffectTacs/onDealTacs 等衍生快取產生之前)插入, 因五戰法皆 type:"passive"
+      // 會被那些快取掃描到(對比裝備proc戰法是charge型, 晚插入也不影響, 見下方_eqObjs迴圈)。
+      // 淺拷貝加 _campBuilding 標記(供TRACE/除錯辨識, 不影響戰鬥邏輯分派)。
+      if (this.campLv >= 10 && isCampHolder) {
+        const campTacName = CAMP_TROOP_TACTIC[ttype];
+        const campTac = campTacName && TACTICS[campTacName];
+        if (campTac) this.tactics.push(Object.assign({}, campTac, { _campBuilding: true }));
+      }
       // 批18: fakeReport(偽報) 加強 —— 記錄「自己的指揮/被動戰法」名稱集合, 供 eff()/addbonus()
       // 判斷某條 adds/mods/statAdds 是否來自「本單位自己的指揮/被動戰法」(而非兵書/裝備/緣分/
       // 隊友戰法, 這些沒有 src 或 src 不在此集合中, 不受偽報影響)。user 實測: 偽報命中後,
@@ -265,6 +292,10 @@
       this.mods = []; this.adds = []; this.dots = []; this.statAdds = [];  // statAdds: 屬性平加(裝備 stat.add, [stat, add, dur, src]); 在 eff() 中於 mods 乘算前先加
       if (a.amp) this.adds.push(["amp", a.amp, 9999]);    // 進階/典藏 攻防加成
       if (a.mitig) this.adds.push(["mitig", a.mitig, 9999]);
+      // 批36: 兵種營「每級+0.25%該兵種造成傷害」——與CAMP(全屬性flat)/Lv10附贈戰法(見上方
+      // this.tactics attach)並列的三合一第三支, 走既有amp原語(與a.amp同慣例, src標記供TRACE/
+      // 除錯辨識), campLv=0時不推入(向後相容, adds為空陣列不影響任何既有戰鬥數學)。
+      if (this.campLv > 0) this.adds.push(["amp", this.campLv * CAMP_DMG_PER_LV, 9999, "兵種營"]);
       this.settle = null; this.guardian = null; this.guardShare = 0; this.guardDur = 0; this.guardNormalOnly = false;  // guardDur: 代承剩餘回合, 歸零清 guardian; guardNormalOnly: 只代承普攻傷害(如 援助), 戰法傷害不轉移
       this.stack = null; this.decay = null; this.swap = 0; this.counter = null;
       // 批28 B1: 守護式反擊(counter.guardFor) —— 「A受擊時, B代為反擊」的方向(如虎衛軍
@@ -1200,7 +1231,7 @@
     }
   }
 
-  function fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario) {
+  function fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario, campLvA, campLvB) {
     troopA = troopA || teamTroop(POOL, teamA);
     troopB = troopB || teamTroop(POOL, teamB);
     bsA = bsA || teamA.map(n => defaultBingshu(POOL[n]));
@@ -1211,9 +1242,15 @@
     addB = addB || teamB.map(() => null);
     inhA = inhA || teamA.map(() => null);
     inhB = inhB || teamB.map(() => null);
+    // 批36: 兵種營等級(0~10, 隊伍級——全隊共用一座對應兵種的營, 與 troopA/troopB 同顆粒度)。
+    campLvA = campLvA || 0; campLvB = campLvB || 0;
+    // Lv10附贈戰法原文是「我軍隨機單體/群體」觸發一次(非每個單位各自擁有), 故隨機挑隊上1人
+    // 當「持有者」(見 Unit 建構子 isCampHolder 參數), 該隊其餘人只吃屬性%加成、不重複附戰法。
+    const holderIdxA = campLvA >= 10 ? Math.floor(rnd() * teamA.length) : -1;
+    const holderIdxB = campLvB >= 10 ? Math.floor(rnd() * teamB.length) : -1;
     const factionsA = teamA.map(n => POOL[n].faction), factionsB = teamB.map(n => POOL[n].faction);  // 批24 D1: teamGate 判定依據(隊伍全體陣營陣列)
-    const A = teamA.map((n, i) => Object.assign(new Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i], seasonModsFor(POOL, POOL[n], i, teamA, scenario), factionsA), { nm: n, side: "我" }));
-    const B = teamB.map((n, i) => Object.assign(new Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i], seasonModsFor(POOL, POOL[n], i, teamB, scenario), factionsB), { nm: n, side: "敵" }));
+    const A = teamA.map((n, i) => Object.assign(new Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i], seasonModsFor(POOL, POOL[n], i, teamA, scenario), factionsA, campLvA, i === holderIdxA), { nm: n, side: "我" }));
+    const B = teamB.map((n, i) => Object.assign(new Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i], seasonModsFor(POOL, POOL[n], i, teamB, scenario), factionsB, campLvB, i === holderIdxB), { nm: n, side: "敵" }));
     const setA = new Set(A);
     const alliesOf = u => setA.has(u) ? A : B, foesOf = u => setA.has(u) ? B : A;
     const bondsA = activeBonds(teamA), bondsB = activeBonds(teamB);
@@ -1386,6 +1423,16 @@
       CUR_R = 0;
       lg(`〔採用兵種〕我方 ${troopA}兵　·　敵方 ${troopB}兵`);
       lg(`〔城建滿〕全員 武智統速 各+${CITY}　〔陣營滿〕全屬性 +${Math.round((FACTION - 1) * 100)}%`);
+      // 批36: 兵種營等級標頭 —— 僅任一方 campLv>0 才印(0=舊行為, 不多噪音); Lv10額外標註附贈戰法名(若有)
+      if (campLvA > 0 || campLvB > 0) {
+        const campNote = (lv, tt) => {
+          if (!lv) return "無";
+          const dmg = `+${(lv * CAMP_DMG_PER_LV * 100).toFixed(2)}%${tt}兵傷害`;
+          const tacNm = lv >= 10 ? CAMP_TROOP_TACTIC[tt] : null;
+          return `Lv${lv}（${dmg}${tacNm ? "　Lv10附贈【" + tacNm + "】" : ""}）`;
+        };
+        lg(`〔兵種營〕我方 ${campNote(campLvA, troopA)}　·　敵方 ${campNote(campLvB, troopB)}`);
+      }
     }
     applyPassives({ noHeal: true, prep: true, skipWhenEffects: true });    // 依序套用並記錄各類戰法; skipWhenEffects: 批18 e.when泛化, 非heal效果帶e.when且母戰法無t.when時prep階段不套用, 改由回合迴圈通用掃描
     if (TRACE) {                                    // 備戰後面板(含適性) + 預備戰法
@@ -1603,16 +1650,16 @@
     return { winner, rounds: ROUNDS, kill: false };
   }
 
-  function trace(POOL, teamA, teamB, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null, addA = null, addB = null, inhA = null, inhB = null, scenario = null) {
+  function trace(POOL, teamA, teamB, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null, addA = null, addB = null, inhA = null, inhB = null, scenario = null, campLvA = 0, campLvB = 0) {
     TRACE = []; CUR_R = 0;                           // 跑一場並記錄事件日誌
-    const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario);
+    const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario, campLvA, campLvB);
     const log = TRACE; TRACE = null;
     return { ...r, log };
   }
-  function simulate(POOL, teamA, teamB, n = 2000, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null, addA = null, addB = null, inhA = null, inhB = null, scenario = null) {
+  function simulate(POOL, teamA, teamB, n = 2000, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null, addA = null, addB = null, inhA = null, inhB = null, scenario = null, campLvA = 0, campLvB = 0) {
     let a = 0, rs = 0, killA = 0, killB = 0;          // 批8: 殲滅(kill) vs 判定勝(8回合打滿按剩餘兵力) 分開統計
     for (let i = 0; i < n; i++) {
-      const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario);
+      const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario, campLvA, campLvB);
       if (r.winner === "A") { a++; if (r.kill) killA++; } else if (r.kill) killB++;
       rs += r.rounds;
     }

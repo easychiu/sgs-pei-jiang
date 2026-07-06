@@ -34,6 +34,16 @@ APT_PCT = {"S": 1.20, "A": 1.00, "B": 0.85, "C": 0.70, "D": 0.55, None: 0.85}
 APT_RANK = {"S": 4, "A": 3, "B": 2, "C": 1, "D": 0, None: -1}
 SCALE_CLAMP = 1.5                                    # amp/mitig 縮放後上限保護: |val| <= 1.5
 
+# 批36: 兵種營建築(Lv0~10) —— 錨點 docs/data/calibration_anchors.json → troop_camp「三合一」
+# 拆解: (1) 全屬性+4(=既有CAMP常數, 全域已無條件套用, 非本批新增) (2) 每級+0.25%該兵種造成
+# 傷害(本批新增, 滿級+2.5%) (3) Lv10附贈對應兵種戰法(本批新增attach邏輯)。CAMP_DMG_PER_LV
+# 直接作用在 amp 原語(「造成傷害提升」, 與現有進階/典藏 a.amp 同慣例, 見下方 Unit.__init__)。
+CAMP_DMG_PER_LV = 0.0025
+# 兵種(隊伍) → 該兵種營Lv10附贈戰法名稱(見 tactics_parsed.json cat/src:"BUILDING" 五筆)。
+# 器械營「負重」無戰鬥內效果(type:"none", 已被 TACTICS 載入時的過濾排除, 不進 TACTICS 表),
+# 故器械不掛(對稱書寫仍列出, 值為 None, 供 attach 邏輯統一走同一張表)。
+CAMP_TROOP_TACTIC = {"槍": "破軍", "盾": "守禦", "弓": "齊射", "騎": "疾馳", "器": None}
+
 # 批35 D: block(抵禦/警戒) 消耗門檻 —— grok查證機鑑先識原文「受到的傷害超過自身可攜帶最大
 # 兵力的6%時(最低100兵力)」才消耗1次警戒。max(START_TROOP×6%, 100) —— 本引擎START_TROOP
 # 恆為10000(單一兵力池常數), 6%=600本身已遠大於100下限, 下限條款只在極端自訂規模才會生效,
@@ -368,8 +378,9 @@ def team_gate_ok(gate, factions):
 
 
 class Unit:
-    def __init__(self, g, ttype, bingshu=None, equip=None, add=None, inherit=None, season=None, team_factions=None):
+    def __init__(self, g, ttype, bingshu=None, equip=None, add=None, inherit=None, season=None, team_factions=None, camp_lv=0, is_camp_holder=False):
         self.g, self.ttype, self.troop, self.stun = g, ttype, START_TROOP, 0
+        self.camp_lv = camp_lv or 0                   # 批36: 兵種營等級(0~10, 隊伍級, 見 fight() 呼叫端), 0=不啟用(向後相容既有全部呼叫點)
         # 批33: heal_base —— 準備階段鎖定的治療基準兵力快照(troop×HEAL_TROOP_C), 供指揮/兵種/
         # 兵書/被動類 heal(常駐急救型)使用, 使治療量不隨後續戰鬥中兵力增減而變動(見上方
         # HEAL_TROOP_C 常數註解); 建構時 troop 尚未受戰鬥影響, 此處快照即「開戰準備階段兵力」。
@@ -394,6 +405,23 @@ class Unit:
             ([dict(g.tactic, native=True)] if g.tactic else []) +
             [TACTICS[nm] for nm in (inherit or []) if nm in TACTICS]  # 自帶 + 傳承戰法
         ) if _gate_ok(t)]
+        # 批36: 兵種營Lv10附贈戰法 attach —— 原文是「我軍隨機單體/群體」觸發(一整隊只發生
+        # 一次), 而非「隊上每個單位各自獨立擁有這個被動」。故只有 fight() 指定的單一「持有者」
+        # (is_camp_holder=True, 每隊隨機挑1人, 見 fight() 呼叫端)才實際 append 進 self.tactics;
+        # 其餘同隊隊友仍受 camp_lv 的屬性%加成(下方amp段, 對每個Unit都算, 因原文那一支是「全隊
+        # 造成傷害」的隊伍級加成, 與Lv10戰法是三合一裡各自獨立的兩支), 但不會各自重複攻得
+        # Lv10戰法(避免3人隊「破軍/守禦」各自觸發3次的過量bug, 已用鏡像對局實測驗證, 見demo()
+        # 97-101號assert)。依「本隊實際兵種(ttype, 隊伍級)」查表 CAMP_TROOP_TACTIC, 命中且
+        # TACTICS 已載入該名稱(器械營"負重"因 type:"none" 被載入時過濾, 表中值為 None 或查無
+        # 則不掛)才 append。必須在此處(cmd_passive_srcs/on_hit_tacs/on_hit_effect_tacs/
+        # on_deal_tacs 等衍生快取產生之前)插入, 因五戰法皆 type:"passive" 會被那些快取掃描到
+        # (對比裝備proc戰法是charge型, 晚插入也不影響)。淺拷貝加 _campBuilding:True 標記
+        # (純供辨識, 不影響戰鬥邏輯分派)。
+        if self.camp_lv >= 10 and is_camp_holder:
+            camp_tac_name = CAMP_TROOP_TACTIC.get(ttype)
+            camp_tac = camp_tac_name and TACTICS.get(camp_tac_name)
+            if camp_tac:
+                self.tactics.append(dict(camp_tac, _campBuilding=True))
         # 批18: fakeReport(偽報) 加強 —— 記錄「自己的指揮/被動戰法」名稱集合, 供 eff()/addbonus()
         # 判斷某條 adds/mods/stat_adds 是否來自「本單位自己的指揮/被動戰法」(見 engine.js 同名欄位註解)。
         self.cmd_passive_srcs = {t.get("nameZh") for t in self.tactics
@@ -468,6 +496,11 @@ class Unit:
             self.adds.append(["amp", a["amp"], 9999, None, None])  # 5元素(含flags=None), 與 push_add 寫入形狀一致, 避免 tick() 的 5-tuple 解包 ValueError(既有bug, 批18順手修正; engine.js 因用彈性解構未受影響)
         if a.get("mitig"):
             self.adds.append(["mitig", a["mitig"], 9999, None, None])
+        # 批36: 兵種營「每級+0.25%該兵種造成傷害」——與CAMP(全屬性flat)/Lv10附贈戰法(見上方
+        # self.tactics attach)並列的三合一第三支, 走既有amp原語(與a["amp"]同慣例, src標記供
+        # 除錯辨識), camp_lv=0時不推入(向後相容, adds為空陣列不影響任何既有戰鬥數學)。
+        if self.camp_lv > 0:
+            self.adds.append(["amp", self.camp_lv * CAMP_DMG_PER_LV, 9999, "兵種營", None])
         self.dots = []                                # 持續傷害: [每回合傷害, left]
         self.settle = None                            # 結算狀態(猛毒)
         self.guardian = None                          # 傷害轉移: 代承者
@@ -1587,7 +1620,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
 
 
 def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, eqB=None,
-          addA=None, addB=None, inhA=None, inhB=None, scenario=None):
+          addA=None, addB=None, inhA=None, inhB=None, scenario=None, campLvA=0, campLvB=0):
     troopA = troopA or team_troop(teamA)              # 未指定兵種則用隊伍最佳適性
     troopB = troopB or team_troop(teamB)
     bsA = bsA or [default_bingshu(POOL[n]) for n in teamA]   # 未指定兵書則裝預設主兵書
@@ -1598,11 +1631,17 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
     addB = addB or [None] * len(teamB)
     inhA = inhA or [None] * len(teamA)
     inhB = inhB or [None] * len(teamB)
+    campLvA = campLvA or 0                            # 批36: 兵種營等級(0~10, 隊伍級——全隊共用一座對應兵種的營, 與 troopA/troopB 同顆粒度)
+    campLvB = campLvB or 0
+    # Lv10附贈戰法原文是「我軍隨機單體/群體」觸發一次(非每個單位各自擁有), 故隨機挑隊上1人
+    # 當「持有者」(見 Unit.__init__ is_camp_holder 參數), 該隊其餘人只吃屬性%加成、不重複附戰法。
+    holder_idx_a = random.randrange(len(teamA)) if campLvA >= 10 and teamA else -1
+    holder_idx_b = random.randrange(len(teamB)) if campLvB >= 10 and teamB else -1
     factions_a = [POOL[n].faction for n in teamA]      # 批24 D1: teamGate 判定依據(隊伍全體陣營陣列)
     factions_b = [POOL[n].faction for n in teamB]
-    A = [Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i], season_mods(POOL[n], i, teamA, scenario), factions_a)
+    A = [Unit(POOL[n], troopA, bsA[i], eqA[i], addA[i], inhA[i], season_mods(POOL[n], i, teamA, scenario), factions_a, campLvA, i == holder_idx_a)
          for i, n in enumerate(teamA)]
-    B = [Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i], season_mods(POOL[n], i, teamB, scenario), factions_b)
+    B = [Unit(POOL[n], troopB, bsB[i], eqB[i], addB[i], inhB[i], season_mods(POOL[n], i, teamB, scenario), factions_b, campLvB, i == holder_idx_b)
          for i, n in enumerate(teamB)]
     setA = set(map(id, A))
     allies_of = lambda u: A if id(u) in setA else B
@@ -2095,12 +2134,12 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
 
 
 def simulate(teamA, teamB, n=3000, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, eqB=None,
-             addA=None, addB=None, inhA=None, inhB=None, scenario=None):
+             addA=None, addB=None, inhA=None, inhB=None, scenario=None, campLvA=0, campLvB=0):
     w = {"A": 0, "B": 0}
     kill = {"A": 0, "B": 0}                           # 批8: 殲滅 vs 判定勝(8回合打滿按剩餘兵力) 分開統計
     rs = 0
     for _ in range(n):
-        winner, r, k = fight(teamA, teamB, troopA, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario)
+        winner, r, k = fight(teamA, teamB, troopA, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario, campLvA, campLvB)
         w[winner] += 1
         if k:
             kill[winner] += 1
@@ -4080,6 +4119,76 @@ def demo():
     assert er95_dst.block, "everyRound效果應在heal_only常駐通道套用"
     assert abs(er95_dst.block[0]["val"] - 0.7620) < 0.0001, \
         f"迴歸: 即使套用當下(第1回合)intel已變成900, block的scale值仍應沿用prep階段(intel 439.38)鎖定值76.20%, 實得{er95_dst.block[0]['val']*100:.2f}%(若得到用900算出的80.00%即代表鎖定被skip_when_effects閘門繞過的bug重現)"
+
+    # --- 批36: 兵種營資料通路(campLv 0~10 屬性%+Lv10附贈戰法attach) ---
+    # 96) campLv=0(預設/未指定): 完全不影響既有行為 —— adds為空, tactics不含任何BUILDING戰法
+    cl96 = Unit(POOL["張飛"], "槍")
+    assert cl96.camp_lv == 0, "未傳camp_lv應預設0(向後相容既有全部呼叫點)"
+    assert not any(a[0] == "amp" and a[3] == "兵種營" for a in cl96.adds), "campLv=0不應推入兵種營amp加成"
+    assert not any(t.get("_campBuilding") for t in cl96.tactics), "campLv=0不應attach任何BUILDING戰法"
+
+    # 97) campLv=10 + is_camp_holder=True 且隊伍兵種=槍: 應同時獲得(1)破軍戰法attach (2)amp+2.5%傷害
+    cl97 = Unit(POOL["張飛"], "槍", camp_lv=10, is_camp_holder=True)
+    camp_tacs97 = [t for t in cl97.tactics if t.get("_campBuilding")]
+    assert len(camp_tacs97) == 1 and camp_tacs97[0]["nameZh"] == "破軍", \
+        f"槍兵隊campLv=10(持有者)應自動獲得破軍, 實得{[t.get('nameZh') for t in camp_tacs97]}"
+    camp_amp97 = [a for a in cl97.adds if a[0] == "amp" and a[3] == "兵種營"]
+    assert len(camp_amp97) == 1 and abs(camp_amp97[0][1] - 0.025) < 1e-9, \
+        f"campLv=10應貢獻amp+2.5%(10×0.25%), 實得{camp_amp97}"
+
+    # 97b) campLv=10 但 is_camp_holder=False(同隊非持有者的隊友): 只吃屬性%加成, 不應attach戰法
+    # ——這是本批修正的核心行為: 原文「我軍隨機單體」是一整隊只發生一次, 不是每個Unit各自擁有
+    cl97b = Unit(POOL["張飛"], "槍", camp_lv=10, is_camp_holder=False)
+    assert not any(t.get("_campBuilding") for t in cl97b.tactics), \
+        "campLv=10但非持有者(is_camp_holder=False)不應attach戰法(避免隊上每人各自重複觸發)"
+    camp_amp97b = [a for a in cl97b.adds if a[0] == "amp" and a[3] == "兵種營"]
+    assert len(camp_amp97b) == 1 and abs(camp_amp97b[0][1] - 0.025) < 1e-9, "非持有者仍應正常吃屬性%加成(三合一另一支, 全隊皆有)"
+
+    # 98) campLv=10 + is_camp_holder=True 但隊伍兵種=盾: 應獲得守禦(非破軍), 驗證兵種→戰法對應表逐一生效
+    cl98 = Unit(POOL["張飛"], "盾", camp_lv=10, is_camp_holder=True)
+    camp_tacs98 = [t for t in cl98.tactics if t.get("_campBuilding")]
+    assert len(camp_tacs98) == 1 and camp_tacs98[0]["nameZh"] == "守禦", \
+        f"盾兵隊campLv=10(持有者)應自動獲得守禦, 實得{[t.get('nameZh') for t in camp_tacs98]}"
+
+    # 99) campLv=10 + is_camp_holder=True 但隊伍兵種=器(器械): 負重無戰鬥效果(type:"none"已被
+    # TACTICS載入時過濾), 不應attach任何BUILDING戰法, 但傷害%加成仍應正常給予(三合一其餘兩支不受影響)
+    cl99 = Unit(POOL["張飛"], "器", camp_lv=10, is_camp_holder=True)
+    assert not any(t.get("_campBuilding") for t in cl99.tactics), "器械營Lv10不應attach任何戰法(負重無戰鬥效果)"
+    camp_amp99 = [a for a in cl99.adds if a[0] == "amp" and a[3] == "兵種營"]
+    assert len(camp_amp99) == 1 and abs(camp_amp99[0][1] - 0.025) < 1e-9, "器械營傷害%加成仍應正常給予(與Lv10戰法attach是獨立的兩支)"
+
+    # 100) campLv=5(未滿級, 即使is_camp_holder=True): 只有屬性%加成(1.25%), 不應attach戰法(嚴格<10門檻)
+    cl100 = Unit(POOL["張飛"], "槍", camp_lv=5, is_camp_holder=True)
+    assert not any(t.get("_campBuilding") for t in cl100.tactics), "campLv=5(未滿10級)不應attach戰法, 即使is_camp_holder=True"
+    camp_amp100 = [a for a in cl100.adds if a[0] == "amp" and a[3] == "兵種營"]
+    assert len(camp_amp100) == 1 and abs(camp_amp100[0][1] - 0.0125) < 1e-9, \
+        f"campLv=5應貢獻amp+1.25%(5×0.25%), 實得{camp_amp100}"
+
+    # 100b) fight() 端到端: campLv=10 一整隊(3人)中應恰好1人是持有者(attach BUILDING戰法),
+    # 其餘2人不應重複attach ——直接驗證 fight() 呼叫端的隨機挑選邏輯正確(非全隊每人都獲得)
+    holder_count_samples = []
+    for trial in range(50):
+        random.seed(1000 + trial)
+        idx = random.randrange(3)
+        units100b = [Unit(POOL["張飛"], "槍", camp_lv=10, is_camp_holder=(i == idx)) for i in range(3)]
+        holders = [u for u in units100b if any(t.get("_campBuilding") for t in u.tactics)]
+        holder_count_samples.append(len(holders))
+    assert all(c == 1 for c in holder_count_samples), \
+        f"每次3人隊campLv=10應恰好1人是持有者(attach戰法), 實得樣本{holder_count_samples}"
+
+    # 101) 端到端 fight(): 鏡像對局(雙方同隊「張飛/SP呂蒙/SP樂進」, 皆採槍兵, 消除陣容強弱
+    # 差異的干擾) A方 campLvA=10(破軍+2.5%傷害) vs campLvA=0, B方恆為0 —— 有營一方勝率應
+    # 明顯高於無營基準(鏡像對局基準本身非50%, 見下方 baseline, 故用「有營 - 對照組」差值判斷
+    # 方向, 而非直接假設50%中心)。
+    campA_team = ["張飛", "SP 呂蒙", "SP 樂進"]
+    campB_team = ["張飛", "SP 呂蒙", "SP 樂進"]
+    random.seed(36)
+    r101_baseline = simulate(campA_team, campB_team, n=4000, troopA="槍", troopB="槍")
+    random.seed(36)
+    r101_with_camp = simulate(campA_team, campB_team, n=4000, troopA="槍", troopB="槍", campLvA=10)
+    assert r101_with_camp["A勝率"] > r101_baseline["A勝率"], \
+        f"campLv=10(破軍+2.5%傷害)應讓A方勝率高於無營基準(鏡像對局): 有營{r101_with_camp['A勝率']} 基準{r101_baseline['A勝率']}"
+    print(f"    [批36] 鏡像對局 campLv=10 A勝率{r101_with_camp['A勝率']:.3f} vs 基準{r101_baseline['A勝率']:.3f} (差+{r101_with_camp['A勝率']-r101_baseline['A勝率']:.3f})")
 
     print("self-check OK")
 
