@@ -1511,6 +1511,9 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 # 遞增, 見 fight() 主動戰法命中分支呼叫端)。刻意不覆寫既有 e["per"] 欄位語意
                 # (per 一直是"每層增傷倍率"的數值欄位, 若拿它兼職當模式字串會造成型別混淆與
                 # PER_KIND_FIELDS/lint的比對複雜化), 新增獨立欄位更安全。
+                # 批37 B: 第三種遞增時機 "attack" —— 「每次普通攻擊後+1層」(如奮突「普通攻擊
+                # 之後...最多疊加3次」), 掛在 dealt_damage 事件點(普攻確實命中造成傷害後遞增,
+                # 見 dealt_damage() 頂端), 繳械/震懾無普攻的回合不會誤疊層(較舊的 round 近似精確)。
                 u.stack = {"per": e.get("per", 0.1), "max": e.get("max", 5), "n": 0,
                            "stackPer": e.get("stackPer", "round")}
             elif k == "decay":                        # 衰減增益: 開場 v0 增傷, rounds 內線性歸零
@@ -1762,6 +1765,13 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             apply_effects(dst, src, {"effects": [e], "kind": "phys"}, allies_of(dst), foes_of(dst), rate_checked=True, reactive=True, dmg=dmg)  # 批23 A4/reactive; 批33: dmg供e["ofDamage"]使用
 
     def dealt_damage(src, dst, is_normal, kind, dmg=None):  # 批27 A: 反應式觸發(when.on:"dealtDamage") —— 自己造成傷害(對 dst)後掛到 hit() 事件點, 與 on_hit(自己受擊視角)對稱; 批33: dmg(可選)—— 本次觸發事件的實際傷害量, 供 e["ofDamage"] 使用
+        # 批37 B: stackPer:"attack" —— 「每次普通攻擊後疊加1層」(如奮突「普通攻擊之後...最多
+        # 疊加3次」)。過去只有 "round"(逐回合)/"cast"(每次發動)兩種遞增模式, 普攻疊層只能用
+        # round 近似(繳械/震懾回合無普攻仍會錯誤地繼續疊層)。掛在 dealt_damage 事件點(普攻
+        # 確實命中造成傷害後), 置於 on_deal_tacs 早退判斷之前(有 stackPer:"attack" 疊層的
+        # 單位未必同時有 when.on:"dealtDamage" 反應式戰法, 不能被該早退擋掉)。
+        if is_normal and src.alive and src.stack and src.stack.get("stackPer") == "attack":
+            src.stack["n"] = min(src.stack["max"], src.stack["n"] + 1)
         if not src.alive or (not src.on_deal_tacs and not src.on_deal_effect_tacs):
             return
         if src.fake_report_dur:                        # 批16: 偽報 —— 抑制反應式觸發(被動/指揮戰法失效), 與 on_hit 同慣例
@@ -1771,6 +1781,8 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
         for t in src.on_deal_tacs:                      # 戰法級: 整個戰法都是「造成傷害時」反應式(如白衣渡江拆成兩個獨立戰法段時可用此形式)
             if not _dmg_type_ok((t.get("when") or {}).get("dmgType")):
                 continue
+            if (t.get("when") or {}).get("normalOnly") and not is_normal:
+                continue                                # 批37 B: when.normalOnly —— 限「普通攻擊」造成的傷害才觸發(如奮突「普通攻擊之後」; dmgType:"phys" 無法區分普攻與兵刃戰法傷害, 需獨立旗標)
             if not round_ok(t, CUR_ROUND):
                 continue
             if id(t) in src.hit_flags:                  # 同回合每單位每戰法最多觸發1次(防無限鏈), 與 on_hit 共用同一 hit_flags(不同方向的觸發各自用不同id(t)/id(e)鍵, 不會互相誤判)
@@ -1805,6 +1817,8 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     continue
                 if not _dmg_type_ok(ew.get("dmgType")):
                     continue
+                if ew.get("normalOnly") and not is_normal:
+                    continue                            # 批37 B: when.normalOnly(效果級) —— 同上, 限普攻傷害觸發
                 if not round_ok({"when": ew}, CUR_ROUND):
                     continue
                 if id(e) in src.hit_flags:
@@ -4189,6 +4203,61 @@ def demo():
     assert r101_with_camp["A勝率"] > r101_baseline["A勝率"], \
         f"campLv=10(破軍+2.5%傷害)應讓A方勝率高於無營基準(鏡像對局): 有營{r101_with_camp['A勝率']} 基準{r101_baseline['A勝率']}"
     print(f"    [批36] 鏡像對局 campLv=10 A勝率{r101_with_camp['A勝率']:.3f} vs 基準{r101_baseline['A勝率']:.3f} (差+{r101_with_camp['A勝率']-r101_baseline['A勝率']:.3f})")
+
+    # --- 批37 B: 停損決策過期重審(義膽雄心 parity互斥交替 / 奮突 普攻事件精確觸發) ---
+    # 102) 義膽雄心(真實資料): everyRound+e.when.parity 奇偶互斥交替 —— 奇數回合只套武力debuff
+    # (單體), 偶數回合只套謀略dot(2人,kind:intel)+智力debuff(2人), 經 heal_only 常駐通道逐回合判定
+    ydxx = TACTICS.get("義膽雄心")
+    assert ydxx and (ydxx.get("when") or {}).get("parity") == "odd", \
+        "義膽雄心應帶戰法級 when.parity:'odd'(main coef 184%兵刃傷害只在奇數回合擲骰, 批37 B重建)"
+    assert all(e.get("everyRound") for e in ydxx["effects"]), "義膽雄心三段效果皆應帶everyRound(逐回合重擲通道)"
+    ydxx_caster = Unit(POOL["呂布"], "騎")
+    ydxx_foes = [Unit(POOL["張飛"], "盾"), Unit(POOL["關羽"], "盾")]
+    CUR_ROUND = 1                                      # 奇數回合: 只有武力debuff段(n=1)應套用
+    apply_effects(ydxx_caster, None, ydxx, [ydxx_caster], ydxx_foes, heal_only=True)
+    force_hit_r1 = [u for u in ydxx_foes if any(s[0] == "force" for s in u.stat_adds)]
+    intel_hit_r1 = [u for u in ydxx_foes if any(s[0] == "intel" for s in u.stat_adds)]
+    dots_r1 = sum(len(u.dots) for u in ydxx_foes)
+    assert len(force_hit_r1) == 1, f"義膽雄心奇數回合應對敵軍單體(n=1)套武力debuff, 實中{len(force_hit_r1)}人"
+    assert not intel_hit_r1 and dots_r1 == 0, \
+        f"義膽雄心奇數回合不應套偶數段(智力debuff/謀略dot), 實得intel={len(intel_hit_r1)} dots={dots_r1}"
+    CUR_ROUND = 2                                      # 偶數回合: 謀略dot(2人)+智力debuff(2人)應套用
+    apply_effects(ydxx_caster, None, ydxx, [ydxx_caster], ydxx_foes, heal_only=True)
+    intel_hit_r2 = [u for u in ydxx_foes if any(s[0] == "intel" for s in u.stat_adds)]
+    dots_r2 = sum(len(u.dots) for u in ydxx_foes)
+    assert len(intel_hit_r2) == 2 and dots_r2 == 2, \
+        f"義膽雄心偶數回合應對敵軍群體(2人)套智力debuff+謀略dot, 實得intel={len(intel_hit_r2)} dots={dots_r2}"
+    CUR_ROUND = 0
+
+    # 103) 奮突(真實資料): stackPer:"attack" + disarm 反應式重建(when.on:'dealtDamage'+normalOnly+rate:0.35)
+    ft = TACTICS.get("奮突")
+    ft_disarm = next(e for e in ft["effects"] if e["k"] == "disarm")
+    ft_stack = next(e for e in ft["effects"] if e["k"] == "stack")
+    assert (ft_disarm.get("when") or {}).get("on") == "dealtDamage" and ft_disarm["when"].get("normalOnly") \
+        and abs(ft_disarm.get("rate", 0) - 0.35) < 1e-9, \
+        "奮突disarm應為when:{on:'dealtDamage',normalOnly:true}+rate:0.35(批37 B重建, 取代舊rate=1常駐高估)"
+    assert ft_stack.get("stackPer") == "attack", "奮突stack應為stackPer:'attack'(每次普攻命中後遞增, 批37 B新模式)"
+    ft_u = Unit(POOL["呂布"], "騎")
+    ft_foe = Unit(POOL["張飛"], "盾")
+    apply_effects(ft_u, ft_foe, ft, [ft_u], [ft_foe], no_heal=True)  # prep套用(非reactive)
+    assert ft_foe.disarm == 0, "奮突disarm(when.on反應式)不應在prep非reactive呼叫時套用(批23 when.on閘門)"
+    assert ft_u.stack and ft_u.stack.get("stackPer") == "attack" and ft_u.stack["n"] == 0, \
+        "奮突stack應在prep套用(stackPer:'attack', 初始0層)"
+    if ft_u.alive and ft_u.stack and ft_u.stack.get("stackPer", "round") == "round":
+        ft_u.stack["n"] = min(ft_u.stack["max"], ft_u.stack["n"] + 1)  # 重演fight()回合迴圈的round遞增判斷式
+    assert ft_u.stack["n"] == 0, "stackPer:'attack'不應被fight()回合迴圈的round模式遞增判斷式誤加層(守衛條件== 'round')"
+
+    # 104) 端到端 fight(): 鏡像對局, A方主將傳承奮突 vs 雙方皆無傳承基準 —— 奮突(普攻疊層增傷
+    # +35%機率繳械)應讓A方勝率高於基準(驗證 stackPer:'attack' 遞增與 dealtDamage(normalOnly)
+    # 繳械兩條新通道在真實fight()中確實生效; 若通道全然未觸發, 差值應~0)。
+    ft_team = ["張飛", "SP 呂蒙", "SP 樂進"]
+    random.seed(37)
+    r104_baseline = simulate(ft_team, ft_team, n=4000, troopA="槍", troopB="槍")
+    random.seed(37)
+    r104_with_ft = simulate(ft_team, ft_team, n=4000, troopA="槍", troopB="槍", inhA=[["奮突"], None, None])
+    assert r104_with_ft["A勝率"] > r104_baseline["A勝率"], \
+        f"A方主將傳承奮突應提升鏡像對局勝率(普攻疊層+繳械通道生效): 傳承{r104_with_ft['A勝率']} 基準{r104_baseline['A勝率']}"
+    print(f"    [批37] 鏡像對局 傳承奮突 A勝率{r104_with_ft['A勝率']:.3f} vs 基準{r104_baseline['A勝率']:.3f} (差+{r104_with_ft['A勝率']-r104_baseline['A勝率']:.3f})")
 
     print("self-check OK")
 

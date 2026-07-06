@@ -160,7 +160,14 @@ def check_r1(p, txt):
         for sm in SCALE_INFLUENCE_RE.finditer(clause):
             hit_attrs = [g for g in sm.groups() if g]
             expect_val = _nearest_pct_before(clause, sm.start())
-            local = clause[:sm.start()]
+            # 批37 A: local 原本取「clause開頭到本次匹配」的全段(可能跨多個逗號分隔的獨立
+            # 子片語, 見功不唐捐假陽性: "...傷害提升15%→30%,並獲得...,自身施加的負面狀態
+            # 有35%→70%機率(受智力影響)不可被驅散"整句只用逗號分隔, 舊local會把句首"提升"
+            # 誤判為"受智力影響"的動詞根據, 但"受智力影響"實際修飾的是後面的"機率"(抗驅散
+            # 觸發率, 與amp/stat無關))。改為只取「本次匹配」往前最近一個逗號(，,)分隔的
+            # 局部片語, 比照_nearest_pct_before"就近"精神, 避免跨越同句更早、不相干的動詞。
+            local_start = max(clause.rfind("，", 0, sm.start()), clause.rfind(",", 0, sm.start())) + 1
+            local = clause[local_start:sm.start()]
             candidate_kinds = []
             if "治療" in local:
                 candidate_kinds.append("heal")
@@ -189,7 +196,11 @@ def check_r1(p, txt):
                         matched = [best_e]
             if any(e.get("scale") for e in matched):
                 continue
-            if _topic_disclosed(p, R1_SCALE_TOPIC_KW):
+            # 批37 A: matched 若已就近窄化到單一效果, 傳入該效果做效果級優先判斷(避免兄弟
+            # 效果的無關_note連帶豁免); 窄化不到單一效果時維持戰法級掃描(舊行為, 避免因
+            # 「多個候選都可能是那句話所指」而誤判成假陰性)。
+            scope_effect = matched[0] if len(matched) == 1 else None
+            if _topic_disclosed(p, R1_SCALE_TOPIC_KW, effect=scope_effect):
                 continue
             violations.append({
                 "name": p["nameZh"], "rule": "R1",
@@ -411,7 +422,9 @@ def check_r4(p, txt):
                 if dedup_key in seen:
                     continue
                 seen.add(dedup_key)
-                if _topic_disclosed(p, R4_DUR_TOPIC_KW):
+                # 批37 A: 傳入 effect=e 做效果級優先判斷(該效果自身 dur/持續 相關_note才算數,
+                # 不再被其他兄弟效果的無關_note連帶豁免)。
+                if _topic_disclosed(p, R4_DUR_TOPIC_KW, effect=e):
                     continue
                 violations.append({
                     "name": p["nameZh"], "rule": "R4",
@@ -467,7 +480,8 @@ def check_r6(p, txt):
     effects = p.get("effects", [])
     for e in effects:
         if e.get("k") in ("counter", "settle"):
-            if _topic_disclosed(p, R6_DOUBLE_COUNT_TOPIC_KW):
+            # 批37 A: 傳入 effect=e 做效果級優先判斷。
+            if _topic_disclosed(p, R6_DOUBLE_COUNT_TOPIC_KW, effect=e):
                 continue
             violations.append({
                 "name": p["nameZh"], "rule": "R6",
@@ -794,6 +808,43 @@ R13_ROLE_WHO = {"self", "leader", "subs"}
 # 「每回合持續造成兵刃/謀略傷害」這種「持續」與「傷害」被「造成兵刃/謀略」隔開的常見措辭
 # (v12盲測踩雷: 刺傷「每回合持續造成兵刃傷害」不含子字串「持續傷害」, 完全定位不到窗口)。
 # 改用正則(見 R13_DOT_PATTERN_RE)取代純子字串表, 涵蓋「持續X造成Y傷害」的間隔寫法。
+R13_KIND_VERB_MAP = {
+    "amp": ("降低", "提升", "提高", "增加"), "mitig": ("降低", "減少"),
+    "stat": ("提升", "提高", "降低", "點"),
+    "healblock": ("禁療", "無法恢復兵力"), "rateup": ("發動機率",),
+    "extra": ("連擊", "追擊"), "insight": ("免疫",), "immune": ("免疫",),
+    "lifesteal": ("倒戈",), "shield": ("護盾",), "swap": ("武智互換",),
+    "fakeReport": ("偽報",), "healBoost": ("治療",), "healGiven": ("治療",),
+    "pierce": ("看破", "無視"), "surehit": ("必中",), "dodge": ("規避",),
+}
+# 批37 A: 「全體」宣告與該效果自身動詞的緊鄰距離門檻——若視窗內「全體」出現在該效果自身
+# 動詞關鍵字(如stat的"提高"/"點")之前且距離在此字數內(如"我軍全體武力提高7→14點"), 視為
+# 這個效果的目標已由"全體"明確宣告, 不應該再被視窗內"更後面、屬於另一個不相干子句"的
+# 單體/群體措辭覆蓋(見大戟士假陽性: "我軍全體武力提高7→14點,進行普通攻擊時,有35%機率對
+# 敵軍單體造成兵刃傷害"整句只用逗號分隔, "單體"其實是後面兵刃傷害段的目標描述, 與更早的
+# stat效果無關, 但視窗涵蓋整句導致SINGLE_TARGET_RE誤中)。門檻選8字(略寬於"我軍全體武力"
+# 4字距離, 但不會寬到吃進下一個獨立子句的目標宣告)。
+R13_ALL_ADJACENT_LOOKBACK = 8
+
+
+def _r13_all_target_adjacent(window, e, kind_verb_map=None):
+    """視窗內是否有"全體"緊鄰(往前 R13_ALL_ADJACENT_LOOKBACK 字內)該效果自身的動詞關鍵字
+    ——若是, 視為此效果的目標已被"全體"明確宣告, 呼叫端應優先採信, 不再繼續往視窗更後面
+    掃描可能屬於其他子句的單體/群體措辭。"""
+    kind_verb_map = kind_verb_map or R13_KIND_VERB_MAP
+    kws = kind_verb_map.get(e.get("k"))
+    if not kws:
+        return False
+    for kw in kws:
+        idx = window.find(kw)
+        if idx == -1:
+            continue
+        lookback = window[max(0, idx - R13_ALL_ADJACENT_LOOKBACK):idx]
+        if ALL_TARGET_RE.search(lookback):
+            return True
+    return False
+
+
 R13_ACTION_KW = (
     "降低", "提升", "提高", "增加", "減少",  # amp/mitig/stat 常見動詞
     "持續傷害", "灼燒", "中毒", "水攻",       # dot
@@ -825,24 +876,15 @@ def _r13_window_for_effect(txt, e):
     降噪; 窄窗口反而是本次盲點b的根因)。
     找不到明確錨點時回傳 None(不誤報)。"""
     k = e.get("k")
-    kw_map = {
-        "amp": ("降低", "提升", "提高", "增加"), "mitig": ("降低", "減少"),
-        "stat": ("提升", "提高", "降低", "點"), "dot": None,  # dot 改用 R13_DOT_PATTERN_RE 正則定位, 見下方特判
-        "healblock": ("禁療", "無法恢復兵力"), "rateup": ("發動機率",),
-        "extra": ("連擊", "追擊"), "insight": ("免疫",), "immune": ("免疫",),
-        "lifesteal": ("倒戈",), "shield": ("護盾",), "swap": ("武智互換",),
-        "fakeReport": ("偽報",), "healBoost": ("治療",), "healGiven": ("治療",),
-        "pierce": ("看破", "無視"), "surehit": ("必中",), "dodge": ("規避",),
-    }
-    if k not in kw_map:
-        return None
     if k == "dot":
         for clause in split_clauses(txt):
             m = R13_DOT_PATTERN_RE.search(clause)
             if m:
                 return clause
         return None
-    kws = kw_map.get(k)
+    if k not in R13_KIND_VERB_MAP:
+        return None
+    kws = R13_KIND_VERB_MAP.get(k)
     if not kws:
         return None
     for clause in split_clauses(txt):
@@ -885,6 +927,12 @@ def check_r13(p, txt):
         window = _r13_window_for_effect(txt, e)
         if window is None:
             continue
+        # 批37 A: 若視窗內"全體"緊鄰該效果自身的動詞關鍵字(如"我軍全體武力提高7→14點"),
+        # 視為此效果目標已被"全體"明確宣告, 不再繼續掃視窗更後面(可能屬於另一個不相干
+        # 子句)的單體/群體措辭(大戟士假陽性根因: 視窗涵蓋整句, "對敵軍單體造成兵刃傷害"
+        # 是後段獨立子句的目標描述, 與更早的stat效果無關, 見R13_ALL_ADJACENT_LOOKBACK說明)。
+        if _r13_all_target_adjacent(window, e):
+            continue
         expect_n, desc = None, None
         grp_range = GROUP_RANGE_RE.search(window)
         grp = GROUP_TARGET_RE.search(window)
@@ -898,7 +946,9 @@ def check_r13(p, txt):
             continue  # 窗口內無明確單體/N人措辭(可能是"全體", 本規則不管全體情形, 全體=無e.n的既有向後相容行為)
         # 主題綁定豁免(批28 A2): 只有「提到目標數主題」的揭露才算數, 不再被無關的R21/其他
         # 揭露文字連帶豁免(見上方 R13_TARGET_TOPIC_KW 說明)。
-        if _topic_disclosed(p, R13_TARGET_TOPIC_KW):
+        # 批37 A: 傳入 effect=e, 改為效果級優先——同一戰法其他兄弟效果(如decay)的揭露文字
+        # 恰含"群體"不再連帶豁免本效果的e.n缺口(v16盲測: 形一陣amp/撫輯軍民heal即此問題)。
+        if _topic_disclosed(p, R13_TARGET_TOPIC_KW, effect=e):
             continue
         seen_kinds.add(k)
         violations.append({
@@ -1062,11 +1112,89 @@ def _disclosure_texts(p):
     return out
 
 
-def _topic_disclosed(p, keywords):
-    """揭露文字(見上)裡, 是否有任一則提到 keywords 中的任一關鍵字。用於「主題相關揭露」
-    判定(而非任何揭露都算數), 避免 R16/R17/R18 被無關主題的舊揭露誤豁免。"""
-    for txt in _disclosure_texts(p):
+def _own_disclosure_texts(e):
+    """單一效果 dict 自身(不含戰法頂層、不含其他兄弟效果)的「非空字串」揭露文字。"""
+    out = []
+    for k in TEXT_DISC_KEYS:
+        v = e.get(k)
+        if isinstance(v, str) and v.strip():
+            out.append(v)
+    return out
+
+
+# 批37 A: k 名稱 → 該效果類別在原文中常見的中文自稱詞彙, 供「戰法級揭露文字是否明確指涉
+# 該效果類別」判斷用(見 _topic_disclosed 下方 effect 參數說明)。不求窮舉, 只取最常見、
+# 確定性高的詞彙, 找不到對應詞彙表的 k 一律 fallback 為「不做類別窄化」(維持批28 A2 舊行為,
+# 避免無對照表可查的 k 出現假陰性)。
+R_EFFECT_KIND_SELF_KW = {
+    "amp": ("amp", "造成傷害提高", "造成傷害降低", "易傷", "增傷"),
+    "mitig": ("mitig", "受到傷害降低", "受到傷害提高", "減傷"),
+    "decay": ("decay", "遞減", "衰減"),
+    "heal": ("heal", "治療", "恢復兵力", "回復"),
+    "stat": ("stat", "屬性", "武力", "智力", "統率", "統帥", "速度", "魅力"),
+    "dot": ("dot", "持續傷害", "灼燒", "中毒", "水攻"),
+    "stun": ("stun", "震懾", "眩暈"),
+    "silence": ("silence", "沉默"),
+    "disarm": ("disarm", "繳械"),
+    "chaos": ("chaos", "混亂"),
+    "ambush": ("ambush", "伏兵"),
+    "taunt": ("taunt", "嘲諷"),
+    "counter": ("counter", "反擊"),
+    "settle": ("settle", "結算"),
+    "dispel": ("dispel", "清除", "淨化", "解除"),
+    "immune": ("immune", "免疫"),
+    "insight": ("insight", "免疫"),
+}
+
+
+def _topic_disclosed(p, keywords, effect=None):
+    """揭露文字裡, 是否有任一則提到 keywords 中的任一關鍵字。用於「主題相關揭露」判定
+    (而非任何揭露都算數), 避免規則被無關主題的舊揭露誤豁免。
+
+    批37 A(_topic_disclosed 精準化): 原本不分效果層級, 對戰法內任何一則揭露文字(含其他
+    兄弟效果的 _note)做全文子字串掃描——同一戰法若某效果的 _note 恰好含主題關鍵字(如
+    "群體"), 會連帶把完全不相干的另一個效果的同主題缺口也豁免掉(v16盲測實證: 形一陣
+    decay效果的衰減註記含"群體", 連帶豁免了amp效果缺e.n的R13違規; 撫輯軍民mitig效果的
+    scale族註記同款誤豁免heal/amp的e.n缺口, 見批37任務背景兩案例)。
+
+    修法(效果級優先, 僅當呼叫端傳入 effect 參數時啟用窄化; 不傳則維持戰法級掃描, 相容
+    R3/R5/R8/R16/R20等本就是「戰法整體」層級的既有判斷):
+    1. 先查該效果自身的揭露文字(_own_disclosure_texts) 是否含關鍵字——效果自己承認的
+       缺口, 直接視為已揭露。
+    2. 若效果自身無揭露, 才退而查戰法頂層欄位(不含兄弟效果!) 的揭露文字——且要求該
+       頂層文字同時明確指涉這個效果類別(k名稱字面, 或 R_EFFECT_KIND_SELF_KW 裡該k的
+       自稱詞彙鄰近出現), 而不是恰好共用同一個泛用主題詞(如"群體")就算數。
+       R_EFFECT_KIND_SELF_KW 查無對應k時, fallback 為「頂層文字含主題關鍵字即算」
+       (維持批28 A2 既有寬度, 避免無對照表可查的k出現假陰性)。
+    3. 完全不查其他兄弟效果的揭露文字(這正是v16兩案例的錯誤來源)。
+    """
+    if effect is None:
+        for txt in _disclosure_texts(p):
+            if any(kw in txt for kw in keywords):
+                return True
+        return False
+
+    # 1) 效果自身揭露優先
+    for txt in _own_disclosure_texts(effect):
         if any(kw in txt for kw in keywords):
+            return True
+
+    # 2) 退而查戰法頂層(不含兄弟效果), 且需明確指涉該效果類別
+    top_texts = []
+    for k in TEXT_DISC_KEYS:
+        v = p.get(k)
+        if isinstance(v, str) and v.strip():
+            top_texts.append(v)
+    if not top_texts:
+        return False
+    k = effect.get("k")
+    kind_kw = R_EFFECT_KIND_SELF_KW.get(k)
+    for txt in top_texts:
+        if not any(kw in txt for kw in keywords):
+            continue
+        if kind_kw is None:
+            return True  # 無對照表可查, fallback 維持批28 A2 舊寬度
+        if any(kw in txt for kw in kind_kw):
             return True
     return False
 
@@ -1136,7 +1264,8 @@ def check_r17(p, txt):
     for h in heals:
         if (h.get("when") or {}).get("on"):
             continue
-        if _topic_disclosed(p, R17_WHENON_KW):
+        # 批37 A: 傳入 effect=h 做效果級優先判斷。
+        if _topic_disclosed(p, R17_WHENON_KW, effect=h):
             continue
         violations.append({
             "name": p["nameZh"], "rule": "R17",
@@ -1238,8 +1367,9 @@ def check_r19(p, txt):
         return violations
     if all(e.get("dmgType") for e in amp_mitig):
         return violations
-    if _topic_disclosed(p, R19_DMGTYPE_DISC_KW):
-        return violations
+    # 批37 A: 移除舊的戰法級early-exit(_topic_disclosed(p, ...)無effect scope時, 任一
+    # 兄弟效果的無關_note含"dmgType"字面就會豁免掉整個戰法所有amp/mitig的缺口)。改為
+    # 下方就近綁定到具體效果(bound)後才做效果級豁免判斷, 見下方迴圈內的呼叫。
     seen_effect_ids = set()
     for clause in split_clauses(txt):
         for m in R19_TYPED_DMG_RE.finditer(clause):
@@ -1308,6 +1438,8 @@ def check_r19(p, txt):
             for e in bound:
                 if id(e) in seen_effect_ids:
                     continue
+                if _topic_disclosed(p, R19_DMGTYPE_DISC_KW, effect=e):
+                    continue
                 seen_effect_ids.add(id(e))
                 dmg_type_zh = m.group(1)
                 violations.append({
@@ -1335,7 +1467,14 @@ def check_r19(p, txt):
 # 對照表, 而非泛用比對, 避免誤傷"能力關鍵字剛好出現在句子裡但語意其實是別的東西"的情形
 # (低誤報優先, 只收錄批25全庫核對後確認的高信度別名)。
 # ---------------------------------------------------------------------------
-NEGATION_KW = ("引擎無", "不支援", "無對應原語", "無此原語", "引擎不支援", "引擎目前無", "不分", "無法區分")
+# 批37 B(R26決策): 補「無法表達」——義膽雄心批32停損註記「engine無法表達回合奇偶交替條件」
+# 用的正是此措辭, 且不在原否定詞表中, 加上 alias 表也沒有「奇偶交替」條目, 兩個洞疊加讓該
+# stale停損逃過R20直到v16盲測才現形。批37裁決: 不新增基於「停損措辭」(不硬修/暫不/超出本批等)
+# 的獨立規則R26——該類措辭大量出現於「實測樣本缺口」(非引擎能力缺口, 如陷陣營高順條件)與
+# 「複核後已確認仍成立」的正當停損(誤報難控), 改為(a)強化R20(本處否定詞+下方parity別名),
+# (b)批37一次性清剿(掃描13筆/9戰法, 重建3過期/註記6仍成立), (c)維護規約寫入engine_limitations.md
+# (停損註記必須點名具體缺失原語, 讓R20 alias掃描在原語落地時自動抓到過期)。
+NEGATION_KW = ("引擎無", "不支援", "無對應原語", "無此原語", "引擎不支援", "引擎目前無", "不分", "無法區分", "無法表達")
 
 # 能力關鍵字(中文別名) -> 該能力在引擎的實際名稱(供違規訊息顯示); 只收錄「批25核對後
 # 確認引擎確實已支援、且全庫仍可能有 stale 用語提及」的能力, 非全量能力清單(全量能力見
@@ -1370,7 +1509,17 @@ ENGINE_CAPABILITY_ALIASES = {
                 "counter.guardFor:\"leader\"; 若確實是傷害轉移/代承語意, 引擎現有 redirect 機制只能"
                 "保護全體我軍而非單獨鎖定主將, 此限制仍真實存在, 不算 stale, 見 engine_limitations.md)",
     "每次發動": "stackPer(批26新增, stack 效果欄位 stackPer:\"cast\", 每次成功發動遞增疊層,"
-                "對比預設 stackPer:\"round\" 逐回合遞增, 見 engine.js/sgz.py applyStackCast())",
+                "對比預設 stackPer:\"round\" 逐回合遞增, 見 engine.js/sgz.py applyStackCast();"
+                "批37 B 新增第三種模式 stackPer:\"attack\", 每次普攻確實命中造成傷害後遞增,"
+                "掛 dealtDamage 事件點, 見 dealtDamage()/dealt_damage() 頂端)",
+    "普攻疊加": "stackPer(批37 B 新增 stackPer:\"attack\", 每次普攻命中後+1層, 見上方「每次發動」"
+                "條目; 「stack以回合遞增近似逐次普攻疊加」這類措辭是 attack 模式落地前的舊近似"
+                "說明, 落地後應改寫並補上 stackPer:\"attack\")",
+    "普攻後觸發": "when.normalOnly(批37 B新增, dealtDamage 反應式的觸發過濾旗標(戰法級 t.when 與"
+                "效果級 e.when 皆可), 限「普通攻擊」造成的傷害才觸發(dmgType:\"phys\" 無法區分普攻"
+                "與兵刃戰法傷害), 見 engine.js dealtDamage()/sgz.py dealt_damage() 的 normalOnly 判斷)",
+    "普通攻擊之後": "when.normalOnly(同上; 「普通攻擊之後...機率使目標X」句型用"
+                "when:{on:\"dealtDamage\",normalOnly:true}+e.rate 精確表達, 見奮突批37重建)",
     "三選一": "choices(批16新增, 戰法欄 choices:[{weight,effects,...}], 發動時按權重隨機選一組"
                 "效果; 批27 C 已擴充支援反應式 onHit 路徑同樣消費 choices, 見 engine.js pickChoice())",
     "二選一": "choices(同上)",
@@ -1381,6 +1530,11 @@ ENGINE_CAPABILITY_ALIASES = {
     "已有該狀態": "ifTargetHas(批16新增, 效果/extraHits級條件欄位, 只對「已具備該狀態」的目標"
                 "生效/結算, 見 engine.js targetHas()/ifTargetHas 過濾)",
     "既有狀態": "ifTargetHas(同上)",
+    "奇偶交替": "when.parity(批16新增, 戰法級t.when與效果級e.when皆支援 parity:\"odd\"/\"even\","
+                "見 roundOk()/round_ok(); passive/command 的 coef 傷害段擲骰自批32起亦讀 roundOk;"
+                "配合批30 everyRound 可表達「奇數回合效果A/偶數回合效果B」互斥交替(義膽雄心批37重建"
+                "先例); 「無法表達回合奇偶交替」這類措辭是該組合落地前的舊近似說明, 落地後應重建)",
+    "回合奇偶": "when.parity(同上)",
     "每回合機率": "everyRound(批30新增, 效果級旗標 e.everyRound:true, 非heal效果的逐回合重擲通道,"
                 "與既有heal_only常駐通道對稱, 見 engine.js/sgz.py applyEffects 的 e.everyRound 判斷式;"
                 "「引擎只有heal逐回合重擲/其餘k在prep套用後不會逐回合重新判定」這類措辭是 everyRound"
@@ -1508,6 +1662,14 @@ def check_r20_capability_drift():
 
 R20_WINDOW = 20
 R20_AFTER_GAP = 6  # 「能力關鍵字在前、否定語氣詞在後」句型的緊鄰窗口(見下方說明), 比前向窗口窄很多
+# 批37 B: 歷史敘述排除 —— 停損決策「已重建/已過期」的解決紀錄註記會複誦舊的stale措辭當歷史
+# 引文(如義膽雄心批37註記「批32停損理由『engine無法表達回合奇偶交替條件』已因後續批次補齊
+# 能力而過期」), 這是對「已解決狀態」的敘述, 非對目前狀態的斷言, 不應被R20誤咬(與R14的
+# HISTORICAL_KW lookback同一設計問題)。判定: alias命中位置前後的上下文窗口內出現「已過期/
+# 已重建」等解決性措辭, 視為歷史敘述跳過。
+R20_RESOLVED_KW = ("已過期", "過期重建", "已重建", "已解決", "已落地", "落地後應重建", "已因後續", "複核仍成立", "落地前的舊近似")
+R20_RESOLVED_LOOKBACK = 40   # alias 之前(涵蓋「批32停損理由「engine無法表達...」句型的引文前導)
+R20_RESOLVED_LOOKAHEAD = 40  # alias 之後(涵蓋「...奇偶交替條件, 現簡化為...(可能高估)」已過期重建」這類引文較長的收尾句型)
 
 
 def check_r20(p, txt):
@@ -1539,6 +1701,11 @@ def check_r20(p, txt):
                 and "「" not in after_gap and "」" not in after_gap
             )
             if not any(neg in before for neg in NEGATION_KW) and not after_hit:
+                continue
+            # 批37 B: 歷史敘述排除(見 R20_RESOLVED_KW 說明) —— alias 前後上下文含「已過期/已重建」
+            # 等解決性措辭時, 視為對已解決狀態的歷史引文敘述, 非目前狀態的stale斷言, 跳過。
+            resolved_ctx = text[max(0, idx - R20_RESOLVED_LOOKBACK):idx + len(alias) + R20_RESOLVED_LOOKAHEAD]
+            if any(kw in resolved_ctx for kw in R20_RESOLVED_KW):
                 continue
             violations.append({
                 "name": p["nameZh"], "rule": "R20",
@@ -1780,7 +1947,10 @@ def check_r24(p, txt):
     stuns = [e for e in (p.get("effects") or []) if e.get("k") == "stun"]
     if not stuns:
         return violations
-    if _topic_disclosed(p, R24_TOPIC_KW):
+    # 批37 A: 只有單一stun候選時才能明確scope到該效果(多個stun時無法判斷"虛弱"對應哪一個,
+    # 保守維持戰法級掃描, 與R19/R1的"窄化不到單一效果時退回舊行為"慣例一致)。
+    scope_effect = stuns[0] if len(stuns) == 1 else None
+    if _topic_disclosed(p, R24_TOPIC_KW, effect=scope_effect):
         return violations
     violations.append({
         "name": p["nameZh"], "rule": "R24",
@@ -2049,6 +2219,31 @@ SELFTEST_CASES = {
         ("持續造成X傷害間隔寫法應正確定位dot(對應批28 A1盲點b回歸測試)",
          _base_tactic(coef=0, effects=[{"k": "dot", "who": "enemy", "coef": 0.5, "dur": 3}]),
          "對敵軍單體施加潰逃狀態，每回合持續造成兵刃傷害（傷害率50%），持續3回合", True),
+        ("兄弟效果的無關_note恰含主題關鍵字不應連帶豁免本效果缺口"
+         "(批37 A回歸測試: v16盲測形一陣案例——decay效果的衰減註記含'群體', 過去會誤豁免amp效果的e.n缺口)",
+         _base_tactic(coef=0, effects=[
+             {"k": "decay", "who": "ally", "v0": -0.3, "rounds": 3,
+              "_note": "友軍群體衰減效果的說明文字, 恰好含群體字樣但與amp效果的目標數無關"},
+             {"k": "amp", "who": "ally", "val": 0.16, "dur": 99},
+         ]),
+         "友軍群體（2人）造成傷害降低30%，該效果結束後每回合使其造成傷害提高16%", True),
+        ("同上情境但缺口效果自身有揭露時應豁免"
+         "(對照組: 驗證修復只擋兄弟效果誤豁免, 不影響效果自身的正當揭露)",
+         _base_tactic(coef=0, effects=[
+             {"k": "decay", "who": "ally", "v0": -0.3, "rounds": 3,
+              "_note": "友軍群體衰減效果的說明文字, 恰好含群體字樣但與amp效果的目標數無關"},
+             {"k": "amp", "who": "ally", "val": 0.16, "dur": 99,
+              "_note": "群體（2人）目標數缺e.n, 已知未補, 保留占位"},
+         ]),
+         "友軍群體（2人）造成傷害降低30%，該效果結束後每回合使其造成傷害提高16%", False),
+        ("兄弟效果的無關_note2(scale曲線族揭露)恰含主題關鍵字不應連帶豁免另一效果"
+         "(批37 A回歸測試: v16盲測撫輯軍民案例——mitig效果的scale族註記含'群體', 過去會誤豁免amp效果的e.n缺口)",
+         _base_tactic(coef=0, effects=[
+             {"k": "mitig", "who": "ally", "val": 0.24, "dur": 3,
+              "_note2": "本效果帶scale但曲線族未經實測樣本裁決, 群體效果曲線族待未來實測樣本才裁決"},
+             {"k": "amp", "who": "ally", "val": -0.24, "dur": 3},
+         ]),
+         "使我軍群體（2人）造成的兵刃傷害降低12%，受到的兵刃傷害降低12%", True),
     ],
     "R14": [
         ("_note聲稱的coef與實際不符應抓到",
@@ -2114,6 +2309,12 @@ SELFTEST_CASES = {
          "隨意文字", False),
         ("否定詞隔了引號內無關名詞不應誤報(批29回歸測試: 錦囊妙計假陽性案例)",
          _base_tactic(coef=0, _note="「17.5%→35%(主將時100%)跳過1回合準備」無對應原語(chargeup=突擊發動率非準備跳過)，未建模"),
+         "隨意文字", False),
+        ("「無法表達」否定詞+奇偶交替別名應抓到(批37 B回歸測試: 義膽雄心批32 stale停損句型)",
+         _base_tactic(coef=0, _note="與奇數回合段實際為互斥交替觸發,engine無法表達回合奇偶交替條件,現簡化為兩者同時常駐生效"),
+         "隨意文字", True),
+        ("歷史敘述(已過期重建)複誦舊stale措辭不應誤報(批37 B: 停損解決紀錄的引文豁免)",
+         _base_tactic(coef=0, _note="批37 B: 批32停損理由「engine無法表達回合奇偶交替條件」已因後續批次補齊能力而過期, 本批全面重建為精確互斥交替"),
          "隨意文字", False),
     ],
     "R21": [

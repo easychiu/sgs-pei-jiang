@@ -1129,6 +1129,9 @@
         // 「本戰法每次成功發動」才+1層, 與回合數無關。"cast"模式改由 applyStackCast() 在戰法
         // 命中/發動結算處呼叫遞增(見 fight() fire 分支)。刻意不覆寫既有 e.per 語意(per 一直是
         // "每層增傷倍率"數值欄位), 新增獨立欄位避免型別混淆。
+        // 批37 B: 第三種遞增時機 "attack" —— 「每次普通攻擊後+1層」(如奮突「普通攻擊之後...
+        // 最多疊加3次」), 掛在 dealtDamage 事件點(普攻確實命中造成傷害後遞增, 見 dealtDamage()
+        // 頂端), 繳械/震懾無普攻的回合不會誤疊層(較舊的 round 近似精確)。
         else if (k === "stack") u.stack = { per: e.per ?? 0.1, max: e.max ?? 5, n: 0, stackPer: e.stackPer || "round" };
         else if (k === "decay") u.decay = { v0: e.v0 ?? 0.5, left: e.rounds ?? 8, total: e.rounds ?? 8 };
         else if (k === "swap") u.swap = Math.max(u.swap, (e.dur ?? 1) + 1);
@@ -1348,11 +1351,18 @@
       }
     };
     const dealtDamage = (src, dst, isNormal, kind, dmg) => {  // 批27 A: 反應式觸發(when.on:"dealtDamage") —— 自己造成傷害(對 dst)後掛到 hit() 事件點, 與 onHit(自己受擊視角)對稱; 批33: dmg(可選, 尾端新增)—— 本次觸發事件的實際傷害量, 供 e.ofDamage 使用
+      // 批37 B: stackPer:"attack" —— 「每次普通攻擊後疊加1層」(如奮突「普通攻擊之後...最多
+      // 疊加3次」)。過去只有 "round"(逐回合)/"cast"(每次發動)兩種遞增模式, 普攻疊層只能用
+      // round 近似(繳械/震懾回合無普攻仍會錯誤地繼續疊層)。掛在 dealtDamage 事件點(普攻確實
+      // 命中造成傷害後), 置於 onDealTacs 早退判斷之前(有 stackPer:"attack" 疊層的單位未必
+      // 同時有 when.on:"dealtDamage" 反應式戰法, 不能被該早退擋掉)。
+      if (isNormal && src.alive && src.stack && src.stack.stackPer === "attack") src.stack.n = Math.min(src.stack.max, src.stack.n + 1);
       if (!src.alive || (!src.onDealTacs.length && !src.onDealEffectTacs.length)) return;
       if (src.fakeReportDur) return;                 // 批16: 偽報 —— 抑制反應式觸發(被動/指揮戰法失效), 與 onHit 同慣例
       const dmgTypeOk = dt => !dt || dt === kind;     // dmgType 過濾: 未指定視為兵刃/謀略皆可觸發(向後相容)
       for (const t of src.onDealTacs) {               // 戰法級: 整個戰法都是「造成傷害時」反應式(如白衣渡江拆成兩個獨立戰法段時可用此形式)
         if (!dmgTypeOk(t.when.dmgType)) continue;
+        if (t.when.normalOnly && !isNormal) continue; // 批37 B: when.normalOnly —— 限「普通攻擊」造成的傷害才觸發(如奮突「普通攻擊之後」; dmgType:"phys" 無法區分普攻與兵刃戰法傷害, 需獨立旗標)
         if (!roundOk(t, CUR_R)) continue;
         if (src.hitFlags.has(t)) continue;            // 同回合每單位每戰法最多觸發1次(防無限鏈), 與 onHit 共用同一 hitFlags(不同方向的觸發各自用不同t/e鍵, 不會互相誤判)
         if (rnd() >= t.rate) continue;
@@ -1376,6 +1386,7 @@
         for (const e of t.effects) {
           if (!e.when || e.when.on !== "dealtDamage") continue;
           if (!dmgTypeOk(e.when.dmgType)) continue;
+          if (e.when.normalOnly && !isNormal) continue; // 批37 B: when.normalOnly(效果級) —— 同上, 限普攻傷害觸發
           if (!roundOk({ when: e.when }, CUR_R)) continue;
           if (src.hitFlags.has(e)) continue;
           const evRate = e.rate ?? t.rate ?? 1;

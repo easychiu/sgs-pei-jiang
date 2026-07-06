@@ -1356,3 +1356,56 @@ precise assert)/`python reparse_effects.py`(冪等, 二次執行輸出byte-ident
 `python lint_tactics.py --selftest`(60項全過, `scaleDiv`/`capVal` 已登記進
 `ENGINE_CAPABILITY_ALIASES`)/`python lint_tactics.py`(R1-R25全庫零違規, `capVal`/
 `scaleDiv` 已加入 `KNOWN_EFFECT_FIELDS` 避免R9幽靈欄位誤報)。
+
+## 35. 批37: `_topic_disclosed` 效果級精準化 + 停損決策過期重審制度化 + `stackPer:"attack"`/`when.normalOnly`
+
+**A. lint 豁免精準化(`_topic_disclosed` effect scope)**: v16盲測實證兩案例(形一陣/撫輯軍民)——
+豁免判定過去對「戰法內任何一則揭露文字」做全文子字串掃描, 兄弟效果的無關 `_note` 恰含主題
+關鍵字(如"群體")就連帶豁免另一個效果的缺口。修法(lint_tactics.py `_topic_disclosed(p, kw,
+effect=None)`): 傳入 effect 時改「效果級優先」——(1)效果自身揭露文字含關鍵字才直接豁免;
+(2)戰法頂層文字須同時明確指涉該效果類別(`R_EFFECT_KIND_SELF_KW` k別名表)才算數; (3)完全
+不再掃描兄弟效果的揭露文字。R1/R4/R6/R13/R17/R19/R24 呼叫端已傳入 effect scope(可窄化到
+單一效果時), R2/R3/R5/R8/R10/R11/R12/R15/R16/R20/R21/R22/R23/R25 屬戰法整體級判斷維持
+原掃描。附帶修正兩個被舊寬豁免掩蓋的規則窗口 bug: R1 的動詞窗口改「最近逗號分段」(功不唐捐
+假陽性), R13 新增「全體緊鄰動詞宣告優先」判斷(`_r13_all_target_adjacent`, 大戟士假陽性)。
+全庫重掃現形15筆(R1×4/R4×1/R13×9/R19×1), 全數清零(明細見批37報告/tactic_corrections.json
+批37 A 註記)。selftest 新增3個 v16 回歸樣例(對舊邏輯驗證確實現形)。
+
+**B. 停損決策過期重審**: 批次停損決策(「引擎不支援X, 不硬修」)會因後續批次補齊能力而過期,
+過去無人回頭複核。本批:
+- **義膽雄心重建**(批32停損「engine無法表達回合奇偶交替」過期): 頂層 `when:{parity:"odd"}`
+  (main coef 只在奇數回合擲骰, passive coef dispatch 自批32讀 roundOk) + 三段效果
+  `everyRound`+`e.when.parity` 互斥交替(奇: 武力debuff/偶: 謀略dot+智力debuff), dot 誤用
+  no-op 的 `scale:intel` 改為 `kind:"intel"`(批23 A3通道)。
+- **奮突重建**(批23停損「disarm無獨立prob欄位」過期): disarm 改
+  `when:{on:"dealtDamage",normalOnly:true}`+`rate:0.35`(每次普攻命中後35%反覆判定);
+  stack 補 `stackPer:"attack"`。
+- **水淹七軍部分重建**: 主將加成用「基礎dot(0.96)+差額dot(0.12, `ifLeader:true`)」top-up
+  拆法落地(原停損誤以為需要不存在的 ifLeader:false 變體); 項(2)(3)(`ifCasterStack`)複核仍成立。
+- **新原語×2(雙引擎同步)**: `stackPer:"attack"`(第三種疊層遞增模式, 每次普攻確實命中造成
+  傷害後+1層, 掛 dealtDamage 事件點頂端, 早於 onDealTacs 早退判斷; 繳械/震懾回合不誤疊層)
+  + `when.normalOnly`(dealtDamage 反應式的觸發過濾旗標, 戰法級/效果級皆可, 限普攻傷害觸發
+  ——`dmgType:"phys"` 無法區分普攻與兵刃戰法傷害)。
+- **一次性清剿統計**: 停損措辭(不硬修/停損/強修會/暫不/保留現狀/超出本批)全庫掃描 13筆/9戰法,
+  重建3(義膽雄心/奮突/水淹七軍項1), 複核仍成立6(十二奇策/同戰身先/義心昭烈/陷陣營/鷹視狼顧/
+  知己知彼, 皆已補記「批37複核仍成立」+具體仍缺的原語名)。
+
+**R26 決策: 不新增基於停損措辭的獨立規則**。理由: 該類措辭大量正當出現於「實測樣本缺口」
+(非引擎能力缺口, 如陷陣營高順條件)與「已複核仍成立」的停損, 誤報難控。改為強化 R20:
+(a) `NEGATION_KW` 補「無法表達」(義膽雄心 stale 句型的否定詞); (b) `ENGINE_CAPABILITY_ALIASES`
+補「奇偶交替/回合奇偶」→when.parity、「普攻疊加」→stackPer:"attack"、「普攻後觸發/普通攻擊
+之後」→when.normalOnly; (c) R20 新增歷史敘述排除(`R20_RESOLVED_KW`: alias 前後40字內含
+「已過期/已重建/複核仍成立」等解決性措辭視為歷史引文, 不誤咬解決紀錄)。
+
+**維護規約(停損註記)**: 今後寫停損/不硬修決策時, 註記**必須點名具體缺失的原語/機制名**
+(如「需要 ifCasterStack」「需要跨單位事件廣播」), 而非只寫「引擎不支援」的泛稱——這讓 R20
+的 alias 掃描在該原語未來落地、別名表登記後能自動抓到過期的停損; 同時新原語落地時**必須**
+在 `ENGINE_CAPABILITY_ALIASES` 登記中文別名(R20-drift selftest 會強制)並順手 grep 全庫
+停損註記是否有點名此原語的條目可以重建。解決一筆停損後, 解決紀錄可複誦舊措辭當歷史引文,
+但須在引文前後40字內帶「已過期/已重建」等解決性措辭(R20 歷史敘述排除的判定窗口)。
+
+**驗收**: `node --check docs/engine.js` / `python sgz.py test`(新增102-104: 義膽雄心
+parity互斥交替/奮突欄位與reactive閘門/傳承奮突鏡像對局端到端) /
+`node scratchpad/smoke_batch37.js`(103 asserts: 義膽雄心主傷僅奇數回合+dot僅偶數回合;
+奮突disarm僅普攻後觸發, 主動兵刃傷害不觸發) / `python reparse_effects.py`(冪等) /
+`python lint_tactics.py --selftest`(65項全過) / `python lint_tactics.py`(R1-R25全庫零違規)。
