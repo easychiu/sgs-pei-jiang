@@ -99,6 +99,15 @@ ON_ATTACKED = {
 ON_DAMAGED = {
     "剛勇無前": "受到兵刃傷害後,下回合行動時提高會心並使下一擊傷害提高",
 }
+# 批39 C: when.dmgType(戰法級, 反應式damaged/attacked路徑限定觸發的傷害類型) —— 對稱既有
+# amp/mitig 效果級 dmgType(批24)與 dealtDamage 的 when.dmgType(批27), engine.js/sgz.py 已補
+# onHit()/on_hit() 讀取此欄位過濾(見 engine_limitations.md 批39節)。此白名單只收錄「原文明確
+# 限定『受到兵刃/謀略傷害』, 而非泛稱『受到傷害/普通攻擊』」的 ON_DAMAGED/ON_ATTACKED 條目
+# ——全庫核對(批39 C)後, ON_ATTACKED 四筆(氣凌三軍/後發制人/眾動萬計/魅惑)皆為「受到普通
+# 攻擊時」(攻擊手段限定, 非傷害類型限定, 不適用dmgType), ON_DAMAGED 僅剛勇無前一筆符合。
+ON_DAMAGED_DMGTYPE = {
+    "剛勇無前": "phys",
+}
 
 # --- rate 白名單覆寫: on 觸發類戰法的內文機率(activationRate=1 但實際觸發率藏在
 # effectText, 且 coef=0 走不到既有 item 2 的 inline rate 抽取路徑)。
@@ -1068,6 +1077,15 @@ def main():
             w = p.setdefault("when", {})
             if w.get("on") != "damaged":
                 w["on"] = "damaged"
+                n_when_filled += 1
+            touched_meaningful = True
+        # 批39 C: when.dmgType —— 限定damaged/attacked反應式只在特定傷害類型(兵刃/謀略)下觸發,
+        # 見 ON_DAMAGED_DMGTYPE 註解。只在該戰法已有 when.on 時才補(dmgType依附於on事件, 無on
+        # 不該憑空出現dmgType)。
+        if name in ON_DAMAGED_DMGTYPE and p.get("when", {}).get("on"):
+            w = p["when"]
+            if w.get("dmgType") != ON_DAMAGED_DMGTYPE[name]:
+                w["dmgType"] = ON_DAMAGED_DMGTYPE[name]
                 n_when_filled += 1
             touched_meaningful = True
 

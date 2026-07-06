@@ -560,7 +560,7 @@
   function hit(src, dst, coef, kind, isNormal, onEvent, onDeal, isActive) {  // 批31 A: isActive(可選, 尾端新增, 向後相容既有全部呼叫點)—— 傳入本次傷害是否為主動/突擊戰法所致
     if (!src.surehitDur && dst.dodgeDur && rnd() < dst.dodgeProb) {  // 規避: 完全迴避一次傷害(必中無視)
       if (TRACE) lg(`　→ ${dst.nm} 規避了攻擊`);
-      if (onEvent) onEvent(dst, src, isNormal, 0);
+      if (onEvent) onEvent(dst, src, isNormal, 0, kind);  // 批39 C: 補傳kind(本次傷害類型), 供onHit()對稱dealtDamage的e.when.dmgType過濾(見下方onEvent呼叫端與onHit定義)
       return;
     }
     let dmg = damage(src, dst, coef, kind, undefined, isNormal, isActive);  // 批28 B3/批31 A: 傳入isNormal/isActive供amp()過濾normalOnly/activeOnly標記的加成
@@ -604,7 +604,10 @@
     // 批33: onEvent/onDeal 補傳 dmg(本次結算後的實際傷害量, 已經過block/shield/代承折算,
     // 與寫入 wounded 池的量一致) —— 供 e.ofDamage(傷害比例治療) 反應式heal使用, 見
     // onHit()/dealtDamage() 呼叫端與 applyEffects() heal 分支(opt.dmg)。
-    if (onEvent) onEvent(dst, src, isNormal, dmg);
+    // 批39 C: 補傳kind(本次傷害類型, phys/intel) —— 供onHit()對when.dmgType/e.when.dmgType過濾
+    // (對稱dealtDamage自批27起就有的dmgType過濾, 見下方dealtDamage定義), 修正damaged/attacked
+    // 反應式路徑過去完全不分兵刃/謀略傷害觸發(剛勇無前/剛烈不屈「受到兵刃傷害時」誤及謀略傷害)。
+    if (onEvent) onEvent(dst, src, isNormal, dmg, kind);
     // 批27 A: on:"dealtDamage" —— src(施加本次傷害的一方)反應式觸發, 只在非規避(確實造成
     // 傷害, 含被完全格擋/護盾吸收歸零的情形——「造成傷害」語意上仍是「打出了這一擊」, 只是
     // 傷害量被防禦手段抵銷, 與「規避=攻擊未命中」不同, 故僅 dodge 分支排除, block/shield
@@ -1302,7 +1305,8 @@
       if (who === "enemy") return foesOf(evtUnit);
       return null;                                    // "self"/未指定: 不走廣播, 呼叫端維持原本 dst/src 自身路徑
     };
-    const onHit = (dst, src, isNormal, dmg) => {          // 反應式觸發(when.on): 被普攻(attacked)/受任意傷害(damaged) 時掛到 hit() 事件點; 批33: dmg(可選, 尾端新增)—— 本次觸發事件的實際傷害量, 供 e.ofDamage 傷害比例治療使用; 批38 A: 新增who:"ally"/"otherAlly"/"enemy"跨單位廣播(見上方broadcastHolders/onHitFor)
+    const onHit = (dst, src, isNormal, dmg, kind) => {          // 反應式觸發(when.on): 被普攻(attacked)/受任意傷害(damaged) 時掛到 hit() 事件點; 批33: dmg(可選, 尾端新增)—— 本次觸發事件的實際傷害量, 供 e.ofDamage 傷害比例治療使用; 批38 A: 新增who:"ally"/"otherAlly"/"enemy"跨單位廣播(見上方broadcastHolders/onHitFor); 批39 C: 新增kind(可選, 尾端新增, 向後相容既有呼叫點皆未傳)—— 本次傷害類型(phys/intel), 供when.dmgType/e.when.dmgType過濾(對稱dealtDamage的dmgTypeOk)
+      const dmgTypeOk = dt => !dt || dt === kind;  // dmgType 過濾: 未指定該欄位視為兵刃/謀略皆可觸發(向後相容), 與dealtDamage的dmgTypeOk同慣例
       const onHitFor = (dst, src, isNormal, dmg, holder, wantWho) => {  // 批38 A: 抽出可重用核心 —— holder(效果持有者)可能不同於dst(受擊/受傷的事件單位本身), wantWho: 本次呼叫只處理與此匹配的when.who(undefined/"self"→只認持有者自身受擊之既有語意; "ally"/"enemy"→只認持有者從隊友/敵軍廣播監聽到的受擊事件, 避免self掃描與廣播掃描重複觸發同一條)
         if (!holder.alive || (!holder.onHitTacs.length && !holder.onHitEffectTacs.length && !holder.onHitEq.length && !holder.onHitBs.length)) return;
         if (holder.fakeReportDur) return;             // 批16: 偽報 —— 抑制 onHit 反應式觸發(被動/指揮戰法失效)
@@ -1317,6 +1321,7 @@
           if (!whoOk(t0.when)) continue;
           if (wantWho === "otherAlly" && !otherAllyOk()) continue;
           if (t0.when.on === "attacked" && !isNormal) continue;   // attacked: 限普通攻擊觸發; damaged: 任意傷害都觸發
+          if (!dmgTypeOk(t0.when.dmgType)) continue;  // 批39 C: 戰法級when.dmgType過濾(如剛勇無前/剛烈不屈「受到兵刃傷害時」限定)
           // 批22: when.on 反應式戰法過去完全不檢查 rounds/from/until/parity/every(只認 on 事件本身),
           // 導致「戰鬥首回合獲得急救(受傷時回血)」這類「反應式觸發+回合窗口限定」的複合語意無法
           // 表達(如 長健/青囊書: 首回合內受傷才會回血, 而非全程)。roundOk() 對「無 rounds/from/
@@ -1349,6 +1354,7 @@
             if (!whoOk(e.when)) continue;
             if (wantWho === "otherAlly" && !otherAllyOk()) continue;
             if (e.when.on === "attacked" && !isNormal) continue;
+            if (!dmgTypeOk(e.when.dmgType)) continue;  // 批39 C: 效果級when.dmgType過濾
             if (!roundOk({ when: e.when }, CUR_R)) continue;
             if (holder.hitFlags.has(e)) continue;
             const evRate = e.rate ?? t.rate ?? 1;
@@ -1363,6 +1369,7 @@
           if (!whoOk(e.when)) continue;
           if (wantWho === "otherAlly" && !otherAllyOk()) continue;
           if (e.when.on === "attacked" && !isNormal) continue;
+          if (!dmgTypeOk(e.when.dmgType)) continue;  // 批39 C: 裝備效果級when.dmgType過濾
           if (!roundOk({ when: e.when }, CUR_R)) continue;
           if (holder.hitFlags.has(e)) continue;
           const evRate = e.rate ?? 1;
@@ -1376,6 +1383,7 @@
           if (!whoOk(e.when)) continue;
           if (wantWho === "otherAlly" && !otherAllyOk()) continue;
           if (e.when.on === "attacked" && !isNormal) continue;
+          if (!dmgTypeOk(e.when.dmgType)) continue;  // 批39 C: 兵書效果級when.dmgType過濾
           if (!roundOk({ when: e.when }, CUR_R)) continue;
           if (holder.hitFlags.has(e)) continue;
           const evRate = e.rate ?? 1;

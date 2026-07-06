@@ -855,7 +855,7 @@ def damage(src, dst, coef, kind, src_troop=None, is_normal=None, is_active=None)
 def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_active=None):  # 造成傷害(含規避/護盾/代承轉移/反擊), 累積結算層數; 批31 A: is_active(可選, 尾端新增, 向後相容既有全部呼叫點)—— 傳入本次傷害是否為主動/突擊戰法所致
     if not src.surehit_dur and dst.dodge_dur and random.random() < dst.dodge_prob:  # 規避: 完全迴避一次傷害(必中無視)
         if on_event:
-            on_event(dst, src, is_normal, 0)
+            on_event(dst, src, is_normal, 0, kind)  # 批39 C: 補傳kind(本次傷害類型), 供on_hit()對稱dealt_damage的when.dmgType過濾
         return
     dmg = damage(src, dst, coef, kind, is_normal=is_normal, is_active=is_active)  # 批28 B3/批31 A: 傳入is_normal/is_active供amp()過濾normalOnly/activeOnly標記的加成
     # 批22: block(次數型格擋, 抵禦/警戒同族) —— 判定順序 dodge→block→shield→傷害(見紅線指示)。
@@ -893,8 +893,11 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_a
     # 批33: on_event/on_deal 補傳 dmg(本次結算後的實際傷害量, 已經過block/shield/代承折算,
     # 與寫入 wounded 池的量一致) —— 供 e["ofDamage"](傷害比例治療) 反應式heal使用, 見
     # on_hit()/dealt_damage() 呼叫端與 apply_effects() heal 分支(dmg 參數)。
+    # 批39 C: 補傳kind(本次傷害類型, phys/intel) —— 供on_hit()對when.dmgType/e["when"]["dmgType"]
+    # 過濾(對稱dealt_damage自批27起就有的dmgType過濾), 修正damaged/attacked反應式路徑過去完全
+    # 不分兵刃/謀略傷害觸發(剛勇無前/剛烈不屈「受到兵刃傷害時」誤及謀略傷害)。
     if on_event:
-        on_event(dst, src, is_normal, dmg)
+        on_event(dst, src, is_normal, dmg, kind)
     # 批27 A: on:"dealtDamage" —— src(施加本次傷害的一方)反應式觸發, 只在非規避(確實造成
     # 傷害, 含被完全格擋/護盾吸收歸零的情形——「造成傷害」語意上仍是「打出了這一擊」, 只是
     # 傷害量被防禦手段抵銷, 與「規避=攻擊未命中」不同, 故僅 dodge 分支排除, block/shield
@@ -1695,7 +1698,9 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             return foes_of(evt_unit)
         return None                                    # "self"/未指定: 不走廣播, 呼叫端維持原本自身路徑
 
-    def on_hit(dst, src, is_normal, dmg=None):        # 反應式觸發(when.on): 被普攻(attacked)/受任意傷害(damaged) 時掛到 hit() 事件點; 批33: dmg(可選)—— 本次觸發事件的實際傷害量, 供 e["ofDamage"] 傷害比例治療使用; 批38 A: 新增who=="ally"/"enemy"跨單位廣播(見上方broadcast_holders/on_hit_for)
+    def on_hit(dst, src, is_normal, dmg=None, kind=None):  # 反應式觸發(when.on): 被普攻(attacked)/受任意傷害(damaged) 時掛到 hit() 事件點; 批33: dmg(可選)—— 本次觸發事件的實際傷害量, 供 e["ofDamage"] 傷害比例治療使用; 批38 A: 新增who=="ally"/"enemy"跨單位廣播(見上方broadcast_holders/on_hit_for); 批39 C: 新增kind(可選, 尾端新增, 向後相容既有呼叫點皆未傳)—— 本次傷害類型(phys/intel), 供when["dmgType"]/e["when"]["dmgType"]過濾(對稱dealt_damage的dmg_type_ok)
+        def dmg_type_ok(dt):
+            return not dt or not kind or dt == kind   # dmgType 過濾: 未指定該欄位視為兵刃/謀略皆可觸發(向後相容), 與dealt_damage的dmg_type_ok同慣例
         def on_hit_for(dst, src, is_normal, dmg, holder, want_who):  # holder: 效果持有者(可能不同於dst); want_who: None→只認持有者自身受擊之既有語意; "ally"/"enemy"→只認廣播監聽到的受擊事件, 避免self掃描與廣播掃描重複觸發同一條
             if not holder.alive or (not holder.on_hit_tacs and not holder.on_hit_effect_tacs and not holder.on_hit_eq and not holder.on_hit_bs):
                 return
@@ -1710,6 +1715,8 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 if want_who == "otherAlly" and not other_ally_ok():
                     continue
                 if t0["when"]["on"] == "attacked" and not is_normal:  # attacked: 限普通攻擊觸發; damaged: 任意傷害都觸發
+                    continue
+                if not dmg_type_ok(t0["when"].get("dmgType")):  # 批39 C: 戰法級when.dmgType過濾(如剛勇無前/剛烈不屈「受到兵刃傷害時」限定)
                     continue
                 # 批22: when.on 反應式戰法過去完全不檢查 rounds/from/until/parity/every(只認 on 事件
                 # 本身), 導致「戰鬥首回合獲得急救(受傷時回血)」這類「反應式觸發+回合窗口限定」的
@@ -1753,6 +1760,8 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                         continue
                     if ew["on"] == "attacked" and not is_normal:
                         continue
+                    if not dmg_type_ok(ew.get("dmgType")):  # 批39 C: 效果級when.dmgType過濾
+                        continue
                     if not round_ok({"when": ew}, CUR_ROUND):
                         continue
                     if id(e) in holder.hit_flags:
@@ -1772,6 +1781,8 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     continue
                 if ew["on"] == "attacked" and not is_normal:
                     continue
+                if not dmg_type_ok(ew.get("dmgType")):  # 批39 C: 裝備效果級when.dmgType過濾
+                    continue
                 if not round_ok({"when": ew}, CUR_ROUND):
                     continue
                 if id(e) in holder.hit_flags:
@@ -1789,6 +1800,8 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 if want_who == "otherAlly" and not other_ally_ok():
                     continue
                 if ew["on"] == "attacked" and not is_normal:
+                    continue
+                if not dmg_type_ok(ew.get("dmgType")):  # 批39 C: 兵書效果級when.dmgType過濾
                     continue
                 if not round_ok({"when": ew}, CUR_ROUND):
                     continue
@@ -2374,7 +2387,7 @@ def demo():
     assert round_ok({"when": None}, 1), "無 when 應視為每回合皆符合"
 
     # 7) 反應式觸發(when.on): 受到普通攻擊(attacked)時應觸發; damaged 則任意傷害來源都觸發(仿 fight() 內 on_hit 的精簡版)
-    def on_hit_test(dst, src, is_normal, dmg=None):  # 批33: dmg(可選)—— 對稱於正式 on_hit(), 接受 hit() 新增的第4參數
+    def on_hit_test(dst, src, is_normal, dmg=None, kind=None):  # 批33: dmg(可選)—— 對稱於正式 on_hit(), 接受 hit() 新增的第4參數; 批39 C: kind(可選)—— 對稱正式on_hit()新增的第5參數(此簡化測試harness不做dmgType過濾, 僅接受參數避免TypeError)
         for t in dst.tactics:
             on = t.get("when", {}).get("on")
             if not on or (on == "attacked" and not is_normal):
@@ -3360,7 +3373,7 @@ def demo():
     CUR_ROUND = 1
     heal67_src = Unit(POOL["呂布"], "騎")
 
-    def on_hit67(dst, s2, is_normal, dmg=None):  # 批33: dmg(可選)—— 對稱於正式 on_hit()
+    def on_hit67(dst, s2, is_normal, dmg=None, kind=None):  # 批33: dmg(可選)—— 對稱於正式 on_hit(); 批39 C: kind(可選)—— 對稱正式on_hit()新增第5參數
         for t in dst.on_hit_effect_tacs:
             for e in t["effects"]:
                 ew = e.get("when") or {}
@@ -3719,7 +3732,7 @@ def demo():
     # 過去 when.on:"attacked"/"damaged" 的反應式戰法完全不讀 t0["choices"], 資料層寫入choices
     # 形同虛設(魅惑「混亂/計窮/虛弱」三選一即是此缺口的代表案例)。用仿 on_hit_test 的精簡版
     # on_hit_choices_test 驗證修復: 兩個weight=0/999懸殊的分支, 應幾乎必中weight大的那個。
-    def on_hit_choices_test(dst, src, is_normal, dmg=None):  # 批33: dmg(可選)—— 對稱於正式 on_hit()
+    def on_hit_choices_test(dst, src, is_normal, dmg=None, kind=None):  # 批33: dmg(可選)—— 對稱於正式 on_hit(); 批39 C: kind(可選)—— 對稱正式on_hit()新增第5參數
         for t0 in dst.tactics:
             on = (t0.get("when") or {}).get("on")
             if not on or (on == "attacked" and not is_normal):
@@ -4464,6 +4477,87 @@ def demo():
     assert not (sfxf_tac107.get("when") or {}).get("who"), "士爭先赴 when.who 應維持未指定(向後相容self預設), 批38不應誤加who欄位"
 
     print(f"    [批38] activeFired 跨單位廣播 who=='ally'/'enemy' 端到端驗證通過(105/106), who未指定回歸驗證通過(107)")
+
+    # --- 批39: 象兵重建(ifTargetHas自查+everyRound) + R26統領揭露 + onHit dmgType + 萬軍奪帥五態拆分 ---
+    # 108) 象兵(真實資料): 自身有灼燒(dot)時才獲得群攻(extra)+混亂(chaos), 用ifTargetHas:"dot"
+    # 複用既有原語表達「自查」條件(who="self"先選定caster自己, ifTargetHas再過濾)。everyRound
+    # 逐回合重新判定(灼燒可能到期消失)。
+    xb108_tac = dict(TACTICS["象兵"])
+    xb108_extra = next(e for e in xb108_tac["effects"] if e["k"] == "extra")
+    xb108_chaos = next(e for e in xb108_tac["effects"] if e["k"] == "chaos")
+    assert xb108_extra.get("ifTargetHas") == "dot" and xb108_extra.get("everyRound") is True, \
+        "象兵 extra(群攻近似)應帶 ifTargetHas:'dot' + everyRound(自查灼燒狀態, 逐回合重判)"
+    assert xb108_chaos.get("ifTargetHas") == "dot" and xb108_chaos.get("everyRound") is True, \
+        "象兵 chaos(混亂)應帶 ifTargetHas:'dot' + everyRound(自查灼燒狀態, 逐回合重判)"
+    # 端到端: 無灼燒時不應觸發; 有灼燒時應觸發(直接呼叫 apply_effects heal_only 通道模擬 everyRound 常駐判定)
+    xb108_caster_no_dot = Unit(POOL["張飛"], "盾")
+    apply_effects(xb108_caster_no_dot, None, xb108_tac, [xb108_caster_no_dot], [], heal_only=True)
+    assert not any(a[0] == "extra" for a in xb108_caster_no_dot.adds), "象兵: 無灼燒狀態時, 群攻(extra)不應觸發"
+    assert xb108_caster_no_dot.chaos == 0, "象兵: 無灼燒狀態時, 混亂(chaos)不應觸發"
+    xb108_caster_dot = Unit(POOL["張飛"], "盾")
+    xb108_caster_dot.dots.append([50, 3, False])   # 模擬自身已有灼燒(dot非空)
+    apply_effects(xb108_caster_dot, None, xb108_tac, [xb108_caster_dot], [], heal_only=True)
+    assert any(a[0] == "extra" for a in xb108_caster_dot.adds), "象兵: 自身有灼燒狀態時, 群攻(extra)應觸發"
+    assert xb108_caster_dot.chaos > 0, "象兵: 自身有灼燒狀態時, 混亂(chaos)應觸發"
+
+    # 109) R26統領揭露一致性(真實資料抽驗): 批39 B新補_todo的5筆(丹陽兵/白毦兵/白馬義從/
+    # 先登死士/藤甲兵, 其中藤甲兵是lint R26新掃出、非任務原定4筆之一)皆應含「統領」字面揭露。
+    for nm109 in ("丹陽兵", "白毦兵", "白馬義從", "先登死士", "藤甲兵"):
+        todo109 = TACTICS[nm109].get("_todo", "") or ""
+        assert "統領" in todo109, f"{nm109} 應含「統領」條件的_todo揭露(批39 B/R26)"
+
+    # 110) onHit dmgType 過濾(剛勇無前真實資料): 原文「受到兵刃傷害後」限定, when.dmgType應為
+    # "phys"。用 inherit=["剛勇無前"] 走真實 Unit 建構(正確填 on_hit_tacs), 搭配與正式 on_hit()
+    # 同款 dmgTypeOk 過濾邏輯的精簡反應式派發(hit()已於批39 C補傳kind, 此處驗證dmgType過濾
+    # 本身是否正確生效, 不依賴fight()內部才建立的完整廣播閉包)。
+    gy110_tac = TACTICS["剛勇無前"]
+    assert (gy110_tac.get("when") or {}).get("dmgType") == "phys", "剛勇無前 when.dmgType 應為'phys'(受到兵刃傷害限定, 批39 C)"
+
+    def on_hit_dmgtype_test(dst, src, is_normal, dmg=None, kind=None):
+        def dmg_type_ok(dt):
+            return not dt or not kind or dt == kind
+        for t in dst.on_hit_tacs:
+            w = t.get("when") or {}
+            if w.get("on") == "attacked" and not is_normal:
+                continue
+            if not dmg_type_ok(w.get("dmgType")):
+                continue
+            if id(t) in dst.hit_flags:
+                continue
+            dst.hit_flags.add(id(t))
+            if t.get("effects"):
+                apply_effects(dst, src, t, [dst], [src], reactive=True, dmg=dmg)
+
+    gy110_src = Unit(POOL["張飛"], "盾")
+    gy110_dst_intel = Unit(POOL["張飛"], "盾", inherit=["剛勇無前"])
+    hit(gy110_src, gy110_dst_intel, 1.0, "intel", is_normal=False, on_event=on_hit_dmgtype_test)
+    assert not any(a[0] == "amp" for a in gy110_dst_intel.adds), "剛勇無前: 受到謀略(intel)傷害不應觸發(dmgType='phys'限定)"
+    gy110_dst_phys = Unit(POOL["張飛"], "盾", inherit=["剛勇無前"])
+    hit(gy110_src, gy110_dst_phys, 1.0, "phys", is_normal=False, on_event=on_hit_dmgtype_test)
+    assert any(a[0] == "amp" for a in gy110_dst_phys.adds), "剛勇無前: 受到兵刃(phys)傷害應觸發amp"
+
+    # 111) 萬軍奪帥(真實資料): 5種狀態(遇襲/計窮/繳械/禁療, 破壞未建模)應各自獨立為effects條目
+    # (而非過去合併成單一stun), 各帶獨立e.rate=0.45(滿級值), 且無leaderBonus/統領相關字段(本戰法
+    # 本身無「若XX統領」條件, 與R26無關, 純狀態拆分驗證)。
+    wjdshuai_tac = TACTICS["萬軍奪帥"]
+    wjdshuai_ks = sorted(e["k"] for e in wjdshuai_tac["effects"])
+    assert wjdshuai_ks == sorted(["stat", "ambush", "silence", "disarm", "healblock"]), \
+        f"萬軍奪帥 五態拆分後應為stat+ambush+silence+disarm+healblock(不含合併的stun), 實得{wjdshuai_ks}"
+    for k111 in ("ambush", "silence", "disarm", "healblock"):
+        e111 = next(e for e in wjdshuai_tac["effects"] if e["k"] == k111)
+        assert abs(e111.get("rate", 1.0) - 0.45) < 1e-9, f"萬軍奪帥 {k111} 應獨立rate=0.45(滿級值, 每種狀態獨立判定)"
+    assert "破壞" in (wjdshuai_tac.get("_todo") or ""), "萬軍奪帥 _todo 應揭露「破壞」(禁用裝備)無對應原語"
+    # 端到端: 5次獨立擲骰(用固定種子驗證至少部分觸發, 至少一種不觸發——證明是獨立判定而非全有/全無的單一stun)
+    random.seed(3)
+    wjd111_caster = Unit(POOL["張飛"], "弓")
+    wjd111_tgt = Unit(POOL["張飛"], "弓")
+    apply_effects(wjd111_caster, wjd111_tgt, wjdshuai_tac, [wjd111_caster], [wjd111_tgt], no_heal=True)
+    fired111 = {"ambush": wjd111_tgt.ambush > 0, "silence": wjd111_tgt.silence > 0,
+                "disarm": wjd111_tgt.disarm > 0, "healblock": wjd111_tgt.healblock > 0}
+    assert not (all(fired111.values()) or not any(fired111.values())), \
+        f"萬軍奪帥: 5態應獨立判定(45%各自擲骰), 不應呈現全有或全無的單一stun語意殘留, 本次結果{fired111}(若剛好全真/全假需換種子重驗, 但邏輯上4個獨立0.45擲骰同時全中或全不中機率僅約(0.45^4+0.55^4)≈8.3%, 不構成系統性問題)"
+
+    print(f"    [批39] 象兵ifTargetHas自查+everyRound(108), R26統領揭露5筆(109), onHit dmgType過濾(110), 萬軍奪帥五態拆分(111)驗證通過")
 
     print("self-check OK")
 

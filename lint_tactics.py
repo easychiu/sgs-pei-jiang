@@ -2066,6 +2066,63 @@ def check_r25(p, txt):
     return violations
 
 
+# ---------------------------------------------------------------------------
+# R26(批39 B): 「若/由 XX統領」揭露一致性防線 —— 原文含「若/由 <特定武將>統領」的條件式加成
+# 措辭(西涼鐵騎/虎豹騎/大戟士/無當飛軍/虎衛軍/陷陣營/錦帆軍等12筆既有precedent, 全庫核對
+# 後其中4筆丹陽兵/白毦兵/白馬義從/先登死士完全漏揭露, 見批39任務背景), 但該戰法既無
+# leaderBonus(唯一已知可精確建模此類條件的原語, 見虎豹騎曹純特例, k===\"chargeup\"專屬硬編碼
+# 力²公式)、也沒有任何提到「統領」字面的揭露文字(_todo/_note/_note2/_note_self/_approx,
+# 戰法級或效果級皆可, 見 _topic_disclosed(effect=None) 全文掃描), 視為「條件加成完全被
+# 沉默丟棄」的違規。
+#
+# 低誤報設計:
+# - 只抓「若<1~8字任意武將名>統領」或「由<1~8字任意武將名>統領」句型(排除純泛稱如「若統領
+#   為蠻族」這類陣營條件, 非特定武將——見象兵批39 A, 那是另一種完全不同的缺口(陣營計數),
+#   不屬本規則管轄範圍, 用排除詞「陣營」「蠻族」「異族」「同族」濾掉泛稱條件, 只保留「統領」
+#   前緊鄰疑似人名的具體武將條件)。
+# - leaderBonus(戰法級或任一效果級)存在即視為已妥善建模(不論是否為「該筆」特定武將, 因
+#   leaderBonus本身是為此類條件而生的專屬機制, 已使用即非沉默省略), 不算違規。
+# - 揭露判定用 _topic_disclosed(p, R26_TOPIC_KW, effect=None)(戰法整體層級掃描, 而非批37
+#   效果級精準化——「統領」條件通常修飾整個戰法的某個數值調整, 不對應單一固定的k類別, 故
+#   採 R3/R5/R8/R16/R20 同慣例的戰法級全文掃描, 非R13/R25式效果級窄化)。
+# - 版本區塊感知: 只在含「統領」措辭的版本區塊內核對(比照R22慣例只信任最新區塊, 避免舊版本
+#   已被取代的統領條件描述誤判為當前版本缺口)。
+# ---------------------------------------------------------------------------
+R26_LEADER_COND_RE = re.compile(r"[若由][^。；;，,]{0,8}統領")
+R26_FACTION_EXCLUDE_RE = re.compile(r"陣營|蠻族|異族|同族|漢族|善戰|統領為")
+R26_TOPIC_KW = ("統領", "leaderBonus")
+
+
+def check_r26(p, txt):
+    violations = []
+    if _has_leader_bonus(p):
+        return violations
+    for block in split_version_blocks(txt):
+        for clause in split_clauses(block):
+            m = R26_LEADER_COND_RE.search(clause)
+            if not m or R26_FACTION_EXCLUDE_RE.search(clause):
+                continue
+            if _topic_disclosed(p, R26_TOPIC_KW):
+                return violations
+            violations.append({
+                "name": p["nameZh"], "rule": "R26",
+                "message": f"原文「{m.group(0)}」為特定武將統領條件式加成, 但戰法/效果皆無"
+                           "leaderBonus(批26原語, 目前唯一已知可建模此類條件的機制)且無提及"
+                           "「統領」的揭露文字, 條件加成完全被沉默省略",
+                "evidence": clause.strip()[:120],
+            })
+            break
+        if violations:
+            break
+    return violations
+
+
+def _has_leader_bonus(p):
+    if p.get("leaderBonus"):
+        return True
+    return any(e.get("leaderBonus") for e in (p.get("effects") or []))
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
@@ -2073,7 +2130,7 @@ RULES = [
     ("R13", check_r13), ("R14", check_r14), ("R15", check_r15),
     ("R16", check_r16), ("R17", check_r17), ("R18", check_r18), ("R19", check_r19),
     ("R20", check_r20), ("R21", check_r21), ("R22", check_r22),
-    ("R23", check_r23), ("R24", check_r24), ("R25", check_r25),
+    ("R23", check_r23), ("R24", check_r24), ("R25", check_r25), ("R26", check_r26),
 ]
 
 
@@ -2397,6 +2454,22 @@ SELFTEST_CASES = {
         ("無法造成傷害(虛弱描述)不應誤判為本戰法自身傷害宣告",
          _base_tactic(coef=0, effects=[{"k": "amp", "who": "enemy", "val": -1.0, "dur": 1}]),
          "對敵軍單體施加虛弱（無法造成傷害）狀態，持續1回合", False),
+    ],
+    "R26": [
+        ("若XX統領條件但無leaderBonus且無揭露應抓到",
+         _base_tactic(effects=[{"k": "mitig", "who": "ally", "val": 0.18, "dur": 99}]),
+         "我軍全體受到謀略傷害降低18%→36%；若陶謙統領，則抵擋比例提升至20%→40%", True),
+        ("有leaderBonus不應誤報(比照虎豹騎)",
+         _base_tactic(effects=[{"k": "chargeup", "who": "self", "val": 0.05, "dur": 99,
+                                 "leaderBonus": {"general": "曹純", "k": 0.032}}]),
+         "若曹純統領，突擊發動機率額外受武力影響", False),
+        ("有揭露統領缺口不應誤報",
+         _base_tactic(effects=[{"k": "mitig", "who": "ally", "val": 0.18, "dur": 99}],
+                      _todo="若陶謙統領的加成條件未建模, 無ifLeaderIsGeneral通用機制"),
+         "我軍全體受到謀略傷害降低18%→36%；若陶謙統領，則抵擋比例提升至20%→40%", False),
+        ("陣營泛稱條件(非特定武將)不應誤報",
+         _base_tactic(effects=[{"k": "mitig", "who": "ally", "val": 0.1, "dur": 99}]),
+         "若統領為蠻族，部隊每多1名蠻族武將結算的傷害額外降低5%→10%", False),
     ],
 }
 
