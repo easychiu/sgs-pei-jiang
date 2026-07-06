@@ -1283,152 +1283,219 @@
           applyEffects(team[0], null, pt(bd.effects), team, foesOf(team[0]), opt);
         }
     };
-    const onHit = (dst, src, isNormal, dmg) => {          // 反應式觸發(when.on): 被普攻(attacked)/受任意傷害(damaged) 時掛到 hit() 事件點; 批33: dmg(可選, 尾端新增)—— 本次觸發事件的實際傷害量, 供 e.ofDamage 傷害比例治療使用
-      if (!dst.alive || (!dst.onHitTacs.length && !dst.onHitEffectTacs.length && !dst.onHitEq.length && !dst.onHitBs.length)) return;
-      if (dst.fakeReportDur) return;                 // 批16: 偽報 —— 抑制 onHit 反應式觸發(被動/指揮戰法失效)
-      for (const t0 of dst.onHitTacs) {
-        if (t0.when.on === "attacked" && !isNormal) continue;   // attacked: 限普通攻擊觸發; damaged: 任意傷害都觸發
-        // 批22: when.on 反應式戰法過去完全不檢查 rounds/from/until/parity/every(只認 on 事件本身),
-        // 導致「戰鬥首回合獲得急救(受傷時回血)」這類「反應式觸發+回合窗口限定」的複合語意無法
-        // 表達(如 長健/青囊書: 首回合內受傷才會回血, 而非全程)。roundOk() 對「無 rounds/from/
-        // until/parity/every」的戰法一律回傳 true(見其實作), 故此檢查對絕大多數既有 when.on
-        // 戰法(只帶 on, 無回合欄位)是無副作用的 no-op, 只在新資料明確加上回合窗口時才生效。
-        if (!roundOk(t0, CUR_R)) continue;
-        if (dst.hitFlags.has(t0)) continue;             // 同回合每單位每戰法最多觸發1次(防無限鏈), 鍵用t0(戰法原始物件)不受choices合成視圖影響
-        if (rnd() >= t0.rate) continue;
-        dst.hitFlags.add(t0);
-        // 批27 C: choices(擇一分支) —— 過去 onHit() 反應式路徑完全不讀 t0.choices(見
-        // engine_limitations.md §8: 魅惑「混亂/計窮/虛弱」三選一只能固定選其中一種, choices
-        // 寫入也不會被消費), 主動/指揮/被動的常駐輪詢派發路徑(fight()主迴圈)已支援 choices,
-        // 這裡補上同一套邏輯(先 pickChoice 選分支, 再用合成視圖 t 讀 coef/kind/effects/
-        // extraHits, t0 保留給 hitFlags 去重/roundOk 等以物件本身為鍵的邏輯, 不受選分支影響)。
-        const t = t0.choices ? Object.assign({}, t0, pickChoice(t0.choices)) : t0;
-        if (TRACE) lg(`【${dst.side}】${dst.nm} 戰法【${t.nameZh}】（受擊觸發）發動`);
-        if (t.coef) hit(dst, src, t.coef, t.kind, false, onHit, dealtDamage);
-        if (t.extraHits) fireExtraHits(dst, t, src, alliesOf, foesOf, onHit, dealtDamage);  // 批13: 受擊觸發類多段傷害(如剛烈不屈 反擊後群體額外段)
-        if (t.effects.length) applyEffects(dst, src, t, alliesOf(dst), foesOf(dst), { reactive: true, dmg });  // 批23: 戰法級when.on本身即反應式, 標記reactive供內部e.when.on效果(若有)一致判定; 批33: 傳入dmg供e.ofDamage使用
-      }
-      // 批22: 效果級 e.when.on(急救類反應式治療, 見 onHitEffectTacs 註解) —— 戰法本身無 t.when
-      // (其餘效果如武力/統率平加仍在 prep 正常套用, 不受影響), 只有帶 e.when.on 的個別效果在
-      // 此處反應式結算。用「合成單效果戰法」(effects:[e])呼叫 applyEffects, 讓 heal 分支的
-      // 傷兵池/healBoost/healGiven 邏輯完整適用, 觸發率取 e.rate ?? t.rate ?? 1(效果自身優先,
-      // 無則沿用戰法整體 rate)。去重鍵用效果物件本身(而非戰法物件), 因同一戰法可能有多個
-      // e.when.on 效果, 需各自獨立節流(防同回合多次觸發同一效果)。
-      for (const t of dst.onHitEffectTacs) {
-        for (const e of t.effects) {
-          if (!e.when || !e.when.on) continue;
+    // 批38 A: 跨單位事件廣播 —— e.when.who/t.when.who(選填, 預設"self"向後相容零變化)。
+    // 過去 onHit/dealtDamage/activeFired 只掃描「事件發生的那個單位自己」攜帶的反應式戰法/
+    // 效果(見上方各陣列皆以「持有者=事件單位本身」為前提預篩+觸發), 無法表達「任一友軍受擊/
+    // 造成傷害/發動主動戰法時, 我(持有者, 可能是另一個單位)也跟著觸發」這類跨單位監聽語意
+    // (歷輪盲測點名最大殘餘原語缺口, 見 engine_limitations.md 21/27節「跨單位事件廣播」
+    // 未解決缺口列表: 虎侯/十二奇策/經天緯地/神機妙算/舌戰群儒/騎虎難下等)。
+    // who:"ally" —— 監聽對象是「事件單位所在隊伍的任一人(含事件單位自己)」, 持有者也必須
+    // 在同一隊(廣播範圍限同隊, 不含對面)。who:"otherAlly" —— 同"ally", 但明確排除事件單位
+    // 自己(對應原文「除自己之外的友軍...時」這類措辭, 如騎虎難下)。who:"enemy" —— 監聽對象
+    // 是「事件單位所在隊伍的敵對隊伍任一人」, 持有者必須在敵對那一隊。實作: broadcastHolders
+    // (evtUnit, who) 回傳所有「應該被視為此事件監聽對象」的持有者候選隊伍(ally/otherAlly→
+    // evtUnit自己隊伍全體; enemy→evtUnit的敵隊全體), self(未指定或"self")仍走原本「持有者
+    // ===事件單位」路徑, 不受此廣播擴充影響(零回歸)。效能: 每次事件多掃隊伍其餘1~2人的預篩
+    // 陣列(已是O(小常數)), 3000場預算內可忽略(見驗收效能數字)。
+    const broadcastHolders = (evtUnit, who) => {
+      if (who === "ally" || who === "otherAlly") return alliesOf(evtUnit);
+      if (who === "enemy") return foesOf(evtUnit);
+      return null;                                    // "self"/未指定: 不走廣播, 呼叫端維持原本 dst/src 自身路徑
+    };
+    const onHit = (dst, src, isNormal, dmg) => {          // 反應式觸發(when.on): 被普攻(attacked)/受任意傷害(damaged) 時掛到 hit() 事件點; 批33: dmg(可選, 尾端新增)—— 本次觸發事件的實際傷害量, 供 e.ofDamage 傷害比例治療使用; 批38 A: 新增who:"ally"/"otherAlly"/"enemy"跨單位廣播(見上方broadcastHolders/onHitFor)
+      const onHitFor = (dst, src, isNormal, dmg, holder, wantWho) => {  // 批38 A: 抽出可重用核心 —— holder(效果持有者)可能不同於dst(受擊/受傷的事件單位本身), wantWho: 本次呼叫只處理與此匹配的when.who(undefined/"self"→只認持有者自身受擊之既有語意; "ally"/"enemy"→只認持有者從隊友/敵軍廣播監聽到的受擊事件, 避免self掃描與廣播掃描重複觸發同一條)
+        if (!holder.alive || (!holder.onHitTacs.length && !holder.onHitEffectTacs.length && !holder.onHitEq.length && !holder.onHitBs.length)) return;
+        if (holder.fakeReportDur) return;             // 批16: 偽報 —— 抑制 onHit 反應式觸發(被動/指揮戰法失效)
+        // 批38 A: who:"otherAlly" 與 who:"ally" 共用同一組廣播候選隊伍(見broadcastHolders),
+        // 差別只在「事件單位本身是否算數」——otherAlly 明確排除 holder===dst(受擊者自己)的
+        // 情形(對應原文「除自己之外」), ally 則含自己。用 whoOk 統一比對 w.who 是否等於
+        // wantWho(嚴格字串相等, "otherAlly"!=="ally", 兩者是各自獨立的 when.who 值, 不會
+        // 互相誤放行), 再另外用 holder!==dst 這條額外閘門收斂 otherAlly 的範圍。
+        const whoOk = w => (w && w.who) === wantWho || (!wantWho && !(w && w.who));  // wantWho未傳(undefined)時只放行無who欄位(含"self")的既有寫法; 傳"ally"/"otherAlly"/"enemy"時只放行明確標記該值的新寫法
+        const otherAllyOk = () => holder !== dst;      // who:"otherAlly" 額外要求: 持有者不是本次事件單位自己
+        for (const t0 of holder.onHitTacs) {
+          if (!whoOk(t0.when)) continue;
+          if (wantWho === "otherAlly" && !otherAllyOk()) continue;
+          if (t0.when.on === "attacked" && !isNormal) continue;   // attacked: 限普通攻擊觸發; damaged: 任意傷害都觸發
+          // 批22: when.on 反應式戰法過去完全不檢查 rounds/from/until/parity/every(只認 on 事件本身),
+          // 導致「戰鬥首回合獲得急救(受傷時回血)」這類「反應式觸發+回合窗口限定」的複合語意無法
+          // 表達(如 長健/青囊書: 首回合內受傷才會回血, 而非全程)。roundOk() 對「無 rounds/from/
+          // until/parity/every」的戰法一律回傳 true(見其實作), 故此檢查對絕大多數既有 when.on
+          // 戰法(只帶 on, 無回合欄位)是無副作用的 no-op, 只在新資料明確加上回合窗口時才生效。
+          if (!roundOk(t0, CUR_R)) continue;
+          if (holder.hitFlags.has(t0)) continue;             // 同回合每單位每戰法最多觸發1次(防無限鏈), 鍵用t0(戰法原始物件)不受choices合成視圖影響
+          if (rnd() >= t0.rate) continue;
+          holder.hitFlags.add(t0);
+          // 批27 C: choices(擇一分支) —— 過去 onHit() 反應式路徑完全不讀 t0.choices(見
+          // engine_limitations.md §8: 魅惑「混亂/計窮/虛弱」三選一只能固定選其中一種, choices
+          // 寫入也不會被消費), 主動/指揮/被動的常駐輪詢派發路徑(fight()主迴圈)已支援 choices,
+          // 這裡補上同一套邏輯(先 pickChoice 選分支, 再用合成視圖 t 讀 coef/kind/effects/
+          // extraHits, t0 保留給 hitFlags 去重/roundOk 等以物件本身為鍵的邏輯, 不受選分支影響)。
+          const t = t0.choices ? Object.assign({}, t0, pickChoice(t0.choices)) : t0;
+          if (TRACE) lg(`【${holder.side}】${holder.nm} 戰法【${t.nameZh}】（${holder === dst ? "受擊觸發" : "友軍/敵軍受擊觸發"}）發動`);
+          if (t.coef) hit(holder, src, t.coef, t.kind, false, onHit, dealtDamage);
+          if (t.extraHits) fireExtraHits(holder, t, src, alliesOf, foesOf, onHit, dealtDamage);  // 批13: 受擊觸發類多段傷害(如剛烈不屈 反擊後群體額外段)
+          if (t.effects.length) applyEffects(holder, src, t, alliesOf(holder), foesOf(holder), { reactive: true, dmg });  // 批23: 戰法級when.on本身即反應式, 標記reactive供內部e.when.on效果(若有)一致判定; 批33: 傳入dmg供e.ofDamage使用
+        }
+        // 批22: 效果級 e.when.on(急救類反應式治療, 見 onHitEffectTacs 註解) —— 戰法本身無 t.when
+        // (其餘效果如武力/統率平加仍在 prep 正常套用, 不受影響), 只有帶 e.when.on 的個別效果在
+        // 此處反應式結算。用「合成單效果戰法」(effects:[e])呼叫 applyEffects, 讓 heal 分支的
+        // 傷兵池/healBoost/healGiven 邏輯完整適用, 觸發率取 e.rate ?? t.rate ?? 1(效果自身優先,
+        // 無則沿用戰法整體 rate)。去重鍵用效果物件本身(而非戰法物件), 因同一戰法可能有多個
+        // e.when.on 效果, 需各自獨立節流(防同回合多次觸發同一效果)。
+        for (const t of holder.onHitEffectTacs) {
+          for (const e of t.effects) {
+            if (!e.when || !e.when.on) continue;
+            if (!whoOk(e.when)) continue;
+            if (wantWho === "otherAlly" && !otherAllyOk()) continue;
+            if (e.when.on === "attacked" && !isNormal) continue;
+            if (!roundOk({ when: e.when }, CUR_R)) continue;
+            if (holder.hitFlags.has(e)) continue;
+            const evRate = e.rate ?? t.rate ?? 1;
+            if (rnd() >= evRate) continue;
+            holder.hitFlags.add(e);
+            if (TRACE) lg(`【${holder.side}】${holder.nm} 戰法【${t.nameZh}】急救效果（${holder === dst ? "受擊觸發" : "友軍/敵軍受擊觸發"}）發動`);
+            applyEffects(holder, src, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(holder), foesOf(holder), { rateChecked: true, reactive: true, dmg });  // 批23 A4: 這裡已擲過 e.rate, 避免 applyEffects 通用閘門重複擲骰; reactive:true 供內部 e.when.on 閘門判定放行; 批33: dmg供e.ofDamage使用
+          }
+        }
+        // 批22: 裝備效果級 e.when.on(見 onHitEq 註解) —— 同上, 用合成單效果戰法呼叫 applyEffects
+        for (const e of holder.onHitEq) {
+          if (!whoOk(e.when)) continue;
+          if (wantWho === "otherAlly" && !otherAllyOk()) continue;
           if (e.when.on === "attacked" && !isNormal) continue;
           if (!roundOk({ when: e.when }, CUR_R)) continue;
-          if (dst.hitFlags.has(e)) continue;
-          const evRate = e.rate ?? t.rate ?? 1;
+          if (holder.hitFlags.has(e)) continue;
+          const evRate = e.rate ?? 1;
           if (rnd() >= evRate) continue;
-          dst.hitFlags.add(e);
-          if (TRACE) lg(`【${dst.side}】${dst.nm} 戰法【${t.nameZh}】急救效果（受擊觸發）發動`);
-          applyEffects(dst, src, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(dst), foesOf(dst), { rateChecked: true, reactive: true, dmg });  // 批23 A4: 這裡已擲過 e.rate, 避免 applyEffects 通用閘門重複擲骰; reactive:true 供內部 e.when.on 閘門判定放行; 批33: dmg供e.ofDamage使用
+          holder.hitFlags.add(e);
+          if (TRACE) lg(`【${holder.side}】${holder.nm}〔特技·${e._eqNm || "?"}〕（${holder === dst ? "受擊觸發" : "友軍/敵軍受擊觸發"}）發動`);
+          applyEffects(holder, src, { effects: [e], kind: "phys" }, alliesOf(holder), foesOf(holder), { rateChecked: true, reactive: true, dmg });  // 批23 A4/reactive: 已擲過 e.rate; 批33: dmg供e.ofDamage使用
         }
-      }
-      // 批22: 裝備效果級 e.when.on(見 onHitEq 註解) —— 同上, 用合成單效果戰法呼叫 applyEffects
-      for (const e of dst.onHitEq) {
-        if (e.when.on === "attacked" && !isNormal) continue;
-        if (!roundOk({ when: e.when }, CUR_R)) continue;
-        if (dst.hitFlags.has(e)) continue;
-        const evRate = e.rate ?? 1;
-        if (rnd() >= evRate) continue;
-        dst.hitFlags.add(e);
-        if (TRACE) lg(`【${dst.side}】${dst.nm}〔特技·${e._eqNm || "?"}〕（受擊觸發）發動`);
-        applyEffects(dst, src, { effects: [e], kind: "phys" }, alliesOf(dst), foesOf(dst), { rateChecked: true, reactive: true, dmg });  // 批23 A4/reactive: 已擲過 e.rate; 批33: dmg供e.ofDamage使用
-      }
-      // 批22: 兵書效果級 e.when.on(見 onHitBs 註解) —— 同上, 用合成單效果戰法呼叫 applyEffects
-      for (const e of dst.onHitBs) {
-        if (e.when.on === "attacked" && !isNormal) continue;
-        if (!roundOk({ when: e.when }, CUR_R)) continue;
-        if (dst.hitFlags.has(e)) continue;
-        const evRate = e.rate ?? 1;
-        if (rnd() >= evRate) continue;
-        dst.hitFlags.add(e);
-        if (TRACE) lg(`【${dst.side}】${dst.nm}〔兵書〕（受擊觸發）發動`);
-        applyEffects(dst, src, { effects: [e], kind: "phys" }, alliesOf(dst), foesOf(dst), { rateChecked: true, reactive: true, dmg });  // 批23 A4/reactive: 已擲過 e.rate; 批33: dmg供e.ofDamage使用
-      }
+        // 批22: 兵書效果級 e.when.on(見 onHitBs 註解) —— 同上, 用合成單效果戰法呼叫 applyEffects
+        for (const e of holder.onHitBs) {
+          if (!whoOk(e.when)) continue;
+          if (wantWho === "otherAlly" && !otherAllyOk()) continue;
+          if (e.when.on === "attacked" && !isNormal) continue;
+          if (!roundOk({ when: e.when }, CUR_R)) continue;
+          if (holder.hitFlags.has(e)) continue;
+          const evRate = e.rate ?? 1;
+          if (rnd() >= evRate) continue;
+          holder.hitFlags.add(e);
+          if (TRACE) lg(`【${holder.side}】${holder.nm}〔兵書〕（${holder === dst ? "受擊觸發" : "友軍/敵軍受擊觸發"}）發動`);
+          applyEffects(holder, src, { effects: [e], kind: "phys" }, alliesOf(holder), foesOf(holder), { rateChecked: true, reactive: true, dmg });  // 批23 A4/reactive: 已擲過 e.rate; 批33: dmg供e.ofDamage使用
+        }
+      };
+      if (!dst.alive) return;
+      onHitFor(dst, src, isNormal, dmg, dst, undefined);   // 既有語意: 持有者=事件單位自己(who未指定/"self")
+      // 批38 A: 廣播 —— dst(受擊/受傷的那個單位)所在隊伍的隊友(who:"ally"持有者)與敵隊
+      // (who:"enemy"持有者)也一併掃描。候選陣列含 dst 自己, 但 whoOk() 只放行明確 who
+      // 欄位匹配的條目, 不會與上面的 self 路徑(whoOk 要求 who 欄位為空)重複觸發同一筆。
+      for (const holder of alliesOf(dst)) onHitFor(dst, src, isNormal, dmg, holder, "ally");
+      for (const holder of alliesOf(dst)) onHitFor(dst, src, isNormal, dmg, holder, "otherAlly");  // 批38 A: who:"otherAlly"(排除dst自己, 見騎虎難下「除自己之外的友軍受到普通攻擊時」)
+      for (const holder of foesOf(dst)) onHitFor(dst, src, isNormal, dmg, holder, "enemy");
     };
-    const dealtDamage = (src, dst, isNormal, kind, dmg) => {  // 批27 A: 反應式觸發(when.on:"dealtDamage") —— 自己造成傷害(對 dst)後掛到 hit() 事件點, 與 onHit(自己受擊視角)對稱; 批33: dmg(可選, 尾端新增)—— 本次觸發事件的實際傷害量, 供 e.ofDamage 使用
+    const dealtDamage = (src, dst, isNormal, kind, dmg) => {  // 批27 A: 反應式觸發(when.on:"dealtDamage") —— 自己造成傷害(對 dst)後掛到 hit() 事件點, 與 onHit(自己受擊視角)對稱; 批33: dmg(可選, 尾端新增)—— 本次觸發事件的實際傷害量, 供 e.ofDamage 使用; 批38 A: 新增who:"ally"/"enemy"跨單位廣播(對稱onHit, 見 broadcastHolders/dealtDamageFor)
       // 批37 B: stackPer:"attack" —— 「每次普通攻擊後疊加1層」(如奮突「普通攻擊之後...最多
       // 疊加3次」)。過去只有 "round"(逐回合)/"cast"(每次發動)兩種遞增模式, 普攻疊層只能用
       // round 近似(繳械/震懾回合無普攻仍會錯誤地繼續疊層)。掛在 dealtDamage 事件點(普攻確實
       // 命中造成傷害後), 置於 onDealTacs 早退判斷之前(有 stackPer:"attack" 疊層的單位未必
-      // 同時有 when.on:"dealtDamage" 反應式戰法, 不能被該早退擋掉)。
+      // 同時有 when.on:"dealtDamage" 反應式戰法, 不能被該早退擋掉)。此段是src自身狀態變化,
+      // 與who廣播無關, 維持只對src本身執行, 不隨廣播迴圈重複執行。
       if (isNormal && src.alive && src.stack && src.stack.stackPer === "attack") src.stack.n = Math.min(src.stack.max, src.stack.n + 1);
-      if (!src.alive || (!src.onDealTacs.length && !src.onDealEffectTacs.length)) return;
-      if (src.fakeReportDur) return;                 // 批16: 偽報 —— 抑制反應式觸發(被動/指揮戰法失效), 與 onHit 同慣例
-      const dmgTypeOk = dt => !dt || dt === kind;     // dmgType 過濾: 未指定視為兵刃/謀略皆可觸發(向後相容)
-      for (const t of src.onDealTacs) {               // 戰法級: 整個戰法都是「造成傷害時」反應式(如白衣渡江拆成兩個獨立戰法段時可用此形式)
-        if (!dmgTypeOk(t.when.dmgType)) continue;
-        if (t.when.normalOnly && !isNormal) continue; // 批37 B: when.normalOnly —— 限「普通攻擊」造成的傷害才觸發(如奮突「普通攻擊之後」; dmgType:"phys" 無法區分普攻與兵刃戰法傷害, 需獨立旗標)
-        if (!roundOk(t, CUR_R)) continue;
-        if (src.hitFlags.has(t)) continue;            // 同回合每單位每戰法最多觸發1次(防無限鏈), 與 onHit 共用同一 hitFlags(不同方向的觸發各自用不同t/e鍵, 不會互相誤判)
-        if (rnd() >= t.rate) continue;
-        src.hitFlags.add(t);
-        if (TRACE) lg(`【${src.side}】${src.nm} 戰法【${t.nameZh}】（造成傷害觸發）發動`);
-        // 批32 B: targetSel(依準則選標) —— 過去 dealtDamage 的 coef 傷害段固定命中 dst(觸發
-        // 本次事件的同一目標), 沒有讀取 t.targetSel 這條路徑, 導致原文「對負傷最高之敵造成
-        // 謀略傷害」(選標準則與觸發目標無關, 如監統震軍)只能被迫近似或完全不建模。比照主動
-        // 戰法主迴圈既有的 targetSel 判斷式, 若戰法帶 targetSel 則改用準則選標, 找不到符合
-        // 準則的目標時不出手(而非退回 dst, 避免誤傷/誤選)。
-        if (t.targetSel) {
-          const dv = pickByCriterion(foesOf(src), t.targetSel);
-          if (dv) hit(src, dv, t.coef, t.kind, false, onHit, dealtDamage);
-        } else if (t.coef) hit(src, dst, t.coef, t.kind, false, onHit, dealtDamage);
-        if (t.extraHits) fireExtraHits(src, t, dst, alliesOf, foesOf, onHit, dealtDamage);
-        if (t.effects.length) applyEffects(src, dst, t, alliesOf(src), foesOf(src), { reactive: true, dmg });  // 批33: 傳入dmg供e.ofDamage使用
-      }
-      // 效果級: 戰法本身有其他常駐效果, 只有部分效果段是「造成傷害時」反應式(如白衣渡江本身
-      // 是常駐 command, disarm/silence 兩效果各自綁不同 dmgType, 與 onHitEffectTacs 同慣例)
-      for (const t of src.onDealEffectTacs) {
-        for (const e of t.effects) {
-          if (!e.when || e.when.on !== "dealtDamage") continue;
-          if (!dmgTypeOk(e.when.dmgType)) continue;
-          if (e.when.normalOnly && !isNormal) continue; // 批37 B: when.normalOnly(效果級) —— 同上, 限普攻傷害觸發
-          if (!roundOk({ when: e.when }, CUR_R)) continue;
-          if (src.hitFlags.has(e)) continue;
-          const evRate = e.rate ?? t.rate ?? 1;
-          if (rnd() >= evRate) continue;
-          src.hitFlags.add(e);
-          if (TRACE) lg(`【${src.side}】${src.nm} 戰法【${t.nameZh}】效果（造成傷害觸發）發動`);
-          applyEffects(src, dst, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(src), foesOf(src), { rateChecked: true, reactive: true, dmg });  // 已擲過 e.rate, 避免重複擲骰; reactive 供 e.when.on 閘門放行; 批33: dmg供e.ofDamage使用
+      const dealtDamageFor = (src, dst, isNormal, kind, dmg, holder, wantWho) => {  // holder: 效果持有者(可能不同於src本身); wantWho: 同onHitFor慣例
+        if (!holder.alive || (!holder.onDealTacs.length && !holder.onDealEffectTacs.length)) return;
+        if (holder.fakeReportDur) return;             // 批16: 偽報 —— 抑制反應式觸發(被動/指揮戰法失效), 與 onHit 同慣例
+        const whoOk = w => (w && w.who) === wantWho || (!wantWho && !(w && w.who));
+        const dmgTypeOk = dt => !dt || dt === kind;   // dmgType 過濾: 未指定視為兵刃/謀略皆可觸發(向後相容)
+        for (const t of holder.onDealTacs) {           // 戰法級: 整個戰法都是「造成傷害時」反應式(如白衣渡江拆成兩個獨立戰法段時可用此形式)
+          if (!whoOk(t.when)) continue;
+          if (!dmgTypeOk(t.when.dmgType)) continue;
+          if (t.when.normalOnly && !isNormal) continue; // 批37 B: when.normalOnly —— 限「普通攻擊」造成的傷害才觸發(如奮突「普通攻擊之後」; dmgType:"phys" 無法區分普攻與兵刃戰法傷害, 需獨立旗標)
+          if (!roundOk(t, CUR_R)) continue;
+          if (holder.hitFlags.has(t)) continue;        // 同回合每單位每戰法最多觸發1次(防無限鏈), 與 onHit 共用同一 hitFlags(不同方向的觸發各自用不同t/e鍵, 不會互相誤判)
+          if (rnd() >= t.rate) continue;
+          holder.hitFlags.add(t);
+          if (TRACE) lg(`【${holder.side}】${holder.nm} 戰法【${t.nameZh}】（${holder === src ? "造成傷害觸發" : "友軍/敵軍造成傷害觸發"}）發動`);
+          // 批32 B: targetSel(依準則選標) —— 過去 dealtDamage 的 coef 傷害段固定命中 dst(觸發
+          // 本次事件的同一目標), 沒有讀取 t.targetSel 這條路徑, 導致原文「對負傷最高之敵造成
+          // 謀略傷害」(選標準則與觸發目標無關, 如監統震軍)只能被迫近似或完全不建模。比照主動
+          // 戰法主迴圈既有的 targetSel 判斷式, 若戰法帶 targetSel 則改用準則選標, 找不到符合
+          // 準則的目標時不出手(而非退回 dst, 避免誤傷/誤選)。
+          if (t.targetSel) {
+            const dv = pickByCriterion(foesOf(holder), t.targetSel);
+            if (dv) hit(holder, dv, t.coef, t.kind, false, onHit, dealtDamage);
+          } else if (t.coef) hit(holder, holder === src ? dst : (foesOf(holder)[0] || dst), t.coef, t.kind, false, onHit, dealtDamage);  // 廣播情形(holder!==src)下, 觸發事件的原始dst未必是holder的敵人(可能同隊), 退回holder自己的固定敵方位0近似選標(見同批B節遷移逐筆核對是否需要targetSel精確指定)
+          if (t.extraHits) fireExtraHits(holder, t, holder === src ? dst : null, alliesOf, foesOf, onHit, dealtDamage);
+          if (t.effects.length) applyEffects(holder, holder === src ? dst : null, t, alliesOf(holder), foesOf(holder), { reactive: true, dmg });  // 批33: 傳入dmg供e.ofDamage使用
         }
-      }
+        // 效果級: 戰法本身有其他常駐效果, 只有部分效果段是「造成傷害時」反應式(如白衣渡江本身
+        // 是常駐 command, disarm/silence 兩效果各自綁不同 dmgType, 與 onHitEffectTacs 同慣例)
+        for (const t of holder.onDealEffectTacs) {
+          for (const e of t.effects) {
+            if (!e.when || e.when.on !== "dealtDamage") continue;
+            if (!whoOk(e.when)) continue;
+            if (!dmgTypeOk(e.when.dmgType)) continue;
+            if (e.when.normalOnly && !isNormal) continue; // 批37 B: when.normalOnly(效果級) —— 同上, 限普攻傷害觸發
+            if (!roundOk({ when: e.when }, CUR_R)) continue;
+            if (holder.hitFlags.has(e)) continue;
+            const evRate = e.rate ?? t.rate ?? 1;
+            if (rnd() >= evRate) continue;
+            holder.hitFlags.add(e);
+            if (TRACE) lg(`【${holder.side}】${holder.nm} 戰法【${t.nameZh}】效果（${holder === src ? "造成傷害觸發" : "友軍/敵軍造成傷害觸發"}）發動`);
+            applyEffects(holder, holder === src ? dst : null, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(holder), foesOf(holder), { rateChecked: true, reactive: true, dmg });  // 已擲過 e.rate, 避免重複擲骰; reactive 供 e.when.on 閘門放行; 批33: dmg供e.ofDamage使用
+          }
+        }
+      };
+      if (!src.alive) return;
+      dealtDamageFor(src, dst, isNormal, kind, dmg, src, undefined);  // 既有語意: 持有者=事件單位自己(who未指定/"self")
+      // 批38 A: 廣播 —— src(本次造成傷害的那個單位)所在隊伍的隊友(who:"ally"持有者)與敵隊
+      // (who:"enemy"持有者)也一併掃描。
+      for (const holder of alliesOf(src)) dealtDamageFor(src, dst, isNormal, kind, dmg, holder, "ally");
+      for (const holder of foesOf(src)) dealtDamageFor(src, dst, isNormal, kind, dmg, holder, "enemy");
     };
-    const activeFired = (u) => {  // 批31 A: 反應式觸發(when.on:"activeFired") —— 自己成功發動主動/突擊戰法時掛到 fight() 主迴圈事件點, 與 dealtDamage(自己造成傷害視角)/onHit(自己受擊視角)對稱; 只認「自身」戰法成功fire這件事本身, 不要求造成傷害
-      if (!u.alive || (!u.activeFiredTacs.length && !u.activeFiredEffectTacs.length)) return;
-      if (u.fakeReportDur) return;                   // 批16: 偽報 —— 抑制反應式觸發(被動/指揮戰法失效), 與 onHit/dealtDamage 同慣例
-      for (const t of u.activeFiredTacs) {            // 戰法級: 整個戰法都是「自身成功發動主動戰法時」反應式(如士爭先赴)
-        if (!roundOk(t, CUR_R)) continue;
-        if (u.hitFlags.has(t)) continue;              // 同回合每單位每戰法最多觸發1次(防無限鏈), 與 onHit/dealtDamage 共用同一 hitFlags
-        if (rnd() >= t.rate) continue;
-        u.hitFlags.add(t);
-        if (TRACE) lg(`【${u.side}】${u.nm} 戰法【${t.nameZh}】（自身發動主動戰法觸發）發動`);
-        let mainHitTgt = null;
-        if (t.coef) {
-          const cnt = t.nMax ? (t.n + Math.floor(rnd() * (t.nMax - t.n + 1))) : t.n;
-          const vs = pickTargets(foesOf(u), cnt);
-          for (const v of vs) hit(u, v, t.coef, t.kind, false, onHit, dealtDamage, true);  // 批31 A: 本段傷害本身即「主動戰法發動觸發的反應式傷害」, isActive=true供同戰法/其他戰法的e.activeOnly amp判定
-          if (vs.length === 1) mainHitTgt = vs[0];
+    const activeFired = (u) => {  // 批31 A: 反應式觸發(when.on:"activeFired") —— 自己成功發動主動/突擊戰法時掛到 fight() 主迴圈事件點, 與 dealtDamage(自己造成傷害視角)/onHit(自己受擊視角)對稱; 只認「自身」戰法成功fire這件事本身, 不要求造成傷害; 批38 A: 新增who:"ally"/"enemy"跨單位廣播(見 broadcastHolders/activeFiredFor) —— 解決十二奇策「我軍全體下次發動主動戰法後」/經天緯地「我軍全體發動主動/突擊戰法時」(who:"ally")、神機妙算/舌戰群儒「敵軍發動主動戰法時」(who:"enemy")這一族全庫最大殘餘原語缺口(見engine_limitations.md 21/27節)
+      const activeFiredFor = (u, holder, wantWho) => {  // holder: 效果持有者(可能不同於u=實際發動主動戰法的單位); wantWho: 同onHitFor慣例
+        if (!holder.alive || (!holder.activeFiredTacs.length && !holder.activeFiredEffectTacs.length)) return;
+        if (holder.fakeReportDur) return;             // 批16: 偽報 —— 抑制反應式觸發(被動/指揮戰法失效), 與 onHit/dealtDamage 同慣例
+        const whoOk = w => (w && w.who) === wantWho || (!wantWho && !(w && w.who));
+        for (const t of holder.activeFiredTacs) {      // 戰法級: 整個戰法都是「(自身/我軍/敵軍)成功發動主動戰法時」反應式(如士爭先赴/十二奇策/神機妙算)
+          if (!whoOk(t.when)) continue;
+          if (!roundOk(t, CUR_R)) continue;
+          if (holder.hitFlags.has(t)) continue;        // 同回合每單位每戰法最多觸發1次(防無限鏈), 與 onHit/dealtDamage 共用同一 hitFlags
+          if (rnd() >= t.rate) continue;
+          holder.hitFlags.add(t);
+          if (TRACE) lg(`【${holder.side}】${holder.nm} 戰法【${t.nameZh}】（${holder === u ? "自身發動主動戰法觸發" : "友軍/敵軍發動主動戰法觸發"}）發動`);
+          let mainHitTgt = null;
+          if (t.coef) {
+            const cnt = t.nMax ? (t.n + Math.floor(rnd() * (t.nMax - t.n + 1))) : t.n;
+            const vs = pickTargets(foesOf(holder), cnt);
+            for (const v of vs) hit(holder, v, t.coef, t.kind, false, onHit, dealtDamage, true);  // 批31 A: 本段傷害本身即「主動戰法發動觸發的反應式傷害」, isActive=true供同戰法/其他戰法的e.activeOnly amp判定
+            if (vs.length === 1) mainHitTgt = vs[0];
+          }
+          if (t.extraHits) fireExtraHits(holder, t, mainHitTgt, alliesOf, foesOf, onHit, dealtDamage);
+          if (t.effects.length) applyEffects(holder, mainHitTgt, t, alliesOf(holder), foesOf(holder), { reactive: true });
         }
-        if (t.extraHits) fireExtraHits(u, t, mainHitTgt, alliesOf, foesOf, onHit, dealtDamage);
-        if (t.effects.length) applyEffects(u, mainHitTgt, t, alliesOf(u), foesOf(u), { reactive: true });
-      }
-      // 效果級: 戰法本身有其他常駐效果, 只有部分效果段是「自身成功發動主動戰法時」反應式
-      for (const t of u.activeFiredEffectTacs) {
-        for (const e of t.effects) {
-          if (!e.when || e.when.on !== "activeFired") continue;
-          if (!roundOk({ when: e.when }, CUR_R)) continue;
-          if (u.hitFlags.has(e)) continue;
-          const evRate = e.rate ?? t.rate ?? 1;
-          if (rnd() >= evRate) continue;
-          u.hitFlags.add(e);
-          if (TRACE) lg(`【${u.side}】${u.nm} 戰法【${t.nameZh}】效果（自身發動主動戰法觸發）發動`);
-          applyEffects(u, null, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(u), foesOf(u), { rateChecked: true, reactive: true });  // 已擲過 e.rate, 避免重複擲骰; reactive 供 e.when.on 閘門放行
+        // 效果級: 戰法本身有其他常駐效果, 只有部分效果段是「(自身/我軍/敵軍)成功發動主動戰法時」反應式
+        for (const t of holder.activeFiredEffectTacs) {
+          for (const e of t.effects) {
+            if (!e.when || e.when.on !== "activeFired") continue;
+            if (!whoOk(e.when)) continue;
+            if (!roundOk({ when: e.when }, CUR_R)) continue;
+            if (holder.hitFlags.has(e)) continue;
+            const evRate = e.rate ?? t.rate ?? 1;
+            if (rnd() >= evRate) continue;
+            holder.hitFlags.add(e);
+            if (TRACE) lg(`【${holder.side}】${holder.nm} 戰法【${t.nameZh}】效果（${holder === u ? "自身發動主動戰法觸發" : "友軍/敵軍發動主動戰法觸發"}）發動`);
+            applyEffects(holder, null, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(holder), foesOf(holder), { rateChecked: true, reactive: true });  // 已擲過 e.rate, 避免重複擲骰; reactive 供 e.when.on 閘門放行
+          }
         }
-      }
+      };
+      if (!u.alive) return;
+      activeFiredFor(u, u, undefined);                 // 既有語意: 持有者=事件單位自己(who未指定/"self")
+      // 批38 A: 廣播 —— u(本次成功發動主動/突擊戰法的單位)所在隊伍的隊友(who:"ally"持有者)
+      // 與敵隊(who:"enemy"持有者)也一併掃描。
+      for (const holder of alliesOf(u)) activeFiredFor(u, holder, "ally");
+      for (const holder of foesOf(u)) activeFiredFor(u, holder, "enemy");
     };
     if (TRACE) {                                    // 準備階段標頭: 兵種 + 城建/陣營
       CUR_R = 0;

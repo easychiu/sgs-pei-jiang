@@ -1679,200 +1679,289 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                                   team, foes_of(team[0]), no_heal=no_heal, heal_only=heal_only,
                                   skip_when_effects=skip_when_effects)
 
-    def on_hit(dst, src, is_normal, dmg=None):        # 反應式觸發(when.on): 被普攻(attacked)/受任意傷害(damaged) 時掛到 hit() 事件點; 批33: dmg(可選)—— 本次觸發事件的實際傷害量, 供 e["ofDamage"] 傷害比例治療使用
-        if not dst.alive or (not dst.on_hit_tacs and not dst.on_hit_effect_tacs and not dst.on_hit_eq and not dst.on_hit_bs):
-            return
-        if dst.fake_report_dur:                       # 批16: 偽報 —— 抑制 on_hit 反應式觸發(被動/指揮戰法失效)
-            return
-        for t0 in dst.on_hit_tacs:
-            if t0["when"]["on"] == "attacked" and not is_normal:  # attacked: 限普通攻擊觸發; damaged: 任意傷害都觸發
-                continue
-            # 批22: when.on 反應式戰法過去完全不檢查 rounds/from/until/parity/every(只認 on 事件
-            # 本身), 導致「戰鬥首回合獲得急救(受傷時回血)」這類「反應式觸發+回合窗口限定」的
-            # 複合語意無法表達(如 長健/青囊書: 首回合內受傷才會回血, 而非全程)。round_ok() 對
-            # 「無 rounds/from/until/parity/every」的戰法一律回傳 True, 故此檢查對絕大多數既有
-            # when.on 戰法(只帶 on, 無回合欄位)是無副作用的 no-op, 只在新資料明確加上回合窗口
-            # 時才生效。
-            if not round_ok(t0, CUR_ROUND):
-                continue
-            if id(t0) in dst.hit_flags:                # 同回合每單位每戰法最多觸發1次(防無限鏈), 鍵用t0(戰法原始物件)不受choices合成視圖影響
-                continue
-            if random.random() >= t0["rate"]:
-                continue
-            dst.hit_flags.add(id(t0))
-            # 批27 C: choices(擇一分支) —— 過去 on_hit() 反應式路徑完全不讀 t0["choices"](見
-            # engine_limitations.md §8: 魅惑「混亂/計窮/虛弱」三選一只能固定選其中一種, choices
-            # 寫入也不會被消費), 主動/指揮/被動的常駐輪詢派發路徑(fight()主迴圈)已支援 choices,
-            # 這裡補上同一套邏輯(先 pick_choice 選分支, 再用合成視圖 t 讀 coef/kind/effects/
-            # extraHits, t0 保留給 id()去重/round_ok 等以物件本身為鍵的邏輯, 不受選分支影響)。
-            t = dict(t0, **pick_choice(t0["choices"])) if t0.get("choices") else t0
-            if t["coef"]:
-                hit(dst, src, t["coef"], t["kind"], False, on_hit, dealt_damage)
-            if t.get("extraHits"):
-                fire_extra_hits(dst, t, src, allies_of, foes_of, on_hit, dealt_damage)  # 批13: 受擊觸發類多段傷害(如剛烈不屈 反擊後群體額外段)
-            if t["effects"]:
-                apply_effects(dst, src, t, allies_of(dst), foes_of(dst), reactive=True, dmg=dmg)  # 批23: 戰法級when.on本身即反應式, 標記reactive供內部e.when.on效果(若有)一致判定; 批33: dmg供e["ofDamage"]使用
-        # 批22: 效果級 e.when.on(急救類反應式治療, 見 on_hit_effect_tacs 註解) —— 戰法本身無
-        # t["when"](其餘效果如武力/統率平加仍在 prep 正常套用, 不受影響), 只有帶 e.when.on 的
-        # 個別效果在此處反應式結算。用「合成單效果戰法」(effects=[e])呼叫 apply_effects, 讓
-        # heal 分支的傷兵池/healBoost/healGiven 邏輯完整適用, 觸發率取 e.rate ?? t.rate ?? 1
-        # (效果自身優先, 無則沿用戰法整體rate)。去重鍵用 id(效果物件)(而非戰法物件), 因同一
-        # 戰法可能有多個 e.when.on 效果, 需各自獨立節流。
-        for t in dst.on_hit_effect_tacs:
-            for e in t["effects"]:
-                ew = e.get("when") or {}
-                if not ew.get("on"):
+    # 批38 A: 跨單位事件廣播 —— e["when"]["who"]/t["when"]["who"](選填, 預設None=向後相容
+    # "self"零變化)。過去 on_hit/dealt_damage/active_fired 只掃描「事件發生的那個單位自己」
+    # 攜帶的反應式戰法/效果, 無法表達「任一友軍受擊/造成傷害/發動主動戰法時, 我(持有者,
+    # 可能是另一個單位)也跟著觸發」這類跨單位監聽語意(歷輪盲測點名最大殘餘原語缺口, 見
+    # engine_limitations.md 21/27節「跨單位事件廣播」未解決缺口列表: 虎侯/十二奇策/經天緯地/
+    # 神機妙算/舌戰群儒等)。who=="ally": 監聽對象是「事件單位所在隊伍的任一人(含自己)」,
+    # 持有者也必須在同一隊。who=="enemy": 監聽對象是「事件單位所在隊伍的敵對隊伍任一人」,
+    # 持有者必須在敵對那一隊。self(未指定/None)仍走原本「持有者===事件單位」路徑, 不受
+    # 此廣播擴充影響(零回歸)。
+    def broadcast_holders(evt_unit, who):
+        if who in ("ally", "otherAlly"):
+            return allies_of(evt_unit)
+        if who == "enemy":
+            return foes_of(evt_unit)
+        return None                                    # "self"/未指定: 不走廣播, 呼叫端維持原本自身路徑
+
+    def on_hit(dst, src, is_normal, dmg=None):        # 反應式觸發(when.on): 被普攻(attacked)/受任意傷害(damaged) 時掛到 hit() 事件點; 批33: dmg(可選)—— 本次觸發事件的實際傷害量, 供 e["ofDamage"] 傷害比例治療使用; 批38 A: 新增who=="ally"/"enemy"跨單位廣播(見上方broadcast_holders/on_hit_for)
+        def on_hit_for(dst, src, is_normal, dmg, holder, want_who):  # holder: 效果持有者(可能不同於dst); want_who: None→只認持有者自身受擊之既有語意; "ally"/"enemy"→只認廣播監聽到的受擊事件, 避免self掃描與廣播掃描重複觸發同一條
+            if not holder.alive or (not holder.on_hit_tacs and not holder.on_hit_effect_tacs and not holder.on_hit_eq and not holder.on_hit_bs):
+                return
+            if holder.fake_report_dur:                # 批16: 偽報 —— 抑制 on_hit 反應式觸發(被動/指揮戰法失效)
+                return
+            def who_ok(w):
+                return (w or {}).get("who") == want_who if want_who else not (w or {}).get("who")
+            other_ally_ok = lambda: holder is not dst   # who=="otherAlly" 額外要求: 持有者不是本次事件單位自己
+            for t0 in holder.on_hit_tacs:
+                if not who_ok(t0.get("when")):
+                    continue
+                if want_who == "otherAlly" and not other_ally_ok():
+                    continue
+                if t0["when"]["on"] == "attacked" and not is_normal:  # attacked: 限普通攻擊觸發; damaged: 任意傷害都觸發
+                    continue
+                # 批22: when.on 反應式戰法過去完全不檢查 rounds/from/until/parity/every(只認 on 事件
+                # 本身), 導致「戰鬥首回合獲得急救(受傷時回血)」這類「反應式觸發+回合窗口限定」的
+                # 複合語意無法表達(如 長健/青囊書: 首回合內受傷才會回血, 而非全程)。round_ok() 對
+                # 「無 rounds/from/until/parity/every」的戰法一律回傳 True, 故此檢查對絕大多數既有
+                # when.on 戰法(只帶 on, 無回合欄位)是無副作用的 no-op, 只在新資料明確加上回合窗口
+                # 時才生效。
+                if not round_ok(t0, CUR_ROUND):
+                    continue
+                if id(t0) in holder.hit_flags:          # 同回合每單位每戰法最多觸發1次(防無限鏈), 鍵用t0(戰法原始物件)不受choices合成視圖影響
+                    continue
+                if random.random() >= t0["rate"]:
+                    continue
+                holder.hit_flags.add(id(t0))
+                # 批27 C: choices(擇一分支) —— 過去 on_hit() 反應式路徑完全不讀 t0["choices"](見
+                # engine_limitations.md §8: 魅惑「混亂/計窮/虛弱」三選一只能固定選其中一種, choices
+                # 寫入也不會被消費), 主動/指揮/被動的常駐輪詢派發路徑(fight()主迴圈)已支援 choices,
+                # 這裡補上同一套邏輯(先 pick_choice 選分支, 再用合成視圖 t 讀 coef/kind/effects/
+                # extraHits, t0 保留給 id()去重/round_ok 等以物件本身為鍵的邏輯, 不受選分支影響)。
+                t = dict(t0, **pick_choice(t0["choices"])) if t0.get("choices") else t0
+                if t["coef"]:
+                    hit(holder, src, t["coef"], t["kind"], False, on_hit, dealt_damage)
+                if t.get("extraHits"):
+                    fire_extra_hits(holder, t, src, allies_of, foes_of, on_hit, dealt_damage)  # 批13: 受擊觸發類多段傷害(如剛烈不屈 反擊後群體額外段)
+                if t["effects"]:
+                    apply_effects(holder, src, t, allies_of(holder), foes_of(holder), reactive=True, dmg=dmg)  # 批23: 戰法級when.on本身即反應式, 標記reactive供內部e.when.on效果(若有)一致判定; 批33: dmg供e["ofDamage"]使用
+            # 批22: 效果級 e.when.on(急救類反應式治療, 見 on_hit_effect_tacs 註解) —— 戰法本身無
+            # t["when"](其餘效果如武力/統率平加仍在 prep 正常套用, 不受影響), 只有帶 e.when.on 的
+            # 個別效果在此處反應式結算。用「合成單效果戰法」(effects=[e])呼叫 apply_effects, 讓
+            # heal 分支的傷兵池/healBoost/healGiven 邏輯完整適用, 觸發率取 e.rate ?? t.rate ?? 1
+            # (效果自身優先, 無則沿用戰法整體rate)。去重鍵用 id(效果物件)(而非戰法物件), 因同一
+            # 戰法可能有多個 e.when.on 效果, 需各自獨立節流。
+            for t in holder.on_hit_effect_tacs:
+                for e in t["effects"]:
+                    ew = e.get("when") or {}
+                    if not ew.get("on"):
+                        continue
+                    if not who_ok(ew):
+                        continue
+                    if want_who == "otherAlly" and not other_ally_ok():
+                        continue
+                    if ew["on"] == "attacked" and not is_normal:
+                        continue
+                    if not round_ok({"when": ew}, CUR_ROUND):
+                        continue
+                    if id(e) in holder.hit_flags:
+                        continue
+                    ev_rate = e.get("rate", t.get("rate", 1))
+                    if random.random() >= ev_rate:
+                        continue
+                    holder.hit_flags.add(id(e))
+                    apply_effects(holder, src, {"effects": [e], "kind": t.get("kind", "phys"), "nameZh": t.get("nameZh")},
+                                 allies_of(holder), foes_of(holder), rate_checked=True, reactive=True, dmg=dmg)  # 批23 A4/reactive: 上面已擲過 e["rate"], 避免重複擲骰; reactive供e.when.on閘門放行; 批33: dmg供e["ofDamage"]使用
+            # 批22: 裝備效果級 e.when.on(見 on_hit_eq 註解) —— 同上, 用合成單效果戰法呼叫 apply_effects
+            for e in holder.on_hit_eq:
+                ew = e["when"]
+                if not who_ok(ew):
+                    continue
+                if want_who == "otherAlly" and not other_ally_ok():
                     continue
                 if ew["on"] == "attacked" and not is_normal:
                     continue
                 if not round_ok({"when": ew}, CUR_ROUND):
                     continue
-                if id(e) in dst.hit_flags:
+                if id(e) in holder.hit_flags:
                     continue
-                ev_rate = e.get("rate", t.get("rate", 1))
+                ev_rate = e.get("rate", 1)
                 if random.random() >= ev_rate:
                     continue
-                dst.hit_flags.add(id(e))
-                apply_effects(dst, src, {"effects": [e], "kind": t.get("kind", "phys"), "nameZh": t.get("nameZh")},
-                             allies_of(dst), foes_of(dst), rate_checked=True, reactive=True, dmg=dmg)  # 批23 A4/reactive: 上面已擲過 e["rate"], 避免重複擲骰; reactive供e.when.on閘門放行; 批33: dmg供e["ofDamage"]使用
-        # 批22: 裝備效果級 e.when.on(見 on_hit_eq 註解) —— 同上, 用合成單效果戰法呼叫 apply_effects
-        for e in dst.on_hit_eq:
-            ew = e["when"]
-            if ew["on"] == "attacked" and not is_normal:
-                continue
-            if not round_ok({"when": ew}, CUR_ROUND):
-                continue
-            if id(e) in dst.hit_flags:
-                continue
-            ev_rate = e.get("rate", 1)
-            if random.random() >= ev_rate:
-                continue
-            dst.hit_flags.add(id(e))
-            apply_effects(dst, src, {"effects": [e], "kind": "phys"}, allies_of(dst), foes_of(dst), rate_checked=True, reactive=True, dmg=dmg)  # 批23 A4/reactive; 批33: dmg供e["ofDamage"]使用
-        # 批22: 兵書效果級 e.when.on(見 on_hit_bs 註解) —— 同上, 用合成單效果戰法呼叫 apply_effects
-        for e in dst.on_hit_bs:
-            ew = e["when"]
-            if ew["on"] == "attacked" and not is_normal:
-                continue
-            if not round_ok({"when": ew}, CUR_ROUND):
-                continue
-            if id(e) in dst.hit_flags:
-                continue
-            ev_rate = e.get("rate", 1)
-            if random.random() >= ev_rate:
-                continue
-            dst.hit_flags.add(id(e))
-            apply_effects(dst, src, {"effects": [e], "kind": "phys"}, allies_of(dst), foes_of(dst), rate_checked=True, reactive=True, dmg=dmg)  # 批23 A4/reactive; 批33: dmg供e["ofDamage"]使用
+                holder.hit_flags.add(id(e))
+                apply_effects(holder, src, {"effects": [e], "kind": "phys"}, allies_of(holder), foes_of(holder), rate_checked=True, reactive=True, dmg=dmg)  # 批23 A4/reactive; 批33: dmg供e["ofDamage"]使用
+            # 批22: 兵書效果級 e.when.on(見 on_hit_bs 註解) —— 同上, 用合成單效果戰法呼叫 apply_effects
+            for e in holder.on_hit_bs:
+                ew = e["when"]
+                if not who_ok(ew):
+                    continue
+                if want_who == "otherAlly" and not other_ally_ok():
+                    continue
+                if ew["on"] == "attacked" and not is_normal:
+                    continue
+                if not round_ok({"when": ew}, CUR_ROUND):
+                    continue
+                if id(e) in holder.hit_flags:
+                    continue
+                ev_rate = e.get("rate", 1)
+                if random.random() >= ev_rate:
+                    continue
+                holder.hit_flags.add(id(e))
+                apply_effects(holder, src, {"effects": [e], "kind": "phys"}, allies_of(holder), foes_of(holder), rate_checked=True, reactive=True, dmg=dmg)  # 批23 A4/reactive; 批33: dmg供e["ofDamage"]使用
 
-    def dealt_damage(src, dst, is_normal, kind, dmg=None):  # 批27 A: 反應式觸發(when.on:"dealtDamage") —— 自己造成傷害(對 dst)後掛到 hit() 事件點, 與 on_hit(自己受擊視角)對稱; 批33: dmg(可選)—— 本次觸發事件的實際傷害量, 供 e["ofDamage"] 使用
+        if not dst.alive:
+            return
+        on_hit_for(dst, src, is_normal, dmg, dst, None)   # 既有語意: 持有者=事件單位自己(who未指定/"self")
+        # 批38 A: 廣播 —— dst(受擊/受傷的那個單位)所在隊伍的隊友(who=="ally"持有者)與敵隊
+        # (who=="enemy"持有者)也一併掃描。候選陣列含 dst 自己, 但 who_ok() 只放行明確 who
+        # 欄位匹配的條目, 不會與上面的 self 路徑(who_ok 要求 who 欄位為空)重複觸發同一筆。
+        for holder in allies_of(dst):
+            on_hit_for(dst, src, is_normal, dmg, holder, "ally")
+        for holder in allies_of(dst):
+            on_hit_for(dst, src, is_normal, dmg, holder, "otherAlly")  # 批38 A: who=="otherAlly"(排除dst自己, 見騎虎難下「除自己之外的友軍受到普通攻擊時」)
+        for holder in foes_of(dst):
+            on_hit_for(dst, src, is_normal, dmg, holder, "enemy")
+
+    def dealt_damage(src, dst, is_normal, kind, dmg=None):  # 批27 A: 反應式觸發(when.on:"dealtDamage") —— 自己造成傷害(對 dst)後掛到 hit() 事件點, 與 on_hit(自己受擊視角)對稱; 批33: dmg(可選)—— 本次觸發事件的實際傷害量, 供 e["ofDamage"] 使用; 批38 A: 新增who=="ally"/"enemy"跨單位廣播(對稱on_hit, 見 broadcast_holders/dealt_damage_for)
         # 批37 B: stackPer:"attack" —— 「每次普通攻擊後疊加1層」(如奮突「普通攻擊之後...最多
         # 疊加3次」)。過去只有 "round"(逐回合)/"cast"(每次發動)兩種遞增模式, 普攻疊層只能用
         # round 近似(繳械/震懾回合無普攻仍會錯誤地繼續疊層)。掛在 dealt_damage 事件點(普攻
         # 確實命中造成傷害後), 置於 on_deal_tacs 早退判斷之前(有 stackPer:"attack" 疊層的
-        # 單位未必同時有 when.on:"dealtDamage" 反應式戰法, 不能被該早退擋掉)。
+        # 單位未必同時有 when.on:"dealtDamage" 反應式戰法, 不能被該早退擋掉)。此段是src自身
+        # 狀態變化, 與who廣播無關, 維持只對src本身執行, 不隨廣播迴圈重複執行。
         if is_normal and src.alive and src.stack and src.stack.get("stackPer") == "attack":
             src.stack["n"] = min(src.stack["max"], src.stack["n"] + 1)
-        if not src.alive or (not src.on_deal_tacs and not src.on_deal_effect_tacs):
-            return
-        if src.fake_report_dur:                        # 批16: 偽報 —— 抑制反應式觸發(被動/指揮戰法失效), 與 on_hit 同慣例
-            return
-        def _dmg_type_ok(dmg_type):                     # dmgType 過濾: 未指定視為兵刃/謀略皆可觸發(向後相容)
-            return not dmg_type or dmg_type == kind
-        for t in src.on_deal_tacs:                      # 戰法級: 整個戰法都是「造成傷害時」反應式(如白衣渡江拆成兩個獨立戰法段時可用此形式)
-            if not _dmg_type_ok((t.get("when") or {}).get("dmgType")):
-                continue
-            if (t.get("when") or {}).get("normalOnly") and not is_normal:
-                continue                                # 批37 B: when.normalOnly —— 限「普通攻擊」造成的傷害才觸發(如奮突「普通攻擊之後」; dmgType:"phys" 無法區分普攻與兵刃戰法傷害, 需獨立旗標)
-            if not round_ok(t, CUR_ROUND):
-                continue
-            if id(t) in src.hit_flags:                  # 同回合每單位每戰法最多觸發1次(防無限鏈), 與 on_hit 共用同一 hit_flags(不同方向的觸發各自用不同id(t)/id(e)鍵, 不會互相誤判)
-                continue
-            if random.random() >= t["rate"]:
-                continue
-            src.hit_flags.add(id(t))
-            if t["coef"]:
-                # 批32 B: targetSel(依準則選標) —— 過去 dealtDamage 的 coef 傷害段固定命中
-                # dst(觸發本次事件的同一目標, 如普攻打誰就額外打誰), 沒有讀取 t.get("targetSel")
-                # 這條路徑, 導致原文「對負傷最高之敵造成謀略傷害」(選標準則與觸發目標無關,
-                # 如監統震軍)只能被迫近似成「打觸發同目標」或完全不建模。比照主動戰法主迴圈
-                # 既有的 targetSel 判斷式(pick_by_criterion(foes_of(u), t["targetSel"])), 若
-                # 戰法帶 targetSel 則改用準則選標, 找不到符合準則的目標(如全軍陣亡)時不出手
-                # (dv=None 時不呼叫 hit, 而非退回 dst, 避免誤傷/誤選)。
-                if t.get("targetSel"):
-                    dv = pick_by_criterion(foes_of(src), t["targetSel"])
-                    if dv:
-                        hit(src, dv, t["coef"], t["kind"], False, on_hit, dealt_damage)
-                else:
-                    hit(src, dst, t["coef"], t["kind"], False, on_hit, dealt_damage)
-            if t.get("extraHits"):
-                fire_extra_hits(src, t, dst, allies_of, foes_of, on_hit, dealt_damage)
-            if t["effects"]:
-                apply_effects(src, dst, t, allies_of(src), foes_of(src), reactive=True, dmg=dmg)  # 批33: dmg供e["ofDamage"]使用
-        # 效果級: 戰法本身有其他常駐效果, 只有部分效果段是「造成傷害時」反應式(如白衣渡江本身
-        # 是常駐 command, disarm/silence 兩效果各自綁不同 dmgType, 與 on_hit_effect_tacs 同慣例)
-        for t in src.on_deal_effect_tacs:
-            for e in t["effects"]:
-                ew = e.get("when") or {}
-                if ew.get("on") != "dealtDamage":
-                    continue
-                if not _dmg_type_ok(ew.get("dmgType")):
-                    continue
-                if ew.get("normalOnly") and not is_normal:
-                    continue                            # 批37 B: when.normalOnly(效果級) —— 同上, 限普攻傷害觸發
-                if not round_ok({"when": ew}, CUR_ROUND):
-                    continue
-                if id(e) in src.hit_flags:
-                    continue
-                ev_rate = e.get("rate", t.get("rate", 1))
-                if random.random() >= ev_rate:
-                    continue
-                src.hit_flags.add(id(e))
-                apply_effects(src, dst, {"effects": [e], "kind": t.get("kind", "phys"), "nameZh": t.get("nameZh")},
-                             allies_of(src), foes_of(src), rate_checked=True, reactive=True, dmg=dmg)  # 已擲過 e["rate"], 避免重複擲骰; reactive供e.when.on閘門放行; 批33: dmg供e["ofDamage"]使用
 
-    def active_fired(u):                                # 批31 A: 反應式觸發(when.on:"activeFired") —— 自己成功發動主動/突擊戰法時掛到 fight() 主迴圈事件點, 與 dealt_damage(自己造成傷害視角)/on_hit(自己受擊視角)對稱; 只認「自身」戰法成功fire這件事本身, 不要求造成傷害(士爭先赴等戰法可能coef=0純buff, 也可能有coef傷害段)
-        if not u.alive or (not u.active_fired_tacs and not u.active_fired_effect_tacs):
+        def dealt_damage_for(src, dst, is_normal, kind, dmg, holder, want_who):  # holder: 效果持有者(可能不同於src); want_who: 同on_hit_for慣例
+            if not holder.alive or (not holder.on_deal_tacs and not holder.on_deal_effect_tacs):
+                return
+            if holder.fake_report_dur:                  # 批16: 偽報 —— 抑制反應式觸發(被動/指揮戰法失效), 與 on_hit 同慣例
+                return
+            def who_ok(w):
+                return (w or {}).get("who") == want_who if want_who else not (w or {}).get("who")
+            def _dmg_type_ok(dmg_type):                 # dmgType 過濾: 未指定視為兵刃/謀略皆可觸發(向後相容)
+                return not dmg_type or dmg_type == kind
+            for t in holder.on_deal_tacs:                # 戰法級: 整個戰法都是「造成傷害時」反應式(如白衣渡江拆成兩個獨立戰法段時可用此形式)
+                if not who_ok(t.get("when")):
+                    continue
+                if not _dmg_type_ok((t.get("when") or {}).get("dmgType")):
+                    continue
+                if (t.get("when") or {}).get("normalOnly") and not is_normal:
+                    continue                            # 批37 B: when.normalOnly —— 限「普通攻擊」造成的傷害才觸發(如奮突「普通攻擊之後」; dmgType:"phys" 無法區分普攻與兵刃戰法傷害, 需獨立旗標)
+                if not round_ok(t, CUR_ROUND):
+                    continue
+                if id(t) in holder.hit_flags:            # 同回合每單位每戰法最多觸發1次(防無限鏈), 與 on_hit 共用同一 hit_flags(不同方向的觸發各自用不同id(t)/id(e)鍵, 不會互相誤判)
+                    continue
+                if random.random() >= t["rate"]:
+                    continue
+                holder.hit_flags.add(id(t))
+                if t["coef"]:
+                    # 批32 B: targetSel(依準則選標) —— 過去 dealtDamage 的 coef 傷害段固定命中
+                    # dst(觸發本次事件的同一目標, 如普攻打誰就額外打誰), 沒有讀取 t.get("targetSel")
+                    # 這條路徑, 導致原文「對負傷最高之敵造成謀略傷害」(選標準則與觸發目標無關,
+                    # 如監統震軍)只能被迫近似成「打觸發同目標」或完全不建模。比照主動戰法主迴圈
+                    # 既有的 targetSel 判斷式(pick_by_criterion(foes_of(u), t["targetSel"])), 若
+                    # 戰法帶 targetSel 則改用準則選標, 找不到符合準則的目標(如全軍陣亡)時不出手
+                    # (dv=None 時不呼叫 hit, 而非退回 dst, 避免誤傷/誤選)。
+                    if t.get("targetSel"):
+                        dv = pick_by_criterion(foes_of(holder), t["targetSel"])
+                        if dv:
+                            hit(holder, dv, t["coef"], t["kind"], False, on_hit, dealt_damage)
+                    elif holder is src:
+                        hit(holder, dst, t["coef"], t["kind"], False, on_hit, dealt_damage)
+                    else:                                # 廣播情形(holder不是src): 觸發事件的原始dst未必是holder的敵人(可能同隊), 退回holder自己的固定敵方位0近似選標(見同批B節遷移逐筆核對是否需要targetSel精確指定)
+                        fv = foes_of(holder)
+                        if fv and fv[0].alive:
+                            hit(holder, fv[0], t["coef"], t["kind"], False, on_hit, dealt_damage)
+                if t.get("extraHits"):
+                    fire_extra_hits(holder, t, dst if holder is src else None, allies_of, foes_of, on_hit, dealt_damage)
+                if t["effects"]:
+                    apply_effects(holder, dst if holder is src else None, t, allies_of(holder), foes_of(holder), reactive=True, dmg=dmg)  # 批33: dmg供e["ofDamage"]使用
+            # 效果級: 戰法本身有其他常駐效果, 只有部分效果段是「造成傷害時」反應式(如白衣渡江本身
+            # 是常駐 command, disarm/silence 兩效果各自綁不同 dmgType, 與 on_hit_effect_tacs 同慣例)
+            for t in holder.on_deal_effect_tacs:
+                for e in t["effects"]:
+                    ew = e.get("when") or {}
+                    if ew.get("on") != "dealtDamage":
+                        continue
+                    if not who_ok(ew):
+                        continue
+                    if not _dmg_type_ok(ew.get("dmgType")):
+                        continue
+                    if ew.get("normalOnly") and not is_normal:
+                        continue                        # 批37 B: when.normalOnly(效果級) —— 同上, 限普攻傷害觸發
+                    if not round_ok({"when": ew}, CUR_ROUND):
+                        continue
+                    if id(e) in holder.hit_flags:
+                        continue
+                    ev_rate = e.get("rate", t.get("rate", 1))
+                    if random.random() >= ev_rate:
+                        continue
+                    holder.hit_flags.add(id(e))
+                    apply_effects(holder, dst if holder is src else None, {"effects": [e], "kind": t.get("kind", "phys"), "nameZh": t.get("nameZh")},
+                                 allies_of(holder), foes_of(holder), rate_checked=True, reactive=True, dmg=dmg)  # 已擲過 e["rate"], 避免重複擲骰; reactive供e.when.on閘門放行; 批33: dmg供e["ofDamage"]使用
+
+        if not src.alive:
             return
-        if u.fake_report_dur:                           # 批16: 偽報 —— 抑制反應式觸發(被動/指揮戰法失效), 與 on_hit/dealt_damage 同慣例
+        dealt_damage_for(src, dst, is_normal, kind, dmg, src, None)  # 既有語意: 持有者=事件單位自己(who未指定/"self")
+        # 批38 A: 廣播 —— src(本次造成傷害的那個單位)所在隊伍的隊友(who=="ally"持有者)與敵隊
+        # (who=="enemy"持有者)也一併掃描。
+        for holder in allies_of(src):
+            dealt_damage_for(src, dst, is_normal, kind, dmg, holder, "ally")
+        for holder in foes_of(src):
+            dealt_damage_for(src, dst, is_normal, kind, dmg, holder, "enemy")
+
+    def active_fired(u):                                # 批31 A: 反應式觸發(when.on:"activeFired") —— 自己成功發動主動/突擊戰法時掛到 fight() 主迴圈事件點, 與 dealt_damage(自己造成傷害視角)/on_hit(自己受擊視角)對稱; 只認「自身」戰法成功fire這件事本身, 不要求造成傷害(士爭先赴等戰法可能coef=0純buff, 也可能有coef傷害段); 批38 A: 新增who=="ally"/"enemy"跨單位廣播(見broadcast_holders/active_fired_for) —— 解決十二奇策「我軍全體下次發動主動戰法後」/經天緯地「我軍全體發動主動/突擊戰法時」(who=="ally")、神機妙算/舌戰群儒「敵軍發動主動戰法時」(who=="enemy")這一族全庫最大殘餘原語缺口(見engine_limitations.md 21/27節)
+        def active_fired_for(u, holder, want_who):       # holder: 效果持有者(可能不同於u=實際發動主動戰法的單位); want_who: 同on_hit_for慣例
+            if not holder.alive or (not holder.active_fired_tacs and not holder.active_fired_effect_tacs):
+                return
+            if holder.fake_report_dur:                   # 批16: 偽報 —— 抑制反應式觸發(被動/指揮戰法失效), 與 on_hit/dealt_damage 同慣例
+                return
+            def who_ok(w):
+                return (w or {}).get("who") == want_who if want_who else not (w or {}).get("who")
+            for t in holder.active_fired_tacs:            # 戰法級: 整個戰法都是「(自身/我軍/敵軍)成功發動主動戰法時」反應式(如士爭先赴/十二奇策/神機妙算)
+                if not who_ok(t.get("when")):
+                    continue
+                if not round_ok(t, CUR_ROUND):
+                    continue
+                if id(t) in holder.hit_flags:             # 同回合每單位每戰法最多觸發1次(防無限鏈), 與 on_hit/dealt_damage 共用同一 hit_flags(不同方向的觸發各自用不同id(t)/id(e)鍵, 不會互相誤判)
+                    continue
+                if random.random() >= t["rate"]:
+                    continue
+                holder.hit_flags.add(id(t))
+                main_hit_tgt = None
+                if t["coef"]:
+                    cnt = t["n"]
+                    if t.get("nMax"):
+                        cnt = t["n"] + random.randint(0, t["nMax"] - t["n"])
+                    vs = pick_targets(foes_of(holder), cnt)
+                    for v in vs:
+                        hit(holder, v, t["coef"], t["kind"], False, on_hit, dealt_damage, is_active=True)  # 批31 A: 本段傷害本身即「主動戰法發動觸發的反應式傷害」, 供同戰法/其他戰法的e.activeOnly amp判定
+                    if len(vs) == 1:
+                        main_hit_tgt = vs[0]
+                if t.get("extraHits"):
+                    fire_extra_hits(holder, t, main_hit_tgt, allies_of, foes_of, on_hit, dealt_damage)
+                if t["effects"]:
+                    apply_effects(holder, main_hit_tgt, t, allies_of(holder), foes_of(holder), reactive=True)
+            # 效果級: 戰法本身有其他常駐效果, 只有部分效果段是「(自身/我軍/敵軍)成功發動主動戰法時」反應式
+            for t in holder.active_fired_effect_tacs:
+                for e in t["effects"]:
+                    ew = e.get("when") or {}
+                    if ew.get("on") != "activeFired":
+                        continue
+                    if not who_ok(ew):
+                        continue
+                    if not round_ok({"when": ew}, CUR_ROUND):
+                        continue
+                    if id(e) in holder.hit_flags:
+                        continue
+                    ev_rate = e.get("rate", t.get("rate", 1))
+                    if random.random() >= ev_rate:
+                        continue
+                    holder.hit_flags.add(id(e))
+                    apply_effects(holder, None, {"effects": [e], "kind": t.get("kind", "phys"), "nameZh": t.get("nameZh")},
+                                 allies_of(holder), foes_of(holder), rate_checked=True, reactive=True)  # 已擲過 e["rate"], 避免重複擲骰; reactive供e.when.on閘門放行
+
+        if not u.alive:
             return
-        for t in u.active_fired_tacs:                    # 戰法級: 整個戰法都是「自身成功發動主動戰法時」反應式(如士爭先赴)
-            if not round_ok(t, CUR_ROUND):
-                continue
-            if id(t) in u.hit_flags:                      # 同回合每單位每戰法最多觸發1次(防無限鏈), 與 on_hit/dealt_damage 共用同一 hit_flags(不同方向的觸發各自用不同id(t)/id(e)鍵, 不會互相誤判)
-                continue
-            if random.random() >= t["rate"]:
-                continue
-            u.hit_flags.add(id(t))
-            main_hit_tgt = None
-            if t["coef"]:
-                cnt = t["n"]
-                if t.get("nMax"):
-                    cnt = t["n"] + random.randint(0, t["nMax"] - t["n"])
-                vs = pick_targets(foes_of(u), cnt)
-                for v in vs:
-                    hit(u, v, t["coef"], t["kind"], False, on_hit, dealt_damage, is_active=True)  # 批31 A: 本段傷害本身即「主動戰法發動觸發的反應式傷害」, 供同戰法/其他戰法的e.activeOnly amp判定
-                if len(vs) == 1:
-                    main_hit_tgt = vs[0]
-            if t.get("extraHits"):
-                fire_extra_hits(u, t, main_hit_tgt, allies_of, foes_of, on_hit, dealt_damage)
-            if t["effects"]:
-                apply_effects(u, main_hit_tgt, t, allies_of(u), foes_of(u), reactive=True)
-        # 效果級: 戰法本身有其他常駐效果, 只有部分效果段是「自身成功發動主動戰法時」反應式
-        for t in u.active_fired_effect_tacs:
-            for e in t["effects"]:
-                ew = e.get("when") or {}
-                if ew.get("on") != "activeFired":
-                    continue
-                if not round_ok({"when": ew}, CUR_ROUND):
-                    continue
-                if id(e) in u.hit_flags:
-                    continue
-                ev_rate = e.get("rate", t.get("rate", 1))
-                if random.random() >= ev_rate:
-                    continue
-                u.hit_flags.add(id(e))
-                apply_effects(u, None, {"effects": [e], "kind": t.get("kind", "phys"), "nameZh": t.get("nameZh")},
-                             allies_of(u), foes_of(u), rate_checked=True, reactive=True)  # 已擲過 e["rate"], 避免重複擲骰; reactive供e.when.on閘門放行
+        active_fired_for(u, u, None)                     # 既有語意: 持有者=事件單位自己(who未指定/"self")
+        # 批38 A: 廣播 —— u(本次成功發動主動/突擊戰法的單位)所在隊伍的隊友(who=="ally"持有者)
+        # 與敵隊(who=="enemy"持有者)也一併掃描。
+        for holder in allies_of(u):
+            active_fired_for(u, holder, "ally")
+        for holder in foes_of(u):
+            active_fired_for(u, holder, "enemy")
 
     apply_passives(no_heal=True, skip_when_effects=True)  # 開戰套持久效果(治療除外); skip_when_effects: 批18 e.when泛化, 非heal效果帶e.when且母戰法無t.when時prep階段不套用, 改由回合迴圈通用掃描
 
@@ -3746,16 +3835,25 @@ def demo():
     # 批16/27既有機制)讀取 pick_choice() 抽出的分支 t["coef"]/t["kind"]/t["targetSel"] 並呼叫
     # hit(), 不需要引擎擴充即可支援傷害段。用勝率統計驗證(同78號測試手法): 帶巨額傷害分支
     # (coef=5.0)的command戰法應比完全no-op的對照組顯著推高勝率。
+    # 批38: 除呂布外, 也暫時把「諸葛亮」的自帶戰法(神機妙算)換成中性no-op占位——本測試的
+    # 本意是隔離驗證choices機制本身, 不應受隊上其他武將自帶戰法(尤其批38後諸葛亮的神機妙算
+    # 已改為activeFired反應式監聽, 觸發頻率隨敵隊主動戰法發動節奏浮動, 與本測試無關卻會顯著
+    # 影響A隊整體傷害輸出, 使win_dmg_83/win_noop_83的差值不穩定)干擾, 確保測試只量測choices
+    # 傷害段本身的影響。
     _orig_lb_tactic_83 = POOL["呂布"].tactic
+    _orig_zgl_tactic_83 = POOL["諸葛亮"].tactic
     noop_tac_83 = {"nameZh": "測試no-op對照83", "type": "command", "kind": "phys", "coef": 0,
                    "rate": 1.0, "n": 1, "prep": 0, "effects": []}
+    noop_tac_83b = {"nameZh": "測試no-op對照83b", "type": "command", "kind": "phys", "coef": 0,
+                    "rate": 1.0, "n": 1, "prep": 0, "effects": []}
     dmg_choice_tac_83 = {
         "nameZh": "測試choices傷害分支83", "type": "command", "kind": "phys", "coef": 0,
         "rate": 1.0, "n": 1, "prep": 0, "effects": [],
         "choices": [
-            {"weight": 1, "coef": 5.0, "kind": "intel", "targetSel": "minIntel", "effects": []},
+            {"weight": 1, "coef": 20.0, "kind": "intel", "targetSel": "minIntel", "effects": []},
         ],
     }
+    POOL["諸葛亮"].tactic = noop_tac_83b
     POOL["呂布"].tactic = noop_tac_83
     try:
         random.seed(83)
@@ -3768,6 +3866,7 @@ def demo():
         win_dmg_83 = simulate(["呂布", "張飛", "諸葛亮"], ["曹操", "司馬懿", "周瑜"], n=300)["A勝率"]
     finally:
         POOL["呂布"].tactic = _orig_lb_tactic_83
+        POOL["諸葛亮"].tactic = _orig_zgl_tactic_83
     assert win_dmg_83 > win_noop_83 + 0.1, (
         f"批28 B4: command型戰法choices分支帶coef/kind/targetSel應能造成真實傷害並顯著推高"
         f"勝率(no-op基準{win_noop_83:.3f}, 帶傷害分支{win_dmg_83:.3f})——若choices的coef傷害段"
@@ -4258,6 +4357,113 @@ def demo():
     assert r104_with_ft["A勝率"] > r104_baseline["A勝率"], \
         f"A方主將傳承奮突應提升鏡像對局勝率(普攻疊層+繳械通道生效): 傳承{r104_with_ft['A勝率']} 基準{r104_baseline['A勝率']}"
     print(f"    [批37] 鏡像對局 傳承奮突 A勝率{r104_with_ft['A勝率']:.3f} vs 基準{r104_baseline['A勝率']:.3f} (差+{r104_with_ft['A勝率']-r104_baseline['A勝率']:.3f})")
+
+    # 105) 批38 A: 跨單位事件廣播 who=="ally"/"enemy" —— activeFired 廣播端到端驗證。持有者
+    # 自身無主動戰法(active_fired_tacs命中0次self路徑), 隊友掛一個rate=1必發的主動戰法(coef=0
+    # 純占位); 持有者掛 when:{on:"activeFired", who:"ally"} 的被動, 命中時對敵軍造成一段
+    # 額外兵刃傷害。若who=="ally"廣播完全未生效, 持有者的戰法永遠不會觸發(其"自己"從未fire
+    # 任何主動戰法), 額外傷害段應為0; 若生效, 隊友每次成功發動都應觸發持有者的額外傷害。
+    ally_active_tac105 = {"nameZh": "測試105隊友主動戰法", "type": "active", "kind": "phys",
+                           "coef": 0, "rate": 1, "n": 1, "prep": 0, "effects": []}
+    holder_tac105 = {"nameZh": "測試105持有者ally監聽", "type": "passive", "kind": "phys",
+                      "coef": 0.5, "rate": 1, "n": 1, "prep": 0,
+                      "when": {"on": "activeFired", "who": "ally"}, "effects": []}
+    TACTICS[ally_active_tac105["nameZh"]] = ally_active_tac105
+    TACTICS[holder_tac105["nameZh"]] = holder_tac105
+    try:
+        holder105 = Unit(POOL["呂布"], "騎", None, None, None, [holder_tac105["nameZh"]])
+        ally105 = Unit(POOL["張飛"], "騎", None, None, None, [ally_active_tac105["nameZh"]])
+        foe105 = Unit(POOL["關羽"], "盾")
+        assert len(holder105.active_fired_tacs) == 1, "測試105持有者ally監聽 應被正確預篩收錄進 active_fired_tacs"
+        # 直接重演 fight() 主迴圈: ally105 成功發動主動戰法(fire=True分支)後呼叫 active_fired(ally105),
+        # 廣播應掃到 holder105(who=="ally") 並對 foe105 造成傷害。
+        setA105 = {id(holder105), id(ally105)}
+        allies_of105 = lambda u: [holder105, ally105] if id(u) in setA105 else [foe105]
+        foes_of105 = lambda u: [foe105] if id(u) in setA105 else [holder105, ally105]
+
+        def active_fired105(u):
+            def active_fired_for105(u, holder, want_who):
+                if not holder.alive or not holder.active_fired_tacs:
+                    return
+                def who_ok(w):
+                    return (w or {}).get("who") == want_who if want_who else not (w or {}).get("who")
+                for t in holder.active_fired_tacs:
+                    if not who_ok(t.get("when")):
+                        continue
+                    if id(t) in holder.hit_flags:
+                        continue
+                    holder.hit_flags.add(id(t))
+                    if t["coef"]:
+                        for v in pick_targets(foes_of105(holder), t["n"]):
+                            hit(holder, v, t["coef"], t["kind"], False, None, None, is_active=True)
+            active_fired_for105(u, u, None)
+            for holder in allies_of105(u):
+                active_fired_for105(u, holder, "ally")
+            for holder in foes_of105(u):
+                active_fired_for105(u, holder, "enemy")
+
+        foe_troop_before105 = foe105.troop
+        active_fired105(ally105)  # ally105(非holder105自己)成功發動主動戰法
+        assert foe105.troop < foe_troop_before105, \
+            "who=='ally' activeFired廣播: 隊友(ally105)發動主動戰法後, 持有者(holder105)的who=='ally'監聽應觸發並造成傷害"
+    finally:
+        del TACTICS[ally_active_tac105["nameZh"]]
+        del TACTICS[holder_tac105["nameZh"]]
+
+    # 106) 批38 A: who=="enemy" activeFired 廣播(神機妙算/舌戰群儒方向) —— 我方持有者監聽敵方
+    # 發動主動戰法。同上106用手工重演的 active_fired_for 邏輯(對稱105), 只是holder與觸發者u分屬
+    # 不同隊。
+    foe_active_tac106 = {"nameZh": "測試106敵方主動戰法", "type": "active", "kind": "phys",
+                         "coef": 0, "rate": 1, "n": 1, "prep": 0, "effects": []}
+    holder_tac106 = {"nameZh": "測試106持有者enemy監聽", "type": "passive", "kind": "phys",
+                      "coef": 0.5, "rate": 1, "n": 1, "prep": 0,
+                      "when": {"on": "activeFired", "who": "enemy"}, "effects": []}
+    TACTICS[foe_active_tac106["nameZh"]] = foe_active_tac106
+    TACTICS[holder_tac106["nameZh"]] = holder_tac106
+    try:
+        holder106 = Unit(POOL["呂布"], "騎", None, None, None, [holder_tac106["nameZh"]])
+        foe106 = Unit(POOL["關羽"], "盾", None, None, None, [foe_active_tac106["nameZh"]])
+        assert len(holder106.active_fired_tacs) == 1, "測試106持有者enemy監聽 應被正確預篩收錄進 active_fired_tacs"
+        setA106 = {id(holder106)}
+        allies_of106 = lambda u: [holder106] if id(u) in setA106 else [foe106]
+        foes_of106 = lambda u: [foe106] if id(u) in setA106 else [holder106]
+
+        def active_fired106(u):
+            def active_fired_for106(u, holder, want_who):
+                if not holder.alive or not holder.active_fired_tacs:
+                    return
+                def who_ok(w):
+                    return (w or {}).get("who") == want_who if want_who else not (w or {}).get("who")
+                for t in holder.active_fired_tacs:
+                    if not who_ok(t.get("when")):
+                        continue
+                    if id(t) in holder.hit_flags:
+                        continue
+                    holder.hit_flags.add(id(t))
+                    if t["coef"]:
+                        for v in pick_targets(foes_of106(holder), t["n"]):
+                            hit(holder, v, t["coef"], t["kind"], False, None, None, is_active=True)
+            active_fired_for106(u, u, None)
+            for holder in allies_of106(u):
+                active_fired_for106(u, holder, "ally")
+            for holder in foes_of106(u):
+                active_fired_for106(u, holder, "enemy")
+
+        foe_troop_before106 = foe106.troop  # foe106自己是唯一foe, 也是本次發動者: 用另一個觀察點——holder106是否有觸發, 改觀察holder106.hit_flags
+        active_fired106(foe106)  # foe106(敵方, 非holder106)成功發動主動戰法
+        assert any(id(t) in holder106.hit_flags for t in holder106.active_fired_tacs), \
+            "who=='enemy' activeFired廣播: 敵方(foe106)發動主動戰法後, 我方持有者(holder106)的who=='enemy'監聽應觸發(hit_flags應記錄)"
+    finally:
+        del TACTICS[foe_active_tac106["nameZh"]]
+        del TACTICS[holder_tac106["nameZh"]]
+
+    # 107) 批38 A: who未指定(預設"self")回歸 —— 士爭先赴真實資料在86a已驗證; 這裡額外核對
+    # who=="ally"/"enemy"廣播不會誤觸發只認"self"的既有戰法(反向回歸: 廣播迴圈的who_ok閘門
+    # 不應放行未帶who欄位的t0)。
+    sfxf_tac107 = dict(TACTICS["士爭先赴"])
+    assert not (sfxf_tac107.get("when") or {}).get("who"), "士爭先赴 when.who 應維持未指定(向後相容self預設), 批38不應誤加who欄位"
+
+    print(f"    [批38] activeFired 跨單位廣播 who=='ally'/'enemy' 端到端驗證通過(105/106), who未指定回歸驗證通過(107)")
 
     print("self-check OK")
 

@@ -1542,18 +1542,40 @@ ENGINE_CAPABILITY_ALIASES = {
     "逐回合重擲": "everyRound(同上)",
     "逐回合重新判定": "everyRound(同上)",
     # 批31: activeFired 只覆蓋「自身」成功發動主動/突擊戰法這個方向的事件廣播(見
-    # active_fired_tacs/active_fired_effect_tacs + active_fired()/activeFired())。刻意不用
-    # 「發動主動戰法」這種方向中性的片語當別名鍵——舌戰群儒/神機妙算「敵軍發動主動戰法時」、
-    # 經天緯地「友軍發動戰法時」是相反方向(監聽別人發動, 而非自己發動)的廣播事件, 仍是
-    # 未解決的缺口(需要「跨單位事件監聽」機制, 比 activeFired 的「自己監聽自己」複雜),
-    # 若用方向中性片語當別名鍵, 會把這些貨真價實的缺口誤判成 stale 揭露。只用「自身/自帶/
-    # 成功發動」這類天然帶第一人稱語意、且全庫核對後確認皆為自身方向的片語。
+    # active_fired_tacs/active_fired_effect_tacs + active_fired()/activeFired())。批38 A 已擴充
+    # when.who("ally"/"enemy")跨單位事件廣播(activeFired/onHit/dealtDamage三事件點皆支援, 見
+    # broadcast_holders/active_fired_for/on_hit_for/dealt_damage_for), 「敵軍/友軍發動戰法時」
+    # (舌戰群儒/神機妙算/經天緯地方向)已可用 when:{on:"activeFired", who:"enemy"/"ally"} 精確
+    # 表達並已完成遷移(見 engine_limitations.md 批38節)。但仍非萬能: (1) 單一tactic物件只有
+    # 一個t.when, 無法同時掛「自身主動施放」與「監聽隊友之後發動」兩個獨立事件(十二奇策這類
+    # 「先買buff, 之後由任一人觸發」的複合時序仍是缺口, 見該筆_todo); (2) who:"ally"/"enemy"
+    # 目前只支援 attacked/damaged/dealtDamage/activeFired 三種既有事件的廣播擴展, 不支援全新
+    # 事件種類(如「狀態施加」, 機鑑先識缺口仍在); (3) activeFired 事件本身只在 fire===true
+    # (真正成功)之後才廣播, 「敵軍嘗試發動」(不論成功與否)與「敵軍成功發動」之間仍有粒度落差
+    # (神機妙算/舌戰群儒遷移時已誠實記錄此點, 非新缺口, 是fire機制設計本身的既有邊界)。
     "自帶主動戰法": "activeFired(批31新增, when.on==\"activeFired\", 見 sgz.py/engine.js 的"
                 "active_fired_tacs/active_fired_effect_tacs + active_fired()/activeFired() 掛在"
-                "fight() 主迴圈 active/charge 型戰法 fire===true 判定通過後對施放者自身掃描)",
+                "fight() 主迴圈 active/charge 型戰法 fire===true 判定通過後對施放者自身掃描;"
+                "批38 A 新增 when.who(\"ally\"/\"enemy\")後, 亦可監聽隊友/敵軍的同一事件, 見下方"
+                "「友軍發動戰法」/「敵軍發動主動戰法」條目)",
     "成功發動": "activeFired(同上; 「成功發動自帶主動戰法前/後」「自身成功發動突擊戰法後」這類"
                 "第一人稱措辭若指的是自身主動/突擊戰法發動事件, 是 activeFired 的落地範圍;"
-                "「敵軍/友軍發動戰法時」是相反方向的跨單位廣播, 不算 stale, 仍是未解決缺口)",
+                "批38 A 起「敵軍/友軍發動戰法時」也已可用 when.who 精確表達, 見下方條目, 不再"
+                "一概視為未解決缺口——需逐筆核對是否仍卡在「複合時序」(如十二奇策)或「全新"
+                "事件種類」(如機鑑先識狀態鏡射)等批38範圍外的阻塞點)",
+    "友軍發動戰法": "activeFired+who:\"ally\"(批38 A新增, when:{on:\"activeFired\",who:\"ally\"},"
+                "見 sgz.py/engine.js 的 broadcast_holders/active_fired_for(\"ally\")分支; 持有者"
+                "監聽「我軍全體(含自己)任一人成功發動主動/突擊戰法」事件, 見經天緯地批38遷移)",
+    "友軍發動主動戰法": "activeFired+who:\"ally\"(同上, 見十二奇策/經天緯地)",
+    "我軍全體發動": "activeFired+who:\"ally\"(同上; 若該筆同時有「自己先施放買buff」與「之後由"
+                "隊友觸發」兩個獨立事件並存於同一戰法, 單一t.when仍無法表達複合時序, 需個案核對"
+                "是否仍為缺口, 見十二奇策批38 _todo)",
+    "敵軍發動主動戰法": "activeFired+who:\"enemy\"(批38 A新增, when:{on:\"activeFired\",who:\"enemy\"},"
+                "見 sgz.py/engine.js 的 broadcast_holders/active_fired_for(\"enemy\")分支; 持有者"
+                "監聽「敵軍任一人成功發動主動/突擊戰法」事件, 見神機妙算/舌戰群儒批38遷移; 事件"
+                "只在敵方該次發動fire===true成功後才廣播, 「嘗試發動」與「成功發動」的粒度落差"
+                "仍存在, 已在遷移note誠實記錄, 不算stale)",
+    "敵軍嘗試發動": "activeFired+who:\"enemy\"(同上)",
     "僅主動戰法傷害": "activeOnly(批31新增, amp 效果欄位, 對稱於既有 normalOnly, 見 sgz.py/"
                 "engine.js 的 is_active/isActive 參數穿透 hit()→damage()→amp()/addbonus())",
     "目標為敵軍主將": "ifSameTargetIsLeader(批31新增, extraHits 段條件過濾欄位, 見 sgz.py"
