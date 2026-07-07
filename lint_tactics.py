@@ -548,7 +548,13 @@ KNOWN_EFFECT_FIELDS = {
 PER_KIND_FIELDS = {
     "amp": {"val", "dmgType", "normalOnly", "activeOnly"}, "mitig": {"val", "dmgType", "normalOnly"}, "stun": set(), "silence": set(), "disarm": set(),  # dmgType: 批24 D2, 兵刃/謀略傷害類型過濾; normalOnly: 批28 B3, 僅普攻傷害生效/受影響; activeOnly: 批31 A, 僅主動/突擊戰法傷害生效(amp限定)
     "chaos": set(), "ambush": set(), "insight": set(), "immune": {"types"}, "first": set(),
-    "stat": {"stat", "add", "mult"},
+    "stat": {"stat", "add", "mult",
+              "stackKey", "perStack", "maxStacks", "onMaxStacks", "globalMax", "globalEffects"},
+    # 批42: stackKey(truthy旗標)/perStack(每層量級)/maxStacks(單目標疊層上限)/onMaxStacks
+    # (該目標本地池耗盡時額外套用的效果陣列)/globalMax(持有者跨目標累計觸發次數上限)/
+    # globalEffects(全場觸發後套用的效果陣列) —— 傲睨王侯「敵軍目標受普攻時觸發1個破綻,
+    # 該目標降3%可疊…單目標破綻全觸發→…全場破綻觸發後→…」per-target疊層+雙閾值原語,
+    # 見 engine.js/sgz.py k=="stat"&&e.stackKey 分支與 engine_limitations.md 第40節。
     "dot": {"coef", "kind"},  # 批23 A3: e.kind(dot段自帶傷害類型, 優先於t.kind, 見damage()呼叫端)
     "extra": {"val"}, "stack": {"per", "max", "stackPer"},  # stackPer: 批26 B2, "round"預設/"cast"每次發動遞增
     "decay": {"v0", "rounds"}, "swap": set(), "pierce": {"val"}, "counter": {"coef", "kind", "prob", "guardFor"},  # guardFor: 批28 B1, 守護式反擊("leader"=登記進主將counter_guards, 由代為受擊者反擊)
@@ -1629,6 +1635,27 @@ ENGINE_CAPABILITY_ALIASES = {
     "準備階段鎖定": "lockedScaleOf/locked_scale_of(批35新增, 見 engine.js/sgz.py 對 block 效果"
                 "scale 縮放值的準備階段鎖定快取, caster.scaleLock/scale_lock, 效果物件本身當鍵;"
                 "「開戰後智力變動會重新計算」這類措辭若指 block 是 stale 的, 落地後應改寫)",
+    # 批42: eventTarget(who值)/stackKey+perStack+maxStacks(per-target疊層)/onMaxStacks+
+    # globalMax+globalEffects(雙閾值觸發) —— 傲睨王侯「敵軍目標受普攻時觸發1個破綻, 該目標
+    # 降3%可疊…單目標破綻全觸發→…全場破綻觸發後→…」首次落地新增的一族原語, 見
+    # engine.js/sgz.py k=="stat"&&e.stackKey 分支 + who=="eventTarget" 分派 +
+    # engine_limitations.md 第40節。刻意不收錄過於通用的別名(如「疊加5次」「破綻」這類
+    # 純自然語言措辭, 大量既有戰法的_note/_todo會用相近字眼描述「仍未解決」的其他獨立缺口
+    # ——如虎侯要的是add固定點數疊層, 本批只解決了mult百分比疊層, 兩者不同機制, 若收錄
+    # 「疊加5次」當別名, 虎侯正確描述剩餘缺口的措辭反而會被R20誤判成stale——只收錄不含糊
+    # 指向本批新增能力本身的精確措辭。
+    "事件單位本身": "who:\"eventTarget\"(批42新增, 效果級who值, 精確鎖定跨單位事件廣播"
+                "(when.who:\"ally\"/\"enemy\")的事件單位本身, 而非泛用敵軍全體/隨機N人, 見"
+                "engine.js/sgz.py opt.evtTarget/evt_target 參數)",
+    # 批42: 用比「疊加5次」/「破綻」精確得多的完整片語當別名, 只命中「聲稱stat完全不能疊層」
+    # 這種已被推翻的blanket claim, 不會誤傷「stackKey機制現階段只支援mult不支援add」這類
+    # 正確描述剩餘缺口(add類疊層仍未落地)的措辭(見虎侯_note改寫)。
+    "stat原語完全無疊層計數能力": "stackKey/perStack/maxStacks(批42新增, k==\"stat\"效果欄位,"
+                "支援mult百分比per-target疊層, 見傲睨王侯; onMaxStacks(該目標本地池耗盡時"
+                "額外套用的效果陣列)/globalMax+globalEffects(持有者跨目標累計觸發次數達門檻"
+                "時套用的效果陣列)為同批新增的雙閾值觸發原語, 見engine.js/sgz.py k==\"stat\""
+                "&&e.stackKey分支。若戰法描述的是add固定點數疊層(如虎侯「+15點可疊加5次」),"
+                "此原語仍不支援, 非stale, 見engine_limitations.md第40節)",
 }
 
 # =============================================================================

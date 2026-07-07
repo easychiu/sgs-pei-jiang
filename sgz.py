@@ -528,6 +528,16 @@ class Unit:
         self.healblock = 0                             # 批8: 禁療(healblock) 剩餘回合, >0 時 heal 效果對其無效
         self.when_fired = set()                        # 條件觸發(when.rounds/from/until) 已套用效果的戰法(一次性, 用 id() 去重); 批8: delayed_eq(裝備效果級when)共用同一個 set(效果物件本身 id() 去重, 不與戰法物件撞)
         self.scale_lock = None                          # 批35 B: 「準備階段鎖定」的 scale 縮放值快取, dict[id(效果物件) -> scale_of結果], 惰性建立(見 locked_scale_of)
+        # 批42: exploit_layers —— 「持有者對本單位(受害目標)累積的疊層負面buff」計數器,
+        # dict[id(效果物件) -> 已疊層數], 掛在**目標**(受害者)身上(對稱 engine.js
+        # exploitLayers, 見其註解), 惰性建立。傲睨王侯: 敵軍目標受普攻時觸發1層(該目標降3%
+        # 可疊), 用效果物件id當鍵天然對應「同一張卡的疊層」不撞其他戰法的stat效果, 掛在目標
+        # 身上則天然對應「疊層只對這個特定目標累積, 不同敵人各自獨立計數」。
+        self.exploit_layers = None
+        self.exploit_capped = None                      # 批42: 同上, set[id(效果物件)] —— 記錄該目標「本效果已達max_stacks上限並觸發過on_max_stacks」, 防止之後重複觸發
+        # 批42: exploit_global —— 持有者(caster)視角跨目標累計觸發次數, dict[id(效果物件) ->
+        # {"n":int,"fired":bool}], 掛在持有者身上(對稱 engine.js exploitGlobal)。
+        self.exploit_global = None
         self.heal_rounds_fired = {}                     # 批15: heal 效果 e["when"]["rounds"](明確列出的特定回合)的「每回合各觸發一次」去重, dict[id(效果物件) -> set(已觸發回合數)], 見 apply_effects 的 heal 分支
         self.hit_flags = set()                         # 反應式觸發(when.on) 本回合已觸發的戰法, 每回合重置(防無限鏈)
         # 批31 A 修復: 過去 on_hit_tacs 只檢查 t.when.on 是否為真(truthy), 沒有限定具體事件值,
@@ -1150,7 +1160,10 @@ def fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit, on_deal=None):
 
 
 def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=False, skip_when_effects=False,
-                   rate_checked=False, reactive=False, dmg=None):
+                   rate_checked=False, reactive=False, dmg=None, evt_target=None):
+    # 批42: evt_target(可選) —— 對稱 engine.js opt.evtTarget, 供 who=="eventTarget" 精確鎖定
+    # 「本次反應式事件的事件單位本身」(如傲睨王侯敵軍受普攻時, 事件單位=被打的那個敵人, 而非
+    # 泛用敵軍全體/隨機N人)。由 on_hit_for/dealt_damage_for 呼叫端傳入, 見下方 who 分派。
     # 批33: dmg(可選)—— 反應式呼叫端(on_hit/dealt_damage)傳入「觸發本次效果結算的那一下傷害
     # 量」, 供 heal 分支的 e["ofDamage"](傷害比例治療) 使用, 見下方 k=="heal" 分支。
     src = t.get("nameZh")                              # 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → None, 不去重)
@@ -1377,6 +1390,8 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             dests = [picked] if picked else []
         elif who == "self":
             dests = [caster] if caster.alive else []
+        elif who == "eventTarget":                    # 批42: 見 apply_effects evt_target 參數註解
+            dests = [evt_target] if (evt_target and evt_target.alive) else []
         elif who == "leader":                         # 批8: 主將限定(隊伍 index 0)
             dests = [allies[0]] if allies and allies[0].alive else []
         elif who == "subs":                           # 批13: 副將群限定(隊伍 index 0 以外; 如鋒矢陣/箕形陣副將分化段)
@@ -1519,6 +1534,48 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 u.push_immune(e.get("types"), e.get("dur"))
             elif k == "first":                        # 先攻: 本回合旗標, 優先於速度排序
                 u.first = max(u.first, e.get("dur", 1))
+            elif k == "stat" and e.get("stackKey"):
+                # 批42: e["stackKey"](truthy旗標) —— stat 效果的「每次觸發對目標疊加1層」模式,
+                # 對稱 engine.js 同名分支(見其詳細註解)。傲睨王侯: 敵軍目標受普攻時觸發1個
+                # 破綻, 該目標降3%可疊, 疊層數上限 e["maxStacks"](該目標本地破綻池耗盡)。
+                if u.exploit_layers is None:
+                    u.exploit_layers = {}
+                ekey = id(e)
+                already = u.exploit_layers.get(ekey, 0)
+                max_stacks = e.get("maxStacks")
+                if max_stacks is not None and already >= max_stacks:
+                    continue  # 本地池已耗盡: 不再刷新/計入, 對稱 engine.js continue(非return, 避免誤跳過t["effects"]其餘效果段)
+                layers = already + 1
+                u.exploit_layers[ekey] = layers
+                sc = locked_scale_of(caster, e)
+                per_stack = e.get("perStack", 0.03)
+                total_mult = 1 - min(0.95, per_stack * layers * sc)  # 0.95下限防止全屬性歸零/負值
+                u.push_mod(e["stat"], total_mult, e.get("dur", 99), src, ud_flags)
+                # e["onMaxStacks"](效果陣列, 選填) —— 該目標本地池首次耗盡時額外套用的一次性
+                # 效果段(如「單目標破綻全觸發→虛弱+受傷提高」)。exploit_capped 去重確保只觸發
+                # 一次。caster 仍傳原持有者(scale基準不變), 目標靠 who=="eventTarget" 精確指定。
+                if e.get("onMaxStacks") and max_stacks is not None and layers >= max_stacks:
+                    if u.exploit_capped is None:
+                        u.exploit_capped = set()
+                    if ekey not in u.exploit_capped:
+                        u.exploit_capped.add(ekey)
+                        for sub in e["onMaxStacks"]:
+                            apply_effects(caster, None, {"effects": [sub], "kind": t.get("kind", "phys")}, allies, enemies, reactive=True, evt_target=u)
+                # e["globalMax"]/e["globalEffects"](選填) —— 持有者視角跨目標累計觸發次數,
+                # 達到 globalMax(原文「場上所有破綻」15個)且尚未觸發過時套用 globalEffects
+                # (如「敵軍群體2人降20%」)。capped目標的重複刷新不計入(該目標本地池已耗盡,
+                # 這次只是continue掉不會走到這裡, 故此處g.n只在layers真的新增時才遞增)。
+                if e.get("globalMax") is not None and e.get("globalEffects"):
+                    if caster.exploit_global is None:
+                        caster.exploit_global = {}
+                    g = caster.exploit_global.get(ekey, {"n": 0, "fired": False})
+                    if not g["fired"]:
+                        g["n"] += 1
+                        if g["n"] >= e["globalMax"]:
+                            g["fired"] = True
+                            for sub in e["globalEffects"]:
+                                apply_effects(caster, None, {"effects": [sub], "kind": t.get("kind", "phys")}, allies, enemies, reactive=True)
+                    caster.exploit_global[ekey] = g
             elif k == "stat":                         # 裝備平加(add)與乘算(mult)擇一; add 為戰報所示「裝備獨立平加階段」
                 if e.get("add") is not None:
                     u.push_stat_add(e["stat"], sv_add(e["add"]), e["dur"], src, ud_flags)
@@ -1771,7 +1828,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 if t.get("extraHits"):
                     fire_extra_hits(holder, t, src, allies_of, foes_of, on_hit, dealt_damage)  # 批13: 受擊觸發類多段傷害(如剛烈不屈 反擊後群體額外段)
                 if t["effects"]:
-                    apply_effects(holder, src, t, allies_of(holder), foes_of(holder), reactive=True, dmg=dmg)  # 批23: 戰法級when.on本身即反應式, 標記reactive供內部e.when.on效果(若有)一致判定; 批33: dmg供e["ofDamage"]使用
+                    apply_effects(holder, src, t, allies_of(holder), foes_of(holder), reactive=True, dmg=dmg, evt_target=dst)  # 批23: 戰法級when.on本身即反應式, 標記reactive供內部e.when.on效果(若有)一致判定; 批33: dmg供e["ofDamage"]使用; 批42: evt_target供who=="eventTarget"
             # 批22: 效果級 e.when.on(急救類反應式治療, 見 on_hit_effect_tacs 註解) —— 戰法本身無
             # t["when"](其餘效果如武力/統率平加仍在 prep 正常套用, 不受影響), 只有帶 e.when.on 的
             # 個別效果在此處反應式結算。用「合成單效果戰法」(effects=[e])呼叫 apply_effects, 讓
@@ -1800,7 +1857,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                         continue
                     holder.hit_flags.add(id(e))
                     apply_effects(holder, src, {"effects": [e], "kind": t.get("kind", "phys"), "nameZh": t.get("nameZh")},
-                                 allies_of(holder), foes_of(holder), rate_checked=True, reactive=True, dmg=dmg)  # 批23 A4/reactive: 上面已擲過 e["rate"], 避免重複擲骰; reactive供e.when.on閘門放行; 批33: dmg供e["ofDamage"]使用
+                                 allies_of(holder), foes_of(holder), rate_checked=True, reactive=True, dmg=dmg, evt_target=dst)  # 批23 A4/reactive: 上面已擲過 e["rate"], 避免重複擲骰; reactive供e.when.on閘門放行; 批33: dmg供e["ofDamage"]使用; 批42: evt_target供who=="eventTarget"
             # 批22: 裝備效果級 e.when.on(見 on_hit_eq 註解) —— 同上, 用合成單效果戰法呼叫 apply_effects
             for e in holder.on_hit_eq:
                 ew = e["when"]
@@ -1820,7 +1877,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 if random.random() >= ev_rate:
                     continue
                 holder.hit_flags.add(id(e))
-                apply_effects(holder, src, {"effects": [e], "kind": "phys"}, allies_of(holder), foes_of(holder), rate_checked=True, reactive=True, dmg=dmg)  # 批23 A4/reactive; 批33: dmg供e["ofDamage"]使用
+                apply_effects(holder, src, {"effects": [e], "kind": "phys"}, allies_of(holder), foes_of(holder), rate_checked=True, reactive=True, dmg=dmg, evt_target=dst)  # 批23 A4/reactive; 批33: dmg供e["ofDamage"]使用; 批42: evt_target供who=="eventTarget"
             # 批22: 兵書效果級 e.when.on(見 on_hit_bs 註解) —— 同上, 用合成單效果戰法呼叫 apply_effects
             for e in holder.on_hit_bs:
                 ew = e["when"]
@@ -1840,7 +1897,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 if random.random() >= ev_rate:
                     continue
                 holder.hit_flags.add(id(e))
-                apply_effects(holder, src, {"effects": [e], "kind": "phys"}, allies_of(holder), foes_of(holder), rate_checked=True, reactive=True, dmg=dmg)  # 批23 A4/reactive; 批33: dmg供e["ofDamage"]使用
+                apply_effects(holder, src, {"effects": [e], "kind": "phys"}, allies_of(holder), foes_of(holder), rate_checked=True, reactive=True, dmg=dmg, evt_target=dst)  # 批23 A4/reactive; 批33: dmg供e["ofDamage"]使用; 批42: evt_target供who=="eventTarget"
 
         if not dst.alive:
             return
@@ -4673,6 +4730,65 @@ def demo():
     assert abs(yslg113_sub.addbonus("amp", "intel")) < 1e-9, "鷹視狼顧: 非主將施放者不應吃16%奇謀增傷(ifLeader閘門應擋下, v18零分修復)"
 
     print(f"    [批41] 鷹視狼顧/錦帆軍v18零分修復+R27 ifLeader top-up尾碼去重(112/113)驗證通過")
+
+    # --- 批42: 傲睨王侯官方卡重建 —— who=="eventTarget"精確選標 + k=="stat"疊層原語
+    # (stackKey/perStack/maxStacks/onMaxStacks/globalMax/globalEffects) ---
+    # 114) 兩點白字標智力戰報精確曲線驗證(calibration_anchors.json aoni_wanghou_20260707):
+    # 破綻每層 = 3% × (1+(持有者智力-100)/385), 兩點智力328.36/428.14分別應得4.78%/5.56%
+    # (兩位小數精確吻合, 非近似)。用真實 TACTICS["傲睨王侯"] 資料(非手造測試效果)驗證,
+    # 確保 scaleDiv:385 確實落地且無被其他曲線(350/375)誤蓋。
+    aowh114_e = TACTICS["傲睨王侯"]["effects"][0]
+    assert aowh114_e.get("scaleDiv") == 385, "傲睨王侯主效果應標scaleDiv:385(user兩點實測定案曲線)"
+    for intel114, expect114 in [(328.36, 4.78), (428.14, 5.56)]:
+        got114 = 0.03 * SCALE_G(intel114, 385) * 100
+        assert abs(got114 - expect114) < 0.01, f"傲睨王侯破綻單層錨點 智力{intel114}: 預期{expect114}%, 算得{got114:.2f}%"
+
+    # 115) per-target疊層 + who=="eventTarget"精確選標: 敵軍目標受普攻時觸發1層(該目標降3%
+    # 可疊), 用合成單效果戰法呼叫apply_effects(reactive=True, evt_target=被攻擊的那個敵人)
+    # 模擬on_hit_for廣播路徑(who=="enemy")的呼叫慣例, 驗證(a)只有evt_target這個目標的
+    # force/intel/command/speed受影響, 隊伍另一人不受影響(b)連續5次觸發後該目標force應為
+    # 基準值×(1-0.03×5×scale)(c)第6次觸發時(已達maxStacks)不再繼續疊加(mult不變)。
+    aowh115_holder = Unit(POOL["張飛"], "槍")     # 傲睨王侯持有者(智力決定scale基準)
+    aowh115_holder.intel = 328.36
+    aowh115_tgt = Unit(POOL["張飛"], "槍")        # 被普攻的敵方目標(evt_target)
+    aowh115_other = Unit(POOL["張飛"], "槍")      # 同隊另一人, 不應受影響
+    aowh115_force_base = aowh115_tgt.eff("force")
+    for _ in range(5):
+        apply_effects(aowh115_holder, None, {"effects": [aowh114_e], "kind": "intel", "nameZh": "傲睨王侯"},
+                      [aowh115_holder], [aowh115_tgt, aowh115_other], reactive=True, evt_target=aowh115_tgt)
+    expect_mult115 = 1 - 0.03 * 5 * SCALE_G(328.36, 385)
+    assert abs(aowh115_tgt.eff("force") / aowh115_force_base - expect_mult115) < 1e-6, \
+        f"傲睨王侯5層疊加後force應為基準×{expect_mult115:.4f}, 實得比例{aowh115_tgt.eff('force')/aowh115_force_base:.4f}"
+    assert abs(aowh115_other.eff("force") - aowh115_other.force) < 1e-6, "傲睨王侯: who=='eventTarget'應只影響evt_target這一個目標, 同隊/同敵隊其他人不受影響"
+    # 第6次觸發: 本地池已耗盡(maxStacks:5), 不應再繼續疊加
+    apply_effects(aowh115_holder, None, {"effects": [aowh114_e], "kind": "intel", "nameZh": "傲睨王侯"},
+                  [aowh115_holder], [aowh115_tgt, aowh115_other], reactive=True, evt_target=aowh115_tgt)
+    assert abs(aowh115_tgt.eff("force") / aowh115_force_base - expect_mult115) < 1e-6, "傲睨王侯: 第6次觸發時本地破綻池已耗盡, 不應再繼續疊加(mult應維持5層時的值不變)"
+
+    # 116) onMaxStacks: 該目標5層全觸發後應獲得1回合虛弱(amp val:-1.0, 對dmg歸零)+受傷提高
+    # 15%持續2回合(mitig val:-0.15)。上面115的aowh115_tgt已經觸發滿5層, 直接驗證其狀態。
+    assert abs(aowh115_tgt.addbonus("amp", "intel") - (-1.0)) < 1e-6, "傲睨王侯: 單目標5層全觸發後應獲得虛弱(amp val:-1.0)"
+    expect_mitig116 = -0.15 * SCALE_G(328.36, 350)  # onMaxStacks的mitig段帶scale:"intel"(曲線族未定, 沿用全域350預設, 見_note2), 會依holder(傲睨王侯持有者)智力縮放, 非裸值-0.15
+    assert abs(aowh115_tgt.addbonus("mitig", "intel") - expect_mitig116) < 1e-6, f"傲睨王侯: 單目標5層全觸發後應獲得受傷提高{-expect_mitig116*100:.1f}%(mitig val:-0.15×智力350曲線縮放, 易傷)"
+
+    # 117) globalMax/globalEffects: 持有者跨目標累計觸發次數達15(3個敵人各5層)後, 敵軍隨機
+    # 2人應獲得全屬性-20%。用同一個holder對3個不同敵人各自打滿5層(15次新層觸發, 不含115/116
+    # 已用掉的holder——換一個全新holder避免與115/116的exploit_global計數混疊)。
+    aowh117_holder = Unit(POOL["張飛"], "槍")
+    aowh117_holder.intel = 100.0                  # scale=1.0, 純測邏輯不測曲線細節
+    aowh117_e = TACTICS["傲睨王侯"]["effects"][0]
+    aowh117_enemies = [Unit(POOL["張飛"], "槍") for _ in range(3)]
+    for enemy in aowh117_enemies:
+        for _ in range(5):
+            apply_effects(aowh117_holder, None, {"effects": [aowh117_e], "kind": "intel", "nameZh": "傲睨王侯"},
+                          [aowh117_holder], aowh117_enemies, reactive=True, evt_target=enemy)
+    # 每個敵人已先各自疊滿5層本地池(mods含src=="傲睨王侯"的×0.85), globalEffects再疊加一條
+    # 額外的src=None全屬性×0.8 mod(兩者相乘生效, 非互斥), 故只檢查「是否額外多一條全域debuff
+    # mod」而非檢查eff()總乘積是否恰為0.8(那已被本地層debuff污染, 不會是裸0.8)。
+    debuffed117 = [en for en in aowh117_enemies if any(m[0] == "all" and m[3] is None and abs(m[1] - 0.8) < 1e-6 for m in en.mods)]
+    assert len(debuffed117) == 2, f"傲睨王侯: 全場15層觸發後應有2名敵軍獲得全屬性-20%(globalEffects), 實得{len(debuffed117)}名"
+
+    print(f"    [批42] 傲睨王侯官方卡重建: 兩點曲線scaleDiv:385(114)/who==\"eventTarget\"精確per-target疊層(115)/單目標5層全觸發虛弱+受傷提高15%(116)/全場15層觸發2人-20%(117)驗證通過")
 
     print("self-check OK")
 

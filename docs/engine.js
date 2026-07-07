@@ -312,6 +312,23 @@
       this.healblock = 0;                           // 批8: 禁療(healblock) 剩餘回合, >0 時 heal 效果對其無效
       this.whenFired = new Set();                   // 條件觸發(when.rounds/from/until) 已套用效果的戰法(一次性), 依戰法物件去重; 批8: delayedEq(裝備效果級when)共用同一個 Set(效果物件本身去重, 不與戰法物件撞)
       this.scaleLock = null;                        // 批35 B: 「準備階段鎖定」的 scale 縮放值快取, Map<效果物件, scaleOf結果>, 惰性建立(見 lockedScaleOf)
+      // 批42: exploitLayers —— 「持有者對本單位(受害目標)累積的疊層負面buff」計數器, Map<效果
+      // 物件, 已疊層數>, 掛在**目標**(受害者)身上而非持有者(與stack/scaleLock等「掛在自己
+      // 身上」的既有欄位方向相反, 因為疊層語意是「敵人身上累積的破綻層數」, 不是「自己累積的
+      // 增傷層數」)。惰性建立。見傲睨王侯(k:"stat"+e.stackKey/e.maxStacks): 敵軍目標受普攻時
+      // 觸發1層(該目標降3%可疊), 用「效果物件」當鍵天然對應「同一張卡的疊層」不會跟其他戰法的
+      // stat效果撞鍵; 掛在目標身上則天然對應「疊層只對這個特定目標累積, 不同敵人各自獨立計數」
+      // (foesOf(holder)全體共用同一個效果物件, 但各自的 exploitLayers 是自己 Unit 實例上的
+      // 獨立Map, 天然不互相干擾)。
+      this.exploitLayers = null;
+      this.exploitCapped = null;                    // 批42: 同上, Set<效果物件> —— 記錄該目標「本效果已達maxStacks上限並觸發過onMaxStacks」, 防止之後每次疊層(已封頂不再增加)重複觸發onMaxStacks次數效果(如傲睨王侯「單體破綻全觸發→虛弱+受傷提高」只應在剛好達到15/5層那一次觸發, 非之後同目標若又被攻擊而重複觸發)。
+      // 批42: exploitGlobal —— 「持有者(施放者/caster)」視角的跨目標累計觸發次數計數器,
+      // Map<效果物件, {n, fired}>, 掛在持有者(而非目標)身上, 對應原文「場上所有破綻觸發後」
+      // (15個破綻分布全體敵軍, 不論落在哪個目標身上, 全數觸發完才算數, 與exploitLayers的
+      // 「單一目標各自累積到maxStacks」是兩個不同層級的計數, 前者跨目標加總、後者單目標各自
+      // 封頂)。fired旗標防止15層全觸發後, 之後同陣營若還有普攻事件持續進來時重複觸發
+      // globalEffects(全域效果只應觸發一次, 對應「觸發後」的一次性語意, 非常駐狀態)。
+      this.exploitGlobal = null;
       this.healRoundsFired = null;                  // 批15: heal 效果 e.when.rounds(明確列出的特定回合)的「每回合各觸發一次」去重, Map<效果物件, Set<已觸發回合數>>, 惰性建立(見 applyEffects 的 heal 分支)
       this.hitFlags = new Set();                    // 反應式觸發(when.on) 本回合已觸發的戰法, 每回合重置(防無限鏈)
       // 批31 A 修復: 過去只檢查 t.when.on 是否為真(truthy), 未限定具體事件值, onHit() 內部
@@ -1065,6 +1082,16 @@
         dests = picked ? [picked] : [];
       }
       else if (who === "self") dests = caster.alive ? [caster] : [];
+      // 批42: who:"eventTarget" —— 精確鎖定「本次反應式事件的事件單位本身」(如 when.who:"enemy"
+      // 廣播監聽敵軍受普攻時, 事件單位是「被打的那個敵人」, 而非泛用敵軍全體/隨機N人)。過去
+      // onHit()/dealtDamage() 呼叫 applyEffects() 傳入的 tgt 參數固定是「觸發本次事件的另一方」
+      // (如受擊事件傳 src=攻擊者), 沒有任何管道能表達「效果套用對象=事件單位自己」這種語意
+      // (見傲睨王侯「敵軍目標受普攻時, 該目標降3%」——目標是被打的那個敵人, 不是打人的攻擊者,
+      // 也不是敵軍全體/隨機選)。opt.evtTarget(見 onHitFor/dealtDamageFor 呼叫端新增的第7參數)
+      // 由事件迴圈直接傳入「事件單位本身」, 與既有 tgt(攻擊者/施法目標)語意分離, 兩者互不干擾
+      // (未傳 opt.evtTarget 的既有呼叫路徑, who:"eventTarget" 會落空回傳[], 等同無效——只有
+      // 明確走事件廣播且明確傳入 evtTarget 的新資料才會用到, 零回歸)。
+      else if (who === "eventTarget") dests = (opt.evtTarget && opt.evtTarget.alive) ? [opt.evtTarget] : [];
       else if (who === "leader") dests = (allies[0] && allies[0].alive) ? [allies[0]] : [];  // 批8: 主將限定(隊伍 index 0)
       else if (who === "subs") dests = allies.slice(1).filter(a => a.alive);  // 批13: 副將群限定(隊伍 index 0 以外; 如鋒矢陣/箕形陣副將分化段)
       // 批30 C: who:"sub1"/"sub2"(副將固定位置分派) —— 「subs」只能讓兩名副將套用同一份效果,
@@ -1148,6 +1175,65 @@
         // 批18: ambush(遇襲, 先攻的反面/遲緩) —— 不鎖行動(仍可行動), 只影響排序(見 fight() 的
         // effFirst 三檔排序鍵)。insight(全免)/immuneTo(單項免疫)可免, 同其他控制類慣例。
         else if (k === "ambush") { if (!u.insight && !u.isImmuneTo("ambush")) { u.ambush = Math.max(u.ambush, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入遇襲(行動遲滯)`); } else if (TRACE) lg(`　▸ ${u.nm} 免疫遇襲`); }
+        // 批42: e.stackKey(truthy旗標) —— stat 效果的「每次觸發對目標疊加1層」模式, 取代既有
+        // add/mult 二選一的「單次套用」語意。原文族: 傲睨王侯「敵軍目標受普攻時觸發1個破綻,
+        // 該目標降3%武智統速(受智力影響)可疊加」——每次事件命中對「這一個目標」疊1層, 疊層數
+        // 上限 e.maxStacks(該目標本地破綻池耗盡), 用「效果物件」當Map鍵掛在目標身上
+        // (u.exploitLayers, 見Unit建構式註解), 每層量級 e.perStack(預設0.03)×lockedScaleOf
+        // (「數值鎖定準備階段」慣例, calibration_anchors.json aoni_wanghou laws「prep鎖定再證」
+        // ——同場多層恆定%, 不因戰鬥中智力浮動重算)。用pushMod(同src同stat「刷新覆蓋」既有慣例)
+        // 每次重新算「當前層數×每層量級」的總乘數並覆寫, 天然等同疊加(因為新值已包含新層數),
+        // 不需要另外的疊加型pushXxx原語。
+        else if (k === "stat" && e.stackKey) {
+          if (!u.exploitLayers) u.exploitLayers = new Map();
+          const already = u.exploitLayers.get(e) || 0;
+          // 批42: 該目標本地破綻池若已耗盡(達maxStacks), 語意上「已無破綻可觸發」——之後同一
+          // 目標再受普攻, 不應再刷新/計入任何東西(非「持續疊加但封頂」, 是「這個池子空了」)。
+          // 用 continue(跳過dests迴圈本次u, 非return——本函式外層還有t.effects的其餘效果段
+          // 待處理, return會誤將它們一併跳過)避免重複pushMod/誤增全場計數。
+          if (e.maxStacks != null && already >= e.maxStacks) continue;
+          const layers = already + 1;
+          u.exploitLayers.set(e, layers);
+          const sc = lockedScaleOf(caster, e);
+          const perStack = e.perStack ?? 0.03;
+          const totalMult = 1 - Math.min(0.95, perStack * layers * sc);  // 0.95下限防止全屬性歸零/負值(既有SCALE_CLAMP同族安全側保護, 本效果無實測樣本佐證超過maxStacks後的極端行為, 保守夾住)
+          u.pushMod(e.stat, totalMult, e.dur ?? 99, src, udFlags);
+          if (TRACE) lg(`　▸ ${u.nm} 破綻 第${layers}層（累計${STAT_ZH[e.stat] || e.stat}×${totalMult.toFixed(3)}, 受${STAT_ZH[e.scale] || e.scale}影響）`);
+          // 批42: e.onMaxStacks(效果陣列, 選填) —— 該目標本地破綻池首次耗盡(layers達maxStacks)
+          // 時額外套用的一次性效果段(如傲睨王侯「單目標破綻全觸發→1回合虛弱+受傷提高15%持續2
+          // 回合」), 用exploitCapped(Set<效果物件>)去重, 確保同一目標只觸發一次(之後即使繼續
+          // 被普攻, layers已封頂不再增加, 也不重複觸發此段)。用合成單效果戰法遞迴呼叫
+          // applyEffects: caster仍傳原持有者(holder, 保持scale=智力縮放的基準人物不變, 對應
+          // 「受智力影響」是持有者的智力, 非目標的), 目標則靠who:"eventTarget"+opt.evtTarget:u
+          // 精確指定為u(此目標), 不能用who:"self"(那會需要caster=u, 但caster換成u會連帶讓
+          // scale錯誤地改用目標智力, 兩者互斥, 故採eventTarget機制解耦「持有者(scale基準)」
+          // 與「效果套用目標」)。
+          if (e.onMaxStacks && e.maxStacks != null && layers >= e.maxStacks) {
+            if (!u.exploitCapped) u.exploitCapped = new Set();
+            if (!u.exploitCapped.has(e)) {
+              u.exploitCapped.add(e);
+              if (TRACE) lg(`　▸ ${u.nm} 破綻全觸發（本地池耗盡）`);
+              for (const sub of e.onMaxStacks) applyEffects(caster, null, { effects: [sub], kind: t.kind || "phys" }, allies, enemies, { reactive: true, evtTarget: u });
+            }
+          }
+          // 批42: e.globalMax/e.globalEffects(選填) —— 持有者視角跨目標累計觸發次數(不論落在
+          // 哪個目標身上, 每次成功疊層都+1, 見exploitGlobal掛在caster/holder身上而非目標),
+          // 達到e.globalMax(原文「場上所有破綻」15個)且尚未觸發過時, 套用e.globalEffects
+          // (如傲睨王侯「敵軍群體2人武智統速降20%」)。fired旗標防重複觸發(一次性語意)。
+          if (e.globalMax != null && e.globalEffects) {  // 走到這裡代表上面已通過「本地池未耗盡」的continue閘門(見already>=maxStacks時已continue跳過), 故此處必為新層, 不需再額外檢查capped
+            if (!caster.exploitGlobal) caster.exploitGlobal = new Map();
+            const g = caster.exploitGlobal.get(e) || { n: 0, fired: false };
+            if (!g.fired) {
+              g.n += 1;
+              if (g.n >= e.globalMax) {
+                g.fired = true;
+                if (TRACE) lg(`　▸ ${caster.nm} 破綻全場觸發（累計${g.n}/${e.globalMax}）`);
+                for (const sub of e.globalEffects) applyEffects(caster, null, { effects: [sub], kind: t.kind || "phys" }, allies, enemies, { reactive: true });
+              }
+            }
+            caster.exploitGlobal.set(e, g);
+          }
+        }
         else if (k === "stat") { if (e.add != null) u.pushStatAdd(e.stat, svAdd(e.add), e.dur, src, udFlags); else u.pushMod(e.stat, svMult(e.mult ?? 1), e.dur, src, udFlags); }  // 裝備平加(add)與乘算(mult)擇一; add 為戰報所示「裝備獨立平加階段」
         // 批23 A3: dot 結算優先讀 e.kind(戰法整體是兵刃 t.kind="phys", 但灼燒/水攻類 dot 段
         // 依原文「受智力影響」應走謀略傷害類型, 過去誤用 t.kind 導致傷害類型錯位, 如天降火雨
@@ -1368,7 +1454,7 @@
           if (TRACE) lg(`【${holder.side}】${holder.nm} 戰法【${t.nameZh}】（${holder === dst ? "受擊觸發" : "友軍/敵軍受擊觸發"}）發動`);
           if (t.coef) hit(holder, src, t.coef, t.kind, false, onHit, dealtDamage);
           if (t.extraHits) fireExtraHits(holder, t, src, alliesOf, foesOf, onHit, dealtDamage);  // 批13: 受擊觸發類多段傷害(如剛烈不屈 反擊後群體額外段)
-          if (t.effects.length) applyEffects(holder, src, t, alliesOf(holder), foesOf(holder), { reactive: true, dmg });  // 批23: 戰法級when.on本身即反應式, 標記reactive供內部e.when.on效果(若有)一致判定; 批33: 傳入dmg供e.ofDamage使用
+          if (t.effects.length) applyEffects(holder, src, t, alliesOf(holder), foesOf(holder), { reactive: true, dmg, evtTarget: dst });  // 批23: 戰法級when.on本身即反應式, 標記reactive供內部e.when.on效果(若有)一致判定; 批33: 傳入dmg供e.ofDamage使用; 批42: evtTarget=dst(事件單位本身)供who:"eventTarget"精確選標(如傲睨王侯"敵軍目標受普攻時,該目標降3%")
         }
         // 批22: 效果級 e.when.on(急救類反應式治療, 見 onHitEffectTacs 註解) —— 戰法本身無 t.when
         // (其餘效果如武力/統率平加仍在 prep 正常套用, 不受影響), 只有帶 e.when.on 的個別效果在
@@ -1389,7 +1475,7 @@
             if (rnd() >= evRate) continue;
             holder.hitFlags.add(e);
             if (TRACE) lg(`【${holder.side}】${holder.nm} 戰法【${t.nameZh}】急救效果（${holder === dst ? "受擊觸發" : "友軍/敵軍受擊觸發"}）發動`);
-            applyEffects(holder, src, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(holder), foesOf(holder), { rateChecked: true, reactive: true, dmg });  // 批23 A4: 這裡已擲過 e.rate, 避免 applyEffects 通用閘門重複擲骰; reactive:true 供內部 e.when.on 閘門判定放行; 批33: dmg供e.ofDamage使用
+            applyEffects(holder, src, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(holder), foesOf(holder), { rateChecked: true, reactive: true, dmg, evtTarget: dst });  // 批23 A4: 這裡已擲過 e.rate, 避免 applyEffects 通用閘門重複擲骰; reactive:true 供內部 e.when.on 閘門判定放行; 批33: dmg供e.ofDamage使用; 批42: evtTarget供who:"eventTarget"
           }
         }
         // 批22: 裝備效果級 e.when.on(見 onHitEq 註解) —— 同上, 用合成單效果戰法呼叫 applyEffects
@@ -1404,7 +1490,7 @@
           if (rnd() >= evRate) continue;
           holder.hitFlags.add(e);
           if (TRACE) lg(`【${holder.side}】${holder.nm}〔特技·${e._eqNm || "?"}〕（${holder === dst ? "受擊觸發" : "友軍/敵軍受擊觸發"}）發動`);
-          applyEffects(holder, src, { effects: [e], kind: "phys" }, alliesOf(holder), foesOf(holder), { rateChecked: true, reactive: true, dmg });  // 批23 A4/reactive: 已擲過 e.rate; 批33: dmg供e.ofDamage使用
+          applyEffects(holder, src, { effects: [e], kind: "phys" }, alliesOf(holder), foesOf(holder), { rateChecked: true, reactive: true, dmg, evtTarget: dst });  // 批23 A4/reactive: 已擲過 e.rate; 批33: dmg供e.ofDamage使用; 批42: evtTarget供who:"eventTarget"
         }
         // 批22: 兵書效果級 e.when.on(見 onHitBs 註解) —— 同上, 用合成單效果戰法呼叫 applyEffects
         for (const e of holder.onHitBs) {
@@ -1418,7 +1504,7 @@
           if (rnd() >= evRate) continue;
           holder.hitFlags.add(e);
           if (TRACE) lg(`【${holder.side}】${holder.nm}〔兵書〕（${holder === dst ? "受擊觸發" : "友軍/敵軍受擊觸發"}）發動`);
-          applyEffects(holder, src, { effects: [e], kind: "phys" }, alliesOf(holder), foesOf(holder), { rateChecked: true, reactive: true, dmg });  // 批23 A4/reactive: 已擲過 e.rate; 批33: dmg供e.ofDamage使用
+          applyEffects(holder, src, { effects: [e], kind: "phys" }, alliesOf(holder), foesOf(holder), { rateChecked: true, reactive: true, dmg, evtTarget: dst });  // 批23 A4/reactive: 已擲過 e.rate; 批33: dmg供e.ofDamage使用; 批42: evtTarget供who:"eventTarget"
         }
       };
       if (!dst.alive) return;

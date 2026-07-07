@@ -1799,3 +1799,110 @@ byte-diff為空, 冪等) / `python lint_tactics.py --selftest`(78項全過, 含R
 (自我檢查含新增112/113兩項迴歸斷言全過) / TRACE抽驗鷹視狼顧非主將施放者不吃16%
 奇謀增傷、主將施放者才吃; 圍師必闕主將施放者mitig(intel)=非主將值+0.06(兩段
 疊加而非覆蓋)。
+
+## 40. 批42: 傲睨王侯官方卡重建 —— `who:"eventTarget"`(事件單位精確選標) +
+`k:"stat"` per-target 疊層原語(`stackKey`/`perStack`/`maxStacks`/`onMaxStacks`/
+`globalMax`/`globalEffects`)
+
+**背景**: user 提供傲睨王侯官方卡全文+兩點白字標智力戰報(許攸智力328.36→每層
+4.78%/428.14→每層5.56%, 兩位小數精確吻合, 見 `calibration_anchors.json`
+`aoni_wanghou_20260707`), 獨立解出第五條「受智力影響」曲線 `scaleDiv:385`(≠傷害
+350≠狀態375≠發動率獨立常數≠此前草船統率曲線266)。舊版(批34前)用「ramp-avg固定
+均值-15%全體敵軍開場套用」近似, 完全不反映「敵軍目標受普攻時才觸發, 逐層疊加在
+那一個特定目標身上」的真實逐層動態機制, 也不反映兩段閾值(單目標5層全觸發/全場
+15層觸發)各自精確的觸發時點。
+
+**機制原文**: 15個破綻池分布全體敵軍(≈每敵5個)/敵軍目標受普攻時觸發1個破綻/
+每層該目標全屬性(武智統速, 不含魅力)-3%×(1+(持有者智力-100)/385)可疊/單目標
+破綻全觸發(5層)→該目標1回合虛弱+受傷提高15%(受智力影響)持續2回合/全場15個
+破綻皆觸發後→敵軍群體2人全屬性-20%(受智力影響)。
+
+### A. `who:"eventTarget"`(效果級選標值, 精確鎖定跨單位事件廣播的事件單位本身)
+
+**缺口**: 批38新增的 `when.who:"ally"/"otherAlly"/"enemy"` 跨單位事件廣播只解決
+了「持有者(可能不同於事件單位)是否該觸發」的問題, 觸發後效果實際套用的目標仍是
+既有 `who:"enemy"/"ally"` 的「泛用該陣營全體/隨機N人」邏輯(如虎侯 `who:"ally"`
+廣播監聽「任一友軍受擊」, 但效果套用時 `who:"ally"` 選標打的是「我軍全體」而非
+「受擊的那一個友軍」) —— 無法表達「敵軍目標受普攻時, 觸發的效果只作用在被打的
+那一個目標身上」這種精確 1:1 綁定語意。
+
+**設計**: `applyEffects`/`apply_effects` 新增 `opt.evtTarget`/`evt_target` 參數
+(對稱既有 `opt.dmg`/`dmg` 尾端新增慣例), 由 `onHitFor`/`on_hit_for`(廣播事件迴圈)
+在呼叫端傳入「本次事件的事件單位本身」(即 `dst`, 受擊/受傷的那個單位); 效果級
+`who` 新增第五個值 `"eventTarget"`, 解析為 `dests = [opt.evtTarget]`(其 alive 時)。
+未傳 `evtTarget` 的既有呼叫路徑(prep/active/charge等), `who:"eventTarget"` 會落
+空回傳 `[]`, 對全庫既有資料零回歸(只有新資料明確用 `who:"eventTarget"` 才會用到)。
+
+### B. `k:"stat"` per-target 疊層原語(`e.stackKey`/`e.perStack`/`e.maxStacks`)
+
+**缺口**: 批38虎侯遷移時已點名「stat原語本身不支援疊層計數」(`pushAdd`/
+`pushMod`/`pushStatAdd` 皆是「同來源刷新覆蓋」語意, 非疊加), 對比 `block` 的
+`times`/`stack` 的 `per`+`max` 才有疊層語意, 但兩者都是「掛在持有者/目標自身
+單一狀態物件上」的計數, 不支援「持有者對多個不同敵方目標各自獨立疊層計數」這種
+per-(效果,目標) 二維計數語意。
+
+**設計**: `k=="stat"` 新增 `e.stackKey`(truthy 旗標, 標記走疊層模式而非既有
+`add`/`mult` 二選一單次套用) 分支。疊層計數 `exploitLayers`/`exploit_layers`
+(`Map`/`dict`, 鍵=效果物件本身, 惰性建立)掛在**目標**(受害者)身上而非持有者
+——因為疊層語意是「敵人身上累積的破綻層數」, 不同敵人各自的 `exploitLayers`
+是各自 Unit 實例上獨立的 Map, 天然互不干擾, 不需要額外的目標維度索引。每次
+觸發: 若已達 `e.maxStacks` 則直接 `continue`(本地池已耗盡, 不再刷新/計入任何
+東西, 語意上「無破綻可觸發」而非「持續疊加但封頂」); 否則層數 `+1`, 用
+`lockedScaleOf`(批35「準備階段鎖定」慣例, 佐證見 `aoni_wanghou` 錨點 laws
+「prep鎖定再證」)算持有者智力縮放值, 重新計算「當前層數×每層量級
+(`e.perStack`, 預設0.03)」的總乘數並 `pushMod`(同 `src`+`stat` 刷新覆蓋既有
+慣例, 因新值已包含新層數, 天然等同疊加, 不需要另外的疊加型 `pushXxx` 原語)。
+
+**雙閾值觸發**(`e.onMaxStacks`/`e.globalMax`+`e.globalEffects`, 皆為效果陣列選填):
+- `onMaxStacks`: 該目標本地池首次耗盡(層數達 `maxStacks`)時額外套用的一次性
+  效果段(如「該目標1回合虛弱+受傷提高15%持續2回合」), 用 `exploitCapped`/
+  `exploit_capped`(`Set`, 鍵=效果物件)去重, 確保同一目標只觸發一次。遞迴呼叫
+  `applyEffects` 時 `caster` 仍傳原持有者(scale 縮放基準人物不變, 「受智力
+  影響」指的是持有者的智力), 目標則靠 `who:"eventTarget"`+`evtTarget:u` 精確
+  指定——不能用 `who:"self"`(那需要 `caster=u`, 但换成 `u` 會連帶讓 scale
+  誤用目標智力), 兩者互斥, 故用 `eventTarget` 機制解耦「持有者(scale基準)」
+  與「效果套用目標」這兩個不同角色。
+- `globalMax`/`globalEffects`: 持有者視角跨目標累計觸發次數(`exploitGlobal`/
+  `exploit_global`, 掛在持有者身上, 鍵=效果物件, 值=`{n, fired}`), 每次「新層
+  觸發」(非本地池已耗盡的重複刷新)才 `+1`, 達到 `globalMax`(原文「場上所有
+  破綻」15個)且尚未觸發過時套用 `globalEffects`(如「敵軍隨機2人全屬性-20%」),
+  `fired` 旗標防重複觸發(一次性語意)。
+
+### C. 落地: 傲睨王侯全面重建(取代 ramp-avg 近似)
+
+改用上述原語精確重建: 主效果 `who:"eventTarget"`+`stackKey`+`perStack:0.03`+
+`maxStacks:5`+`scale:"intel"`+`scaleDiv:385`(user 兩點實測定案曲線)+
+`when:{on:"attacked",who:"enemy"}`(批38廣播機制, 敵軍目標受普攻才觸發);
+`onMaxStacks` 掛虛弱(`amp val:-1.0`, 既有克敵制勝/威謀靡亢/臨戰先登慣例)+易傷
+(`mitig val:-0.15`, 既有負值=易傷慣例); `globalMax:15`+`globalEffects` 掛
+`stat who:"enemy" n:2 mult:0.8`。`maxStacks:5` 為 15 個破綻均攤 3 人隊(每敵5個)
+的近似值, 官方未明說確切分配規則, 若隊伍非3人/有陣亡等邊界情形分配未知, 已於
+`_todo` 揭露。`onMaxStacks`/`globalEffects` 兩段的 intel scale 曲線族(350 vs
+375)未經實測樣本裁決(`aoni_wanghou` 錨點只涵蓋主效果每層-3%這一段), 沿用全域
+350 預設並保留揭露, 不擅自套 385/375。
+
+**R20 alias 維護**: `ENGINE_CAPABILITY_ALIASES` 新增 `"事件單位本身"`(對應
+`eventTarget`)與 `"stat原語完全無疊層計數能力"`(對應 `stackKey` 系列, 用完整
+精確片語而非通用詞「疊加5次」/「破綻」當別名, 避免誤傷虎侯等「仍有其他獨立
+缺口」的正確措辭——虎侯要的是「+15點固定值疊加5次」的 `add` 疊層形態, 與本批
+只解決的 `mult` 百分比疊層形態不對應, 該限制對虎侯依然真實存在, 只是措辭改寫
+為精確版本以避免 R20 誤判整段為 stale)。
+
+### 驗收
+
+`node --check docs/engine.js` / `python -c "import py_compile;
+py_compile.compile('sgz.py', doraise=True)"` / `python reparse_effects.py`(兩輪
+byte-diff為空, 冪等) / `python lint_tactics.py`(R1-R28全庫零違規) /
+`python lint_tactics.py --selftest`(78項全過) / `python sgz.py demo`(自我檢查
+新增114-117四項斷言: 兩點曲線錨點精確吻合/per-target疊層+`eventTarget`精確選標
+只影響事件單位+5層封頂/`onMaxStacks`虛弱+易傷/`globalMax`全場15層觸發2人-20%,
+全過) / `node scratchpad/smoke_batch42.js`(對稱10項斷言全過, 修復途中發現並
+修正一處 `engine.js` 殘留的 `capped` 未定義變數參照——重構成 `continue` 早退
+後遺留的舊變數引用, 只有跑到 `globalMax` 分支的路徑才會觸發, 端到端 smoke test
+抓到) / `SGZ.trace` 端到端3v3實戰模擬50場無崩潰, TRACE 抽驗確認「破綻 第N層」
+逐層遞增、僅普攻觸發(繳械/震懾回合無普攻不誤觸發)、`onMaxStacks`(「破綻全
+觸發」)在300場內可觀察到; `globalMax`(「破綻全場觸發」)在標準8回合3v3規模下
+偏難自然觸發(15層門檻對3人隊已是本地池上限總和, 需極高比例普攻集中命中同批
+少數目標且無人陣亡, 3000場模擬仍未見, 屬遊戲平衡特性而非引擎缺陷, 已用獨立
+`applyEffects` 單元測試在 sgz.py demo 117/smoke_batch42 直接驗證觸發邏輯本身
+正確)。
