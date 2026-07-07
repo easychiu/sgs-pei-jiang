@@ -1077,8 +1077,11 @@ TARGETSEL_KEY = {
     "minTroop": lambda u: u.troop, "maxForce": lambda u: u.eff("force"),
     "minIntel": lambda u: u.eff("intel"), "maxIntel": lambda u: u.eff("intel"),
     "minCommand": lambda u: u.eff("command"), "mostDamaged": lambda u: u.troop,
+    "maxTroop": lambda u: u.troop,  # 批45 C: 兵力最高準則(對稱minTroop), 見engine_limitations.md第17節——
+    # 過去只有minTroop(=mostDamaged, 兵力最低=最受損)一種方向, 「兵力最高」的敵軍/我軍選標
+    # 缺口(定謀貴決「使敵軍兵力最高的武將...」)長年只能誠實揭露維持無targetSel近似, 現補上。
 }
-TARGETSEL_MIN = {"minTroop", "minIntel", "minCommand", "mostDamaged"}
+TARGETSEL_MIN = {"minTroop", "minIntel", "minCommand", "mostDamaged"}  # maxTroop故意不加入此集合, 使pick_by_criterion對它用max()而非min()
 
 
 def pick_by_criterion(units, sel):
@@ -1218,12 +1221,15 @@ def healed_for(hurt, caster, actual, allies, enemies):
 
 
 def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=False, skip_when_effects=False,
-                   rate_checked=False, reactive=False, dmg=None, evt_target=None, heal_amt=None):
+                   rate_checked=False, reactive=False, dmg=None, evt_target=None, heal_amt=None, main_hit_tgts=None):
     # 批42: evt_target(可選) —— 對稱 engine.js opt.evtTarget, 供 who=="eventTarget" 精確鎖定
     # 「本次反應式事件的事件單位本身」(如傲睨王侯敵軍受普攻時, 事件單位=被打的那個敵人, 而非
     # 泛用敵軍全體/隨機N人)。由 on_hit_for/dealt_damage_for 呼叫端傳入, 見下方 who 分派。
     # 批33: dmg(可選)—— 反應式呼叫端(on_hit/dealt_damage)傳入「觸發本次效果結算的那一下傷害
     # 量」, 供 heal 分支的 e["ofDamage"](傷害比例治療) 使用, 見下方 k=="heal" 分支。
+    # 批45 A: main_hit_tgts(可選)—— 對稱 engine.js opt.mainHitTgts, 由 fight() 主迴圈傳入本次
+    # 主 coef 段命中的群體目標陣列(僅群體結算, len(vs)>1 時才有值), 供 e["sameTargets"] 沿用
+    # 同一批目標, 見下方 who 分派。
     src = t.get("nameZh")                              # 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → None, 不去重)
     for e in t["effects"]:
         k = e["k"]
@@ -1481,6 +1487,17 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             dests = [allies[1]] if len(allies) > 1 and allies[1].alive else []
         elif who == "sub2":
             dests = [allies[2]] if len(allies) > 2 and allies[2].alive else []
+        # 批45 A: e["sameTargets"] —— 「對敵軍群體(N人)造成傷害並降低其XX」這類措辭, 過去主
+        # coef 段(pick_targets)與效果段(who=="enemy"+e["n"], 走下方 ctrl_k/has_en 分支自己的
+        # pick_targets)各自獨立擲骰選標, 3人隊只有1/3機率同組(見 engine_limitations.md 對應
+        # 節, 全庫掃描 R29)。e["sameTargets"]=True 時直接沿用主 coef 段記錄的 main_hit_tgts
+        # (見 fight() 主迴圈, 只在群體(len(vs)>1)結算時才有值), 過濾存活後作為 dests, 不再獨立
+        # pick_targets——確保「造成傷害」與「降低其XX」精確命中同一批目標, 對稱單體版本既有的
+        # main_hit_tgt(t["lockTarget"]/t["targetSel"]等既有沿用慣例)。未傳 main_hit_tgts 的
+        # 呼叫路徑(prep/reactive/choices分支未帶等)dests 落空回傳[], 向後相容(只有明確要求且
+        # 母戰法主coef段確實命中>=2人群體時才會生效)。
+        elif e.get("sameTargets"):
+            dests = [x for x in (main_hit_tgts or []) if x.alive]
         elif who == "enemy":
             if ctrl_k:                                # 群體控制隨機挑不重複目標; 單體優先鎖定 tgt
                 # 批26: CTRL類效果優先讀 e["n"]/e["nMax"](效果自身欄位), 無則 fallback 到
@@ -1508,6 +1525,13 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     dests = [tgt] if tgt and tgt.alive else pick_targets(enemies, 1)
                 else:
                     dests = pick_targets(enemies, cnt)
+                # 批45 A: 若本效果本身是「首次」命中群體(cnt>1)的來源(無 coef 段可沿用時, 如
+                # 誘敵深入 coef=0, dot+amp 兩個效果皆為 effects[] 內的同層 sibling), 就地更新
+                # main_hit_tgts, 讓本戰法內排在後面、帶 e["sameTargets"] 的效果可以沿用「前一個
+                # 效果實際命中的那一批目標」, 不必一定要來自頂層 coef 段。只在尚未有 main_hit_tgts
+                # (未被 coef 段設定過)時才更新, 避免覆蓋掉更早、更明確的 coef 段記錄。
+                if cnt > 1 and main_hit_tgts is None:
+                    main_hit_tgts = dests
             else:
                 dests = [x for x in enemies if x.alive]
         elif has_en:                                   # 批23 A1: who="ally"(含預設) 非CTRL效果讀 e["n"]/e["nMax"](如「我軍2人」「自己及友軍單體」)
@@ -2299,6 +2323,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                         # 合成視圖(不修改 t0 本身)。
                         t = dict(t0, **pick_choice(t0["choices"])) if t0.get("choices") else t0
                         main_hit_tgt = None  # 批13: 記錄主 coef 段命中的(單體)目標, 供 extraHits 同目標段沿用
+                        main_hit_tgts = None  # 批45 A: 記錄主 coef 段命中的(群體)目標陣列, 供效果段 e["sameTargets"] 沿用同一批目標(對稱 main_hit_tgt 的單體版本)
                         is_active_dmg = t0["type"] == "active" or None  # 批31 A: 供e.activeOnly amp判定「本段傷害是否為主動戰法所致」; command/passive走同一段程式碼但非主動戰法, 傳None(安全側不套用activeOnly加成, 見addbonus()docstring)
                         if t["coef"]:
                             cnt = t["n"]
@@ -2336,6 +2361,8 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                                     hit(u, v, t["coef"], t["kind"], False, on_hit, dealt_damage, is_active=is_active_dmg)
                                 if len(vs) == 1:
                                     main_hit_tgt = vs[0]
+                                elif len(vs) > 1:
+                                    main_hit_tgts = vs  # 批45 A: 群體(len(vs)>1)額外記錄完整目標陣列
                         if t.get("extraHits"):
                             fire_extra_hits(u, t, main_hit_tgt, allies_of, foes_of, on_hit, dealt_damage)  # 批13: 多段傷害(兵刃+謀略雙段/主傷+補刀等)
                         if t["type"] == "active":
@@ -2346,7 +2373,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                             # 批12 ModeG: lockTarget 的 apply_effects 目標(單體效果destination)同樣改用
                             # 鎖定目標(與混亂互斥: lockTarget 戰法目前資料上未與 chaos 共存)。
                             active_dst = resolve_locked_target(u, t0, foes_of(u)) if t.get("lockTarget") else pick_target_chaos(u, allies_of(u), foes_of(u))
-                            apply_effects(u, active_dst, t, allies_of(u), foes_of(u))
+                            apply_effects(u, active_dst, t, allies_of(u), foes_of(u), main_hit_tgts=main_hit_tgts)  # 批45 A: 傳入本次主coef段的群體目標陣列, 供 e["sameTargets"] 沿用
                         elif t0.get("choices"):
                             # 批27 B: command/passive 型戰法帶 choices —— 過去 pick_choice() 抽出的
                             # 分支 t 只有 coef/extraHits 段會在上面被讀取套用, t["effects"](分支自帶
@@ -2362,7 +2389,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                             # 常駐掃描是互斥的兩個通道: choices戰法的t0["effects"]本身為空(內容
                             # 全在choices[].effects裡), heal_only通道對空effects列表天然no-op,
                             # 不會與此處重複治療。
-                            apply_effects(u, main_hit_tgt, t, allies_of(u), foes_of(u), no_heal=False)
+                            apply_effects(u, main_hit_tgt, t, allies_of(u), foes_of(u), no_heal=False, main_hit_tgts=main_hit_tgts)
             tgt = pick_target_chaos(u, allies_of(u), foes_of(u))  # 普攻(每回合常駐) + 連擊 + 突擊(繳械時跳過); 嘲諷: 強制指向施放者; 混亂: 敵我不分(批12 ModeF)
             if tgt and not u.disarm:
                 hit(u, tgt, 1.0, "phys", True, on_hit, dealt_damage)
@@ -5004,6 +5031,109 @@ def demo():
     assert abs(bym124_tac["coef"] - 1.1) < 1e-9, "白毦兵: 頂層coef應維持1.1(base段, 無條件)"
 
     print(f"    [批44] e.ifLeaderIs特定武將統領條件: 效果級主將身份匹配(121)/陣列OR語意(122)/extraHits段級(123)/白毦兵真實資料回歸(124)驗證通過")
+
+    # --- 批45 A: e["sameTargets"] —— 群體目標沿用原語, 對稱既有 main_hit_tgt(單體)慣例。
+    # coef段(pick_targets)與效果段(who=="enemy"+e["sameTargets"])須精確命中同一批目標, 不再
+    # 各自獨立擲骰(3人隊過去只有1/3機率同組)。---
+    # 125) 直接呼叫 apply_effects, 傳入 main_hit_tgts=[固定2人], 驗證效果段 dests 精確等於
+    # main_hit_tgts(過濾存活), 且不受 e["n"] 影響(sameTargets 優先於 has_en 分支)。
+    st125_caster = Unit(POOL["張飛"], "槍")
+    st125_foe_a = Unit(POOL["關羽"], "槍")
+    st125_foe_b = Unit(POOL["趙雲"], "槍")
+    st125_foe_c = Unit(POOL["馬超"], "槍")  # 第3名敵軍, 不應被命中(驗證sameTargets精確排除未命中者)
+    st125_tac = {"nameZh": "測試sameTargets125", "effects": [
+        {"k": "stat", "who": "enemy", "stat": "speed", "add": -30, "dur": 2, "sameTargets": True}
+    ]}
+    apply_effects(st125_caster, None, st125_tac, [st125_caster], [st125_foe_a, st125_foe_b, st125_foe_c],
+                  no_heal=True, main_hit_tgts=[st125_foe_a, st125_foe_b])
+    assert abs(st125_foe_a.eff("speed") - (st125_foe_a.speed - 30)) < 1e-6, "sameTargets: main_hit_tgts內的目標應命中效果"
+    assert abs(st125_foe_b.eff("speed") - (st125_foe_b.speed - 30)) < 1e-6, "sameTargets: main_hit_tgts內的目標應命中效果"
+    assert abs(st125_foe_c.eff("speed") - st125_foe_c.speed) < 1e-6, "sameTargets: 不在main_hit_tgts內的第3名敵軍不應被命中"
+
+    # 126) main_hit_tgts=None(未傳入, 如prep/reactive等既有呼叫路徑)時, sameTargets 應落空
+    # dests=[](不誤退回全體/隨機選標), 向後相容——只有明確傳入且母戰法主coef段確實命中群體時
+    # 才會生效。
+    st126_caster = Unit(POOL["張飛"], "槍")
+    st126_foe = Unit(POOL["關羽"], "槍")
+    apply_effects(st126_caster, None, st125_tac, [st126_caster], [st126_foe], no_heal=True)  # 未傳main_hit_tgts
+    assert abs(st126_foe.eff("speed") - st126_foe.speed) < 1e-6, "sameTargets: 未傳main_hit_tgts時應落空不生效(向後相容, 不誤套用全體)"
+
+    # 127) 端到端 fight() 主迴圈: 3人隊, 主動戰法群體(n=2)coef命中2人時, 效果段 sameTargets
+    # 應精確命中同一批2人(非獨立隨機選標)。用固定隨機種子跑多次戰鬥, TRACE式直接檢查
+    # troop 損耗與 speed debuff 是否精確對應同一批目標(non-hit的第3人不應掉血也不應被debuff)。
+    st127_tac_name = "測試sameTargets127"
+    TACTICS[st127_tac_name] = {"nameZh": st127_tac_name, "type": "active", "kind": "phys",
+                               "coef": 0.01, "rate": 1.0, "n": 2, "prep": 0, "effects": [
+        {"k": "stat", "who": "enemy", "stat": "speed", "add": -999, "dur": 2, "sameTargets": True}
+    ]}
+    random.seed(20260707)
+    st127_hit_ok = 0
+    for _ in range(50):
+        st127_u = Unit(POOL["張飛"], "槍")
+        st127_a = Unit(POOL["關羽"], "槍")
+        st127_b = Unit(POOL["趙雲"], "槍")
+        st127_c = Unit(POOL["馬超"], "槍")
+        foes127 = [st127_a, st127_b, st127_c]
+        # 手動模擬單回合 fight() 主迴圈的 coef 群體段 + sameTargets 效果段呼叫序列(不跑完整fight,
+        # 直接複現主迴圈同段落邏輯, 驗證引擎內建的呼叫慣例本身正確):
+        vs127 = pick_targets(foes127, 2)
+        for v in vs127:
+            hit(st127_u, v, TACTICS[st127_tac_name]["coef"], "phys", False, None, None)
+        mht127 = vs127 if len(vs127) > 1 else None
+        apply_effects(st127_u, None, TACTICS[st127_tac_name], [st127_u], foes127, no_heal=True, main_hit_tgts=mht127)
+        hurt127 = [f for f in foes127 if f.troop < START_TROOP]
+        debuffed127 = [f for f in foes127 if f.eff("speed") < f.speed]
+        if set(id(x) for x in hurt127) == set(id(x) for x in debuffed127) == set(id(x) for x in vs127):
+            st127_hit_ok += 1
+    del TACTICS[st127_tac_name]
+    assert st127_hit_ok == 50, f"sameTargets端到端: 50次模擬中應全數精確命中同一批coef群體目標(實際{st127_hit_ok}/50)"
+
+    # 128) sibling-effect 沿用(誘敵深入形狀: coef=0, 無main coef段可沿用, dot(首個, e.n=2)
+    # 就地成為"main_hit_tgts"的來源, amp(第二個, sameTargets:true)應沿用dot實際命中的同一批
+    # 目標, 而非各自獨立pick_targets。50次跑批驗證dot命中集合(靠troop受損判斷)與amp命中集合
+    # (靠speed受影響判斷改用stat效果排查更直接: 這裡用dot的troop損耗 vs amp的stat debuff)。
+    st128_tac_name = "測試sameTargets128"
+    TACTICS[st128_tac_name] = {"nameZh": st128_tac_name, "type": "active", "kind": "intel",
+                               "coef": 0, "rate": 1.0, "n": 2, "prep": 0, "effects": [
+        {"k": "dot", "who": "enemy", "coef": 0.5, "dur": 2, "n": 2},
+        {"k": "stat", "who": "enemy", "stat": "speed", "add": -999, "dur": 2, "sameTargets": True}
+    ]}
+    random.seed(20260707)
+    st128_hit_ok = 0
+    for _ in range(50):
+        st128_u = Unit(POOL["張飛"], "槍")
+        st128_a = Unit(POOL["關羽"], "槍")
+        st128_b = Unit(POOL["趙雲"], "槍")
+        st128_c = Unit(POOL["馬超"], "槍")
+        foes128 = [st128_a, st128_b, st128_c]
+        apply_effects(st128_u, None, TACTICS[st128_tac_name], [st128_u], foes128, no_heal=True)
+        dotted128 = [f for f in foes128 if f.dots]
+        debuffed128 = [f for f in foes128 if f.eff("speed") < f.speed]
+        if len(dotted128) == 2 and set(id(x) for x in dotted128) == set(id(x) for x in debuffed128):
+            st128_hit_ok += 1
+    del TACTICS[st128_tac_name]
+    assert st128_hit_ok == 50, f"sameTargets(sibling-effect無coef錨點): 50次模擬中dot與amp/stat應精確命中同一批2人(實際{st128_hit_ok}/50)"
+
+    print(f"    [批45 A] e.sameTargets群體目標沿用原語: 基本沿用(125)/未傳main_hit_tgts向後相容(126)/端到端fight同段落50次全命中(127)/sibling-effect無coef錨點沿用(128)驗證通過")
+
+    # --- 批45 C: TARGETSEL_KEY.maxTroop(兵力最高準則, 對稱既有minTroop) ---
+    # 129) pick_by_criterion(units, "maxTroop") 應精確選中兵力最高的單位(而非minTroop/
+    # mostDamaged的兵力最低方向)。
+    mt129_a = Unit(POOL["張飛"], "槍")
+    mt129_b = Unit(POOL["關羽"], "槍")
+    mt129_c = Unit(POOL["趙雲"], "槍")
+    mt129_a.troop, mt129_b.troop, mt129_c.troop = 5000, 9000, 3000
+    picked129 = pick_by_criterion([mt129_a, mt129_b, mt129_c], "maxTroop")
+    assert picked129 is mt129_b, "maxTroop: 應精確選中兵力最高的單位(9000), 而非minTroop方向"
+    picked129_min = pick_by_criterion([mt129_a, mt129_b, mt129_c], "minTroop")
+    assert picked129_min is mt129_c, "對照組: minTroop應維持既有行為選中兵力最低(3000), 未受maxTroop新增影響"
+
+    # 130) 定謀貴決真實資料回歸: effects[0]應帶targetSel:"maxTroop"(批45 C落地), 且無殘留
+    # 的批21撤回未清乾淨的舊欄位值。
+    dmgj130_tac = TACTICS["定謀貴決"]
+    assert dmgj130_tac["effects"][0].get("targetSel") == "maxTroop", "定謀貴決: effects[0]應帶targetSel:\"maxTroop\"(批45 C精確落地, 取代批21撤回後的無targetSel近似)"
+
+    print(f"    [批45 C] TARGETSEL_KEY.maxTroop(兵力最高準則): 精確選標方向驗證(129)/定謀貴決真實資料回歸(130)驗證通過")
 
     print("self-check OK")
 

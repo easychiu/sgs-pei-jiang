@@ -1172,20 +1172,22 @@
     "who": "enemy",
     "coef": 0.74,
     "dur": 2,
-    "n": 2
+    "n": 2,
+    "sameTargets": true
    },
    {
     "k": "healblock",
     "who": "enemy",
     "dur": 2,
-    "n": 2
+    "n": 2,
+    "sameTargets": true
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INNATE",
-  "_note": "批23 R13: dot/healblock補e.n=2(原文「敵軍群體2人」, 對齊t.n=2; 過去無e.n時兩者皆套用到全體敵軍, 高估覆蓋人數)。"
+  "_note": "批23 R13: dot/healblock補e.n=2(原文「敵軍群體2人」, 對齊t.n=2; 過去無e.n時兩者皆套用到全體敵軍, 高估覆蓋人數)。 | 批45 A: 補e['sameTargets']=True——原文效果段以「其/使其」回指主coef段命中的同一批敵軍群體, 過去coef段(pick_targets)與本效果段(who=enemy+e.n, 各自獨立pick_targets)只有1/3機率同組, 現沿用main_hit_tgts確保精確命中同一批目標(見engine_limitations.md/R29)。"
  },
  {
   "nameZh": "千里走單騎",
@@ -1342,7 +1344,7 @@
   "nameZh": "四面楚歌",
   "type": "active",
   "kind": "intel",
-  "coef": 1.44,
+  "coef": 0,
   "rate": 0.5,
   "n": 2,
   "prep": 1,
@@ -1358,7 +1360,7 @@
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_note": "批12 ModeC(全庫系統性bug): 原資料heal.who=enemy+負值coef(-1.44)，雖被引擎既有防禦(負值heal coef視為0跳過)攔截而未實際造成負面影響，但等同該效果完全不生效(中毒clause遺失)；修正為dot(持續傷害)符合原文「中毒狀態每回合持續造成傷害」語意 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=dot] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。"
+  "_note": "批12 ModeC(全庫系統性bug): 原資料heal.who=enemy+負值coef(-1.44)，雖被引擎既有防禦(負值heal coef視為0跳過)攔截而未實際造成負面影響，但等同該效果完全不生效(中毒clause遺失)；修正為dot(持續傷害)符合原文「中毒狀態每回合持續造成傷害」語意 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=dot] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。 | 批45 B: 核對原文後確認為純持續傷害描述(僅「施加XX狀態,每回合持續造成傷害」單一DoT機制,無「造成一次...攻擊」之類的獨立即時攻擊動詞, 與放火/毒氣「造成謀略攻擊(一次性)+並使其陷入XX狀態每回合持續造成傷害(DoT)」的合法雙動詞結構不同), 頂層coef與dot.coef數值相同純屬前期reparse管線把原文唯一的傷害率百分比同時誤填進coef與dot.coef兩處造成的雙重計算bug(伤害被算了兩次: 一次即時+一次持續, 高估約2倍), set coef:0歸零, 只保留dot段。"
  },
  {
   "nameZh": "因利制權",
@@ -1514,7 +1516,7 @@
     "dur": 2,
     "scale": "command",
     "dmgType": "intel",
-    "_note": "批25 R19: 原文「使敵軍造成的謀略傷害降低19.5%→39%」為單一傷害類型措辭, 補dmgType:\"intel\"(批24新增原語, 精確限定只對謀略傷害生效, 不再誤及兵刃傷害)。",
+    "_note": "批25 R19: 原文「使敵軍造成的謀略傷害降低19.5%→39%」為單一傷害類型措辭, 補dmgType:\"intel\"(批24新增原語, 精確限定只對謀略傷害生效, 不再誤及兵刃傷害)。 批45 D: R13排查澄清——原文「當敵軍群體(2人)處於潰逃或叛逃狀態時壓制敵軍」的「群體(2人)」是觸發本效果的條件子句(敵軍需有2人處於特定狀態才觸發此mitig), 並非本效果(who:\"ally\", 降低我方受到的謀略傷害)的目標範圍描述——mitig的目標本就是「我方」而非「敵軍2人」, e['n']在此不適用(e.n是描述who=\"enemy\"/\"ally\"的目標人數上限, 而非觸發條件的敵方狀態人數)。「需敵軍2人處於潰逃/叛逃狀態才觸發」這個條件閘門本身目前未建模(mitig現為常駐生效, 未檢查敵方狀態計數), 屬既有近似(_todo已記錄的另一組時機缺口,本節僅釐清e.n誤判疑慮, 非新增缺口)。",
     "_note2": "批35 C: 兄弟掃描(狀態屬性曲線375族) —— 本效果帶scale但曲線族(350/375)未經實測樣本裁決, 現行沿用全域SCALE(除數350)預設, 曲線族未定(350/375待實測); 僅機鑑先識(警戒)有六點實測錨點佐證375(見calibration_anchors status_scale_375_20260704), 本效果不擅自套用375, 待未來實測樣本才裁決。"
    },
    {
@@ -1524,7 +1526,7 @@
     "dur": 2,
     "dmgType": "intel",
     "ifLeader": true,
-    "_note": "批41 B(R27修復): 原文「自身為主將時，謀略傷害降低值提升至22.5%→45%」——過去對此主將加成條件完全無揭露也未建模(舊版只有39%基礎值, 靜默漏掉主將時的+6%)。比照水淹七軍(批37 B)的「基礎段(無條件)+差額top-up段(ifLeader:true)」拆法: 本效果為差額段(45%-39%=6%), 與同段基礎mitig(val:0.39)並行結算, 主將時兩段相加=0.45, 非主將時僅基礎段=0.39, 與原文滿級值一致。"
+    "_note": "批41 B(R27修復): 原文「自身為主將時，謀略傷害降低值提升至22.5%→45%」——過去對此主將加成條件完全無揭露也未建模(舊版只有39%基礎值, 靜默漏掉主將時的+6%)。比照水淹七軍(批37 B)的「基礎段(無條件)+差額top-up段(ifLeader:true)」拆法: 本效果為差額段(45%-39%=6%), 與同段基礎mitig(val:0.39)並行結算, 主將時兩段相加=0.45, 非主將時僅基礎段=0.39, 與原文滿級值一致。 批45 D: R13排查澄清——原文「當敵軍群體(2人)處於潰逃或叛逃狀態時壓制敵軍」的「群體(2人)」是觸發本效果的條件子句(敵軍需有2人處於特定狀態才觸發此mitig), 並非本效果(who:\"ally\", 降低我方受到的謀略傷害)的目標範圍描述——mitig的目標本就是「我方」而非「敵軍2人」, e['n']在此不適用(e.n是描述who=\"enemy\"/\"ally\"的目標人數上限, 而非觸發條件的敵方狀態人數)。「需敵軍2人處於潰逃/叛逃狀態才觸發」這個條件閘門本身目前未建模(mitig現為常駐生效, 未檢查敵方狀態計數), 屬既有近似(_todo已記錄的另一組時機缺口,本節僅釐清e.n誤判疑慮, 非新增缺口)。"
    },
    {
     "k": "dot",
@@ -2231,14 +2233,14 @@
     "who": "enemy",
     "val": 0.2,
     "dur": 2,
-    "_approx": "受到傷害+20%(可疊加)實際僅施於敵兵力最高單體; 引擎amp(enemy,val>0)轉全體易傷, 以此近似『敵單體嘲諷我軍全體=我軍集火該目標』的聚焦價值; 疊加不建模",
-    "targetSel": "mostDamaged"
+    "_approx": "受到傷害+20%(可疊加); 引擎amp(enemy,val>0)轉全體易傷語意本身仍是『敵單體嘲諷我軍全體=我軍集火該目標』的聚焦價值近似(taunt反向語意仍未建模, 見_note), 但選標本身現已用targetSel:\"maxTroop\"(批45 C新增, 見engine_limitations.md第17節)精確命中『敵軍兵力最高』的武將, 不再是batch20/21停損的『隨機/群體套用』近似; 疊加不建模。",
+    "targetSel": "maxTroop"
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_note": "移除taunt(who:self): 引擎taunt語意為目標被迫攻擊施放者, who:self時dests=[caster]→caster.tauntBy=caster(施放者強制攻擊自己, 自傷級失真), 與原文『我軍被迫集火敵單體』方向相反。批20覆核: 「敵軍兵力最高」可用targetSel:'mostDamaged'(TARGETSEL_KEY已支援, 見sgz.py)精確選標, 但taunt本身(反向嘲諷=我方被迫攻擊該敵將)這個「我方全隊被迫攻擊指定敵方單體」的語意目前無對應原語(taunt只有「敵方被迫攻擊我方施放者」一種方向, 無「我方被迫攻擊敵方指定目標」的反向版本); 現有amp(enemy)近似(把「被迫集火」的價值近似成「目標更容易受到我方傷害」)是目前可行的最佳近似, 維持不變, 加強揭露原因見上。 批21覆核後撤回: 曾嘗試補targetSel:\"mostDamaged\", 但TARGETSEL_KEY.mostDamaged是min(troop)(兵力最低=最受損), 與原文「兵力最高」語意相反(engine目前只有minTroop, 無maxTroop準則, 見TARGETSEL_KEY/TARGETSEL_MIN, sgz.py 710-715行)。若真的套用targetSel:mostDamaged會把debuff精確地扣到錯的人(兵力最低者, 而非原文要求的兵力最高者)上, 比維持現況(隨機/群體套用, 至少不是「精確選錯人」)更嚴重的錯誤, 已撤回此欄位, 恢復不含targetSel的版本, 待engine補上maxTroop準則後再處理, 詳見engine_limitations.md新增章節。"
+  "_note": "移除taunt(who:self): 引擎taunt語意為目標被迫攻擊施放者, who:self時dests=[caster]→caster.tauntBy=caster(施放者強制攻擊自己, 自傷級失真), 與原文『我軍被迫集火敵單體』方向相反。批20覆核: 「敵軍兵力最高」可用targetSel:'mostDamaged'(TARGETSEL_KEY已支援, 見sgz.py)精確選標, 但taunt本身(反向嘲諷=我方被迫攻擊該敵將)這個「我方全隊被迫攻擊指定敵方單體」的語意目前無對應原語(taunt只有「敵方被迫攻擊我方施放者」一種方向, 無「我方被迫攻擊敵方指定目標」的反向版本); 現有amp(enemy)近似(把「被迫集火」的價值近似成「目標更容易受到我方傷害」)是目前可行的最佳近似, 維持不變, 加強揭露原因見上。 批21覆核後撤回: 曾嘗試補targetSel:\"mostDamaged\", 但TARGETSEL_KEY.mostDamaged是min(troop)(兵力最低=最受損), 與原文「兵力最高」語意相反(engine目前只有minTroop, 無maxTroop準則, 見TARGETSEL_KEY/TARGETSEL_MIN, sgz.py 710-715行)。若真的套用targetSel:mostDamaged會把debuff精確地扣到錯的人(兵力最低者, 而非原文要求的兵力最高者)上, 比維持現況(隨機/群體套用, 至少不是「精確選錯人」)更嚴重的錯誤, 已撤回此欄位, 恢復不含targetSel的版本, 待engine補上maxTroop準則後再處理, 詳見engine_limitations.md新增章節。 | 批45 C: 追根因發現批21的「撤回」實際上只改了_note文字聲稱已撤回, 從未真正刪除effects[0]的targetSel:\"mostDamaged\"欄位本身——資料與揭露矛盾持續存活4批(21→44)未被抓到, 現已真正刪除該欄位, 恢復不含targetSel的版本(隨機/群體套用近似, 維持batch20/21既有結論不變)。追查R14為何沒抓到: R14的STALE_ASSERT_RE只認「coef=X/dur=X/rate=X」這類精確數字斷言句型, 「撤回targetSel」是揭露「刪除了某欄位」而非「某數值不一致」, 不在R14掃描範圍內, 需要新增獨立偵測邏輯(見R20_WITHDRAWAL_KW/check_r20下方新增分支)。 | 批45 C: engine新增TARGETSEL_KEY.maxTroop(兵力最高準則, 對稱既有minTroop)後, 此戰法「敵軍兵力最高」的選標語意可以精確落地, 已補targetSel:\"maxTroop\"(不再是batch21撤回後的無targetSel近似, 見上方回填的_approx)。「我方全隊被迫攻擊該敵軍指定目標」的taunt反向語意(amp near似的根本取捨)仍未建模, 維持既有揭露不變。"
  },
  {
   "nameZh": "定軍斬將",
@@ -4089,7 +4091,7 @@
   "nameZh": "決水潰城",
   "type": "active",
   "kind": "intel",
-  "coef": 1.12,
+  "coef": 0,
   "rate": 0.45,
   "n": 2,
   "prep": 1,
@@ -4108,7 +4110,7 @@
   "src": "EVENT",
   "nMax": 3,
   "_todo": "「破壞(禁用裝備)」狀態無對應原語, 未表達",
-  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=dot] 缺 e['n'], 原文目標為「(2~3人)」, 補 e['n']=2/e['nMax']=3。"
+  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=dot] 缺 e['n'], 原文目標為「(2~3人)」, 補 e['n']=2/e['nMax']=3。 | 批45 B: 核對原文後確認為純持續傷害描述(僅「施加XX狀態,每回合持續造成傷害」單一DoT機制,無「造成一次...攻擊」之類的獨立即時攻擊動詞, 與放火/毒氣「造成謀略攻擊(一次性)+並使其陷入XX狀態每回合持續造成傷害(DoT)」的合法雙動詞結構不同), 頂層coef與dot.coef數值相同純屬前期reparse管線把原文唯一的傷害率百分比同時誤填進coef與dot.coef兩處造成的雙重計算bug(伤害被算了兩次: 一次即時+一次持續, 高估約2倍), set coef:0歸零, 只保留dot段。"
  },
  {
   "nameZh": "沉斷機謀",
@@ -4126,7 +4128,8 @@
     "mult": 0.7,
     "dur": 2,
     "scale": "intel",
-    "n": 2
+    "n": 2,
+    "sameTargets": true
    },
    {
     "k": "stat",
@@ -4135,7 +4138,8 @@
     "mult": 0.7,
     "dur": 2,
     "scale": "intel",
-    "n": 2
+    "n": 2,
+    "sameTargets": true
    }
   ],
   "_src": "https://app.ali213.net/wiki/sgzzlb/zf114.html",
@@ -4144,13 +4148,13 @@
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INNATE",
-  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=stat] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。"
+  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=stat] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。 | 批45 A: 補e['sameTargets']=True——原文效果段以「其/使其」回指主coef段命中的同一批敵軍群體, 過去coef段(pick_targets)與本效果段(who=enemy+e.n, 各自獨立pick_targets)只有1/3機率同組, 現沿用main_hit_tgts確保精確命中同一批目標(見engine_limitations.md/R29)。"
  },
  {
   "nameZh": "沉沙決水",
   "type": "active",
   "kind": "intel",
-  "coef": 1.26,
+  "coef": 0,
   "rate": 0.4,
   "n": 2,
   "prep": 1,
@@ -4175,7 +4179,7 @@
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_note": "批23 R13: amp/dot兩段補e.n=2(原文「敵軍群體2人」, 對齊t.n=2; 過去無e.n時皆套用到全體敵軍, 高估覆蓋人數)。"
+  "_note": "批23 R13: amp/dot兩段補e.n=2(原文「敵軍群體2人」, 對齊t.n=2; 過去無e.n時皆套用到全體敵軍, 高估覆蓋人數)。 | 批45 B: 核對原文後確認為純持續傷害描述(僅「施加XX狀態,每回合持續造成傷害」單一DoT機制,無「造成一次...攻擊」之類的獨立即時攻擊動詞, 與放火/毒氣「造成謀略攻擊(一次性)+並使其陷入XX狀態每回合持續造成傷害(DoT)」的合法雙動詞結構不同), 頂層coef與dot.coef數值相同純屬前期reparse管線把原文唯一的傷害率百分比同時誤填進coef與dot.coef兩處造成的雙重計算bug(伤害被算了兩次: 一次即時+一次持續, 高估約2倍), set coef:0歸零, 只保留dot段。"
  },
  {
   "nameZh": "淑懿之德",
@@ -4605,13 +4609,14 @@
     "k": "healblock",
     "who": "enemy",
     "dur": 1,
-    "n": 2
+    "n": 2,
+    "sameTargets": true
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "EVENT",
-  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=healblock] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。"
+  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=healblock] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。 | 批45 A: 補e['sameTargets']=True——原文效果段以「其/使其」回指主coef段命中的同一批敵軍群體, 過去coef段(pick_targets)與本效果段(who=enemy+e.n, 各自獨立pick_targets)只有1/3機率同組, 現沿用main_hit_tgts確保精確命中同一批目標(見engine_limitations.md/R29)。"
  },
  {
   "nameZh": "無當飛軍",
@@ -5286,7 +5291,8 @@
     "dur": 2,
     "scale": "force",
     "add": -80,
-    "n": 2
+    "n": 2,
+    "sameTargets": true
    },
    {
     "k": "stat",
@@ -5295,13 +5301,14 @@
     "dur": 2,
     "scale": "force",
     "add": -80,
-    "n": 2
+    "n": 2,
+    "sameTargets": true
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=stat] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。"
+  "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=stat] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。 | 批45 A: 補e['sameTargets']=True——原文效果段以「其/使其」回指主coef段命中的同一批敵軍群體, 過去coef段(pick_targets)與本效果段(who=enemy+e.n, 各自獨立pick_targets)只有1/3機率同組, 現沿用main_hit_tgts確保精確命中同一批目標(見engine_limitations.md/R29)。"
  },
  {
   "nameZh": "神射",
@@ -5736,14 +5743,15 @@
     "who": "enemy",
     "dur": 1,
     "n": 2,
-    "nMax": 3
+    "nMax": 3,
+    "sameTargets": true
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "EVENT",
   "nMax": 3,
-  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=healblock] 缺 e['n'], 原文目標為「(2~3人)」, 補 e['n']=2/e['nMax']=3。"
+  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=healblock] 缺 e['n'], 原文目標為「(2~3人)」, 補 e['n']=2/e['nMax']=3。 | 批45 A: 補e['sameTargets']=True——原文效果段以「其/使其」回指主coef段命中的同一批敵軍群體, 過去coef段(pick_targets)與本效果段(who=enemy+e.n, 各自獨立pick_targets)只有1/3機率同組, 現沿用main_hit_tgts確保精確命中同一批目標(見engine_limitations.md/R29)。"
  },
  {
   "nameZh": "絕地反擊",
@@ -7164,13 +7172,14 @@
     "dmgType": "phys",
     "_note": "批25 R19: 原文「使其受到的兵刃傷害提高25%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。",
     "n": 2,
-    "_note2": "批35 C: 兄弟掃描(狀態屬性曲線375族) —— 本效果帶scale但曲線族(350/375)未經實測樣本裁決, 現行沿用全域SCALE(除數350)預設, 曲線族未定(350/375待實測); 僅機鑑先識(警戒)有六點實測錨點佐證375(見calibration_anchors status_scale_375_20260704), 本效果不擅自套用375, 待未來實測樣本才裁決。"
+    "_note2": "批35 C: 兄弟掃描(狀態屬性曲線375族) —— 本效果帶scale但曲線族(350/375)未經實測樣本裁決, 現行沿用全域SCALE(除數350)預設, 曲線族未定(350/375待實測); 僅機鑑先識(警戒)有六點實測錨點佐證375(見calibration_anchors status_scale_375_20260704), 本效果不擅自套用375, 待未來實測樣本才裁決。",
+    "sameTargets": true
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=dot] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=amp] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。"
+  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=dot] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=amp] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。 | 批45 A: 補effects[1](amp)的e['sameTargets']=True——本戰法coef=0無main coef段可沿用, dot段(effects[0], e.n=2)為本戰法內首個命中群體的效果, 就地成為main_hit_tgts來源(見apply_effects新增邏輯), amp段沿用同一批目標而非各自獨立pick_targets。"
  },
  {
   "nameZh": "象兵",
@@ -8446,7 +8455,8 @@
     "mult": 0.7,
     "dur": 1,
     "scale": "intel",
-    "_note": "批19(agy查證): 降低武力30%(mult=1-0.3=0.7, 取代批12誤植的0.4=降60%; agy新查證明確為30%非60%, 本戰法無疊加成長區間, 固定30%)"
+    "_note": "批19(agy查證): 降低武力30%(mult=1-0.3=0.7, 取代批12誤植的0.4=降60%; agy新查證明確為30%非60%, 本戰法無疊加成長區間, 固定30%)",
+    "n": 1
    },
    {
     "k": "dot",
@@ -8454,7 +8464,8 @@
     "coef": 2.26,
     "dur": 1,
     "scale": "intel",
-    "_note": "批19: 『1回合後毒發，造成謀略傷害(226%)』——改用dot(dur:1)取代舊版settle(base:2.26,per:0,max:99,dur:99); 舊版settle參數(max:99且dur:99)在8回合戰鬥內left恆大於1且layers恆小於max, 實際上永遠不會觸發結算(settle是「集滿層數或倒數到期才對目標所在整個隊伍暴擊」的猛毒機制, 與鴆毒『對施放目標單體, 下回合造成一次226%傷害』的語意不符, 且該次結算固定打的是『敵軍統率最高單體』而非鴆毒實際的中毒目標, 目標選取邏輯也不對); dot(dur:1)在本回合末的tick()時對中毒目標本身結算一次226%傷害, 精確對應『1回合後』延遲一拍(不是立即結算)且鎖定正確目標, 是更貼近原文的建模選擇"
+    "_note": "批19: 『1回合後毒發，造成謀略傷害(226%)』——改用dot(dur:1)取代舊版settle(base:2.26,per:0,max:99,dur:99); 舊版settle參數(max:99且dur:99)在8回合戰鬥內left恆大於1且layers恆小於max, 實際上永遠不會觸發結算(settle是「集滿層數或倒數到期才對目標所在整個隊伍暴擊」的猛毒機制, 與鴆毒『對施放目標單體, 下回合造成一次226%傷害』的語意不符, 且該次結算固定打的是『敵軍統率最高單體』而非鴆毒實際的中毒目標, 目標選取邏輯也不對); dot(dur:1)在本回合末的tick()時對中毒目標本身結算一次226%傷害, 精確對應『1回合後』延遲一拍(不是立即結算)且鎖定正確目標, 是更貼近原文的建模選擇",
+    "n": 1
    },
    {
     "k": "stat",
@@ -8464,14 +8475,15 @@
     "dur": 99,
     "scale": "intel",
     "_est": true,
-    "_note": "批19沿用批12既有揭露: 原文『可無限疊加』, engine pushStatAdd同來源(戰法名)刷新不疊加, 每次重新施放僅刷新為-60而非累加, 無法表達無限疊加語意, 維持單次滿值近似(高信度查證未改變此工程限制)"
+    "_note": "批19沿用批12既有揭露: 原文『可無限疊加』, engine pushStatAdd同來源(戰法名)刷新不疊加, 每次重新施放僅刷新為-60而非累加, 無法表達無限疊加語意, 維持單次滿值近似(高信度查證未改變此工程限制)",
+    "n": 1
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INNATE",
-  "_note": "批19: agy高信度查證修正兩處——(1)武力降低應為30%非批12誤植的60%(mult 0.4→0.7); (2)『1回合後毒發』改用dot(dur:1)取代舊版settle(該settle參數配置在8回合戰內實際永不觸發, 且結算目標邏輯錯誤打統率最高敵將而非中毒目標本身, 是隱藏的no-op bug, 本次一併修正為dot精確結算於正確目標)。「鳩毒」重複條目已於tactics_overrides.json強制type:none排除, 本戰法(鴆毒)為唯一有效版本。"
+  "_note": "批19: agy高信度查證修正兩處——(1)武力降低應為30%非批12誤植的60%(mult 0.4→0.7); (2)『1回合後毒發』改用dot(dur:1)取代舊版settle(該settle參數配置在8回合戰內實際永不觸發, 且結算目標邏輯錯誤打統率最高敵將而非中毒目標本身, 是隱藏的no-op bug, 本次一併修正為dot精確結算於正確目標)。「鳩毒」重複條目已於tactics_overrides.json強制type:none排除, 本戰法(鴆毒)為唯一有效版本。 | 批45 D: 全庫三效果(stat武力/dot毒發/stat統率)皆補e['n']=1(原文明確「對敵軍單體」, 過去因R13的_topic_disclosed豁免判定過寬——單獨一個效果(dot)own text提及「單體」歷史敘述即被視為整體豁免, 另兩個stat效果則是頂層_note恰好分別提及「武力」(kind_kw)與「目標」(巧合出現在描述另一個settle→dot重構bug的句子裡, 與目標數主題無關)兩個不相干關鍵字被誤判為\"同一組明確指涉\"——導致無e.n時三效果皆套用到敵軍全體而非原文的單體, 全庫盲測長年未抓到, 見lint_tactics.py _topic_disclosed批45 D鄰近窗口+歧義詞語境強化修復)。"
  },
  {
   "nameZh": "鴟苕鳳姿",
@@ -8807,13 +8819,14 @@
     "coef": 0.66,
     "dur": 1,
     "scale": "intel",
-    "n": 2
+    "n": 2,
+    "sameTargets": true
    }
   ],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_note": "批12 ModeC(全庫系統性bug): 原資料heal.who=enemy+負值coef(-0.66)被引擎防禦攔截未生效(灼燒clause遺失)；修正為dot符合原文「灼燒狀態每回合持續造成傷害」語意 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=dot] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。"
+  "_note": "批12 ModeC(全庫系統性bug): 原資料heal.who=enemy+負值coef(-0.66)被引擎防禦攔截未生效(灼燒clause遺失)；修正為dot符合原文「灼燒狀態每回合持續造成傷害」語意 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=dot] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。 | 批45 A: 補e['sameTargets']=True——原文效果段以「其/使其」回指主coef段命中的同一批敵軍群體, 過去coef段(pick_targets)與本效果段(who=enemy+e.n, 各自獨立pick_targets)只有1/3機率同組, 現沿用main_hit_tgts確保精確命中同一批目標(見engine_limitations.md/R29)。"
  },
  {
   "nameZh": "奮突",
@@ -8853,7 +8866,7 @@
   "nameZh": "妖術",
   "type": "active",
   "kind": "intel",
-  "coef": 0.72,
+  "coef": 0,
   "rate": 0.4,
   "n": 3,
   "prep": 1,
@@ -8876,7 +8889,7 @@
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_note": "批12 ModeC(全庫系統性bug): 原資料heal.who=enemy+負值coef(-0.72)被引擎防禦攔截未生效(沙暴clause遺失)；修正為dot符合原文「沙暴狀態每回合持續造成傷害」語意(自身1次抵禦clause因shield原語與此無關, 未動)"
+  "_note": "批12 ModeC(全庫系統性bug): 原資料heal.who=enemy+負值coef(-0.72)被引擎防禦攔截未生效(沙暴clause遺失)；修正為dot符合原文「沙暴狀態每回合持續造成傷害」語意(自身1次抵禦clause因shield原語與此無關, 未動) | 批45 B: 核對原文後確認為純持續傷害描述(僅「施加XX狀態,每回合持續造成傷害」單一DoT機制,無「造成一次...攻擊」之類的獨立即時攻擊動詞, 與放火/毒氣「造成謀略攻擊(一次性)+並使其陷入XX狀態每回合持續造成傷害(DoT)」的合法雙動詞結構不同), 頂層coef與dot.coef數值相同純屬前期reparse管線把原文唯一的傷害率百分比同時誤填進coef與dot.coef兩處造成的雙重計算bug(伤害被算了兩次: 一次即時+一次持續, 高估約2倍), set coef:0歸零, 只保留dot段。"
  },
  {
   "nameZh": "威風凜凜",
@@ -9103,14 +9116,15 @@
     "val": -1.0,
     "dur": 1,
     "n": 2,
-    "_note": "批23: 補主效果「對敵軍群體(2人)施加虛弱(無法造成傷害)狀態,持續1回合」——過去effects=[]完全空白(0分主因, 只有coef=1.88承載「若目標已虛弱則造成188%猛擊」的條件分支)。amp val=-1.0精確歸零目標當回合傷害(虛弱慣例, 見克敵制勝/威謀靡亢/臨戰先登同款做法); e.n=2對齊原文「敵軍群體2人」。"
+    "_note": "批23: 補主效果「對敵軍群體(2人)施加虛弱(無法造成傷害)狀態,持續1回合」——過去effects=[]完全空白(0分主因, 只有coef=1.88承載「若目標已虛弱則造成188%猛擊」的條件分支)。amp val=-1.0精確歸零目標當回合傷害(虛弱慣例, 見克敵制勝/威謀靡亢/臨戰先登同款做法); e.n=2對齊原文「敵軍群體2人」。",
+    "sameTargets": true
    }
   ],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
   "_todo": "虛弱debuff與coef猛擊本應互斥的條件分支無法用現有ifTargetHas表達(amp狀態不在targetHas可偵測清單內), 需引擎新增「偵測amp處於-1(虛弱)狀態」的targetHas支援才能精確互斥, 暫維持兩者同時觸發的高估近似。",
-  "_note": "批23: 主效果(虛弱debuff)與coef(已虛弱時的188%猛擊)兩者本應互斥(原文「如果目標已處於虛弱狀態則改為造成一次猛擊」), 但引擎缺乏「偵測amp(-1)虛弱狀態」的ifTargetHas支援(ifTargetHas只認stun/silence/disarm/chaos/insight/dot, 不含amp), 故無法用ifTargetHas精確排他; 現況為兩者同時無條件套用(每次發動都會虛弱目標2人+對目標造成188%傷害), 較原文更強(高估), 但至少不再是完全空白的0分狀態。"
+  "_note": "批23: 主效果(虛弱debuff)與coef(已虛弱時的188%猛擊)兩者本應互斥(原文「如果目標已處於虛弱狀態則改為造成一次猛擊」), 但引擎缺乏「偵測amp(-1)虛弱狀態」的ifTargetHas支援(ifTargetHas只認stun/silence/disarm/chaos/insight/dot, 不含amp), 故無法用ifTargetHas精確排他; 現況為兩者同時無條件套用(每次發動都會虛弱目標2人+對目標造成188%傷害), 較原文更強(高估), 但至少不再是完全空白的0分狀態。 | 批45 A: 補e['sameTargets']=True——原文效果段以「其/使其」回指主coef段命中的同一批敵軍群體, 過去coef段(pick_targets)與本效果段(who=enemy+e.n, 各自獨立pick_targets)只有1/3機率同組, 現沿用main_hit_tgts確保精確命中同一批目標(見engine_limitations.md/R29)。"
  },
  {
   "nameZh": "挾勢弄權",
@@ -9193,13 +9207,14 @@
     "who": "enemy",
     "val": -0.16,
     "dur": 2,
-    "n": 2
+    "n": 2,
+    "sameTargets": true
    }
   ],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——原文明確描述效果(k=amp)目標為「群體(2人)」, 但該效果缺 e['n'], 過去無e.n時套用到全體(過去系統性高估覆蓋人數, 見批23 A1機制), 補 e['n']=2。"
+  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——原文明確描述效果(k=amp)目標為「群體(2人)」, 但該效果缺 e['n'], 過去無e.n時套用到全體(過去系統性高估覆蓋人數, 見批23 A1機制), 補 e['n']=2。 | 批45 A: 補e['sameTargets']=True——原文效果段以「其/使其」回指主coef段命中的同一批敵軍群體, 過去coef段(pick_targets)與本效果段(who=enemy+e.n, 各自獨立pick_targets)只有1/3機率同組, 現沿用main_hit_tgts確保精確命中同一批目標(見engine_limitations.md/R29)。"
  },
  {
   "nameZh": "明察秋毫",
@@ -9641,13 +9656,14 @@
     "stat": "speed",
     "dur": 2,
     "add": -30,
-    "n": 2
+    "n": 2,
+    "sameTargets": true
    }
   ],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=stat] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。"
+  "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=stat] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。 | 批45 A: 補e['sameTargets']=True——原文效果段以「其/使其」回指主coef段命中的同一批敵軍群體, 過去coef段(pick_targets)與本效果段(who=enemy+e.n, 各自獨立pick_targets)只有1/3機率同組, 現沿用main_hit_tgts確保精確命中同一批目標(見engine_limitations.md/R29)。"
  },
  {
   "nameZh": "腹背受敵",
@@ -9905,13 +9921,14 @@
     "coef": 1.2,
     "dur": 1,
     "scale": "intel",
-    "n": 2
+    "n": 2,
+    "sameTargets": true
    }
   ],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_note": "批20任務點名修正(R1): dot效果補scale=intel(原文沙暴dot子句明寫「受智力影響」)。原批12 ModeC修正(heal→dot方向修正)只處理了k欄位, 遺漏了scale。準備段主傷害(coef=1.05)的「受智力影響」已由kind=intel天然建模, 不重複標記。 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=dot] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。"
+  "_note": "批20任務點名修正(R1): dot效果補scale=intel(原文沙暴dot子句明寫「受智力影響」)。原批12 ModeC修正(heal→dot方向修正)只處理了k欄位, 遺漏了scale。準備段主傷害(coef=1.05)的「受智力影響」已由kind=intel天然建模, 不重複標記。 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=dot] 缺 e['n'], 原文目標為「群體(2人)」, 補 e['n']=2。 | 批45 A: 補e['sameTargets']=True——原文效果段以「其/使其」回指主coef段命中的同一批敵軍群體, 過去coef段(pick_targets)與本效果段(who=enemy+e.n, 各自獨立pick_targets)只有1/3機率同組, 現沿用main_hit_tgts確保精確命中同一批目標(見engine_limitations.md/R29)。"
  },
  {
   "nameZh": "養兵千日",

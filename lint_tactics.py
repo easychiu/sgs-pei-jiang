@@ -546,6 +546,9 @@ KNOWN_EFFECT_FIELDS = {
     # 的效果都可選配), scaleDiv覆蓋SCALE縮放除數(預設350), capVal為縮放後值上限clamp,
     # 見 engine.js/sgz.py 的 SCALE_G/scale_of/cap_val_of + lockedScaleOf/locked_scale_of。
     # 現階段全庫只有機鑑先識(block)實際使用, 但欄位本身語意不限定k=="block"。
+    "sameTargets",  # 批45 A: 沿用同一次apply_effects呼叫內先前已命中的群體目標(main_hit_tgts),
+    # 取代「coef段與效果段各自獨立pick_targets」的舊近似, 跨所有k種類通用(見 apply_effects
+    # 對 e.sameTargets 的判斷式, engine_limitations.md 第45節)。
 }
 PER_KIND_FIELDS = {
     "amp": {"val", "dmgType", "normalOnly", "activeOnly"}, "mitig": {"val", "dmgType", "normalOnly"}, "stun": set(), "silence": set(), "disarm": set(),  # dmgType: 批24 D2, 兵刃/謀略傷害類型過濾; normalOnly: 批28 B3, 僅普攻傷害生效/受影響; activeOnly: 批31 A, 僅主動/突擊戰法傷害生效(amp限定)
@@ -1177,6 +1180,13 @@ R_EFFECT_KIND_SELF_KW = {
 }
 
 
+R13_TOPIC_PROXIMITY_WINDOW = 40  # 批45 D: keywords與kind_kw命中位置的相鄰窗口(字元距離), 見下方 _topic_disclosed docstring。
+# 40字取自校勝帷幄回歸樣例的實測距離(「amp」與「受智力影響」相隔30字, 同一句子內的正常語意
+# 修飾距離)+安全餘裕, 同時鴆毒案例的假豁免主要靠 AMBIGUOUS_TOPIC_KW 語境門檻擋下(「目標」與
+# 「統率」相隔僅7~10字, 在此window內, 但因兩者分屬不同句子語意不相關, 靠語境門檻而非
+# window本身排除), 兩個修法互補, 不衝突。
+
+
 def _topic_disclosed(p, keywords, effect=None):
     """揭露文字裡, 是否有任一則提到 keywords 中的任一關鍵字。用於「主題相關揭露」判定
     (而非任何揭露都算數), 避免規則被無關主題的舊揭露誤豁免。
@@ -1210,6 +1220,19 @@ def _topic_disclosed(p, keywords, effect=None):
             return True
 
     # 2) 退而查戰法頂層(不含兄弟效果), 且需明確指涉該效果類別
+    #
+    # 批45 D: 歧義詞需搭配強語境(修復鴆毒漏網案例) —— 原本只要求 top_texts 內「主題關鍵字」
+    # (keywords)與「該k的自稱詞彙」(kind_kw)各自在文字裡任意位置出現一次即算數(both present
+    # anywhere)。多數呼叫端的 keywords/kind_kw 本身已是語意明確的詞彙(如"settle"/"counter"/
+    # "scale", 幾乎不會用在其他語境), 兩者同文字內各出現一次已是足夠訊號, 不應收緊。但少數
+    # 泛用中文詞(見 AMBIGUOUS_TOPIC_KW, 目前僅"目標"/"人)")語意含糊, 可能指涉"bug本身所在
+    # 的目標邏輯"而非"目標範圍描述"(鴆毒實測案例: 頂層_note同時討論「(1)武力降低30%數值
+    # 修正」與「(2)dot結算目標邏輯錯誤打統率最高敵將而非中毒目標本身」兩個無關子議題, 前者
+    # 巧合含kind_kw「武力」, 後者巧合含keywords「目標」與kind_kw「統率」湊巧同句相鄰, 兩者
+    # 分居不同句子卻被視為同一組"明確指涉"而豁免了完全不相關的stat效果e.n缺口)。修法: 僅
+    # 對 AMBIGUOUS_TOPIC_KW 成員要求額外搭配 AMBIGUOUS_TARGET_CONTEXT_RE(N人/目標數/→/~/
+    # e.n等明確的目標範圍複合語境)才算數, 其餘正常語意明確的關鍵字維持原有"同文字內出現即可"
+    # 的既有寬度, 不影響R1/R6/R20等其他規則既有的正確豁免判定。
     top_texts = []
     for k in TEXT_DISC_KEYS:
         v = p.get(k)
@@ -1220,13 +1243,34 @@ def _topic_disclosed(p, keywords, effect=None):
     k = effect.get("k")
     kind_kw = R_EFFECT_KIND_SELF_KW.get(k)
     for txt in top_texts:
-        if not any(kw in txt for kw in keywords):
+        kw_positions = []
+        for kw in keywords:
+            for m in re.finditer(re.escape(kw), txt):
+                if kw in AMBIGUOUS_TOPIC_KW:
+                    window = txt[max(0, m.start() - 6):m.start() + len(kw) + 6]
+                    if not AMBIGUOUS_TARGET_CONTEXT_RE.search(window):
+                        continue  # 歧義詞("目標"/"人)")須鄰近明確目標範圍語境才算數, 純粹提及不算
+                kw_positions.append(m.start())
+        if not kw_positions:
             continue
         if kind_kw is None:
-            return True  # 無對照表可查, fallback 維持批28 A2 舊寬度
-        if any(kw in txt for kw in kind_kw):
-            return True
+            return True  # 無對照表可查, fallback 維持批28 A2 舊寬度(仍要求keywords本身有命中)
+        kind_positions = [m.start() for kw in kind_kw for m in re.finditer(re.escape(kw), txt)]
+        if not kind_positions:
+            continue
+        for kp in kw_positions:
+            for kdp in kind_positions:
+                if abs(kp - kdp) <= R13_TOPIC_PROXIMITY_WINDOW:
+                    return True
     return False
+
+
+# 批45 D: 語意含糊、可能指涉「與目標範圍無關的其他事物」的泛用中文詞——目前僅"目標"(可能指
+# "bug所在的目標邏輯"而非"目標範圍描述")與"人)"(可能是任意帶"人"字的片語巧合帶括號)。"單體"/
+# "群體"/"全體"本身已是強訊號(這三詞在本庫語境幾乎只用於目標範圍描述), 不需要額外語境即可
+# 採信, 不納入此集合。
+AMBIGUOUS_TOPIC_KW = ("目標", "人)")
+AMBIGUOUS_TARGET_CONTEXT_RE = re.compile(r"\d\s*人|目標數|→|~|e\.n|e\['n'\]|e\[\"n\"\]")  # 歧義詞需鄰近此類明確目標範圍複合語境才算數
 
 
 # ---------------------------------------------------------------------------
@@ -1696,6 +1740,12 @@ ENGINE_CAPABILITY_ALIASES = {
                 "才生效」的延後窗口, 見engine.js/sgz.py applyEffects對e.ifLeader之後新增的判斷式,"
                 "長驅直入「疊加5次後...降低16%」已用此組合遷移。「戰法級when會連帶鎖stack段」"
                 "的舊困境已由效果級ifStackMaxed(非戰法級when)解套, 見engine_limitations.md第43節)",
+    "群體目標各自獨立選標": "sameTargets(批45新增, 效果級旗標, 見engine.js/sgz.py applyEffects"
+                "對e.sameTargets的判斷式, 沿用同一次apply_effects呼叫內先前已命中的群體目標"
+                "(main_hit_tgts, 來自主coef段的pick_targets結果, 或母戰法無coef時由本戰法內"
+                "首個命中群體的sibling效果就地提供), 取代「coef段與效果段各自獨立pick_targets,"
+                "3人隊僅1/3機率同組」的舊近似, 見engine_limitations.md第45節)",
+    "各自獨立pick_targets": "sameTargets(同上)",
 }
 
 # =============================================================================
@@ -2416,6 +2466,193 @@ def check_r28(p, txt):
     return violations
 
 
+# ---------------------------------------------------------------------------
+# R29(批45 A): 群體目標沿用缺失 —— 原文「對敵軍群體(N人)造成傷害...並/并...其XX」這類句型,
+# 「其」回指前段主coef段命中的同一批敵軍群體, 但 coef段(pick_targets)與效果段(who="enemy"+
+# e.n, 各自獨立呼叫 pick_targets)實際上各自隨機選標, 3人隊只有1/3機率同組(見
+# engine_limitations.md 對應節, 批45 A 新增 e["sameTargets"] 原語解決此缺口)。
+#
+# 低誤報設計(寧缺勿濫, 同R25/R28既有方法論):
+# - 只抓「並/并」+「其」在同一子句內回指的明確句型(R29_BACK_REF_RE), 且該子句同時緊鄰
+#   「群體」/「N人」描述(避免誤傷「並使我軍全體」这类非回指語意, 或"並對其發動"這種"其"
+#   指涉更早獨立宣告的主將/單體目標而非本效果群體的情形)。
+# - 只在 coef>0(有實質傷害輸出, 排除purely-buff戰法)+ t.n>1(戰法頂層宣告群體, 非單體)時才
+#   檢查(coef=0 的戰法如誘敵深入走另一條「sibling-effect互相沿用」路徑, engine 側已支援
+#   main_hit_tgts 就地更新機制, 但此類「無main coef段可回指」的情形需要人工核對哪個效果是
+#   「首個命中群體」的效果才能決定sameTargets該掛在哪一段, 非本規則的低誤報掃描範圍, 保守
+#   跳過不自動判定)。
+# - 效果須已有 e["n"](>1, 通常對齊 t["n"])且無 e["sameTargets"], 且 who=="enemy"(coef恆定
+#   命中foes, 只有enemy方向的效果段才有「與coef是否同組」的問題; who=="ally"的己方群體
+#   buff與coef命中的敵方目標本就是不同陣營, 不適用)。
+# - CTRL_K(stun/silence/disarm/taunt/chaos)效果不掛此規則——它們沿用 t.n/t.nMax 的既有
+#   fallback邏輯已是「與coef段人數一致」的口徑(雖然仍是獨立pick_targets, 但這是舊有更大範圍
+#   的既有已知近似, 非本次新增原語處理範圍, 且CTRL_K有自己的獨立選標語意慣例, 不宜與
+#   sameTargets混用改動既有大量戰法的行為)。
+# - 揭露豁免: 主題關鍵字(sameTargets/同一批/同批目標/同組/精確命中)或提及「並降低其/並使其/
+#   對其」等回指語意本身的說明, 任一命中即豁免(比照R13/R20主題綁定慣例)。
+# ---------------------------------------------------------------------------
+R29_BACK_REF_RE = re.compile(r"[並并].{0,6}其|對其(?:發動|造成)")
+R29_TOPIC_KW = ("sameTargets", "同一批", "同批目標", "同組", "精確命中", "回指", "main_hit_tgts", "mainHitTgts")
+
+
+def check_r29(p, txt):
+    violations = []
+    if not p.get("coef"):
+        return violations
+    tn = p.get("n")
+    if not tn or tn < 2:
+        return violations
+    effects = p.get("effects", []) or []
+    if not effects:
+        return violations
+    for clause in split_clauses(txt):
+        if not R29_BACK_REF_RE.search(clause):
+            continue
+        if not (GROUP_TARGET_RE.search(clause) or GROUP_RANGE_RE.search(clause)):
+            continue
+        for e in effects:
+            k = e.get("k")
+            if k in ("stun", "silence", "disarm", "taunt", "chaos"):
+                continue
+            if e.get("who", "ally") != "enemy":
+                continue
+            if e.get("n") is None or e.get("n") < 2:
+                continue
+            if e.get("sameTargets"):
+                continue
+            if _topic_disclosed(p, R29_TOPIC_KW, effect=e):
+                continue
+            violations.append({
+                "name": p["nameZh"], "rule": "R29",
+                "message": f"原文「並/其」回指同一批敵軍群體(effects[k={k}]已有e.n={e.get('n')}對齊t.n={tn}), "
+                           "但缺 e['sameTargets'], coef段與本效果段各自獨立pick_targets, 3人隊僅1/3機率同組",
+                "evidence": clause.strip()[:150],
+            })
+        break  # 只用第一個命中回指句型的子句(避免同一戰法多個子句重複觸發同一效果)
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# R30(批45 B): 純dot誤留頂層coef(雙重傷害) —— 原文只描述單一「施加XX狀態,每回合持續造成
+# 傷害」的持續傷害機制(無獨立的「造成一次...攻擊」即時傷害動詞), 但戰法頂層 coef 與
+# effects 內某個 dot 效果的 coef 數值相同, 代表同一段傷害率百分比被前期 reparse 管線同時
+# 誤填進「頂層coef(一次性攻擊)」與「dot.coef(持續傷害)」兩處, 造成傷害被算兩次(一次即時+
+# 一次持續, 高估約2倍)。
+#
+# 低誤報設計(寧缺勿濫, 同R25/R28/R29既有方法論):
+# - 只在「戰法內恰有一個 dot 效果」且「該 dot.coef 與頂層 t.coef 數值相同(誤差<1e-6)」時才
+#   判定——多個dot效果或數值不同(即使系出同源但已分別調整, 如天降火雨coef=1.18/dot.coef=
+#   0.66明顯不同)的情形一律不判定(保守, 避免誤傷真正兩段式機制的巧合同值案例)。
+# - 排除「合法雙動詞結構」(放火/毒氣precedent): 原文若同時含「造成...攻擊」(一次性攻擊
+#   宣告)與「每回合持續造成...傷害」(持續傷害宣告)兩個獨立動詞子句, 視為legitimate雙段,
+#   不判定(R30_IMMEDIATE_ATTACK_RE)。
+# - 揭露豁免: 提及「雙重計算」「雙算」「dot」「持續傷害」等主題關鍵字的揭露文字才算數
+#   (比照R13/R20主題綁定慣例, 純粹複誦原文百分比不算揭露)。
+# ---------------------------------------------------------------------------
+R30_IMMEDIATE_ATTACK_RE = re.compile(r"造成(?:一次)?(?:兵刃|謀略)?攻擊")
+R30_DOT_DESC_RE = re.compile(r"每回合持續造成")
+R30_TOPIC_KW = ("雙重計算", "雙算", "coef歸零", "coef:0", "coef=0", "dot", "持續傷害", "誤填", "重複計算")
+
+
+def check_r30(p, txt):
+    violations = []
+    tcoef = p.get("coef")
+    if not tcoef:
+        return violations
+    dots = [e for e in (p.get("effects") or []) if e.get("k") == "dot" and e.get("coef") is not None]
+    if len(dots) != 1:
+        return violations
+    dot = dots[0]
+    if abs(dot["coef"] - tcoef) > 1e-6:
+        return violations
+    if not R30_DOT_DESC_RE.search(txt):
+        return violations  # 原文須明確有「每回合持續造成」措辭才判定為dot機制本身
+    if R30_IMMEDIATE_ATTACK_RE.search(txt):
+        return violations  # 合法雙動詞結構(放火/毒氣precedent): 原文另有獨立的「造成...攻擊」一次性宣告
+    if _topic_disclosed(p, R30_TOPIC_KW):
+        return violations
+    violations.append({
+        "name": p["nameZh"], "rule": "R30",
+        "message": f"原文僅單一「每回合持續造成傷害」描述(無獨立一次性攻擊動詞), 但頂層coef={tcoef}"
+                   f"與dot.coef={dot['coef']}數值相同, 疑似同一傷害率被誤填進兩處造成雙重計算(高估約2倍)",
+        "evidence": txt.strip()[:150],
+    })
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# R31(批45 C): 「撤回/移除某欄位」揭露與資料矛盾 —— _note/_todo 聲稱「已撤回」/「已移除」/
+# 「恢復不含X的版本」某個具體欄位(如 targetSel), 但該欄位實際上仍寫在效果/戰法資料裡, 資料
+# 從未真正被刪除, 只有揭露文字單方面聲稱撤回動作已完成(見定謀貴決根因: 批21_note聲稱撤回
+# targetSel:"mostDamaged", 但effects[0]的targetSel欄位從未真正被移除, 存活4批(21→44)未被
+# 抓到)。
+#
+# 與既有 R14(數值矛盾)/R20(stale能力聲明)的區別: R14抓「聲稱coef=X但實際≠X」(數值不一致),
+# R20抓「聲稱引擎不支援X但引擎已支援X」(能力聲明過期), 兩者都不是本規則要抓的「聲稱刪除了
+# 某欄位但欄位其實還在」——這需要專門解析「撤回類」動詞+具體欄位名稱, 兩者詞表皆不涵蓋
+# (R14的STALE_ASSERT_RE只認coef/dur/rate精確斷言句型, R20的NEGATION_KW是「不支援能力」語氣,
+# 都不是「撤回動作」語氣), 是本次任務發現的第三種stale揭露形狀, 故獨立成新規則而非塞進既有
+# 兩條規則的詞表。
+#
+# 低誤報設計: 只在 _note/_todo 文字明確含 R31_WITHDRAWAL_KW(撤回/移除/恢復不含.../已撤回)
+# 且緊鄰(<=30字內)提到某個 KNOWN_EFFECT_FIELDS 已知欄位名稱時才觸發, 且該欄位名稱必須真的
+# 是該效果/戰法目前實際持有的欄位鍵(field present)才算矛盾(欄位名稱只是被提及但未真的存在
+# 於資料裡, 不算違規——那正是「揭露屬實, 已撤回」的正常情形)。
+# ---------------------------------------------------------------------------
+R31_WITHDRAWAL_KW = ("撤回", "已撤回", "移除此欄位", "恢復不含", "撤銷", "已移除該欄位")
+R31_WITHDRAWAL_LOOKAHEAD = 30
+# 「不再是撤回後的.../已非撤回狀態」是雙重否定(描述"現在不處於撤回狀態", 即欄位已正確補回),
+# 與「已撤回(=欄位現在不該存在)」語意相反, 若不排除會對「先撤回過、後來又正確補上該欄位」
+# 的正當敘述(如定謀貴決改用maxTroop後的_note)誤判。緊鄰(<=4字)撤回關鍵字前方出現這些詞時,
+# 視為雙重否定, 跳過本次match。
+R31_DOUBLE_NEGATION_KW = ("不再是", "不再", "非")
+R31_DOUBLE_NEGATION_LOOKBACK = 4
+
+
+def _r31_scan_dict_fields(p, d, scope):
+    """在單一 dict(戰法頂層或某個效果)裡, 檢查其揭露文字是否聲稱撤回了某個「該dict目前
+    實際仍持有」的已知欄位鍵, 回傳violation list。"""
+    violations = []
+    texts = []
+    for k in TEXT_DISC_KEYS:
+        v = d.get(k)
+        if isinstance(v, str) and v.strip():
+            texts.append(v)
+    reported_fields = set()  # 同一dict同一欄位只報一次(避免"撤回"/"已撤回"等多個關鍵字重複命中洗違規數)
+    for text in texts:
+        for kw in R31_WITHDRAWAL_KW:
+            idx = text.find(kw)
+            if idx == -1:
+                continue
+            lookback = text[max(0, idx - R31_DOUBLE_NEGATION_LOOKBACK):idx]
+            if any(neg in lookback for neg in R31_DOUBLE_NEGATION_KW):
+                continue  # 雙重否定("不再是撤回..."/"非撤回..."), 描述的是"現在已不處於撤回狀態", 非stale斷言
+            window = text[idx:idx + len(kw) + R31_WITHDRAWAL_LOOKAHEAD]
+            for field in KNOWN_EFFECT_FIELDS:
+                if field in ("k", "who", "n", "nMax", "dur", "rate"):
+                    continue  # 太通用的欄位名稱容易在窗口內巧合出現, 不具辨識力, 排除
+                if field in reported_fields:
+                    continue
+                if field in window and field in d:
+                    reported_fields.add(field)
+                    violations.append({
+                        "name": p["nameZh"], "rule": "R31",
+                        "message": f"{scope} 揭露文字聲稱「{kw}」了欄位 {field!r}, 但該欄位實際上仍存在"
+                                   f"於資料中(值={d.get(field)!r}), 撤回動作可能只改了揭露文字未真正"
+                                   "刪除資料欄位本身(stale揭露, 見engine_limitations.md第45節C項)",
+                        "evidence": window.strip(),
+                    })
+    return violations
+
+
+def check_r31(p, txt):
+    violations = []
+    violations.extend(_r31_scan_dict_fields(p, p, "頂層"))
+    for i, e in enumerate(p.get("effects", []) or []):
+        violations.extend(_r31_scan_dict_fields(p, e, f"effects[{i}](k={e.get('k')})"))
+    return violations
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
@@ -2424,7 +2661,8 @@ RULES = [
     ("R16", check_r16), ("R17", check_r17), ("R18", check_r18), ("R19", check_r19),
     ("R20", check_r20), ("R21", check_r21), ("R22", check_r22),
     ("R23", check_r23), ("R24", check_r24), ("R25", check_r25), ("R26", check_r26),
-    ("R27", check_r27), ("R28", check_r28),
+    ("R27", check_r27), ("R28", check_r28), ("R29", check_r29), ("R30", check_r30),
+    ("R31", check_r31),
 ]
 
 
@@ -2617,6 +2855,32 @@ SELFTEST_CASES = {
              {"k": "amp", "who": "ally", "val": -0.24, "dur": 3},
          ]),
          "使我軍群體（2人）造成的兵刃傷害降低12%，受到的兵刃傷害降低12%", True),
+        ("鴆毒式回歸(批45 D修復前應漏抓, 修復後應抓到): 頂層_note同時討論兩個無關子議題,"
+         "「武力」(kind_kw)與「目標」(keywords, 巧合出現在另一段settle→dot重構bug描述裡)"
+         "湊巧同文字內各出現一次但語意不相關, 不應被視為\"明確指涉\"本stat效果的目標數主題",
+         _base_tactic(coef=0, type="active", effects=[
+             {"k": "stat", "who": "enemy", "stat": "force", "mult": 0.7, "dur": 1},
+             {"k": "dot", "who": "enemy", "coef": 2.26, "dur": 1,
+              "_note": "『對施放目標單體, 下回合造成傷害』——改用dot取代舊版settle, 舊版目標選取邏輯錯誤打統率最高敵將而非中毒目標本身"},
+             {"k": "stat", "who": "enemy", "stat": "command", "add": -60, "dur": 99},
+         ], _note="agy查證: (1)武力降低應為30%; (2)『毒發』改用dot取代舊版settle(結算目標邏輯錯誤打統率最高敵將而非中毒目標本身)"),
+         "對敵軍單體施加鴆毒，使其武力降低30%，持續1回合；1回合後毒發，對目標造成謀略傷害（傷害率226%），並使其統率降低60點，可無限疊加", True),
+        ("鴆毒式回歸(修復後三效果皆補e.n=1不應誤報)",
+         _base_tactic(coef=0, type="active", effects=[
+             {"k": "stat", "who": "enemy", "stat": "force", "mult": 0.7, "dur": 1, "n": 1},
+             {"k": "dot", "who": "enemy", "coef": 2.26, "dur": 1, "n": 1,
+              "_note": "『對施放目標單體, 下回合造成傷害』——改用dot取代舊版settle, 舊版目標選取邏輯錯誤打統率最高敵將而非中毒目標本身"},
+             {"k": "stat", "who": "enemy", "stat": "command", "add": -60, "dur": 99, "n": 1},
+         ], _note="agy查證: (1)武力降低應為30%; (2)『毒發』改用dot取代舊版settle(結算目標邏輯錯誤打統率最高敵將而非中毒目標本身)"),
+         "對敵軍單體施加鴆毒，使其武力降低30%，持續1回合；1回合後毒發，對目標造成謀略傷害（傷害率226%），並使其統率降低60點，可無限疊加", False),
+        ("圍師必闕式假陽性防線: 「群體(N人)」是觸發條件子句(敵軍需N人處於某狀態才觸發),"
+         "非本效果(who=ally)的目標範圍描述, 有主題相關揭露澄清後不應誤判為e.n缺口",
+         _base_tactic(coef=1.2, type="command", n=3, effects=[
+             {"k": "mitig", "who": "ally", "val": 0.39, "dur": 2,
+              "_note": "「群體(2人)」是觸發本效果的條件子句(敵軍需有2人處於特定狀態才觸發此mitig),"
+                       "並非本效果(who=ally, 目標是我方)的目標範圍描述, e.n在此不適用"},
+         ]),
+         "當敵軍群體（2人）處於潰逃或叛逃狀態時壓制敵軍，使敵軍造成的謀略傷害降低19.5%→39%", False),
     ],
     "R14": [
         ("_note聲稱的coef與實際不符應抓到",
@@ -2801,6 +3065,78 @@ SELFTEST_CASES = {
          _base_tactic(type="command", coef=0.64, rate=0.45,
                       extraHits=[{"coef": 1.1, "kind": "phys", "who": "sameTarget", "rate": 0.6}]),
          "部隊普通攻擊時，使目標進入潰逃狀態（傷害率32%→64%）；若目標已潰逃則造成兵刃攻擊（傷害率55%→110%）", False),
+    ],
+    "R29": [
+        ("聲東擊西式回歸(修復前缺sameTargets應抓到): coef群體傷害+並降低其速度",
+         _base_tactic(type="active", coef=1.75, rate=0.4, n=2,
+                      effects=[{"k": "stat", "who": "enemy", "stat": "speed", "add": -30, "dur": 2, "n": 2}]),
+         "對敵軍群體（2人）造成謀略攻擊（傷害率87.5%→175%）并降低其15→30點速度，持續2回合", True),
+        ("聲東擊西式回歸(修復後補sameTargets不應誤報)",
+         _base_tactic(type="active", coef=1.75, rate=0.4, n=2,
+                      effects=[{"k": "stat", "who": "enemy", "stat": "speed", "add": -30, "dur": 2, "n": 2,
+                                "sameTargets": True}]),
+         "對敵軍群體（2人）造成謀略攻擊（傷害率87.5%→175%）并降低其15→30點速度，持續2回合", False),
+        ("單體(n=1)不應誤報(regime不適用群體目標沿用)",
+         _base_tactic(type="active", coef=1.0, rate=0.4, n=1,
+                      effects=[{"k": "stat", "who": "enemy", "stat": "speed", "add": -30, "dur": 2}]),
+         "對敵軍單體造成謀略攻擊（傷害率100%）并降低其速度，持續2回合", False),
+        ("who=ally不應誤報(coef恆命中敵方, 己方群體buff與此規則無關)",
+         _base_tactic(type="active", coef=1.0, rate=0.4, n=2,
+                      effects=[{"k": "amp", "who": "ally", "val": 0.1, "dur": 2, "n": 2}]),
+         "對敵軍群體（2人）造成謀略攻擊（傷害率100%）并使我軍全體提高傷害，持續2回合", False),
+        ("stun(CTRL_K)不應誤報(既有t.n/t.nMax fallback慣例, 非本規則管轄)",
+         _base_tactic(type="active", coef=1.0, rate=0.4, n=2,
+                      effects=[{"k": "stun", "who": "enemy", "dur": 1, "n": 2}]),
+         "對敵軍群體（2人）造成謀略攻擊（傷害率100%）并使其陷入震懾，持續1回合", False),
+        ("有主題揭露(提及sameTargets)不應誤報",
+         _base_tactic(type="active", coef=1.75, rate=0.4, n=2,
+                      effects=[{"k": "stat", "who": "enemy", "stat": "speed", "add": -30, "dur": 2, "n": 2,
+                                "_todo": "sameTargets評估中, 暫維持獨立選標近似"}]),
+         "對敵軍群體（2人）造成謀略攻擊（傷害率87.5%→175%）并降低其15→30點速度，持續2回合", False),
+    ],
+    "R30": [
+        ("決水潰城式回歸(修復前coef與dot.coef相同應抓到): 純dot誤留頂層coef雙重計算",
+         _base_tactic(type="active", coef=1.12, rate=0.45, n=2,
+                      effects=[{"k": "dot", "who": "enemy", "coef": 1.12, "dur": 2, "n": 2}]),
+         "準備1回合，對敵軍群體（2人）施加水攻狀態，每回合持續造成傷害（傷害率56%→112%），持續2回合", True),
+        ("決水潰城式回歸(修復後coef歸零不應誤報)",
+         _base_tactic(type="active", coef=0, rate=0.45, n=2,
+                      effects=[{"k": "dot", "who": "enemy", "coef": 1.12, "dur": 2, "n": 2}]),
+         "準備1回合，對敵軍群體（2人）施加水攻狀態，每回合持續造成傷害（傷害率56%→112%），持續2回合", False),
+        ("放火/毒氣式合法雙動詞結構不應誤報(有獨立「造成...攻擊」一次性宣告)",
+         _base_tactic(type="active", coef=1.0, rate=0.5, n=1,
+                      effects=[{"k": "dot", "who": "enemy", "coef": 1.0, "dur": 1}]),
+         "對敵軍單體造成謀略攻擊（傷害率100%），並使其陷入中毒狀態，每回合持續造成傷害（傷害率100%），持續1回合", False),
+        ("coef與dot.coef不同不應誤報(非雙重計算, 兩段各自獨立數值)",
+         _base_tactic(type="active", coef=1.18, rate=0.5, n=2,
+                      effects=[{"k": "dot", "who": "enemy", "coef": 0.66, "dur": 1, "n": 2}]),
+         "準備1回合，對敵軍群體（2人）造成一次兵刃攻擊（傷害率59%→118%）并附加灼燒狀態，每回合持續造成傷害（傷害率33%→66%），持續1回合", False),
+        ("有主題揭露(提及雙重計算)不應誤報",
+         _base_tactic(type="active", coef=1.12, rate=0.45, n=2,
+                      effects=[{"k": "dot", "who": "enemy", "coef": 1.12, "dur": 2, "n": 2,
+                                "_todo": "coef與dot疑似雙重計算, 待核實"}]),
+         "準備1回合，對敵軍群體（2人）施加水攻狀態，每回合持續造成傷害（傷害率56%→112%），持續2回合", False),
+    ],
+    "R31": [
+        ("定謀貴決式回歸(修復前撤回聲明與資料矛盾應抓到): _note聲稱撤回targetSel但欄位仍在",
+         _base_tactic(coef=0, effects=[{"k": "amp", "who": "enemy", "val": 0.2, "dur": 2,
+                                        "targetSel": "mostDamaged",
+                                        "_note": "批21覆核後撤回: 曾嘗試補targetSel:\"mostDamaged\"...已撤回此欄位, 恢復不含targetSel的版本"}]),
+         "使敵軍兵力最高的武將嘲諷我軍全體，並使其受到的傷害提高10%→20%", True),
+        ("定謀貴決式回歸(修復後真正刪除欄位不應誤報)",
+         _base_tactic(coef=0, effects=[{"k": "amp", "who": "enemy", "val": 0.2, "dur": 2,
+                                        "_note": "批21覆核後撤回: 曾嘗試補targetSel:\"mostDamaged\"...已撤回此欄位, 恢復不含targetSel的版本"}]),
+         "使敵軍兵力最高的武將嘲諷我軍全體，並使其受到的傷害提高10%→20%", False),
+        ("已改用maxTroop不應誤報(欄位仍在但不是被聲稱撤回的那個, 且_note已更新為精確落地敘述)",
+         _base_tactic(coef=0, effects=[{"k": "amp", "who": "enemy", "val": 0.2, "dur": 2,
+                                        "targetSel": "maxTroop",
+                                        "_note": "已補targetSel:\"maxTroop\"精確落地, 不再是撤回後的無targetSel近似"}]),
+         "使敵軍兵力最高的武將嘲諷我軍全體，並使其受到的傷害提高10%→20%", False),
+        ("無撤回關鍵字不應誤報(純粹提及欄位名稱的正常揭露)",
+         _base_tactic(coef=0, effects=[{"k": "amp", "who": "enemy", "val": 0.2, "dur": 2,
+                                        "targetSel": "maxTroop",
+                                        "_note": "targetSel:\"maxTroop\"精確選中兵力最高目標"}]),
+         "使敵軍兵力最高的武將嘲諷我軍全體，並使其受到的傷害提高10%→20%", False),
     ],
 }
 

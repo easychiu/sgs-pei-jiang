@@ -762,8 +762,11 @@
   const TARGETSEL_KEY = {
     minTroop: u => u.troop, maxForce: u => u.eff("force"), minIntel: u => u.eff("intel"),
     maxIntel: u => u.eff("intel"), minCommand: u => u.eff("command"), mostDamaged: u => u.troop,
+    maxTroop: u => u.troop,  // 批45 C: 兵力最高準則(對稱minTroop), 見engine_limitations.md第17節——
+    // 過去只有minTroop(=mostDamaged, 兵力最低=最受損)一種方向, 「兵力最高」的敵軍/我軍選標
+    // 缺口(定謀貴決「使敵軍兵力最高的武將...」)長年只能誠實揭露維持無targetSel近似, 現補上。
   };
-  const TARGETSEL_MIN = new Set(["minTroop", "minIntel", "minCommand", "mostDamaged"]);
+  const TARGETSEL_MIN = new Set(["minTroop", "minIntel", "minCommand", "mostDamaged"]);  // maxTroop故意不加入此集合, 使pickByCriterion對它用max()而非min()
   function pickByCriterion(units, sel) {
     const keyFn = TARGETSEL_KEY[sel];
     if (!keyFn) return null;                        // 未知準則: 呼叫端應退回一般選標(保守, 不是無聲吃掉)
@@ -1198,6 +1201,16 @@
       // 三人隊固定編制(index 0=主將/1/2=副將), 若隊伍不足3人或該位置陣亡則 dests 為空陣列。
       else if (who === "sub1") dests = (allies[1] && allies[1].alive) ? [allies[1]] : [];
       else if (who === "sub2") dests = (allies[2] && allies[2].alive) ? [allies[2]] : [];
+      // 批45 A: e.sameTargets —— 「對敵軍群體(N人)造成傷害並降低其XX」這類措辭, 過去主 coef 段
+      // (pickTargets)與效果段(who:"enemy"+e.n, 走下方 CTRL_K/hasEN 分支自己的 pickTargets)各自
+      // 獨立擲骰選標, 3人隊只有1/3機率同組(見 engine_limitations.md 對應節, 全庫掃描 R29)。
+      // e.sameTargets:true 時直接沿用主 coef 段記錄的 opt.mainHitTgts(見 fight() 主迴圈
+      // _mainHitTgts, 只在群體(vs.length>1)結算時才有值), 過濾存活後作為 dests, 不再獨立
+      // pickTargets——確保「造成傷害」與「降低其XX」精確命中同一批目標, 對稱單體版本既有的
+      // _mainHitTgt(t.lockTarget/t.targetSel等既有沿用慣例)。未傳 opt.mainHitTgts 的呼叫路徑
+      // (prep/reactive/choices分支未帶等)dests 落空回傳[], 向後相容(只有明確要求且母戰法主
+      // coef段確實命中>=2人群體時才會生效)。
+      else if (e.sameTargets) dests = (opt.mainHitTgts || []).filter(x => x.alive);
       else if (who === "enemy") {
         if (CTRL_K) {                                 // 群體控制(n>1 或有 nMax)隨機挑不重複目標; 單體優先鎖定 tgt
           // 批26: CTRL類效果優先讀 e.n/e.nMax(效果自身欄位), 無則fallback到t.n/t.nMax(戰法
@@ -1211,6 +1224,12 @@
         } else if (hasEN) {                            // 批23 A1: 非CTRL效果讀 e.n/e.nMax
           const cnt = e.nMax ? e.n + Math.floor(rnd() * (e.nMax - e.n + 1)) : e.n;
           dests = cnt <= 1 ? (tgt && tgt.alive ? [tgt] : pickTargets(enemies, 1)) : pickTargets(enemies, cnt);
+          // 批45 A: 若本效果本身是「首次」命中群體(cnt>1)的來源(無 coef 段可沿用時, 如誘敵深入
+          // coef=0, dot+amp 兩個效果皆為 effects 陣列內的同層 sibling), 就地更新 opt.mainHitTgts,
+          // 讓本戰法內排在後面、帶 e.sameTargets 的效果可以沿用「前一個效果實際命中的那一批
+          // 目標」, 不必一定要來自頂層 coef 段。只在尚未有 opt.mainHitTgts(未被 coef 段設定過)
+          // 時才更新, 避免覆蓋掉更早、更明確的 coef 段記錄。
+          if (cnt > 1 && opt.mainHitTgts == null) opt.mainHitTgts = dests;
         } else dests = enemies.filter(x => x.alive);
       }
       else if (hasEN) {                                 // 批23 A1: who="ally"(含預設) 非CTRL效果讀 e.n/e.nMax(如「我軍2人」「自己及友軍單體」)
@@ -1883,6 +1902,7 @@
             const t = t0.choices ? Object.assign({}, t0, pickChoice(t0.choices)) : t0;
             if (TRACE) lg(`【${u.side}】${u.nm} 發動戰法【${t.nameZh}】` + (t.when ? `（第${r}回合條件）` : ""));
             let _mainHitTgt = null;   // 批13: 記錄主 coef 段命中的(單體)目標, 供 extraHits 同目標段(如屠几上肉 兵刃+謀略打同一人)沿用
+            let _mainHitTgts = null;  // 批45 A: 記錄主 coef 段命中的(群體)目標陣列, 供效果段 e.sameTargets 沿用同一批目標(對稱 _mainHitTgt 的單體版本)——群體目標沿用原語, 見 applyEffects 的 opt.mainHitTgts/e.sameTargets
             if (t.coef) {
               const cnt = t.nMax ? (t.n + Math.floor(rnd() * (t.nMax - t.n + 1))) : t.n;
               // 批12 ModeB: hitsRepeat —— 「隨機單體攻擊X次/重複X次,每次獨立選擇目標」= N次獨立單體
@@ -1900,7 +1920,7 @@
               if (t.targetSel) { const v = pickByCriterion(foesOf(u), t.targetSel); if (v) { hit(u, v, t.coef, t.kind, false, onHit, dealtDamage, isActiveDmg); _mainHitTgt = v; } }
               else if (t.lockTarget && cnt <= 1 && !t.hitsRepeat) { const v = resolveLockedTarget(u, t0, foesOf(u)); if (v) { hit(u, v, t.coef, t.kind, false, onHit, dealtDamage, isActiveDmg); _mainHitTgt = v; } }  // lockTarget 鍵用 t0(原始戰法物件), 避免 choices 每次合成新物件破壞跨回合鎖定
               else if (t.hitsRepeat) { for (let i = 0; i < cnt; i++) { const v = pickTarget(foesOf(u), u); if (v) { hit(u, v, t.coef, t.kind, false, onHit, dealtDamage, isActiveDmg); _mainHitTgt = v; } } }
-              else { const vs = pickTargets(foesOf(u), cnt); for (const v of vs) hit(u, v, t.coef, t.kind, false, onHit, dealtDamage, isActiveDmg); if (vs.length === 1) _mainHitTgt = vs[0]; }
+              else { const vs = pickTargets(foesOf(u), cnt); for (const v of vs) hit(u, v, t.coef, t.kind, false, onHit, dealtDamage, isActiveDmg); if (vs.length === 1) _mainHitTgt = vs[0]; else _mainHitTgts = vs; }  // 批45 A: 群體(vs.length>1)額外記錄完整目標陣列
             }
             if (t.extraHits) fireExtraHits(u, t, _mainHitTgt, alliesOf, foesOf, onHit, dealtDamage);  // 批13: 多段傷害(兵刃+謀略雙段/主傷+補刀等)
             // 批12 ModeF: 混亂下單體主動戰法目標改敵我不分(pickTargetChaos); 群體/AoE(who=enemy 全體/
@@ -1909,7 +1929,7 @@
             // 批12 ModeG: lockTarget 的 applyEffects 目標(單體效果destination)同樣改用鎖定目標
             // (與混亂互斥: lockTarget 戰法目前資料上未與 chaos 共存, 若未來衝突以 lockTarget 優先,
             // 因 lockTarget 語意更明確針對特定戰法設計)。
-            if (t.type === "active") applyEffects(u, t.lockTarget ? resolveLockedTarget(u, t0, foesOf(u)) : pickTargetChaos(u, alliesOf(u), foesOf(u)), t, alliesOf(u), foesOf(u));
+            if (t.type === "active") applyEffects(u, t.lockTarget ? resolveLockedTarget(u, t0, foesOf(u)) : pickTargetChaos(u, alliesOf(u), foesOf(u)), t, alliesOf(u), foesOf(u), { mainHitTgts: _mainHitTgts });  // 批45 A: 傳入本次主coef段的群體目標陣列, 供 e.sameTargets 沿用
             else if (t0.choices) {
               // 批27 B: command/passive 型戰法帶 choices —— 過去 pickChoice() 抽出的分支 t 只有
               // coef/extraHits 段會在上面被讀取套用, t.effects(分支自帶的效果, 如桃園結義三選一
@@ -1923,7 +1943,7 @@
               // 一次性治療」, 與applyPassives的healOnly常駐掃描是互斥的兩個通道: choices戰法的
               // t0.effects本身為空(內容全在choices[].effects裡), healOnly通道對空effects陣列
               // 天然no-op, 不會與此處重複治療。
-              applyEffects(u, _mainHitTgt, t, alliesOf(u), foesOf(u), {});
+              applyEffects(u, _mainHitTgt, t, alliesOf(u), foesOf(u), { mainHitTgts: _mainHitTgts });
             }
           }
         }
@@ -2012,7 +2032,7 @@
     defaultBingshu, activeBonds, seasonModsFor, mainByCat: () => MAIN_BY_CAT, subByCat: () => SUB_BY_CAT, bingshu: () => BINGSHU,
     bonds: () => BONDS, equips: () => EQUIPS,
     Unit, hit, damage, pickTarget, pickTargets, pickTargetChaos, resolveLockedTarget, applyEffects, roundOk, fireExtraHits,
-    hpOk, targetHas, dispelUnit, pickChoice };  // 批16 新原語供測試腳本直接驗證內部機制(同 sgz.py 直接測 Unit/hit)
+    hpOk, targetHas, dispelUnit, pickChoice, pickByCriterion };  // 批16 新原語供測試腳本直接驗證內部機制(同 sgz.py 直接測 Unit/hit); 批45 C: pickByCriterion供測試腳本直接驗證targetSel(如maxTroop)選標方向
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   root.SGZ = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);
