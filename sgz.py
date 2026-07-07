@@ -662,7 +662,7 @@ class Unit:
                 v *= m
         return v
 
-    def addbonus(self, kind, dmg_type=None, is_normal=None, is_active=None):
+    def addbonus(self, kind, dmg_type=None, is_normal=None, is_active=None, is_charge=None):
         """批24 D2: dmg_type(可選) —— 只加總「該條目未宣告 dmgType, 或宣告的 dmgType 與呼叫端
         指定的 dmg_type 相符」的項目, 供 amp/mitig 依「兵刃/謀略」傷害類型過濾(見 damage() 呼叫端)。
         省略時完全維持原行為(不分類型全部加總), 向後相容全庫既有未帶 dmgType 的 amp/mitig 資料。
@@ -673,11 +673,16 @@ class Unit:
         normalOnly 的加成一律不計入(避免對非普攻傷害路徑意外套用「僅普攻」限定的加成,
         比不套用更安全; 未宣告normalOnly的既有全庫資料完全不受影響, 向後相容)。
         批31 A: is_active(可選) —— 與 is_normal 對稱, 只加總「該條目未宣告 activeOnly, 或宣告
-        activeOnly 且本次 is_active 為 True」的項目, 供 amp 表達「僅主動(或突擊)戰法傷害提升」
-        (如士爭先赴「成功發動自帶主動戰法前造成的這段兵刃傷害提升10%→20%」, 對比 normalOnly
-        「僅普攻」的相反方向限定)。同樣安全側處理: is_active=None(呼叫端未特別傳入, 如dot/
-        counter/settle等)時, 宣告 activeOnly 的加成不計入。normalOnly 與 activeOnly 互斥
-        (前者限普攻, 後者限主動/突擊戰法傷害, 資料上不會同時宣告兩者)。"""
+        activeOnly 且本次 is_active 為 True」的項目, 供 amp 表達「僅主動戰法傷害提升」(如
+        士爭先赴「提高自帶主動戰法傷害」)。同樣安全側處理: is_active=None(呼叫端未特別傳入,
+        如dot/counter/settle等)時, 宣告 activeOnly 的加成不計入。
+        批40 B: is_charge(可選) —— 對稱 is_active, 只加總「該條目未宣告 chargeOnly, 或宣告
+        chargeOnly 且本次 is_charge 為 True」的項目, 供 amp 表達「僅突擊戰法傷害提升/降低」
+        (一鼓作氣/藏刀「突擊戰法造成傷害提升/降低」)。批31 A 原本把「突擊」傷害也標記
+        is_active=True(見 fight() 主迴圈突擊擲骰呼叫點), 誤將「主動戰法」與「突擊戰法」兩個
+        game機制上互斥的分類混為一談, 本批修正呼叫點改傳 is_charge, is_active 維持只在
+        t["type"]=="active" 時為 True。normalOnly/activeOnly/chargeOnly 三者互斥(資料上
+        不會同時宣告)。"""
         s = 0.0
         for a in self.adds:
             k, v = a[0], a[1]
@@ -690,6 +695,8 @@ class Unit:
             if flags and flags.get("normalOnly") and is_normal is not True:
                 continue
             if flags and flags.get("activeOnly") and is_active is not True:
+                continue
+            if flags and flags.get("chargeOnly") and is_charge is not True:
                 continue
             s += v
         return s
@@ -715,8 +722,8 @@ class Unit:
             s += a[1]
         return s
 
-    def amp(self, dmg_type=None, is_normal=None, is_active=None):      # 總增傷 = 一般+疊加層+衰減; 批24 D2: dmg_type過濾amp部分(stack/decay無此概念,全額計入); 批28 B3: is_normal過濾normalOnly標記的amp(僅普攻生效); 批31 A: is_active過濾activeOnly標記的amp(僅主動/突擊戰法傷害生效)
-        a = self.addbonus("amp", dmg_type, is_normal, is_active)
+    def amp(self, dmg_type=None, is_normal=None, is_active=None, is_charge=None):      # 總增傷 = 一般+疊加層+衰減; 批24 D2: dmg_type過濾amp部分(stack/decay無此概念,全額計入); 批28 B3: is_normal過濾normalOnly標記的amp(僅普攻生效); 批31 A: is_active過濾activeOnly標記的amp(僅主動戰法傷害生效); 批40 B: is_charge過濾chargeOnly標記的amp(僅突擊戰法傷害生效)
+        a = self.addbonus("amp", dmg_type, is_normal, is_active, is_charge)
         if self.stack:
             a += self.stack["per"] * self.stack["n"]
         if self.decay:
@@ -821,7 +828,7 @@ DMG_B = 1.44
 DMG_FLOOR = 0.9
 
 
-def damage(src, dst, coef, kind, src_troop=None, is_normal=None, is_active=None):
+def damage(src, dst, coef, kind, src_troop=None, is_normal=None, is_active=None, is_charge=None):
     troop = src.troop if src_troop is None else src_troop  # 結算傷害用施毒當下定格兵力
     atk = src.eff("intel") if kind == "intel" else src.eff("force")
     deff = dst.eff("intel") if kind == "intel" else dst.eff("command")
@@ -842,9 +849,11 @@ def damage(src, dst, coef, kind, src_troop=None, is_normal=None, is_active=None)
     # 且明確限定「普通攻擊傷害」而非全部傷害, 過去mitig無範圍限定, 誤及戰法傷害, 見批28 B3
     # 修正說明); 呼叫端未傳(dot/counter/settle等既有呼叫慣例, 見 damage() 各呼叫點)時預設
     # None, 安全側不套用 normalOnly 加成/減傷(見 addbonus() docstring)。
-    # 批31 A: is_active(可選, 對稱於 is_normal) —— 傳入本次傷害是否為主動/突擊戰法所致, 供
-    # amp() 過濾 activeOnly 標記的加成(僅主動/突擊戰法傷害生效, 見士爭先赴)。
-    total_amp = src.amp(kind, is_normal, is_active)
+    # 批31 A: is_active(可選, 對稱於 is_normal) —— 傳入本次傷害是否為主動戰法所致, 供
+    # amp() 過濾 activeOnly 標記的加成(僅主動戰法傷害生效, 見士爭先赴)。批40 B: is_charge
+    # (可選, 對稱is_active) —— 傳入本次傷害是否為突擊戰法所致, 供amp()過濾chargeOnly標記的
+    # 加成(僅突擊戰法傷害生效/降低, 見一鼓作氣/藏刀)。
+    total_amp = src.amp(kind, is_normal, is_active, is_charge)
     base *= 0.0 if total_amp <= -1 else 1 + max(-0.9, total_amp)  # 增傷(疊加/衰減/敵方減益)
     mit = dst.addbonus("mitig", kind, is_normal) * (1 - min(1.0, src.addbonus("pierce")))  # 看破: 無視部分減傷
     base *= max(0.1, 1 - mit)
@@ -852,12 +861,12 @@ def damage(src, dst, coef, kind, src_troop=None, is_normal=None, is_active=None)
     return max(0, base)
 
 
-def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_active=None):  # 造成傷害(含規避/護盾/代承轉移/反擊), 累積結算層數; 批31 A: is_active(可選, 尾端新增, 向後相容既有全部呼叫點)—— 傳入本次傷害是否為主動/突擊戰法所致
+def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_active=None, is_charge=None):  # 造成傷害(含規避/護盾/代承轉移/反擊), 累積結算層數; 批31 A: is_active(可選, 尾端新增, 向後相容既有全部呼叫點)—— 傳入本次傷害是否為主動戰法所致; 批40 B: is_charge(可選, 對稱is_active)—— 傳入本次傷害是否為突擊戰法所致
     if not src.surehit_dur and dst.dodge_dur and random.random() < dst.dodge_prob:  # 規避: 完全迴避一次傷害(必中無視)
         if on_event:
             on_event(dst, src, is_normal, 0, kind)  # 批39 C: 補傳kind(本次傷害類型), 供on_hit()對稱dealt_damage的when.dmgType過濾
         return
-    dmg = damage(src, dst, coef, kind, is_normal=is_normal, is_active=is_active)  # 批28 B3/批31 A: 傳入is_normal/is_active供amp()過濾normalOnly/activeOnly標記的加成
+    dmg = damage(src, dst, coef, kind, is_normal=is_normal, is_active=is_active, is_charge=is_charge)  # 批28 B3/批31 A/批40 B: 傳入is_normal/is_active/is_charge供amp()過濾normalOnly/activeOnly/chargeOnly標記的加成
     # 批22: block(次數型格擋, 抵禦/警戒同族) —— 判定順序 dodge→block→shield→傷害(見紅線指示)。
     # 每次受擊消耗1次(不論本次傷害量多寡), val=1.0(如「抵禦」)完全格擋歸零本次傷害,
     # val=0.x(如「警戒」-75.35%)按比例打折。用光即從陣列移除。
@@ -1299,7 +1308,13 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             if hurt:                                  # ponytail: 治療量粗估, 上限不超過初始兵力
                 # 批33: e["ofDamage"] —— 傷害比例治療(非屬性公式), 見草船借箭「回復傷害量
                 # 14%→28%」類措辭。dmg(本次觸發傷害量)由反應式呼叫端傳入, 與屬性公式互斥擇一。
-                hcoef = e.get("coef", 0.8) * (scale_of(caster, e["scale"]) if e.get("scale") else 1.0)
+                # 批40 A: e["ofDamage"] 本身也支援 e["scale"]/e["scaleDiv"] —— user兩場對照實測
+                # (草船借箭急救比例隨施放者統率變動, 見 calibration_anchors.json
+                # caochuan_command_experiment): 比例 = ofDamage×(1+(統率-100)/scaleDiv), 與 heal
+                # 屬性公式共用 locked_scale_of(準備階段鎖定, 批35 B同慣例——比例prep鎖定, 同場
+                # 多次恆定, 錨點已證實)。缺 scale 時 mult=1(純固定比例, 向後相容)。
+                of_damage_scale_mult = locked_scale_of(caster, e) if (e.get("ofDamage") is not None and e.get("scale")) else 1.0
+                hcoef = e.get("coef", 0.8) * (scale_of(caster, e["scale"]) if (e.get("scale") and e.get("ofDamage") is None) else 1.0)
                 # 批16: healBoost/healGiven —— 目標受到的治療量×(1+healBoost加總), 施放者施放的治療×(1+healGiven加總)
                 boost_mult = max(0.0, 1 + hurt.addbonus("healBoost")) * max(0.0, 1 + caster.addbonus("healGiven"))
                 # 批33: 治療公式換裝 —— want = coef × HEAL_TROOP_C × 施放者兵力 × SCALE(scale屬性)
@@ -1307,10 +1322,10 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 # heal_formula_resolved_20260704)。「施放者兵力」依戰法型態擇一: active(主動
                 # 直療型, 施放當下即時觸發)用 caster.troop(當下即時兵力); 其餘(指揮/兵種/兵書/
                 # 被動的常駐急救型, 受傷當下反應式觸發)用 caster.heal_base(準備階段鎖定兵力
-                # 快照, 不隨後續兵力增減而變動)。e["ofDamage"] 存在時改用傷害比例治療。
+                # 快照, 不隨後續兵力增減而變動)。e["ofDamage"] 存在時改用傷害比例治療(× scale縮放)。
                 heal_troop_base = caster.troop * HEAL_TROOP_C if t.get("type") == "active" else caster.heal_base
                 if e.get("ofDamage") is not None and dmg is not None:
-                    want = e["ofDamage"] * dmg * boost_mult
+                    want = e["ofDamage"] * of_damage_scale_mult * dmg * boost_mult
                 else:
                     want = hcoef * heal_troop_base * boost_mult
                 # 批18: 傷兵池 —— 治療只能回復傷兵池裡的量(可救援的傷兵), 不是無限回滿。實際回復 =
@@ -1444,20 +1459,23 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         dmg_type = e.get("dmgType")
         normal_only = bool(e.get("normalOnly")) if k in ("amp", "mitig") else False
         active_only = bool(e.get("activeOnly")) if k == "amp" else False  # 批31 A: 對稱於normalOnly, 目前僅amp支援(士爭先赴)
-        ud_flags = {"undispellable": bool(e.get("undispellable")), "dmgType": dmg_type, "normalOnly": normal_only, "activeOnly": active_only} \
-            if (e.get("undispellable") or dmg_type or normal_only or active_only) else None
+        charge_only = bool(e.get("chargeOnly")) if k == "amp" else False  # 批40 B: 對稱activeOnly, 僅amp支援(一鼓作氣/藏刀)
+        ud_flags = {"undispellable": bool(e.get("undispellable")), "dmgType": dmg_type, "normalOnly": normal_only, "activeOnly": active_only, "chargeOnly": charge_only} \
+            if (e.get("undispellable") or dmg_type or normal_only or active_only or charge_only) else None
         # dmgType 存在時, src 附加類型尾碼區分 dedup key(同一戰法內若有兩條不同 dmgType 的
         # amp/mitig, 如暫避其鋒「智力最高者減兵刃傷害」+「武力最高者減謀略傷害」, 兩者若共用
         # 同一個 src 會被 push_add 的「同kind+同src刷新」去重機制互相蓋掉, 見 rateup 既有
         # prepOnly/nativeOnly 尾碼慣例同理)。批28 B3: normalOnly 同理附加尾碼(避免同戰法內
         # normalOnly與非normalOnly的amp共用同一src互相覆蓋); src 為 None 時(兵書/裝備/緣分
         # 無 nameZh) 尾碼無意義, 維持 None(不影響去重, 因 push_add 的 src=None 本就不去重)。
-        # 批31 A: activeOnly 同理附加尾碼。
+        # 批31 A/批40 B: activeOnly/chargeOnly 同理附加尾碼。
         dt_src = (src + ":" + dmg_type) if (src and dmg_type) else src
         if normal_only and src:
             dt_src = (dt_src or src) + ":normalOnly"
         if active_only and src:
             dt_src = (dt_src or src) + ":activeOnly"
+        if charge_only and src:
+            dt_src = (dt_src or src) + ":chargeOnly"
         for u in dests:
             if k == "amp":
                 v = sv_val(e["val"])
@@ -2211,7 +2229,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     up = 0 if t.get("proc") else u.addbonus_for("chargeup", t)
                     if t["type"] == "charge" and random.random() < t["rate"] + up:
                         if t["coef"]:
-                            hit(u, tgt, t["coef"], t["kind"], False, on_hit, dealt_damage, is_active=True)  # 批31 A: 突擊戰法傷害同樣視為e.activeOnly判定範圍內的「主動/突擊戰法傷害」
+                            hit(u, tgt, t["coef"], t["kind"], False, on_hit, dealt_damage, is_charge=True)  # 批40 B修正: 過去誤傳is_active=True(見批31 A原註解), 導致突擊傷害誤被士爭先赴等activeOnly(僅限「主動戰法」)加成命中——「突擊戰法」與「主動戰法」是遊戲機制上互斥的兩個分類, 改傳is_charge=True(觸發chargeOnly, 供一鼓作氣/藏刀等新增), 不再誤觸activeOnly
                         if t.get("extraHits"):
                             fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit, dealt_damage)
                         apply_effects(u, tgt, t, allies_of(u), foes_of(u))
@@ -4024,6 +4042,31 @@ def demo():
     d_normal = damage(ao_src, ao_dst2, 1.0, "phys", is_active=None)
     assert d_active > d_normal * 1.5, f"activeOnly amp 應只在 is_active=True 時生效: d_active={d_active:.1f} d_normal={d_normal:.1f}"
 
+    # 86b-2) 批40 B: e.chargeOnly —— 對稱86b, amp(自身)應只對 is_charge=True 的傷害生效,
+    # 且與 activeOnly 互斥(is_active=True 時不應觸發 chargeOnly 的加成, 反之亦然)——這是本批
+    # 修正批31 A「突擊傷害誤標is_active=True導致誤觸activeOnly」bug的迴歸防線: 一鼓作氣
+    # (chargeOnly+12%)這類效果不應對主動戰法傷害生效, 士爭先赴(activeOnly)這類效果也不應
+    # 再被突擊傷害觸發。damage() 帶 ±4% 隨機帶(random.uniform(0.96,1.04)), 單次取樣比較
+    # 曾實測約18%機率因隨機噪聲誤判失敗(flaky), 改用多次取平均消除隨機性(而非放大容差
+    # 掩蓋邏輯問題)。
+    def _avg_dmg(src, dst_g, is_active=None, is_charge=None, n=200):
+        return sum(damage(src, Unit(POOL[dst_g], "盾"), 1.0, "phys", is_active=is_active, is_charge=is_charge) for _ in range(n)) / n
+
+    co_src = Unit(POOL["呂布"], "騎")
+    co_src.push_add("amp", 0.12, 9, "測試chargeOnly86b2", {"chargeOnly": True})
+    d_charge = _avg_dmg(co_src, "張飛", is_charge=True)
+    d_active2 = _avg_dmg(co_src, "張飛", is_active=True)   # 突擊限定的amp不應套用在主動戰法傷害上
+    d_normal2 = _avg_dmg(co_src, "張飛")                    # 也不應套用在普攻上
+    assert d_charge > d_active2 * 1.05, f"chargeOnly amp 應只在 is_charge=True 時生效, 不應誤觸主動戰法傷害: d_charge={d_charge:.1f} d_active={d_active2:.1f}"
+    assert abs(d_active2 - d_normal2) < d_normal2 * 0.03, f"chargeOnly amp 不應誤觸主動/普攻傷害(兩者應相近, 皆不吃chargeOnly加成): d_active={d_active2:.1f} d_normal={d_normal2:.1f}"
+
+    # 86b-3) 迴歸防線: 突擊(charge)戰法傷害不應再誤觸activeOnly(批31 A遺留bug, 本批40 B修正)
+    ao2_src = Unit(POOL["呂布"], "騎")
+    ao2_src.push_add("amp", 1.0, 9, "測試activeOnly不誤觸charge86b3", {"activeOnly": True})
+    d_charge2 = _avg_dmg(ao2_src, "張飛", is_charge=True)  # 突擊傷害: 不應吃到activeOnly加成
+    d_normal3 = _avg_dmg(ao2_src, "張飛")
+    assert abs(d_charge2 - d_normal3) < d_normal3 * 0.03, f"activeOnly amp 不應被突擊(charge)傷害誤觸(批31 A遺留bug, 批40 B應已修正): d_charge={d_charge2:.1f} d_normal={d_normal3:.1f}"
+
     # 86c) 同回合節流: active_fired 每回合每戰法最多觸發1次(與 on_hit/dealt_damage 共用 hit_flags 慣例)
     af_trigger_count = [0]
     af_u = Unit(POOL["呂布"], "騎")
@@ -4130,6 +4173,35 @@ def demo():
     gained89c = of_target89.troop - before89c
     assert abs(gained89c - 329 * 0.2857) < 0.5, \
         f"e['ofDamage']=0.2857應恢復傷害量329的28.57%(=94), 實得{gained89c:.1f}"
+
+    # 89c-2) 批40 A: e["ofDamage"] 支援 e["scale"]/e["scaleDiv"] —— 草船借箭統率縮放實測
+    # (calibration_anchors.json caochuan_command_experiment): ofDamage=0.2716, scaleDiv=266.3,
+    # 兩點錨點: 統率506.18→68.6%±0.3 / 統率237.65→41.2%±0.2。比例prep鎖定(lockedScaleOf),
+    # dmg×比例即為恢復量, 與屬性公式(coef×heal_base)互斥擇一同批33既有慣例, 這裡驗證的是
+    # scale縮放本身正確套用在ofDamage路徑上(過去只有純固定比例, 無scale時mult=1向後相容)。
+    of_caster89b_hi = Unit(POOL["張飛"], "盾")
+    of_caster89b_hi.command = 506.18
+    of_target89b_hi = Unit(POOL["張飛"], "盾")
+    of_target89b_hi.troop = 5000
+    of_target89b_hi.wounded = 9000
+    of_tac89b = {"nameZh": "測試ofDamage縮放89b", "kind": "phys",
+                 "effects": [{"k": "heal", "who": "ally", "ofDamage": 0.2716, "scale": "command", "scaleDiv": 266.3, "dur": 1}]}
+    before89d = of_target89b_hi.troop
+    apply_effects(of_caster89b_hi, None, of_tac89b, [of_target89b_hi], [], no_heal=False, dmg=643)
+    gained89d = of_target89b_hi.troop - before89d
+    pct89d = gained89d / 643 * 100
+    assert abs(pct89d - 68.6) < 0.3, f"統率506.18應得比例68.6%±0.3, 實得{pct89d:.2f}%(恢復{gained89d:.1f}/643)"
+
+    of_caster89b_lo = Unit(POOL["張飛"], "盾")
+    of_caster89b_lo.command = 237.65
+    of_target89b_lo = Unit(POOL["張飛"], "盾")
+    of_target89b_lo.troop = 5000
+    of_target89b_lo.wounded = 9000
+    before89e = of_target89b_lo.troop
+    apply_effects(of_caster89b_lo, None, of_tac89b, [of_target89b_lo], [], no_heal=False, dmg=595)
+    gained89e = of_target89b_lo.troop - before89e
+    pct89e = gained89e / 595 * 100
+    assert abs(pct89e - 41.2) < 0.2, f"統率237.65應得比例41.2%±0.2, 實得{pct89e:.2f}%(恢復{gained89e:.1f}/595)"
 
     # 89c) active(主動直療型)heal 用 caster.troop(當下即時兵力), 非 heal_base(準備階段快照)——
     # 用不同的 troop/heal_base 值驗證兩者確實分流, 對稱驗證 88/89 已涵蓋的「常駐急救型用

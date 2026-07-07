@@ -396,9 +396,15 @@
     // isNormal 為 true」的項目, 供 amp 表達「僅普攻傷害提升」(見至柔動剛)。未傳(undefined,
     // 如dot/counter/settle等非普攻傷害路徑)時安全側不套用 normalOnly 加成。
     // 批31 A: isActive(可選, 對稱於 isNormal) —— 只加總「該條目未宣告 activeOnly, 或宣告
-    // activeOnly 且本次 isActive 為 true」的項目, 供 amp 表達「僅主動(或突擊)戰法傷害提升」
-    // (如士爭先赴)。未傳(undefined)時安全側不套用 activeOnly 加成。
-    addbonus(kind, dmgType, isNormal, isActive) {
+    // activeOnly 且本次 isActive 為 true」的項目, 供 amp 表達「僅主動戰法傷害提升」(如
+    // 士爭先赴「提高自帶主動戰法傷害」)。未傳(undefined)時安全側不套用 activeOnly 加成。
+    // 批40 B: isCharge(可選, 尾端新增, 向後相容) —— 對稱 isActive, 供 amp 表達「僅突擊戰法
+    // 傷害提升/降低」(一鼓作氣/藏刀「突擊戰法造成傷害提升/降低」)。批31 A 原本把「突擊」
+    // 傷害也標記 isActive=true(見 fight() 主迴圈突擊擲骰呼叫點), 誤將「主動戰法」與「突擊
+    // 戰法」兩個game機制上互斥的分類(士爭先赴明確是「自帶主動戰法」, 不含突擊; 一鼓作氣/
+    // 藏刀明確只講「突擊戰法」, 不含主動)混為一談——本批修正呼叫點改傳 isCharge, isActive
+    // 維持只在真正 t.type==="active" 時為 true(見下方呼叫點修正)。
+    addbonus(kind, dmgType, isNormal, isActive, isCharge) {
       let s = 0;
       for (const a of this.adds) {
         if (a[0] !== kind || this.suppressed(a[3])) continue;
@@ -406,6 +412,7 @@
         if (dmgType && f && f.dmgType && f.dmgType !== dmgType) continue;
         if (f && f.normalOnly && isNormal !== true) continue;
         if (f && f.activeOnly && isActive !== true) continue;
+        if (f && f.chargeOnly && isCharge !== true) continue;
         s += a[1];
       }
       return s;
@@ -485,9 +492,10 @@
     // 目前無 dmgType 概念(全庫暫無「僅對特定傷害類型疊層」的戰法), 維持無條件全額計入, 與呼叫端
     // 的 dmgType 過濾無關(不受影響, 向後相容)。批28 B3: isNormal(可選) —— 過濾 normalOnly
     // 標記的加成(僅普攻傷害生效, 見至柔動剛)。批31 A: isActive(可選) —— 過濾 activeOnly
-    // 標記的加成(僅主動/突擊戰法傷害生效, 見士爭先赴)。
-    amp(dmgType, isNormal, isActive) {
-      let a = this.addbonus("amp", dmgType, isNormal, isActive);
+    // 標記的加成(僅主動戰法傷害生效, 見士爭先赴)。批40 B: isCharge(可選) —— 過濾 chargeOnly
+    // 標記的加成(僅突擊戰法傷害生效, 見一鼓作氣/藏刀)。
+    amp(dmgType, isNormal, isActive, isCharge) {
+      let a = this.addbonus("amp", dmgType, isNormal, isActive, isCharge);
       if (this.stack) a += this.stack.per * this.stack.n;
       if (this.decay) a += this.decay.v0 * this.decay.left / this.decay.total;
       return a;
@@ -529,7 +537,7 @@
   //   錨3 屬性差大負值(保底) → 實測 ≈90  傷害 ⇒ DMG_FLOOR = 90/sqrt(10000) = 0.9
   // 之後有更多實測數據(不同兵力/等級)可再校準, 目前僅50級單一等級係數樣本, 折入常數中。
   const DMG_A = 4.76, DMG_B = 1.44, DMG_FLOOR = 0.9;
-  function damage(src, dst, coef, kind, srcTroop, isNormal, isActive) {
+  function damage(src, dst, coef, kind, srcTroop, isNormal, isActive, isCharge) {
     const troop = srcTroop == null ? src.troop : srcTroop;
     const atk = kind === "intel" ? src.eff("intel") : src.eff("force");
     const def = kind === "intel" ? dst.eff("intel") : dst.eff("command");
@@ -548,22 +556,24 @@
     // 這類定向效果不再誤及不該覆蓋的另一種傷害類型(見 e.dmgType 呼叫端, applyEffects k==="amp"/"mitig"分支)。
     // 批28 B3: isNormal(可選) —— 傳入本次傷害是否為普攻, 供 amp()/addbonus("mitig") 過濾
     // normalOnly 標記的加成/減傷(僅普攻傷害生效/受影響, 見至柔動剛「降低我軍及敵軍全體普通
-    // 攻擊傷害35%」)。批31 A: isActive(可選, 對稱於 isNormal) —— 傳入本次傷害是否為主動/
-    // 突擊戰法所致, 供 amp() 過濾 activeOnly 標記的加成(僅主動/突擊戰法傷害生效, 見士爭先赴)。
-    const totalAmp = src.amp(kind, isNormal, isActive);
+    // 攻擊傷害35%」)。批31 A: isActive(可選, 對稱於 isNormal) —— 傳入本次傷害是否為主動
+    // 戰法所致, 供 amp() 過濾 activeOnly 標記的加成(僅主動戰法傷害生效, 見士爭先赴)。批40 B:
+    // isCharge(可選, 對稱isActive) —— 傳入本次傷害是否為突擊戰法所致, 供 amp() 過濾
+    // chargeOnly 標記的加成(僅突擊戰法傷害生效/降低, 見一鼓作氣/藏刀)。
+    const totalAmp = src.amp(kind, isNormal, isActive, isCharge);
     base *= totalAmp <= -1 ? 0 : 1 + Math.max(-0.9, totalAmp);
     const mit = dst.addbonus("mitig", kind, isNormal) * (1 - Math.min(1, src.addbonus("pierce")));
     base *= Math.max(0.1, 1 - mit);
     base *= 0.96 + rnd() * 0.08;   // 隨機帶 0.96~1.04(對稱): rnd()*0.08 涵蓋 [0,0.08), 起點0.96 → 上限0.96+0.08=1.04
     return Math.max(0, base);
   }
-  function hit(src, dst, coef, kind, isNormal, onEvent, onDeal, isActive) {  // 批31 A: isActive(可選, 尾端新增, 向後相容既有全部呼叫點)—— 傳入本次傷害是否為主動/突擊戰法所致
+  function hit(src, dst, coef, kind, isNormal, onEvent, onDeal, isActive, isCharge) {  // 批31 A: isActive(可選, 尾端新增, 向後相容既有全部呼叫點)—— 傳入本次傷害是否為主動戰法所致; 批40 B: isCharge(可選, 對稱isActive)—— 傳入本次傷害是否為突擊戰法所致
     if (!src.surehitDur && dst.dodgeDur && rnd() < dst.dodgeProb) {  // 規避: 完全迴避一次傷害(必中無視)
       if (TRACE) lg(`　→ ${dst.nm} 規避了攻擊`);
       if (onEvent) onEvent(dst, src, isNormal, 0, kind);  // 批39 C: 補傳kind(本次傷害類型), 供onHit()對稱dealtDamage的e.when.dmgType過濾(見下方onEvent呼叫端與onHit定義)
       return;
     }
-    let dmg = damage(src, dst, coef, kind, undefined, isNormal, isActive);  // 批28 B3/批31 A: 傳入isNormal/isActive供amp()過濾normalOnly/activeOnly標記的加成
+    let dmg = damage(src, dst, coef, kind, undefined, isNormal, isActive, isCharge);  // 批28 B3/批31 A/批40 B: 傳入isNormal/isActive/isCharge供amp()過濾normalOnly/activeOnly/chargeOnly標記的加成
     // 批22: block(次數型格擋, 抵禦/警戒同族) —— 判定順序 dodge→block→shield→傷害(見紅線指示)。
     // 每次受擊消耗1次(不論本次傷害量多寡), val=1.0(如「抵禦」)完全格擋歸零本次傷害,
     // val=0.x(如「警戒」-75.35%)按比例打折。用光即從陣列移除, 供 TRACE 顯示「剩餘N層」。
@@ -993,7 +1003,13 @@
           // 批33: e.ofDamage —— 傷害比例治療(非屬性公式), 見草船借箭「回復傷害量14%→28%」
           // 類措辭。opt.dmg 由反應式呼叫端(onHit/dealtDamage, 見批33引擎擴充)傳入「觸發本次
           // 治療的那一下傷害量」, 與屬性公式互斥擇一, 兩者不疊加。
-          const hcoef = (e.coef ?? 0.8) * (e.scale ? scaleOf(caster, e.scale) : 1);
+          // 批40 A: e.ofDamage 本身也支援 e.scale/e.scaleDiv —— user 兩場對照實測(草船借箭
+          // 急救比例隨施放者統率變動, 見 calibration_anchors.json caochuan_command_experiment):
+          // 比例 = ofDamage × (1+(施放者統率-100)/scaleDiv), 與 heal 屬性公式共用 lockedScaleOf
+          // (準備階段鎖定, 批35 B同慣例——比例prep鎖定, 同場多次恆定, 錨點已證實)。ofDamage
+          // 缺 e.scale 時沿用批33原行為(scaleMult=1, 純固定比例, 向後相容全庫既有無scale資料)。
+          const ofDamageScaleMult = e.ofDamage != null ? (e.scale ? lockedScaleOf(caster, e) : 1) : 1;
+          const hcoef = (e.coef ?? 0.8) * (e.scale && e.ofDamage == null ? scaleOf(caster, e.scale) : 1);
           // 批16: healBoost/healGiven —— 目標受到的治療量×(1+healBoost加總), 施放者施放的治療×(1+healGiven加總)
           const boostMult = Math.max(0, 1 + hurt.addbonus("healBoost")) * Math.max(0, 1 + caster.addbonus("healGiven"));
           // 批33: 治療公式換裝 —— want = coef × HEAL_TROOP_C × 施放者兵力 × SCALE(scale屬性)
@@ -1002,15 +1018,15 @@
           // 用 caster.troop(當下即時兵力); 其餘(指揮/兵種/兵書/被動的常駐急救型, 受傷當下
           // 反應式觸發)用 caster.healBase(準備階段鎖定兵力快照, 不隨後續兵力增減而變動——
           // user 實測同一施放者兵力8611~8781持續變動但治療恆742的關鍵佐證)。
-          // e.ofDamage 存在時改用傷害比例治療(want = ofDamage × 本次觸發傷害量), 忽略屬性公式。
+          // e.ofDamage 存在時改用傷害比例治療(want = ofDamage × 本次觸發傷害量 × scale縮放), 忽略屬性公式。
           const healTroopBase = t.type === "active" ? caster.troop * HEAL_TROOP_C : caster.healBase;
-          const want = (e.ofDamage != null && opt.dmg != null) ? e.ofDamage * opt.dmg * boostMult : hcoef * healTroopBase * boostMult;
+          const want = (e.ofDamage != null && opt.dmg != null) ? e.ofDamage * ofDamageScaleMult * opt.dmg * boostMult : hcoef * healTroopBase * boostMult;
           // 批18: 傷兵池 —— 治療只能回復傷兵池裡的量(可救援的傷兵), 不是無限回滿。實際回復 =
           // min(想治療量, 傷兵池餘量, 距滿編差額); 回復後從傷兵池扣掉對應量(此人已被救回, 不再
           // 算在池裡)。這會全域削弱治療(尤其後期, 陣亡比例升高、傷兵池餘量變少), 屬預期真實化。
           const actual = Math.max(0, Math.min(want, hurt.wounded, START_TROOP - hurt.troop));
           hurt.troop += actual; hurt.wounded -= actual;
-          if (TRACE && hurt.troop - before >= 1) lg(`　▸ 治療 ${hurt.nm} +${Math.round(hurt.troop - before)}(傷兵池餘${Math.round(hurt.wounded)})` + (e.ofDamage != null && opt.dmg != null ? `（傷害量比例治療×${Math.round(e.ofDamage * 100)}%）` : (e.scale ? `（受${STAT_ZH[e.scale] || e.scale}影響, 實際治療率${Math.round(hcoef * 100)}%）` : "")) + (boostMult !== 1 ? `（治療加成×${boostMult.toFixed(2)}）` : ""));
+          if (TRACE && hurt.troop - before >= 1) lg(`　▸ 治療 ${hurt.nm} +${Math.round(hurt.troop - before)}(傷兵池餘${Math.round(hurt.wounded)})` + (e.ofDamage != null && opt.dmg != null ? `（傷害量比例治療×${(e.ofDamage * ofDamageScaleMult * 100).toFixed(1)}%）` : (e.scale ? `（受${STAT_ZH[e.scale] || e.scale}影響, 實際治療率${Math.round(hcoef * 100)}%）` : "")) + (boostMult !== 1 ? `（治療加成×${boostMult.toFixed(2)}）` : ""));
         }
         continue;
       }
@@ -1094,18 +1110,22 @@
       // 批28 B3: normalOnly 旗標 —— amp/mitig 效果可選填 e.normalOnly:true, 限定只對普攻傷害
       // 生效/受影響(見至柔動剛「降低我軍及敵軍全體普通攻擊傷害35%」)。
       // 批31 A: activeOnly 旗標(僅 amp 支援, 對稱於 normalOnly) —— 效果可選填 e.activeOnly:true,
-      // 限定只對主動/突擊戰法傷害生效(見士爭先赴)。
+      // 限定只對主動戰法傷害生效(見士爭先赴)。批40 B: chargeOnly 旗標(同族, 對稱activeOnly)
+      // —— 效果可選填 e.chargeOnly:true, 限定只對突擊戰法傷害生效(見一鼓作氣「突擊戰法造成
+      // 傷害提升12%」/藏刀「突擊戰法造成傷害降低5%」)。
       const normalOnly = (k === "amp" || k === "mitig") && !!e.normalOnly;
       const activeOnly = k === "amp" && !!e.activeOnly;
-      const udFlags = (e.undispellable || e.dmgType || normalOnly || activeOnly) ? { undispellable: !!e.undispellable, dmgType: e.dmgType, normalOnly, activeOnly } : undefined;
+      const chargeOnly = k === "amp" && !!e.chargeOnly;
+      const udFlags = (e.undispellable || e.dmgType || normalOnly || activeOnly || chargeOnly) ? { undispellable: !!e.undispellable, dmgType: e.dmgType, normalOnly, activeOnly, chargeOnly } : undefined;
       // dmgType 存在時, src 附加類型尾碼區分 dedup key(同一戰法內若有兩條不同 dmgType 的
       // amp/mitig, 如暫避其鋒「智力最高者減兵刃傷害」+「武力最高者減謀略傷害」, 兩者若共用
       // 同一個 src(戰法名)會被 pushAdd 的「同kind+同src刷新」去重機制互相蓋掉, 見 rateup 的
-      // 既有 prepOnly/nativeOnly 尾碼慣例同理)。批28 B3: normalOnly 同理附加尾碼。批31 A:
-      // activeOnly 同理附加尾碼。
+      // 既有 prepOnly/nativeOnly 尾碼慣例同理)。批28 B3: normalOnly 同理附加尾碼。批31 A/
+      // 批40 B: activeOnly/chargeOnly 同理附加尾碼。
       let dtSrc = (src && e.dmgType) ? src + ":" + e.dmgType : src;
       if (normalOnly && src) dtSrc = (dtSrc || src) + ":normalOnly";
       if (activeOnly && src) dtSrc = (dtSrc || src) + ":activeOnly";
+      if (chargeOnly && src) dtSrc = (dtSrc || src) + ":chargeOnly";
       for (const u of dests) {
         if (k === "amp") { const v = svVal(e.val); who === "enemy" && v > 0 ? u.pushAdd("mitig", -v, e.dur, dtSrc, udFlags) : u.pushAdd("amp", v, e.dur, dtSrc, udFlags); }
         else if (k === "mitig") u.pushAdd("mitig", svVal(e.val), e.dur, dtSrc, udFlags);
@@ -1714,7 +1734,7 @@
             }
             // 突擊(charge)擲骰: chargeup(突擊發動率加成, 如虎豹騎)只對真突擊戰法生效, 排除 t.proc===true 的
             // 特技偽戰法(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲proc本身無此欄)。
-            for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate + (t.proc ? 0 : u.addbonusFor("chargeup", t))) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind, false, onHit, dealtDamage, true); if (t.extraHits) fireExtraHits(u, t, tgt, alliesOf, foesOf, onHit, dealtDamage); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); activeFired(u); }  // 批31 A: 突擊戰法成功發動同樣觸發 activeFired(如陷陣突襲監聽同單位另一個 type:"charge" 戰法的發動); isActive=true供e.activeOnly amp判定
+            for (const t of u.tactics) if (t.type === "charge" && rnd() < t.rate + (t.proc ? 0 : u.addbonusFor("chargeup", t))) { if (TRACE) lg(`【${u.side}】${u.nm} 突擊【${t.nameZh}】`); if (t.coef) hit(u, tgt, t.coef, t.kind, false, onHit, dealtDamage, undefined, true); if (t.extraHits) fireExtraHits(u, t, tgt, alliesOf, foesOf, onHit, dealtDamage); applyEffects(u, tgt, t, alliesOf(u), foesOf(u)); activeFired(u); }  // 批31 A: 突擊戰法成功發動同樣觸發 activeFired(如陷陣突襲監聽同單位另一個 type:"charge" 戰法的發動)。批40 B修正: 過去誤傳isActive=true(見批31 A原註解), 導致突擊傷害誤被士爭先赴等activeOnly(僅限「主動戰法」)加成命中——「突擊戰法」與「主動戰法」是遊戲機制上互斥的兩個分類(一鼓作氣/藏刀明確只講突擊, 士爭先赴明確只講自帶主動), 改傳isActive=undefined(不觸發activeOnly)+isCharge=true(觸發chargeOnly, 供一鼓作氣/藏刀等新增)
           }
         }
       }

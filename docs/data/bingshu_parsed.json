@@ -8,7 +8,9 @@
     "k": "amp",
     "who": "self",
     "val": 0.12,
-    "dur": 99
+    "dur": 99,
+    "chargeOnly": true,
+    "_note": "批40 B: 原文「增加突擊戰法造成的傷害(隨發動次數遞減)」明確限定「突擊戰法」, 過去 amp 無範圍限定, 誤及全部傷害(普攻/主動/突擊皆吃), 高估。user戰報實測「一鼓作氣: 突擊戰法造成傷害提升12.00%」精確吻合0.12滿級值, 補chargeOnly:true(批40新增amp效果欄位, 對稱既有activeOnly, 見engine.js/sgz.py isCharge參數穿透hit()→damage()→amp()/addbonus())限定只在突擊戰法傷害結算生效。「隨發動次數遞減」的遞減語意仍未建模(無對應原語, 較原文寬鬆, 維持固定12%不隨次數衰減)。"
    }
   ]
  },
@@ -134,7 +136,23 @@
   "name": "藏刀",
   "category": "作戰",
   "type": "副兵書",
-  "effects": []
+  "effects": [
+   {
+    "k": "chargeup",
+    "who": "self",
+    "val": 0.03,
+    "dur": 99,
+    "_note": "批40 B: 原文「增加突擊戰法的發動機率」缺數值(root data/bingshu.json effectText未載百分比), user戰報實測「藏刀: 突擊戰法發動率+3%」精確補值, 用既有chargeup原語(見虎豹騎/陷陣突襲等既有chargeup慣例)。"
+   },
+   {
+    "k": "amp",
+    "who": "self",
+    "val": -0.05,
+    "dur": 99,
+    "chargeOnly": true,
+    "_note": "批40 B: 原文「降低突擊戰法造成的傷害」明確限定「突擊戰法」, user戰報實測「藏刀: 突擊戰法造成傷害降低5.00%」精確吻合。補chargeOnly:true(批40新增amp效果欄位, 對稱既有activeOnly)限定只在突擊戰法傷害結算生效, val=-0.05為負值增傷(=減傷)沿用amp既有負值慣例(如虛弱/減益類負amp)。"
+   }
+  ]
  },
  {
   "name": "後發先至",

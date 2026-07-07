@@ -1578,6 +1578,12 @@ ENGINE_CAPABILITY_ALIASES = {
     "敵軍嘗試發動": "activeFired+who:\"enemy\"(同上)",
     "僅主動戰法傷害": "activeOnly(批31新增, amp 效果欄位, 對稱於既有 normalOnly, 見 sgz.py/"
                 "engine.js 的 is_active/isActive 參數穿透 hit()→damage()→amp()/addbonus())",
+    "突擊戰法造成的傷害": "chargeOnly(批40 B新增, amp 效果欄位, 對稱於既有 activeOnly, 見 sgz.py/"
+                "engine.js 的 is_charge/isCharge 參數穿透 hit()→damage()→amp()/addbonus(); "
+                "批31 A 原本把「突擊」傷害誤標記 is_active=True(見 fight() 主迴圈突擊擲骰呼叫點),"
+                "與「主動戰法」(士爭先赴)混為一談, 批40 B 已修正呼叫點改傳 is_charge, 兩者現為"
+                "互斥分類, 見一鼓作氣「突擊戰法造成傷害提升12%」/藏刀「突擊戰法造成傷害降低5%」)",
+    "突擊戰法造成傷害": "chargeOnly(同上)",
     "目標為敵軍主將": "ifSameTargetIsLeader(批31新增, extraHits 段條件過濾欄位, 見 sgz.py"
                 "fire_extra_hits()/engine.js fireExtraHits() 對 dests 的事後過濾: 只保留"
                 "dests 中恰好是 foes[0] 的目標, 取代舊有 1/3 機率 EV 折算近似)",
