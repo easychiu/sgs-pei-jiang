@@ -2307,7 +2307,7 @@
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "_todo": "「疊加3次」(觸發式debuff可疊到3層, 每層-15%)未建模: pushAdd同src刷新去重機制讓重複觸發只是刷新-15%而非疊加到-45%, 無對應「條件觸發式疊層」原語, 此限制仍然成立。批24更正: 舊_todo(b)聲稱「settle效果nested的when:{rounds:[6]}引擎並未真正讀取/實作」已stale——批18已在fight()回合迴圈新增非heal效果的e.when通用掃描(母戰法無t.when時逐一檢查passive/command效果的e.when, 視窗開啟時才套用), 本戰法type=command且無t.when, settle的e.when.rounds:[6]現在會被正確讀取, 猛毒確實在第6回合才套用並於dur=2後(約第7~8回合)結算, 不再是prep階段搶跑, 此部分缺口已消除。",
+  "_todo": "批43 B(全庫兄弟遷移掃描重新核對, 發現舊_evidence/_todo皆遺漏原文首段完整語意): data/tactics.json的完整effectText為「當我軍主將造成大於300的傷害時，有50%機率使敵軍單體造成的最終傷害降低15%（受統率影響），持續2回合，最多疊加3次；戰鬥前2回合...；戰鬥第6回合...（傷害率100%+25%×最終降傷施加次數）」——本batch corrections的_evidence只節錄了後兩段(前2回合傷害/第6回合斬殺), 完全遺漏最關鍵的首段觸發條件與疊層機制, 過去_todo「疊加3次未建模」的描述本身正確, 但成因描述不完整(不只是「pushAdd同src刷新不疊」, 真正缺口更大): (1)觸發條件是「我軍主將造成大於300的傷害時」——dealtDamage事件+傷害量閾值(dmg>300)雙重條件, 現有when.on==\"dealtDamage\"只支援事件本身觸發, 無「傷害量需超過某閾值」的條件欄位(同族「傷害量閾值閘門」缺口, 全庫目前無此原語, 需求方向類似hpBelow但檢查的是本次觸發的dmg值而非caster血量)。(2)debuff對象是「敵軍單體」(隨機), 非dealtDamage事件的固定目標(攻擊時的dst), 若用批42/43的stackKey機制掛在該隨機目標上, 同一目標多次被隨機選中才會疊層, 與原文「50%機率使敵軍單體(隨機)...最多疊加3次」的隨機重選語意大致相容(仍需驗證是否應鎖定同一目標或每次重新隨機), 但先決條件(1)未解決前討論此節意義不大。(3)第6回合斬殺傷害「傷害率100%+25%×最終降傷施加次數」——傷害量隨(1)(2)累計的觸發次數動態縮放, 需要讀取「本場已觸發次數」當作coef的加成分量, 現有coef是靜態值, 無「依某計數器動態調整coef」的原語(對稱amp/mitig的addbonus加總機制, 但套用對象是coef本身而非傷害後乘算)。三項缺口環環相扣(3依賴1/2的觸發次數計數), 綜合評估後認定超出本批「疊層家族兄弟遷移」的原定範圍(新增的是「疊層計數」原語, 而密計誅逆真正卡住的是「傷害量條件閘門」+「動態coef」兩個更上游、更大範圍的缺口), 停損維持現行近似(戰法級rate=0.125 EV折算前2回合傷害+第6回合settle斬殺, 完全不建模首段「大傷害觸發降傷可疊層」機制), 已補齊完整原文供未來核對用。",
   "_note": "批15修正: (1) kind由intel(謀略)修正為phys(兵刃)——原文明確「造成1次兵刃傷害」, 批14誤標為謀略傷害, 傷害種類判定錯誤(影響武力/智力減傷計算)。(2) rate由0.5改為0.125(=0.5×2/8, EV折算): 原文「戰鬥前2回合，有50%機率」是限定在前2回合的機率, 但healOnly/主動擲骰通道原本每回合都以0.5機率結算(無視「前2回合」限定), 約4倍高估這段傷害的觸發頻率; 若改用戰法級t.when:{until:2}精確限定回合, 會連帶讓「戰鬥第6回合」的settle效果(見下方_todo)在when視窗開啟時(第1回合)就被一次性套用並永久消耗掉觸發機會, 導致第6回合反而不會再觸發settle(settle效果本身的e.when:{rounds:[6]}目前引擎未實作/未讀取, 詳見_todo)——兩害相權,改用EV折算(rate=0.125)而非t.when, 避免對settle造成新的次生偏移, 僅需承受coef段本身用EV近似(較「精確前2回合」寬鬆, 但不影響settle時機)。amp(-0.15, dur2, scale command)疊加3次的機制仍受限於pushAdd同src刷新去重, 沿用既有做法。 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=amp] 缺 e['n'], 原文目標為「單體」, 補 e['n']=1。",
   "_note2": "批24 A: stale揭露清剿: settle效果的e.when.rounds:[6]自批18起已被引擎正確讀取執行(見_todo更正說明), 資料本身無需變動。"
  },
@@ -3744,26 +3744,41 @@
     "k": "stat",
     "who": "self",
     "stat": "command",
-    "add": 5,
+    "add": true,
+    "perStack": 5,
+    "maxStacks": 99,
+    "stackKey": true,
     "dur": 99,
     "scale": "command",
-    "_approx": "prob-ev",
-    "_note": "自身受治療時50%機率+5點統率,可疊加99次,以單次期望近似,實際應逐次觸發疊加(引擎無疊加計數器,近似為持續加成); 批28 A2: 補scale:\"command\"(原文「受統率影響」修飾2.5→5點的量值分量, 同heal效果的處理原則)。"
+    "rate": 0.5,
+    "when": {
+     "on": "healed",
+     "who": "self"
+    },
+    "_note": "批43 B: 遷移至批43新增on:\"healed\"反應式事件(見engine.js/sgz.py healedFor/healed_for)+add型stackKey疊層(見批43 A)——自身受到治療時(e.when:{on:\"healed\",who:\"self\"}, 效果級, 母戰法無t.when故可與下方intel效果/heal效果各自獨立掛不同who), 50%機率(e.rate)+5點統率, 可疊加99次(maxStacks:99, 實務上8回合戰鬥不會真的疊滿99層, 純粹取原文「可疊加99次」字面值當上限, 近似等同無上限)。過去「引擎無疊加計數器,近似為持續加成單次期望」的限制已解決, 現逐次真實觸發疊加(每次受治療且擲中50%機率就真的+5點, 而非期望值攤平的固定加成)。批28 A2 scale:\"command\"沿用不變(「受統率影響」修飾量值分量)。"
    },
    {
     "k": "stat",
     "who": "self",
     "stat": "intel",
-    "add": 5,
+    "add": true,
+    "perStack": 5,
+    "maxStacks": 99,
+    "stackKey": true,
     "dur": 99,
     "scale": "command",
-    "_approx": "prob-ev",
-    "_note": "自身受治療時50%機率+5點智力,可疊加99次,近似同上; 批28 A2: 補scale:\"command\"(原文「受統率影響」修飾此量值分量, 縮放依統率而非智力自身, 同heal/上一個stat效果的處理原則)。"
+    "rate": 0.5,
+    "when": {
+     "on": "healed",
+     "who": "self"
+    },
+    "_note": "批43 B: 遷移同上(見effects[1]_note)——自身受到治療時50%機率+5點智力,可疊加99次。scale:\"command\"沿用批28 A2既有設定(量值分量受統率影響, 非智力自身)。"
    }
   ],
   "quality": "S",
   "cat": "COMMAND",
-  "src": "INNATE"
+  "src": "INNATE",
+  "_note": "批43 B: 全庫兄弟遷移掃描候選——「自身受到治療時...可疊加99次」兩段(統率/智力)已用批43新增on:\"healed\"事件+add型stackKey疊層遷移完成(見effects[1]/[2]_note), 過去「無疊加計數器」限制已解決。「敵軍受到治療時...偷取其中12%轉移到自身」(effects[0], heal效果)維持既有prob-ev近似未動: healed事件本身已支援who:\"enemy\"廣播(能精確判定敵軍受治療事件), 但「偷取治療量的12%」需要「治療量比例」機制(對稱既有e.ofDamage傷害比例治療, 但讀的是opt.dmg——本次觸發傷害量, 而非本次觸發的治療量), 引擎現無e.ofDamage的heal版本(如e.ofHeal讀opt.healAmt), 需新增獨立欄位才能精確表達, 超出本批on:\"healed\"事件本身的範圍(本批只解決「事件觸發」缺口, 未解決「治療量比例轉移」這個獨立缺口), 維持prob-ev近似, 誠實揭露非stale。"
  },
  {
   "nameZh": "止戈為武",
@@ -5796,14 +5811,14 @@
     "dur": 1,
     "scale": "intel",
     "_est": true,
-    "_note": "原文為「自身造成治療效果時」觸發(反應式),engine無「治療觸發」when.on類型,以常駐套用近似(較原文寬鬆,可能高估;若自身無治療效果則不應觸發)",
+    "_note": "原文為「自身造成治療效果時」觸發(反應式), 以常駐套用近似(較原文寬鬆,可能高估;若自身無治療效果則不應觸發)。批43 B更正: 過去聲稱「engine無治療觸發when.on類型」已stale——批43新增on:\"healed\"事件(見engine.js/sgz.py healedFor/healed_for, 權僭九鼎已用此遷移「自身受到治療時」), 但方向不對應: 本效果要的是「自身造成治療效果時」(caster-framed, 以施法者/健者為主詞, 對稱既有dealtDamage「自己造成傷害時」), 批43 healed事件是receiver-framed(以受治療者為主詞, 對稱onHit「自己受擊時」), 兩者是相反方向的事件, 現有healed事件無法表達「自己是healer」這個條件(除非caster剛好就是hurt本人, 但heal效果的hurt是「allies中最殘一人」, 不保證等於caster), 此限制對本戰法依然真實存在, 只是措辭需更新為精確版本(非完全無治療觸發原語, 而是只有receiver-framed方向, 本戰法需要的是尚未建的caster-framed方向), 已改寫避免被R20誤判為完全stale。",
     "_note2": "批35 C: 兄弟掃描(狀態屬性曲線375族) —— 本效果帶scale但曲線族(350/375)未經實測樣本裁決, 現行沿用全域SCALE(除數350)預設, 曲線族未定(350/375待實測); 僅機鑑先識(警戒)有六點實測錨點佐證375(見calibration_anchors status_scale_375_20260704), 本效果不擅自套用375, 待未來實測樣本才裁決。"
    }
   ],
   "quality": "S",
   "cat": "COMMAND",
   "src": "INHERITANCE",
-  "_todo": "批17核對: when.hpBelow語意上適用「當自身兵力首次低於30%→40%時」(caster-self血量條件, 批16新增hpOk確實只檢caster自身, 語意吻合)。但engine限制——非heal效果無e.when(效果級when)支援, 只能用t.when(戰法級), 而本戰法已有另一條mitig效果(對應「自身造成治療效果時」觸發, 現簡化為常駐套用近似); 若加t.when:{hpBelow:0.4}會把整個戰法(含mitig)都延後到兵力<40%才首次套用一次, 破壞現有mitig常駐近似(該clause理論上從戰鬥開始就該持續生效, 不應等到掉血才啟動)。兩害相權, 暫不加hpBelow(會製造新的更嚴重的時序錯誤取代現有較輕微的近似), 待engine支援非heal效果級when後再處理。「兵力低於閾值時全隊分攤傷害」機制維持完全未建模。 批21新確認: e.when(效果級)完全不支援hpBelow/hpAbove(round_ok()不檢查這兩個鍵,只有走t.when路徑的hp_ok()才檢查, 見engine_limitations.md相關章節)——曾評估過「不動t.when、改用e.when」的迂迴方案, 但實測round_ok對hpBelow-only的when一律放行(等同無條件), 若真的這樣寫會變成「看似條件觸發、實則round1就常駐套用」的更嚴重錯誤, 故放棄此方案, 維持完全未建模。【批37複核仍成立】e.when(效果級)至批37仍不支援hpBelow/hpAbove(round_ok僅檢rounds/from/until/parity/every, hp條件僅t.when路徑的hp_ok檢查), 停損決策維持。"
+  "_todo": "批17核對: when.hpBelow語意上適用「當自身兵力首次低於30%→40%時」(caster-self血量條件, 批16新增hpOk確實只檢caster自身, 語意吻合)。但engine限制——非heal效果無e.when(效果級when)支援, 只能用t.when(戰法級), 而本戰法已有另一條mitig效果(對應「自身造成治療效果時」觸發, 現簡化為常駐套用近似); 若加t.when:{hpBelow:0.4}會把整個戰法(含mitig)都延後到兵力<40%才首次套用一次, 破壞現有mitig常駐近似(該clause理論上從戰鬥開始就該持續生效, 不應等到掉血才啟動)。兩害相權, 暫不加hpBelow(會製造新的更嚴重的時序錯誤取代現有較輕微的近似), 待engine支援非heal效果級when後再處理。「兵力低於閾值時全隊分攤傷害」機制維持完全未建模。 批21新確認: e.when(效果級)完全不支援hpBelow/hpAbove(round_ok()不檢查這兩個鍵,只有走t.when路徑的hp_ok()才檢查, 見engine_limitations.md相關章節)——曾評估過「不動t.when、改用e.when」的迂迴方案, 但實測round_ok對hpBelow-only的when一律放行(等同無條件), 若真的這樣寫會變成「看似條件觸發、實則round1就常駐套用」的更嚴重錯誤, 故放棄此方案, 維持完全未建模。【批37複核仍成立】e.when(效果級)至批37仍不支援hpBelow/hpAbove(round_ok僅檢rounds/from/until/parity/every, hp條件僅t.when路徑的hp_ok檢查), 停損決策維持。批43 B核對: 曾評估批42新增的onMaxStacks/globalMax(雙閾值觸發, 見傲睨王侯)能否表達「兵力低於閾值時全隊分攤傷害」——結論不適用: onMaxStacks/globalMax是「離散事件觸發次數計數達門檻」語意(exploitLayers/exploitGlobal皆為整數計數器, 每次符合條件的事件+1直到達maxStacks/globalMax), 本戰法要的是「兵力百分比(連續數值)低於某門檻」語意, 與計數次數完全是不同性質的條件(前者是hp_ok/hpBelow這類連續量閾值判斷, 後者是離散次數累計), 兩者不對應, 此限制依然真實存在, 非新原語可涵蓋。"
  },
  {
   "nameZh": "義膽雄心",
@@ -6679,21 +6694,24 @@
     "k": "stat",
     "who": "ally",
     "stat": "command",
-    "add": 15,
+    "add": true,
+    "perStack": 15,
+    "maxStacks": 5,
+    "stackKey": true,
     "dur": 2,
-    "_note": "批38 A: 原「45%×(我軍普攻+受普攻≥2事件/回合)≈1觸發/回合, 單層15點dur2可疊5→穩態30點」EV折算改為精確事件觸發: 我軍任一人(who:ally廣播監聽, 含持有者自己)受到普通攻擊時, 45%機率使我軍全體統率+15點(取單層滿級值, 非舊版折算的穩態雙層30點), 持續2回合。因pushStatAdd為「同來源刷新不疊」語意(見engine.js/sgz.py), 仍無法表達原文「可疊加5次」的真實多層累加(每次觸發只會刷新同一份15點/2回合, 不會疊加到75點)。批42補充: 「stat原語完全無疊層計數能力」的舊限制已不再全面成立——批42新增k==\"stat\"+e.stackKey/perStack/maxStacks原語(見傲睨王侯), 支援per-target的乘算(mult)百分比疊層; 但本戰法要的是「固定+15點, 疊加5次」(平加/add語意, 目標=我軍全體而非單一事件目標, 觸發者也是我方受擊而非敵方受擊), 與batch42機制的「mult百分比疊層+單一eventTarget鎖定」設計並不對應, add類疊層原語仍未落地, 此限制對「虎侯」這個具體案例依然真實存在, 只是措辭需更新為精確版本(非stat完全不能疊層, 而是stackKey機制現階段只支援mult不支援add), 已改寫避免被R20誤判為完全stale。"
+    "_note": "批43 A/B: 遷移至批43新增的add型stackKey疊層原語(對稱批42傲睨王侯的mult型, 見engine.js/sgz.py k==\"stat\"&&e.stackKey分支的e.add路由)——我軍任一人(t.when.who:\"ally\"廣播監聽, 含持有者自己)受到普通攻擊時, 45%機率使我軍全體(who:\"ally\", dests=allies全體)各自疊加1層+15點統率, 每個單位用自己的exploitLayers計數(掛在受益目標u身上, 非持有者), 天然對應「我軍全體各自累積, 非全隊共用同一份」的語意, 最多5層(maxStacks:5)=封頂+75點, 每層dur:2回合(pushStatAdd同src刷新覆蓋——每次觸發都用當下layers重算總add值並覆寫, 天然等同疊加, 同批42 mult機制的既有寫法慣例)。已知近似: exploitLayers計數器本身無時間衰減機制(觸發間隔若超過2回合, 舊layers的add值會因dur到期而在u.mods/statAdds過期失效, 但layers計數不會歸零, 下次觸發會直接疊加成6層而非重新從1層算——此為批42既有機制的通用限制, 非虎侯獨有), 較舊版「45%機率+15點, 同來源刷新不疊」的近似(永遠停在15點)更貼近原文「可疊加5次」的真實多層強度, 屬淨改善而非新增偏差; 8回合戰鬥內「任一友軍受普攻」事件頻繁, 實務上很快封頂5層並維持至終局, 略高估「持續疊加而非長期滿層」的動態過程, 但終局強度(+75點統率)與原文「可疊加5次」一致。"
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "_note": "批38 A: 引擎新增when.who(\"ally\"/\"enemy\")跨單位事件廣播, 本戰法「友軍群體發動或受到普通攻擊時」是OR的兩個事件(dealtDamage方向「友軍發動普通攻擊」+ attacked方向「友軍受到普通攻擊」), 但單一t.when只能指定一個on值, 無法同時掛兩個事件——選擇attacked方向(「受到普通攻擊」)遷移為t.when:{on:\"attacked\",who:\"ally\",normalOnly由attacked語意本身即限普攻,無需額外欄位}, 傷害段coef=0.66/kind=phys/n=1(對敵軍單體, 沿用批20既有修正值)一併掛在同一t.when下精確觸發; dealtDamage方向(「友軍發動普通攻擊」)維持未建模, 見_todo。",
+  "_note": "批38 A: 引擎新增when.who(\"ally\"/\"enemy\")跨單位事件廣播, 本戰法「友軍群體發動或受到普通攻擊時」是OR的兩個事件(dealtDamage方向「友軍發動普通攻擊」+ attacked方向「友軍受到普通攻擊」), 但單一t.when只能指定一個on值, 無法同時掛兩個事件——選擇attacked方向(「受到普通攻擊」)遷移為t.when:{on:\"attacked\",who:\"ally\",normalOnly由attacked語意本身即限普攻,無需額外欄位}, 傷害段coef=0.66/kind=phys/n=1(對敵軍單體, 沿用批20既有修正值)一併掛在同一t.when下精確觸發; dealtDamage方向(「友軍發動普通攻擊」)維持未建模, 見_todo。批43 A/B: 統率+15點的疊加5次語意已用add型stackKey原語遷移完成(見effects[0]_note), 過去「stat原語無疊層計數能力」的舊限制不再成立。",
   "when": {
    "on": "attacked",
    "who": "ally"
   },
-  "_todo": "「友軍發動普通攻擊」方向(dealtDamage+normalOnly+who:ally)未一併遷移: 單一tactic物件的t.when只能指定一個on事件值, 無法同時監聽attacked與dealtDamage兩個獨立事件(除非拆成兩個獨立戰法物件, 但本庫一般一戰法一JSON物件, 拆分會造成同名戰法重複定義的資料結構問題, 需要更通用的「單戰法多重when監聽」原語才能完整覆蓋OR語意, 超出本批範圍)。已選擇涵蓋「受到普通攻擊」方向(較常見的受擊視角, 與虎侯自身既有慣例對齊, 見effects[0]_note), 「發動」方向的觸發次數被低估(少了約一半潛在觸發機會)。另: 統率+15點的疊加5次語意仍未能表達(見effects[0]_note——批42新增stackKey疊層原語只支援mult百分比+單一eventTarget鎖定的疊層形態, 本戰法要的是add固定點數+全隊廣播目標的疊層形態, 兩者不對應, 仍是獨立缺口, 待未來新增add類疊層原語才能補上)。"
+  "_todo": "「友軍發動普通攻擊」方向(dealtDamage+normalOnly+who:ally)未一併遷移: 單一tactic物件的t.when只能指定一個on事件值, 無法同時監聽attacked與dealtDamage兩個獨立事件(除非拆成兩個獨立戰法物件, 但本庫一般一戰法一JSON物件, 拆分會造成同名戰法重複定義的資料結構問題, 需要更通用的「單戰法多重when監聽」原語才能完整覆蓋OR語意, 超出本批範圍)。已選擇涵蓋「受到普通攻擊」方向(較常見的受擊視角, 與虎侯自身既有慣例對齊, 見effects[0]_note), 「發動」方向的觸發次數被低估(少了約一半潛在觸發機會)。"
  },
  {
   "nameZh": "虎痴",
@@ -7608,18 +7626,19 @@
    {
     "k": "mitig",
     "who": "ally",
-    "val": 0.08,
-    "dur": 99,
+    "val": 0.16,
+    "dur": 2,
     "scale": "force",
-    "_approx": "疊滿5層後(約第5回合起)全體-16%×2回合可反覆刷新≈後半場常駐, 攤平全場8%; 條件式起始無法表達(戰法級when會連帶鎖stack段)",
-    "_note2": "批35 C: 兄弟掃描(狀態屬性曲線375族) —— 本效果帶scale但曲線族(350/375)未經實測樣本裁決, 現行沿用全域SCALE(除數350)預設, 曲線族未定(350/375待實測); 僅機鑑先識(警戒)有六點實測錨點佐證375(見calibration_anchors status_scale_375_20260704), 本效果不擅自套用375, 待未來實測樣本才裁決。"
+    "everyRound": true,
+    "ifStackMaxed": true,
+    "_note": "批43 B: 遷移至批43新增e.ifStackMaxed(讀取caster.stack.n>=caster.stack.max既有狀態的條件閘門, 見engine.js/sgz.py applyEffects對e.ifLeader之後新增的判斷式)+既有everyRound(批30, 逐回合重新判定)組合——精確表達『疊加5次後才觸發』: k==\"stack\"段(effects[0])沿用批32停損前的既有機制不變, stackPer預設\"round\"逐回合遞增, 約第5回合n達到max=5; mitig效果現在每回合重新檢查ifStackMaxed, 第5回合前(n<5)完全不觸發, 第5回合起(n>=5恆真, stack.n達max後由pushMod的min(max,n+1)封頂不再增加)才真正套用val:0.16(滿級值, 非舊版EV折算的0.08)dur:2(每回合刷新2回合, 貼合原文『持續2回合』且此後每回合都在疊滿狀態下重新刷新, 等同後半場持續生效)。取代舊版『prep套用0.08(0.16×0.5折算)全程』近似(舊版時序完全錯位: 前4回合尚未疊滿卻已生效, 第5回合起才應生效的窗口反而沒有特別放大)——批32停損時的困境『戰法級when會連帶鎖stack段』已由效果級ifStackMaxed(而非戰法級when)解套: stack效果(effects[0])本身無e.when/e.ifStackMaxed, 不受影響, 只有mitig效果新增判斷, 兩段互不干擾, 非戰法級鎖定。批43 B額外核對(dmgType, R19): raw effectText完整版為兩段複合語意——(a)『每次造成兵刃傷害後, 使自己造成的兵刃傷害提升7.5%→15%, 最大疊加5次』(此為effects[0]的k==\"stack\"段, per:0.15對應15%, who:self自身傷害輸出增傷, 限定兵刃傷害觸發+兵刃傷害受益, 但k==\"stack\"透過u.stack.per全域累加進amp(), 不分dmgType, 現有stack原語本身無dmgType欄位可用, 此為既有機制通用限制非本批新增, 不在本批範圍內處理)(b)『疊加5次後, 使我軍全體受到傷害降低8%→16%（受武力影響）, 持續2回合』(此為本mitig段, 原文『受到傷害』完全未限定兵刃/謀略, 明確是全類型減傷, dmgType欄位不適用/不應加, 非缺漏)。R19(單一傷害類型措辭掃描)因(a)句的『兵刃傷害提升7.5%→15%』數值(15%)與本mitig的val(0.16≈16%)數值相近(diff<=6%容忍度內)而誤綁定觸發假陽性——兩者其實是完全不同的兩個效果段(k==\"stack\" vs k==\"mitig\"), 只是巧合數值相近(15% vs 16%), 非同一效果被漏標dmgType, 本note即此誤判之揭露(dmgType/傷害類型關鍵字供_topic_disclosed辨識豁免)。"
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "_note": "原資料mitig 0.16 dur2於準備階段套用=僅第1~2回合生效, 與『疊滿後才觸發』的後半場窗口完全錯位(此時尚無疊層)"
+  "_note": "批43 B: 過去『原資料mitig 0.16 dur2於準備階段套用=僅第1~2回合生效, 與疊滿後才觸發的後半場窗口完全錯位』的問題已用ifStackMaxed+everyRound解決(見effects[1]_note), 現mitig延後到約第5回合stack疊滿後才開始生效, 且往後每回合持續刷新(非舊版侷限在最初2回合)。原_evidence先前只節錄了後半段(疊滿後的mitig描述), 漏了前半段『每次造成兵刃傷害後...提升7.5%→15%』(對應effects[0]的k==\"stack\"段, per:0.15即15%滿級值, 該段本身建模正確無需變動, 僅屬本批核對時發現_evidence記錄不完整, 一併補齊)。"
  },
  {
   "nameZh": "閉月",

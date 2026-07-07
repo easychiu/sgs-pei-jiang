@@ -1906,3 +1906,176 @@ byte-diff為空, 冪等) / `python lint_tactics.py`(R1-R28全庫零違規) /
 少數目標且無人陣亡, 3000場模擬仍未見, 屬遊戲平衡特性而非引擎缺陷, 已用獨立
 `applyEffects` 單元測試在 sgz.py demo 117/smoke_batch42 直接驗證觸發邏輯本身
 正確)。
+
+## 41. 批43: 疊層家族兄弟遷移 —— add型`stackKey`(平點疊層) +
+`on:"healed"`(受到治療反應式事件) + `ifStackMaxed`(疊滿條件閘門)
+
+**背景**: 批42為傲睨王侯造了「stat逐目標疊層(`stackKey`/`perStack`/`maxStacks`,
+mult型)+雙閾值(`onMaxStacks`/`globalMax`)+`who:"eventTarget"`」一族原語, 依「新
+原語→兄弟全庫遷移」鐵律(v13教訓)掃尾。全庫核對「可疊加/每次...疊加/最多疊加N
+次/每層」措辭候選(奮矛英姿/密計誅逆/淵然難測/先登死士/權僭九鼎/義心昭烈/飛熊軍/
+長驅直入), 逐筆核對原文後精確遷移3筆、確認1筆非本族缺口(false positive)、保留
+4筆為誠實揭露的停損(各自缺口與本批原語不對應)。
+
+### A. add型`stackKey`(`e.add:true`路由, 平點疊層)
+
+**缺口**: 批42的`stackKey`只支援`e.stat`+mult(逐層%乘算), 全庫掃描發現「可疊加
+N次」家族另有平點(add)疊層形態(虎侯「+15點統率, 可疊加5次」)——固定點數逐層
+累加, 非百分比。
+
+**設計**: 同一套`exploitLayers`計數骨架(層數計算/`maxStacks`封頂/`onMaxStacks`/
+`globalMax`皆不變)分岔出兩條套用路徑: `e.add`(truthy旗標, 選路由用, 非數值本身
+——量級仍讀`e.perStack`)為真時, 算`totalAdd = perStack×layers×sc`並呼叫
+`pushStatAdd`(平點疊層); 否則沿用既有`totalMult = 1-min(0.95,perStack×layers×sc)`
++`pushMod`(mult疊層)路徑。兩者共用同一份`already`/`layers`/`lockedScaleOf`邏輯,
+只在最終套用的原語(平加 vs 乘算)與公式分岔, 增量成本低。
+
+**落地**: 虎侯「我軍任一人受到普通攻擊時, 45%機率使我軍全體統率+15點, 可疊加5
+次」——`t.when:{on:"attacked",who:"ally"}`(批38既有廣播機制)觸發, 效果級
+`who:"ally"`(dests=allies全體)搭配`stackKey:true`+`add:true`+`perStack:15`+
+`maxStacks:5`, 每個受益單位各自累積自己的`exploitLayers`(天然對應「全隊各自
+疊加, 非共用一份」), 封頂+75點統率。取代舊版「45%機率+15點, 同來源刷新不疊,
+永遠停在15點」的近似(該近似此前已誠實揭露, 見批38/42兩輪_note修訂史)。
+
+**已知近似**: `exploitLayers`計數器本身無時間衰減機制——若觸發間隔超過`dur`
+(2回合), 舊layers的add值會因寫入`u.statAdds`的條目到期而在屬性讀取時失效, 但
+`exploitLayers`的層數計數本身不會歸零, 下次觸發直接疊加成第6層而非重新從第1層
+算(此為批42既有機制的通用限制, 非虎侯獨有, 傲睨王侯的`exploitLayers`同樣沒有
+時間衰減)。8回合戰鬥內「任一友軍受普攻」事件頻繁, 實務上很快封頂5層並維持至
+終局, 略高估「持續疊加而非長期滿層」的動態過程, 但終局強度(+75點)與原文「可
+疊加5次」的字面上限一致, 屬淨改善(較舊版「永遠停在15點」更貼近真實強度)而非
+新增偏差。
+
+### B1. `on:"healed"`(受到治療反應式事件, receiver-framed)
+
+**缺口**: 權僭九鼎「自身受到治療時50%機率+5點統率智力, 可疊加99次」——觸發
+事件是「受到治療」, 對稱既有`attacked`(受擊)/`damaged`(受任意傷害), 但引擎過去
+無任何「治療」方向的反應式事件掛鉤(heal效果過去只能常駐套用或用`t.when`視窗
+一次性套用, 無法表達「受到治療的當下才觸發」這種事件驅動語意)。
+
+**設計**: 新增`onHealTacs`/`onHealEffectTacs`預篩陣列(對稱`onHitTacs`/
+`onHitEffectTacs`等既有慣例, 見Unit建構式), 掛在`applyEffects`的`k=="heal"`
+分支結算完成(`hurt.troop`已扣傷兵池回補)之後呼叫`healedFor`/`healed_for`
+(新增的模組層級函式, 非`fight()`內部閉包——因為`applyEffects`本身是與`fight`
+同層的頂層函式, 無法直接看到`fight()`內的`onHit`等閉包, 但不需要: heal效果
+的`hurt`保證來自呼叫端傳入的`allies`陣列, 故「`hurt`的敵隊」天然就是同一次
+`applyEffects()`呼叫已持有的`enemies`參數)。廣播支援`who:"self"`(含省略, 兩者
+正規化為同義, 因`healed`是全新事件、無歷史包袱, 較既有onHit/dealtDamage的
+「省略即self」慣例更寬容)/`"ally"`/`"otherAlly"`/`"enemy"`, 四組各自對應正確
+的`allies`/`enemies`定向(遞迴呼叫`applyEffects`時, `enemy`組的holder視角
+allies/enemies需要對調, 見`healedFor`函式內的分組表)。只支援效果級
+(`onHealEffectTacs`), 不支援戰法級(`onHealTacs`已建但函式未讀取, 比照批31
+`activeFired`precedent, 新事件類型不強制一次補齊所有粒度), 也不支援裝備/
+兵書層級掛鉤(同precedent, 現無資料需要)。
+
+**方向限制(誠實記錄, 非本批解決範圍)**: 本事件是**receiver-framed**(以受
+治療者為主詞廣播, 對稱`onHit`「自己受擊時」), 精確涵蓋「自身/敵軍/友軍**受到**
+治療時」這一族語意。義心昭烈需要的是**caster-framed**(以施法者/健者為主詞,
+對稱`dealtDamage`「自己造成傷害時」)方向——「自身**造成**治療效果時」, 現行
+`healed`事件無法表達(除非caster剛好就是hurt本人, 但heal的hurt是「allies中
+最殘一人」, 不保證等於caster), 此限制依然真實存在(見§B2)。
+
+**落地**: 權僭九鼎兩段`stat`效果(統率/智力各+5, 可疊加99次)遷移為
+`e.when:{on:"healed"}`(省略who=self)+`add`型`stackKey`(§A新增)+`maxStacks:99`
++`rate:0.5`。「敵軍受治療時偷取12%轉移到自身」(heal效果)維持既有prob-ev近似
+未動——`healed`事件本身已支援`who:"enemy"`廣播(能精確判定敵軍受治療事件),
+但「偷取治療量的12%」需要「治療量比例」機制(對稱既有`e.ofDamage`傷害比例
+治療, 但讀的是`opt.dmg`本次觸發傷害量, 而非本次觸發的治療量), 引擎現無
+`e.ofDamage`的heal版本(如`e.ofHeal`讀`opt.healAmt`——本次已threading這個
+參數但未接上任何消費端), 超出本批`on:"healed"`事件本身的範圍(本批只解決
+「事件觸發」缺口, 未解決「治療量比例轉移」這個獨立缺口)。
+
+### B2. `ifStackMaxed`(效果級條件閘門, 疊滿才生效)
+
+**缺口**: 長驅直入「每次造成兵刃傷害後, 自身兵刃傷害+15%, 最大疊加5次;
+疊加5次後, 使我軍全體受到傷害降低8%→16%（受武力影響）, 持續2回合」——批32
+曾停損「戰法級`when`會連帶鎖`stack`段」(若用`t.when`表達「疊滿後才觸發」,
+會連帶讓`k=="stack"`本身的疊層段也被鎖進同一個時間窗, 但`k=="stack"`段
+理應從戰鬥開始就持續累加, 不應等到「疊滿」這個未來才會發生的狀態才開始
+套用——邏輯上矛盾, 因為`stack`段本身正是「疊滿」這個狀態的來源)。舊版近似
+只能在prep套用EV折算後的固定值(0.16×0.5≈0.08, 全程8回合), 與原文「疊滿後
+才觸發, 持續2回合」的窗口完全錯位。
+
+**設計**: 新增效果級旗標`e.ifStackMaxed`, 讀取`caster.stack.n>=caster.stack.max`
+(既有`k=="stack"`狀態, 批26既有原語)當條件閘門, 放在`e.ifLeader`判斷之後
+(同層級, 任何`k`皆可掛)。搭配既有`e.everyRound`(批30, 逐回合重新判定)組合,
+即可精確表達「每回合檢查一次, 疊滿才觸發, 未疊滿則本回合不生效」——`mitig`
+效果現在延後到`caster.stack.n`首次達到`max`的那個回合才開始生效, 而非prep
+就套用整場。批32的困境由「效果級`ifStackMaxed`」(而非戰法級`when`)解套:
+`stack`效果本身無`e.when`/`e.ifStackMaxed`, 完全不受影響, 只有`mitig`效果
+新增判斷, 兩段互不干擾, 非戰法級鎖定, 成本低(只是讀取既有`stack.n`/
+`stack.max`狀態的閘門, 不需要新增計數/封頂/`onMaxStacks`等整套機制)。
+
+**落地**: `mitig`效果`val`由EV折算的0.08改回滿級值0.16, 加`everyRound:true`+
+`ifStackMaxed:true`, `dur`由99改為2(貼合原文「持續2回合」, 配合`everyRound`
+逐回合刷新等同疊滿後全程持續生效)。核對R19(單一傷害類型措辭掃描)時發現一則
+巧合假陽性: raw effectText首段「兵刃傷害提升7.5%→15%」(對應`k=="stack"`段,
+per:0.15)的15%數值與本`mitig`的16%數值相近(diff在R19容忍度6%內), 舊版`mitig`
+是0.08(diff過大不觸發), 改回0.16後意外觸發R19誤綁定——兩者其實是完全不同的
+兩個效果段(`stack`的自身增傷 vs `mitig`的全隊減傷), 純數值巧合, 已在`mitig`
+效果`_note`加上明確揭露(含`dmgType`關鍵字供`_topic_disclosed`辨識)消音。
+
+### 兄弟候選核對結果(逐筆)
+
+- **奮矛英姿**: 核對後與本族疊層原語無關(是「隊伍主將身份」條件判定缺口, 見
+  §16節同源案例), 未動。
+- **密計誅逆**: 全文重新核對data/tactics.json後發現corrections的`_evidence`
+  過去只節錄了後兩段(前2回合傷害/第6回合斬殺), 完全遺漏首段「當我軍主將造成
+  大於300的傷害時...最終傷害降低15%...最多疊加3次」——真正卡住的是(1)傷害量
+  閾值閘門(dmg>300, 全庫無此原語)(2)debuff對象是「敵軍單體(隨機)」非
+  `dealtDamage`事件的固定目標(3)第6回合斬殺傷害隨累計觸發次數動態縮放coef
+  (需要「依計數器動態調整coef」的新原語)。三項缺口環環相扣且更上游/範圍更大,
+  超出本批「疊層計數」原語範圍, 停損維持現行近似, 已補齊完整原文供未來核對。
+- **淵然難測**: 核對後確認非疊層家族案例(是"首回合觸發時武力>智力則繳械否則
+  技窮"的動態條件分支+`prob-ev`折算, 與"可疊加"措辭無關, 疑似歷輪點名時的
+  誤入候選), 未動。
+- **先登死士**: 「若麴義統領則可疊加5次(較無條件版4次多1次)」——真正卡住的是
+  「持有者=麴義」的`ifLeaderIsGeneral`條件閘門(同丹陽兵/白毦兵/白馬義從缺口),
+  且本效果本身尚未真正做成反應式`when.on:"attacked"`(現行是`type:"command"
+  rate:1`每回合無條件EV折算近似, 目標=隨機敵軍非攻擊者本人), 疊層機制若要
+  精確化需先解決「目標=攻擊者本人」(現有`who:"eventTarget"`只解析`opt.evtTarget`
+  =受害者/dst, 沒有對應攻擊者/src的等效選標值)這個更上游的缺口, 超出本批範圍,
+  維持現狀近似。
+- **權僭九鼎**: 已遷移, 見§B1。
+- **義心昭烈**: 「自身造成治療效果時」為caster-framed方向, 本批`healed`事件
+  是receiver-framed, 兩者不對應, 見§B1「方向限制」段, 已更新`_note`避免被
+  誤判為stale(過去「engine無治療觸發when.on類型」的舊措辭已不準確, 現應描述
+  為「僅receiver-framed方向已支援, caster-framed方向仍缺」)。「兵力低於閾值
+  時全隊分攤傷害」核對`onMaxStacks`/`globalMax`能否表達——結論不適用(那是
+  離散次數計數達門檻語意, 本戰法要的是連續兵力百分比閾值, 性質不同), 維持
+  完全未建模。
+- **飛熊軍**: 「受我軍全體累計造成治療量影響, 觸發後重置累計進度」是連續數值
+  的跨回合累加計數器(治療總量), 非本族「疊加N次」離散觸發次數計數, 兩者性質
+  不同, `_todo`原描述已精確(「累加計數器機制...無對應原語」), 非stale, 未動。
+- **長驅直入**: 已遷移, 見§B2。
+
+### R20 alias 維護
+
+`ENGINE_CAPABILITY_ALIASES`新增6條: `"stackKey機制現階段只支援mult不支援add"`/
+`"add類疊層原語仍未落地"`(對應add型`stackKey`)、`"受治療時觸發"`/`"無此事件"`
+(對應`on:"healed"`, 精確限定receiver-framed方向, 避免誤傷義心昭烈"caster-framed
+仍缺"的正確措辭)、`"疊加N次後才觸發"`(對應`ifStackMaxed`)。R20漂移自動偵測
+(`--selftest`)掃出`healed`/`ifStackMaxed`兩個engine.js新token缺別名, 已補齊,
+78項全過。
+
+### 驗收
+
+`node --check docs/engine.js` / `python -m py_compile sgz.py` /
+`python reparse_effects.py`(兩輪byte-diff為空, 冪等) /
+`python lint_tactics.py`(R1-R28全庫零違規, 過程中發現並修正R9幽靈欄位缺
+`ifStackMaxed`白名單登記+R19單一傷害類型掃描對長驅直入的數值巧合假陽性,
+兩者皆已修正) / `python lint_tactics.py --selftest`(78項全過, 含新增
+healed/ifStackMaxed登記) / `python sgz.py test`(新增118/119/120三項斷言:
+虎侯5次觸發後+75點統率且第6次觸發不再疊加/`on=="healed"`反應式事件正確
+在治療結算後觸發權僭九鼎+5統率/`ifStackMaxed`長驅直入疊滿前後mitig是否
+觸發, 全過) / 3組對局before/after比較(SP許褚承載虎侯、徐晃承載長驅直入,
+`sgz.simulate`各3000場): (1) `SP許褚/徐晃/張飛` vs `夏侯惇/夏侯淵/張郃`:
+A勝率47.4%→56.3%(+8.9pp, 兩者疊層原語同時真實化的合併效果); (2)
+`SP許褚/張飛/關羽` vs `張遼/樂進/于禁`(單邊虎侯, 對手明顯偏弱): 兩版皆
+100%勝率無法觀察差異(天花板效應, 對局強度差距過大); (3) `徐晃/張飛/關羽`
+vs `夏侯惇/夏侯淵/張郃`(單獨長驅直入): A勝率55.7%→50.8%(-4.9pp)——這不是
+bug, 是長驅直入`mitig`從「舊版0.08全程8回合early」改為「新版0.16僅第5
+回合起約3~4回合late」後, 減傷總量(mitig-回合數乘積)相近但時序後移, 若隊伍
+主要傷害壓力落在中前期(本組對手夏侯惇/夏侯淵/張郃輸出前段較猛), 延後生效
+的減傷反而護體時機錯過, 呈現真實化後的下修, 與虎侯統率增益(持續整場提升
+攻防兩端)方向相反, 屬預期內的「精確化不必然單向增強」現象, 已誠實記錄。

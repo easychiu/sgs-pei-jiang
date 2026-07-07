@@ -540,6 +540,7 @@ KNOWN_EFFECT_FIELDS = {
     "undispellable", "_est", "_todo", "_note", "_note2", "_approx", "_src",
     "n", "nMax", "rate", "ifLeader",  # ifLeader: 批26 B1, 施放者須為隊伍主將(index 0)才套用該效果段
     "everyRound",  # 批30 A: 非heal效果的逐回合重擲通道旗標, 跨所有k種類通用(見 apply_effects 的 e.everyRound 通用閘門判斷)
+    "ifStackMaxed",  # 批43 B: 施放者自身k=="stack"疊層已滿(caster.stack.n>=caster.stack.max)才套用該效果段, 跨所有k種類通用(見 apply_effects 對 e.ifLeader 之後新增的判斷式), 搭配 everyRound 表達「疊加N次後才觸發」(如長驅直入)
     "scaleDiv", "capVal",  # 批35: 曲線族原語泛化 —— 與 scale 同層級的跨k通用欄位(任何帶 scale
     # 的效果都可選配), scaleDiv覆蓋SCALE縮放除數(預設350), capVal為縮放後值上限clamp,
     # 見 engine.js/sgz.py 的 SCALE_G/scale_of/cap_val_of + lockedScaleOf/locked_scale_of。
@@ -1656,6 +1657,34 @@ ENGINE_CAPABILITY_ALIASES = {
                 "時套用的效果陣列)為同批新增的雙閾值觸發原語, 見engine.js/sgz.py k==\"stat\""
                 "&&e.stackKey分支。若戰法描述的是add固定點數疊層(如虎侯「+15點可疊加5次」),"
                 "此原語仍不支援, 非stale, 見engine_limitations.md第40節)",
+    # 批43: add型stackKey(平點疊層)/on:"healed"(受到治療反應式事件)/ifStackMaxed(疊滿條件閘門)
+    # —— 全庫兄弟遷移掃描(虎侯/權僭九鼎/長驅直入)首次落地新增的三個原語, 見
+    # engine.js/sgz.py k=="stat"&&e.stackKey分支的e.add路由 + healedFor/healed_for +
+    # applyEffects對e.ifLeader之後新增的e.ifStackMaxed判斷式 + engine_limitations.md第43節。
+    "stackKey機制現階段只支援mult不支援add": "add型stackKey(批43新增, k==\"stat\"效果欄位"
+                "e.add:true+e.stackKey/perStack/maxStacks, 支援平點(add)per-target疊層, 對稱"
+                "批42既有的mult型, 見engine.js/sgz.py k==\"stat\"&&e.stackKey分支的e.add路由,"
+                "虎侯已用此原語遷移「+15點統率可疊加5次」)。若戰法描述的疊層形態仍是本原語"
+                "涵蓋範圍外的其他機制(如飛熊軍「累計治療量」連續數值計數器, 非離散觸發次數),"
+                "此原語不適用, 非stale)",
+    "add類疊層原語仍未落地": "add型stackKey(同上, 批43新增)",
+    "受治療時觸發": "on:\"healed\"(批43新增, when.on==\"healed\", 見engine.js/sgz.py的"
+                "onHealTacs/onHealEffectTacs + healedFor()/healed_for() 掛在 applyEffects() 的"
+                "k==\"heal\"分支結算完成(hurt.troop已回補)之後, 對受治療者(hurt)/其隊友/其敵隊"
+                "廣播; 支援who:\"self\"(含省略, 兩者視為同義)/\"ally\"/\"otherAlly\"/\"enemy\","
+                "見權僭九鼎「自身受到治療時+5統率智力, 可疊加」遷移。只支援效果級"
+                "(onHealEffectTacs), 不支援戰法級(比照批31 activeFired precedent); 「造成治療"
+                "效果時」(caster-framed, 如義心昭烈「自身造成治療效果時」)是相反方向的事件"
+                "(以施法者為主詞, 對稱dealtDamage), 本批healed事件是receiver-framed(以受治療者"
+                "為主詞, 對稱onHit), 兩者不同方向, 若戰法描述的是caster-framed語意, 此原語不"
+                "適用, 非stale, 見engine_limitations.md第43節)",
+    "無此事件": "on:\"healed\"(同上; 「治療觸發, 引擎無對應when.on類型」這類措辭若指"
+                "receiver-framed「受到治療時」, 落地後應改寫)",
+    "疊加N次後才觸發": "ifStackMaxed(批43新增, 效果級旗標, 讀取caster.stack.n>=caster.stack.max"
+                "既有狀態的條件閘門, 搭配既有everyRound逐回合重新判定, 精確表達「疊加N次後"
+                "才生效」的延後窗口, 見engine.js/sgz.py applyEffects對e.ifLeader之後新增的判斷式,"
+                "長驅直入「疊加5次後...降低16%」已用此組合遷移。「戰法級when會連帶鎖stack段」"
+                "的舊困境已由效果級ifStackMaxed(非戰法級when)解套, 見engine_limitations.md第43節)",
 }
 
 # =============================================================================

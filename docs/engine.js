@@ -377,6 +377,20 @@
       // before 語意, after 措辭的戰法一律視同無差別, 見 engine_limitations.md 新增節)。
       this.activeFiredTacs = this.tactics.filter(t => (t.type === "passive" || t.type === "command") && t.when && t.when.on === "activeFired");
       this.activeFiredEffectTacs = this.tactics.filter(t => !t.when && (t.type === "passive" || t.type === "command" || t.type === "active") && (t.effects || []).some(e => e.when && e.when.on === "activeFired"));
+      // 批43 C: on:"healed" —— 「(自身/我軍/敵軍)受到治療時」反應式掛鉤, 與 onHitTacs(受擊
+      // 視角)/onDealTacs(造成傷害視角)/activeFiredTacs(自身發動視角) 完全對稱(戰法級 vs 效果級
+      // 兩種顆粒度), 只是事件觸發點改在 heal 效果實際結算(applyEffects 的 k==="heal" 分支,
+      // hurt.troop 已扣減傷兵池/回補之後)之後, 對**受治療的那個單位(hurt, 事件的"dst")**
+      // 掃描 —— 對稱 onHit 以受擊者為錨點廣播(而非 dealtDamage 以施加者為錨點), 因為本族
+      // 全庫候選(權僭九鼎「自身受到治療時+5統率智力, 可疊加」「敵軍受治療時偷取12%」)兩句皆是
+      // 「以接受治療的單位」為敘述主詞的receiver-framed語意, 與onHit(以受擊者為主詞)同構。
+      // 「自身造成治療效果時」(caster-framed, 如義心昭烈)是相反方向(以施法者/健者為主詞,
+      // 對稱dealtDamage), 本次不建caster-framed的第二個事件方向(見engine_limitations.md新增
+      // 節說明, 該族維持既有停損近似, 非本次healed事件涵蓋範圍)。批31precedent: 新事件類型
+      // 不強制一次補齊裝備/兵書層級掛鉤(activeFired當年也未補onHitEq/onHitBs同款), 此處
+      // onHealEffectTacs 僅涵蓋戰法效果層級, 現無資料需要裝備/兵書層級的heal反應式。
+      this.onHealTacs = this.tactics.filter(t => (t.type === "passive" || t.type === "command") && t.when && t.when.on === "healed");
+      this.onHealEffectTacs = this.tactics.filter(t => !t.when && (t.type === "passive" || t.type === "command" || t.type === "active") && (t.effects || []).some(e => e.when && e.when.on === "healed"));
       this.lockedTargets = new Map();               // 批12 ModeG: lockTarget:true 戰法的鎖定目標, 鍵=戰法物件本身(同一戰法物件跨回合重用同一 Map)
       // 批16: 原語擴充包 —— 新增狀態欄位(現有資料無新欄位, 皆維持0/null預設值, 行為零變化)
       this.atkCount = new Map();                     // everyN: 自身普攻次數計數器, 鍵=戰法物件本身(同一戰法物件跨回合重用同一 Map)
@@ -875,6 +889,55 @@
       default: return k;
     }
   }
+  // 批43 C: healed(反應式派發, on:"healed") —— 「(自身/我軍/敵軍)受到治療時」事件, 掛在
+  // applyEffects() 的 k==="heal" 分支結算完成(hurt.troop 已回補)之後呼叫。與 onHit/dealtDamage/
+  // activeFired(定義在 fight() 內部, 閉包用 A/B/alliesOf/foesOf 全局隊伍狀態)不同, applyEffects
+  // 本身是模組層級函式(與 fight 同層, 見上方 hit()/applyEffects()/fight() 三者皆為頂層函式),
+  // 無法直接看到 fight() 內的 onHit 等閉包 —— 但不需要: heal 效果的 hurt(受治療者)保證來自
+  // 呼叫端傳入的 allies 陣列(見 heal 分支 for (const a of allies) 篩選 hurt 的既有邏輯), 故
+  // 「hurt 的敵隊」天然就是同一次 applyEffects() 呼叫已持有的 enemies 參數, 不需要額外的
+  // alliesOf/foesOf 全域查找。只支援效果級(onHealEffectTacs, 見 Unit 建構式), 不支援戰法級
+  // (onHealTacs 陣列已建但本函式未讀取, 現無資料需要「整個戰法都是on:healed反應式」這種粒度,
+  // 比照批31 activeFired precedent, 新事件類型不強制一次補齊所有粒度, 見 Unit 建構式該陣列
+  // 註解), 也不支援 t.coef/extraHits 主傷害段(現無資料需要「受治療時對敵造成傷害」這種
+  // 複合語意, 只有 stat/heal 等非傷害效果段, 故省略 hit() 呼叫路徑, 保持函式精簡)。
+  function healedFor(hurt, caster, actual, allies, enemies) {
+    if (actual <= 0) return;                        // 未實際回復(傷兵池已空/滿編)不觸發, 對應「受到治療」語意本身要求真的有治療發生
+    // 候選持有者分四組, 各自對應wantWho比對值與正確的allies/enemies定向(遞迴呼叫applyEffects
+    // 時必須以holder自身視角傳入, 而非一律沿用hurt的視角——ally/otherAlly組holder與hurt同隊,
+    // 沿用原allies/enemies; enemy組holder是hurt的敵隊成員, 對它而言allies/enemies方向相反,
+    // 需對調傳入, 否則該holder的戰法會把自己隊友誤判成敵人反之亦然):
+    const groups = [
+      { holders: [hurt], wantWho: undefined, al: allies, en: enemies },              // self: holder===hurt本人(未指定who或"self")
+      { holders: allies, wantWho: "ally", al: allies, en: enemies },                 // ally: hurt同隊(含自己)
+      { holders: allies.filter(a => a !== hurt), wantWho: "otherAlly", al: allies, en: enemies },  // otherAlly: hurt同隊, 排除自己
+      { holders: enemies, wantWho: "enemy", al: enemies, en: allies },               // enemy: hurt的敵隊(對holder而言方向相反)
+    ];
+    for (const { holders, wantWho, al, en } of groups) {
+      for (const holder of holders) {
+        if (!holder.alive || !holder.onHealEffectTacs.length) continue;
+        if (holder.fakeReportDur) continue;         // 批16: 偽報 —— 抑制反應式觸發, 同 onHit/dealtDamage/activeFired 慣例
+        for (const t of holder.onHealEffectTacs) {
+          for (const e of t.effects) {
+            if (!e.when || e.when.on !== "healed") continue;
+            // who:"self"(顯式寫出)與省略who欄位視為同義(對稱onHit/dealtDamage省略即self的既有
+            // 慣例, 但healed是全新事件, 不像那些歷史資料已固定只用「省略」寫法——為了資料撰寫
+            // 直覺(「自身受到治療時」寫who:"self"更明確易讀), 此處額外正規化"self"→undefined
+            // 再比對, 零風險放寬(不影響ally/otherAlly/enemy三組的既有嚴格比對)。
+            const eWho = e.when.who === "self" ? undefined : e.when.who;
+            if ((eWho || undefined) !== wantWho) continue;
+            if (!roundOk({ when: e.when }, CUR_R)) continue;
+            if (holder.hitFlags.has(e)) continue;   // 同回合每單位每效果最多觸發1次(防無限鏈), 沿用 onHit/dealtDamage 共用的 hitFlags 慣例
+            const evRate = e.rate ?? t.rate ?? 1;
+            if (rnd() >= evRate) continue;
+            holder.hitFlags.add(e);
+            if (TRACE) lg(`【${holder.side}】${holder.nm} 戰法【${t.nameZh}】效果（受到治療觸發）發動`);
+            applyEffects(holder, hurt, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, al, en, { rateChecked: true, reactive: true, healAmt: actual });
+          }
+        }
+      }
+    }
+  }
   function applyEffects(caster, tgt, t, allies, enemies, opt) {
     opt = opt || {};
     const src = t.nameZh || null;                     // 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → null, 不去重)
@@ -919,6 +982,18 @@
       // 被迫「無條件對所有施放者套用」(高估非主將情形)或完全不建模。allies[0] 是隊伍主將慣例
       // (同 who==="leader" 分支既有假設), 只在 caster 就是 allies[0] 時才放行本效果段。
       if (e.ifLeader && !(allies && allies[0] === caster)) { if (TRACE) lg(`　▸ ${effDesc(k, e, caster)}〔限主將〕${caster.nm}非主將, 未觸發`); continue; }
+      // 批43 B: e.ifStackMaxed —— 效果級「施放者自身的 k==="stack" 疊層(見 u.stack, 批26既有
+      // 「每次發動/普攻+1層增傷」原語)已疊滿(caster.stack.n>=caster.stack.max)」條件閘門。
+      // 原文族「疊加N次後, 使我軍全體減傷X%, 持續2回合」(如長驅直入「疊加5次後...降低16%...
+      // 持續2回合」)過去只能在 prep 一次性套用 mitig(整場恆定, 與「疊滿才生效」的後半場窗口
+      // 完全錯位, 見批43 B前的既有_approx近似)。搭配 e.everyRound(逐回合重新判定, 見下方)
+      // 即可精確表達「每回合檢查一次, 疊滿才觸發, 未疊滿則本回合不生效」, 使 mitig 真正延後到
+      // caster.stack.n 首次達到 max 的那個回合才開始生效(而非prep就套用整場)。與 k==="stack"
+      // 本身(掛在 caster/holder 身上累計自身層數, 不像 exploitLayers 是掛在受害目標身上的
+      // 疊層機制)是不同的計數器, 兩者不衝突——ifStackMaxed 只是讀取既有 stack.n/stack.max
+      // 狀態做條件判斷, 不修改/不新增計數邏輯本身, 成本低(對比批42 exploitLayers/批43 A
+      // add型疊層需要新增整套計數/封頂/onMaxStacks原語, 本欄位只是既有stack狀態的讀取閘門)。
+      if (e.ifStackMaxed && !(caster.stack && caster.stack.n >= caster.stack.max)) { if (TRACE) lg(`　▸ ${effDesc(k, e, caster)}〔限疊層已滿〕${caster.nm}尚未疊滿(${caster.stack ? caster.stack.n : 0}/${caster.stack ? caster.stack.max : "?"}), 未觸發`); continue; }
       // 批30 A: 非heal效果的逐回合重擲通道(e.everyRound) —— 過去只有 k==="heal" 在
       // opt.healOnly(見 applyPassives 的逐回合呼叫)這條路徑下逐回合重新掃描/擲骰套用, 其餘
       // k(amp/mitig/block/stat/...)一旦在 prep 套用一次就不會再被重新判定, 導致「每回合X%
@@ -1044,6 +1119,11 @@
           const actual = Math.max(0, Math.min(want, hurt.wounded, START_TROOP - hurt.troop));
           hurt.troop += actual; hurt.wounded -= actual;
           if (TRACE && hurt.troop - before >= 1) lg(`　▸ 治療 ${hurt.nm} +${Math.round(hurt.troop - before)}(傷兵池餘${Math.round(hurt.wounded)})` + (e.ofDamage != null && opt.dmg != null ? `（傷害量比例治療×${(e.ofDamage * ofDamageScaleMult * 100).toFixed(1)}%）` : (e.scale ? `（受${STAT_ZH[e.scale] || e.scale}影響, 實際治療率${Math.round(hcoef * 100)}%）` : "")) + (boostMult !== 1 ? `（治療加成×${boostMult.toFixed(2)}）` : ""));
+          // 批43 C: on:"healed" 反應式派發 —— 本次治療真正結算(troop已回補)後, 廣播給
+          // hurt(受治療者)/其隊友/其敵隊 持有的 on:"healed" 效果(見 healedFor 上方定義)。
+          // 用 hurt.troop - before(實際回補量, 已扣過傷兵池上限)而非 want(理論量), 對應
+          // 「受到治療」語意本身要求真的有回補發生(滿編時want>0但實際回補0不應觸發)。
+          healedFor(hurt, caster, hurt.troop - before, allies, enemies);
         }
         continue;
       }
@@ -1195,10 +1275,24 @@
           const layers = already + 1;
           u.exploitLayers.set(e, layers);
           const sc = lockedScaleOf(caster, e);
+          // 批43 A: e.add(平點疊層) —— 批42 stackKey原先只支援 e.stat+mult(逐層%乘算, 如傲睨
+          // 王侯), 全庫兄弟遷移掃描發現「可疊加N次」家族另有平點(add)疊層形態(如虎侯「+15點
+          // 統率, 可疊加5次」——每層固定+15點, 非百分比)。同一 stackKey 骨架(exploitLayers計數
+          // /maxStacks封頂/onMaxStacks/globalMax全部沿用不變), 差別只在最終套用的原語(pushMod
+          // mult vs pushStatAdd add)與量級公式(mult是"1-per×layers×sc"的乘法衰減, add是單純
+          // "perStack×layers×sc"的疊加平點, 無0.95下限保護的必要, 平點不會出現mult型「全屬性
+          // 歸零/負值」的極端情形)。e.add(truthy旗標, 非數值本身——量級仍讀e.perStack, 沿用
+          // 既有欄位命名, add僅作為「選add分支還是mult分支」的路由旗標避免新增額外欄位)。
           const perStack = e.perStack ?? 0.03;
-          const totalMult = 1 - Math.min(0.95, perStack * layers * sc);  // 0.95下限防止全屬性歸零/負值(既有SCALE_CLAMP同族安全側保護, 本效果無實測樣本佐證超過maxStacks後的極端行為, 保守夾住)
-          u.pushMod(e.stat, totalMult, e.dur ?? 99, src, udFlags);
-          if (TRACE) lg(`　▸ ${u.nm} 破綻 第${layers}層（累計${STAT_ZH[e.stat] || e.stat}×${totalMult.toFixed(3)}, 受${STAT_ZH[e.scale] || e.scale}影響）`);
+          if (e.add) {
+            const totalAdd = perStack * layers * sc;
+            u.pushStatAdd(e.stat, totalAdd, e.dur ?? 99, src, udFlags);
+            if (TRACE) lg(`　▸ ${u.nm} 疊層 第${layers}層（累計${STAT_ZH[e.stat] || e.stat}+${totalAdd.toFixed(1)}, 受${STAT_ZH[e.scale] || e.scale}影響）`);
+          } else {
+            const totalMult = 1 - Math.min(0.95, perStack * layers * sc);  // 0.95下限防止全屬性歸零/負值(既有SCALE_CLAMP同族安全側保護, 本效果無實測樣本佐證超過maxStacks後的極端行為, 保守夾住)
+            u.pushMod(e.stat, totalMult, e.dur ?? 99, src, udFlags);
+            if (TRACE) lg(`　▸ ${u.nm} 破綻 第${layers}層（累計${STAT_ZH[e.stat] || e.stat}×${totalMult.toFixed(3)}, 受${STAT_ZH[e.scale] || e.scale}影響）`);
+          }
           // 批42: e.onMaxStacks(效果陣列, 選填) —— 該目標本地破綻池首次耗盡(layers達maxStacks)
           // 時額外套用的一次性效果段(如傲睨王侯「單目標破綻全觸發→1回合虛弱+受傷提高15%持續2
           // 回合」), 用exploitCapped(Set<效果物件>)去重, 確保同一目標只觸發一次(之後即使繼續

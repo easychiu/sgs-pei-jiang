@@ -603,6 +603,14 @@ class Unit:
         self.active_fired_effect_tacs = [t for t in self.tactics
                                          if not t.get("when") and t["type"] in ("passive", "command", "active")
                                          and any((e.get("when") or {}).get("on") == "activeFired" for e in t.get("effects", []))]
+        # 批43 C: on:"healed" —— 對稱 engine.js 同名分支, 見其詳細註解。只支援效果級
+        # (on_heal_effect_tacs), 不支援戰法級(on_heal_tacs已建但apply_effects/healed_for未讀取,
+        # 比照批31 active_fired precedent, 新事件類型不強制一次補齊所有粒度)。
+        self.on_heal_tacs = [t for t in self.tactics
+                             if t["type"] in ("passive", "command") and (t.get("when") or {}).get("on") == "healed"]
+        self.on_heal_effect_tacs = [t for t in self.tactics
+                                    if not t.get("when") and t["type"] in ("passive", "command", "active")
+                                    and any((e.get("when") or {}).get("on") == "healed" for e in t.get("effects", []))]
         self.locked_targets = {}                       # 批12 ModeG: lockTarget:true 戰法的鎖定目標, 鍵=id(戰法dict)(dict不可雜湊, 用id())
         # 批16: 原語擴充包 —— 新增狀態欄位(現有資料無新欄位, 皆維持0/{}/set()預設值, 行為零變化)
         self.atk_count = {}                            # everyN: 自身普攻次數計數器, 鍵=id(戰法dict)
@@ -1159,8 +1167,50 @@ def fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit, on_deal=None):
             hit(u, v, eh["coef"], eh.get("kind", "phys"), False, on_hit, on_deal)
 
 
+def healed_for(hurt, caster, actual, allies, enemies):
+    # 批43 C: 對稱 engine.js healed_for(見其詳細註解)。apply_effects 是模組層級函式(與 fight
+    # 同層), 無法直接看到 fight() 內的 on_hit 等閉包 —— 但 heal 效果的 hurt(受治療者)保證來自
+    # 呼叫端傳入的 allies 陣列, 故「hurt 的敵隊」天然就是同一次 apply_effects() 呼叫已持有的
+    # enemies 參數, 不需要額外的 allies_of/foes_of 全域查找。只支援效果級
+    # (on_heal_effect_tacs), 不支援戰法級(on_heal_tacs 已建但本函式未讀取, 比照批31
+    # active_fired precedent)。
+    if actual <= 0:
+        return                                          # 未實際回復(傷兵池已空/滿編)不觸發
+    groups = [
+        ([hurt], None, allies, enemies),                            # self: holder是hurt本人(未指定who或"self")
+        (allies, "ally", allies, enemies),                          # ally: hurt同隊(含自己)
+        ([a for a in allies if a is not hurt], "otherAlly", allies, enemies),  # otherAlly: hurt同隊, 排除自己
+        (enemies, "enemy", enemies, allies),                        # enemy: hurt的敵隊(對holder而言方向相反)
+    ]
+    for holders, want_who, al, en in groups:
+        for holder in holders:
+            if not holder.alive or not holder.on_heal_effect_tacs:
+                continue
+            if holder.fake_report_dur:                  # 批16: 偽報 —— 抑制反應式觸發, 同 on_hit/dealt_damage/active_fired 慣例
+                continue
+            for t in holder.on_heal_effect_tacs:
+                for e in t["effects"]:
+                    ew = e.get("when") or {}
+                    if ew.get("on") != "healed":
+                        continue
+                    # who=="self"(顯式寫出)與省略who視為同義, 對稱engine.js的正規化(見其註解)
+                    e_who = None if ew.get("who") == "self" else ew.get("who")
+                    if e_who != want_who:
+                        continue
+                    if not round_ok({"when": ew}, CUR_ROUND):
+                        continue
+                    if id(e) in holder.hit_flags:        # 同回合每單位每效果最多觸發1次(防無限鏈)
+                        continue
+                    ev_rate = e.get("rate", t.get("rate", 1))
+                    if random.random() >= ev_rate:
+                        continue
+                    holder.hit_flags.add(id(e))
+                    apply_effects(holder, hurt, {"effects": [e], "kind": t.get("kind", "phys"), "nameZh": t.get("nameZh")},
+                                  al, en, rate_checked=True, reactive=True, heal_amt=actual)
+
+
 def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=False, skip_when_effects=False,
-                   rate_checked=False, reactive=False, dmg=None, evt_target=None):
+                   rate_checked=False, reactive=False, dmg=None, evt_target=None, heal_amt=None):
     # 批42: evt_target(可選) —— 對稱 engine.js opt.evtTarget, 供 who=="eventTarget" 精確鎖定
     # 「本次反應式事件的事件單位本身」(如傲睨王侯敵軍受普攻時, 事件單位=被打的那個敵人, 而非
     # 泛用敵軍全體/隨機N人)。由 on_hit_for/dealt_damage_for 呼叫端傳入, 見下方 who 分派。
@@ -1215,6 +1265,11 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # caster 就是 allies[0] 時才放行本效果段, 否則跳過。與 e["rate"] 同層級判斷(任何 k
         # 皆可掛), 置於 e["rate"] 判定之後(若戰法同時有機率也要求主將, 兩者皆需通過)。
         if e.get("ifLeader") and not (allies and allies[0] is caster):
+            continue
+        # 批43 B: e["ifStackMaxed"] —— 對稱 engine.js 同名分支(見其詳細註解)。效果級「施放者
+        # 自身的 k=="stack" 疊層(caster.stack)已疊滿(n>=max)」條件閘門, 搭配 everyRound 逐回合
+        # 重新判定, 精確表達「疊加N次後才觸發」(如長驅直入)。
+        if e.get("ifStackMaxed") and not (caster.stack and caster.stack["n"] >= caster.stack["max"]):
             continue
         # 批30 A: 非heal效果的逐回合重擲通道(e["everyRound"]) —— 過去只有 k=="heal" 在
         # heal_only(見 apply_passives 的逐回合呼叫)這條路徑下逐回合重新掃描/擲骰套用, 其餘
@@ -1347,6 +1402,8 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 actual = max(0.0, min(want, hurt.wounded, START_TROOP - hurt.troop))
                 hurt.troop += actual
                 hurt.wounded -= actual
+                # 批43 C: on:"healed" 反應式派發 —— 對稱 engine.js, 本次治療真正結算後廣播
+                healed_for(hurt, caster, actual, allies, enemies)
             continue
         if k == "settle":                             # 結算傷害(猛毒): 掛統率最高敵將, 觸發見 fight
             tg = max((x for x in enemies if x.alive),
@@ -1548,9 +1605,16 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 layers = already + 1
                 u.exploit_layers[ekey] = layers
                 sc = locked_scale_of(caster, e)
+                # 批43 A: e["add"](平點疊層旗標) —— 對稱 engine.js 同名分支, 見其詳細註解。同一
+                # stackKey骨架(exploit_layers計數/maxStacks封頂/onMaxStacks/globalMax)不變, 差別
+                # 只在最終套用push_stat_add(add平點)還是push_mod(mult百分比乘算)。
                 per_stack = e.get("perStack", 0.03)
-                total_mult = 1 - min(0.95, per_stack * layers * sc)  # 0.95下限防止全屬性歸零/負值
-                u.push_mod(e["stat"], total_mult, e.get("dur", 99), src, ud_flags)
+                if e.get("add"):
+                    total_add = per_stack * layers * sc
+                    u.push_stat_add(e["stat"], total_add, e.get("dur", 99), src, ud_flags)
+                else:
+                    total_mult = 1 - min(0.95, per_stack * layers * sc)  # 0.95下限防止全屬性歸零/負值
+                    u.push_mod(e["stat"], total_mult, e.get("dur", 99), src, ud_flags)
                 # e["onMaxStacks"](效果陣列, 選填) —— 該目標本地池首次耗盡時額外套用的一次性
                 # 效果段(如「單目標破綻全觸發→虛弱+受傷提高」)。exploit_capped 去重確保只觸發
                 # 一次。caster 仍傳原持有者(scale基準不變), 目標靠 who=="eventTarget" 精確指定。
@@ -4789,6 +4853,66 @@ def demo():
     assert len(debuffed117) == 2, f"傲睨王侯: 全場15層觸發後應有2名敵軍獲得全屬性-20%(globalEffects), 實得{len(debuffed117)}名"
 
     print(f"    [批42] 傲睨王侯官方卡重建: 兩點曲線scaleDiv:385(114)/who==\"eventTarget\"精確per-target疊層(115)/單目標5層全觸發虛弱+受傷提高15%(116)/全場15層觸發2人-20%(117)驗證通過")
+
+    # --- 批43: 疊層家族兄弟遷移 —— add型stackKey(虎侯) + on:"healed"反應式事件(權僭九鼎) +
+    # ifStackMaxed條件閘門(長驅直入) ---
+    # 118) add型stackKey: 虎侯「我軍全體+15點統率, 可疊加5次」——連續5次觸發後應為基準+75點,
+    # 第6次觸發時(已達maxStacks)不再繼續疊加。用真實 TACTICS["虎侯"] 資料驗證。
+    huhou_e = TACTICS["虎侯"]["effects"][0]
+    assert huhou_e.get("add") is True and huhou_e.get("perStack") == 15 and huhou_e.get("maxStacks") == 5, \
+        "虎侯: effects[0]應為add型stackKey(add:true/perStack:15/maxStacks:5)"
+    huhou_holder = Unit(POOL["張飛"], "槍")
+    huhou_u1 = Unit(POOL["張飛"], "槍")
+    huhou_base_cmd = huhou_u1.eff("command")
+    for _ in range(5):
+        apply_effects(huhou_holder, None, {"effects": [huhou_e], "kind": "phys", "nameZh": "虎侯"},
+                      [huhou_holder, huhou_u1], [], reactive=True)
+    assert abs(huhou_u1.eff("command") - huhou_base_cmd - 75) < 1e-6, \
+        f"虎侯: 5次觸發後應為基準+75點統率, 實得+{huhou_u1.eff('command')-huhou_base_cmd:.2f}"
+    apply_effects(huhou_holder, None, {"effects": [huhou_e], "kind": "phys", "nameZh": "虎侯"},
+                  [huhou_holder, huhou_u1], [], reactive=True)
+    assert abs(huhou_u1.eff("command") - huhou_base_cmd - 75) < 1e-6, "虎侯: 第6次觸發時本地池已耗盡, 不應再繼續疊加"
+
+    # 119) on:"healed"反應式事件 —— 驗證 healed_for 確實在 heal 效果結算(troop已回補)後對
+    # hurt(受治療者)廣播, 命中 who=="self" 的效果段(權僭九鼎「自身受到治療時+5統率」)。
+    # on_heal_effect_tacs 是 Unit 建構時依 self.tactics 預篩的陣列(見批43 C), 測試直接注入
+    # holder.tactics 後重新建構, 對稱批38/42既有測試對 activeFiredTacs 等預篩陣列的驗證方式。
+    qsjd_stat_e = {"k": "stat", "who": "self", "stat": "command", "add": True, "perStack": 5,
+                   "maxStacks": 99, "stackKey": True, "dur": 99, "rate": 1.0,
+                   "when": {"on": "healed", "who": "self"}}
+    qsjd_tac = {"type": "passive", "nameZh": "權僭九鼎測試", "kind": "phys", "coef": 0,
+                "effects": [qsjd_stat_e]}
+    qsjd_g = POOL["張飛"]
+    qsjd_holder = Unit(qsjd_g, "槍")
+    qsjd_holder.tactics = [qsjd_tac]                # 注入測試戰法後重算預篩陣列(對稱批38/42既有測試手法)
+    qsjd_holder.on_heal_effect_tacs = [qsjd_tac]
+    qsjd_holder.troop = qsjd_holder.troop * 0.5     # 製造傷兵池空間, 確保heal真的有回補
+    qsjd_holder.wounded = qsjd_holder.troop
+    qsjd_base_cmd = qsjd_holder.eff("command")
+    qsjd_healer = Unit(POOL["諸葛亮"], "弓")
+    qsjd_heal_tac = {"effects": [{"k": "heal", "who": "ally", "coef": 0.1, "dur": 99}],
+                      "kind": "phys", "nameZh": "測試治療來源"}
+    apply_effects(qsjd_healer, None, qsjd_heal_tac, [qsjd_healer, qsjd_holder], [])
+    assert abs(qsjd_holder.eff("command") - qsjd_base_cmd - 5) < 1e-6, \
+        f"權僭九鼎: on=='healed'應在治療結算後觸發+5統率, 實得+{qsjd_holder.eff('command')-qsjd_base_cmd:.2f}"
+
+    # 120) ifStackMaxed —— 長驅直入「疊加5次後才降傷16%」: stack.n未滿時mitig不應觸發,
+    # 滿5層後才應觸發。用真實 TACTICS["長驅直入"] 資料驗證。
+    cqzr_mitig_e = TACTICS["長驅直入"]["effects"][1]
+    assert cqzr_mitig_e.get("ifStackMaxed") is True and cqzr_mitig_e.get("everyRound") is True, \
+        "長驅直入: effects[1]應帶ifStackMaxed+everyRound(疊滿5層才觸發減傷)"
+    cqzr_u = Unit(POOL["張飛"], "槍")
+    cqzr_ally = Unit(POOL["張飛"], "槍")
+    cqzr_u.stack = {"per": 0.15, "max": 5, "n": 3}   # 未滿5層
+    apply_effects(cqzr_u, None, {"effects": [cqzr_mitig_e], "kind": "phys", "nameZh": "長驅直入"},
+                  [cqzr_u, cqzr_ally], [], heal_only=True)
+    assert abs(cqzr_ally.addbonus("mitig") - 0) < 1e-9, "長驅直入: stack未滿5層時mitig不應觸發"
+    cqzr_u.stack["n"] = 5                            # 疊滿5層
+    apply_effects(cqzr_u, None, {"effects": [cqzr_mitig_e], "kind": "phys", "nameZh": "長驅直入"},
+                  [cqzr_u, cqzr_ally], [], heal_only=True)
+    assert abs(cqzr_ally.addbonus("mitig") - (0.16 * scale_of(cqzr_u, "force"))) < 1e-6, "長驅直入: stack疊滿5層後mitig應觸發(減傷16%×武力縮放, mitig正值=減傷)"
+
+    print(f"    [批43] 疊層家族兄弟遷移: add型stackKey虎侯5層+75點統率(118)/on==\"healed\"反應式事件權僭九鼎(119)/ifStackMaxed長驅直入疊滿才觸發(120)驗證通過")
 
     print("self-check OK")
 
