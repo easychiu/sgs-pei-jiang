@@ -539,6 +539,7 @@ KNOWN_EFFECT_FIELDS = {
     "k", "who", "dur", "durMax", "scale", "when", "targetSel", "ifTargetHas",
     "undispellable", "_est", "_todo", "_note", "_note2", "_approx", "_src",
     "n", "nMax", "rate", "ifLeader",  # ifLeader: 批26 B1, 施放者須為隊伍主將(index 0)才套用該效果段
+    "ifLeaderIs",  # 批44 A: 施放者須為隊伍主將(index 0)且武將名匹配指定值(字串或陣列OR)才套用該效果段, 對稱ifLeader, 跨所有k種類通用
     "everyRound",  # 批30 A: 非heal效果的逐回合重擲通道旗標, 跨所有k種類通用(見 apply_effects 的 e.everyRound 通用閘門判斷)
     "ifStackMaxed",  # 批43 B: 施放者自身k=="stack"疊層已滿(caster.stack.n>=caster.stack.max)才套用該效果段, 跨所有k種類通用(見 apply_effects 對 e.ifLeader 之後新增的判斷式), 搭配 everyRound 表達「疊加N次後才觸發」(如長驅直入)
     "scaleDiv", "capVal",  # 批35: 曲線族原語泛化 —— 與 scale 同層級的跨k通用欄位(任何帶 scale
@@ -1526,6 +1527,16 @@ ENGINE_CAPABILITY_ALIASES = {
                 " applyEffects 對 e.ifLeader 的判斷: caster!==allies[0] 時該效果段整段不觸發)",
     "無條件判斷": "ifLeader(同上; 「限X時觸發,引擎無條件判斷」這類措辭是 ifLeader 落地前的舊近似"
                 "說明, 落地後應改寫並補上 e.ifLeader:true)",
+    "若XX統領": "ifLeaderIs(批44新增, 效果級/extraHits段級「隊伍主將(allies[0])的武將名須匹配指定"
+                "值」條件閘門, 對稱ifLeader(布林)——ifLeaderIs 額外要求 allies[0].g.name 等於指定"
+                "值(字串或陣列, 陣列為OR語意), 見 engine.js/sgz.py applyEffects/fireExtraHits 對"
+                "e.ifLeaderIs/eh.ifLeaderIs 的判斷。「特定武將統領時, XX加成」這類措辭若聲稱"
+                "「引擎無持有者=特定武將的條件判斷」屬 ifLeaderIs 落地前的舊近似說明, 落地後應"
+                "改寫並補上 ifLeaderIs; 惟需注意 ifLeaderIs 只解決「條件判斷」本身, 若該戰法的"
+                "缺口是「上游效果/scale曲線/rate本身缺失」等其他維度, ifLeaderIs 無法單獨解決,"
+                "應個別核實, 不可一概而論已解決)",
+    "統領時提升": "ifLeaderIs(同上)",
+    "持有者為": "ifLeaderIs(同上)",
     "傷害來源區分": "dmgType/normalOnly(批24/28新增, amp/mitig 效果欄位, dmgType 區分兵刃/謀略"
                 "來源, normalOnly 區分普攻/戰法來源, 見 engine.js addbonus() 的 dmgType/isNormal"
                 "過濾參數; 「引擎mitig無傷害來源區分」這類措辭應視為兩原語落地前的舊近似說明)",

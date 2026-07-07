@@ -1132,6 +1132,14 @@ def fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit, on_deal=None):
     for eh in t.get("extraHits") or []:
         if random.random() >= eh.get("rate", 1.0):
             continue
+        # 批44 A: eh["ifLeaderIs"] —— 對稱 engine.js 同名分支(見其詳細註解)。extraHits 段級
+        # 「隊伍主將(allies_of(u)[0])的武將名須匹配指定值」條件閘門, 用於白毦兵等「若XX統領,
+        # 主段傷害更高」家族的 base(頂層coef)+top-up(extraHits段, sameTarget+ifLeaderIs)拆法。
+        if eh.get("ifLeaderIs"):
+            _eh_names = eh["ifLeaderIs"] if isinstance(eh["ifLeaderIs"], list) else [eh["ifLeaderIs"]]
+            al = allies_of(u)
+            if not (al and al[0] is u and u.g and u.g.name in _eh_names):
+                continue
         n = eh.get("n") or 1
         cnt = n + random.randint(0, eh["nMax"] - n) if eh.get("nMax") else n
         who = eh.get("who")
@@ -1266,6 +1274,17 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # 皆可掛), 置於 e["rate"] 判定之後(若戰法同時有機率也要求主將, 兩者皆需通過)。
         if e.get("ifLeader") and not (allies and allies[0] is caster):
             continue
+        # 批44 A: e["ifLeaderIs"] —— 對稱 engine.js 同名分支(見其詳細註解)。效果級「隊伍主將
+        # (allies[0])的武將名須匹配指定值」條件閘門, 對稱既有 e["ifLeader"](布林, 只判斷「是否
+        # 為主將」)。原文常見TROOP兵種戰法「若XX統領, 數值提升/額外效果」措辭(白毦兵/丹陽兵/
+        # 先登死士/藤甲兵/西涼鐵騎/白馬義從等8筆家族, 見 engine_limitations.md)。判斷式與
+        # ifLeader 相同(allies[0] is caster), 額外比對 allies[0].g.name==e["ifLeaderIs"]
+        # (指定武將的中文名, 與 tactics_parsed.json _todo 內文一致, 如"陳到")。也接受list(如
+        # 虎衛軍「若典韋或許褚統領」, OR語意)。
+        if e.get("ifLeaderIs"):
+            _names = e["ifLeaderIs"] if isinstance(e["ifLeaderIs"], list) else [e["ifLeaderIs"]]
+            if not (allies and allies[0] is caster and caster.g and caster.g.name in _names):
+                continue
         # 批43 B: e["ifStackMaxed"] —— 對稱 engine.js 同名分支(見其詳細註解)。效果級「施放者
         # 自身的 k=="stack" 疊層(caster.stack)已疊滿(n>=max)」條件閘門, 搭配 everyRound 逐回合
         # 重新判定, 精確表達「疊加N次後才觸發」(如長驅直入)。
@@ -1533,6 +1552,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         active_only = bool(e.get("activeOnly")) if k == "amp" else False  # 批31 A: 對稱於normalOnly, 目前僅amp支援(士爭先赴)
         charge_only = bool(e.get("chargeOnly")) if k == "amp" else False  # 批40 B: 對稱activeOnly, 僅amp支援(一鼓作氣/藏刀)
         if_leader_topup = bool(e.get("ifLeader")) if k in ("amp", "mitig") else False  # 批41 B: 見下方dt_src註解
+        if_leader_is_topup = bool(e.get("ifLeaderIs")) if k in ("amp", "mitig") else False  # 批44 A: 同if_leader_topup, 見下方dt_src註解
         ud_flags = {"undispellable": bool(e.get("undispellable")), "dmgType": dmg_type, "normalOnly": normal_only, "activeOnly": active_only, "chargeOnly": charge_only} \
             if (e.get("undispellable") or dmg_type or normal_only or active_only or charge_only) else None
         # dmgType 存在時, src 附加類型尾碼區分 dedup key(同一戰法內若有兩條不同 dmgType 的
@@ -1559,6 +1579,10 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             dt_src = (dt_src or src) + ":chargeOnly"
         if if_leader_topup and src:
             dt_src = (dt_src or src) + ":ifLeader"
+        # 批44 A: ifLeaderIs top-up 尾碼 —— 同批41 B if_leader_topup的理由(避免base段+差額段
+        # 共用dt_src被push_add同kind+同src去重互相覆蓋), 用於白毦兵等「若XX統領, 數值更高」家族。
+        if if_leader_is_topup and src:
+            dt_src = (dt_src or src) + ":ifLeaderIs"
         for u in dests:
             if k == "amp":
                 v = sv_val(e["val"])
@@ -4704,11 +4728,18 @@ def demo():
     assert any(a[0] == "extra" for a in xb108_caster_dot.adds), "象兵: 自身有灼燒狀態時, 群攻(extra)應觸發"
     assert xb108_caster_dot.chaos > 0, "象兵: 自身有灼燒狀態時, 混亂(chaos)應觸發"
 
-    # 109) R26統領揭露一致性(真實資料抽驗): 批39 B新補_todo的5筆(丹陽兵/白毦兵/白馬義從/
-    # 先登死士/藤甲兵, 其中藤甲兵是lint R26新掃出、非任務原定4筆之一)皆應含「統領」字面揭露。
+    # 109) R26統領揭露一致性(真實資料抽驗, 批44更新): 批39 B新補_todo的5筆(丹陽兵/白毦兵/
+    # 白馬義從/先登死士/藤甲兵, 其中藤甲兵是lint R26新掃出、非任務原定4筆之一), 批44起「若XX
+    # 統領」條件應「有ifLeaderIs落地 或 有_todo文字揭露」二擇一皆算合格(R26豁免規則同步放寬,
+    # 見lint_tactics.py)——丹陽兵/白毦兵已用ifLeaderIs精確落地(_todo清空), 其餘3筆仍維持
+    # _todo文字揭露(缺口非ifLeaderIs可解, 見各自_todo說明)。
     for nm109 in ("丹陽兵", "白毦兵", "白馬義從", "先登死士", "藤甲兵"):
-        todo109 = TACTICS[nm109].get("_todo", "") or ""
-        assert "統領" in todo109, f"{nm109} 應含「統領」條件的_todo揭露(批39 B/R26)"
+        tac109 = TACTICS[nm109]
+        todo109 = tac109.get("_todo", "") or ""
+        has_ili109 = any(e.get("ifLeaderIs") for e in tac109.get("effects", []) or []) or \
+                     any(eh.get("ifLeaderIs") for eh in tac109.get("extraHits", []) or [])
+        assert has_ili109 or "統領" in todo109, \
+            f"{nm109} 應「有ifLeaderIs落地」或「含統領條件的_todo揭露」二擇一(批39 B/R26, 批44放寬)"
 
     # 110) onHit dmgType 過濾(剛勇無前真實資料): 原文「受到兵刃傷害後」限定, when.dmgType應為
     # "phys"。用 inherit=["剛勇無前"] 走真實 Unit 建構(正確填 on_hit_tacs), 搭配與正式 on_hit()
@@ -4913,6 +4944,66 @@ def demo():
     assert abs(cqzr_ally.addbonus("mitig") - (0.16 * scale_of(cqzr_u, "force"))) < 1e-6, "長驅直入: stack疊滿5層後mitig應觸發(減傷16%×武力縮放, mitig正值=減傷)"
 
     print(f"    [批43] 疊層家族兄弟遷移: add型stackKey虎侯5層+75點統率(118)/on==\"healed\"反應式事件權僭九鼎(119)/ifStackMaxed長驅直入疊滿才觸發(120)驗證通過")
+
+    # --- 批44: e.ifLeaderIs(特定武將統領條件) —— 效果級/extraHits段級「隊伍主將(allies[0])
+    # 的武將名須匹配指定值」條件閘門, 對稱既有 e.ifLeader(布林, 只判斷「是否為主將」) ---
+    # 121) 合成效果: 陳到是主將時應吃到, 陳到是副將(非主將)時不吃, 他人是主將時也不吃
+    # (身份不匹配, 即使是主將)。
+    il121_tac = {"nameZh": "測試ifLeaderIs121", "effects": [
+        {"k": "stat", "who": "self", "stat": "force", "add": 999, "dur": 5, "ifLeaderIs": "陳到"}
+    ]}
+    il121_chendao_leader = Unit(POOL["陳到"], "槍")
+    apply_effects(il121_chendao_leader, None, il121_tac, [il121_chendao_leader], [], no_heal=True)
+    assert abs(il121_chendao_leader.eff("force") - (il121_chendao_leader.force + 999)) < 1e-6, \
+        "ifLeaderIs: 陳到是主將(allies[0])且武將名匹配時應正常套用效果"
+    il121_chendao_sub = Unit(POOL["陳到"], "槍")
+    il121_other_leader = Unit(POOL["張飛"], "槍")
+    apply_effects(il121_chendao_sub, None, il121_tac, [il121_other_leader, il121_chendao_sub], [], no_heal=True)
+    assert abs(il121_chendao_sub.eff("force") - il121_chendao_sub.force) < 1e-6, \
+        "ifLeaderIs: 陳到是副將(非主將)時應完全跳過該效果, 不套用"
+    il121_zhangfei_leader = Unit(POOL["張飛"], "槍")
+    apply_effects(il121_zhangfei_leader, None, il121_tac, [il121_zhangfei_leader], [], no_heal=True)
+    assert abs(il121_zhangfei_leader.eff("force") - il121_zhangfei_leader.force) < 1e-6, \
+        "ifLeaderIs: 張飛是主將但武將名不匹配(要求陳到)時應完全跳過該效果, 不套用"
+
+    # 122) 陣列OR語意(虎衛軍「若典韋或許褚統領」): 典韋/許褚任一是主將皆應吃到, 他人是主將不吃。
+    il122_tac = {"nameZh": "測試ifLeaderIs122", "effects": [
+        {"k": "stat", "who": "self", "stat": "command", "add": 50, "dur": 99, "ifLeaderIs": ["典韋", "許褚"]}
+    ]}
+    for name122 in ("典韋", "許褚"):
+        il122_u = Unit(POOL[name122], "盾")
+        apply_effects(il122_u, None, il122_tac, [il122_u], [], no_heal=True)
+        assert abs(il122_u.eff("command") - (il122_u.command + 50)) < 1e-6, \
+            f"ifLeaderIs陣列OR: {name122}是主將時應吃到+50統率(陣列命中任一即符合)"
+    il122_other = Unit(POOL["張飛"], "槍")
+    apply_effects(il122_other, None, il122_tac, [il122_other], [], no_heal=True)
+    assert abs(il122_other.eff("command") - il122_other.command) < 1e-6, \
+        "ifLeaderIs陣列OR: 張飛是主將但不在[典韋,許褚]陣列內時應跳過"
+
+    # 123) extraHits段級ifLeaderIs(大戟士「張郃獲得連擊」精確度量): 張郃是主將時extraHits應
+    # 觸發(rate=1強制必發驗證邏輯本身, 非真實資料的0.45), 非張郃時不觸發。
+    il123_tac = {"nameZh": "測試ifLeaderIs123", "coef": 0, "effects": [],
+                 "extraHits": [{"coef": 1.0, "kind": "phys", "who": "sameTarget", "rate": 1.0, "ifLeaderIs": "張郃"}]}
+    il123_zhanghe = Unit(POOL["張郃"], "槍")
+    il123_target = Unit(POOL["張飛"], "槍")
+    il123_hits = []
+    fire_extra_hits(il123_zhanghe, il123_tac, il123_target, lambda u: [il123_zhanghe], lambda u: [il123_target],
+                     lambda *a, **k: None, None)
+    assert il123_target.troop < START_TROOP, "ifLeaderIs(extraHits): 張郃是主將時額外段應命中目標造成傷害"
+    il123_target2 = Unit(POOL["張飛"], "槍")
+    il123_zhanghe_sub = Unit(POOL["張郃"], "槍")
+    il123_other_leader = Unit(POOL["關羽"], "槍")
+    fire_extra_hits(il123_zhanghe_sub, il123_tac, il123_target2, lambda u: [il123_other_leader, il123_zhanghe_sub],
+                     lambda u: [il123_target2], lambda *a, **k: None, None)
+    assert il123_target2.troop == START_TROOP, "ifLeaderIs(extraHits): 張郃是副將(非主將)時額外段不應觸發"
+
+    # 124) 真實資料回歸(白毦兵, R27/批44核心案例): 陳到統領時應吃到頂層coef(1.1)+extraHits
+    # top-up(0.2)=1.3對齊滿級值; 非陳到統領時僅頂層1.1。
+    bym124_tac = TACTICS["白毦兵"]
+    assert bym124_tac["extraHits"][0].get("ifLeaderIs") == "陳到", "白毦兵: extraHits[0]應帶ifLeaderIs=陳到(批44落地)"
+    assert abs(bym124_tac["coef"] - 1.1) < 1e-9, "白毦兵: 頂層coef應維持1.1(base段, 無條件)"
+
+    print(f"    [批44] e.ifLeaderIs特定武將統領條件: 效果級主將身份匹配(121)/陣列OR語意(122)/extraHits段級(123)/白毦兵真實資料回歸(124)驗證通過")
 
     print("self-check OK")
 

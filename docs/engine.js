@@ -813,6 +813,12 @@
     if (!t.extraHits) return;
     for (const eh of t.extraHits) {
       if (rnd() >= (eh.rate ?? 1)) continue;
+      // 批44 A: eh.ifLeaderIs —— extraHits 段級「隊伍主將(allies[0])的武將名須匹配指定值」
+      // 條件閘門, 對稱 applyEffects() 的 e.ifLeaderIs(見其詳細註解)。用於白毦兵等「若XX統領,
+      // 主段傷害更高」家族的 base(頂層coef, 無條件)+top-up(extraHits段, sameTarget+
+      // ifLeaderIs)拆法——頂層coef是command型戰法固有的主傷害段, 無法像effects段那樣掛
+      // ifLeaderIs, 改用extraHits補一段「命中同一目標的差額傷害」達成等價的base+topup效果。
+      if (eh.ifLeaderIs) { const names = Array.isArray(eh.ifLeaderIs) ? eh.ifLeaderIs : [eh.ifLeaderIs]; const al = alliesOf(u); if (!(al && al[0] === u && u.g && names.includes(u.g.name))) continue; }
       const n = eh.n || 1;
       const cnt = eh.nMax ? n + Math.floor(rnd() * (eh.nMax - n + 1)) : n;
       let dests;
@@ -982,6 +988,17 @@
       // 被迫「無條件對所有施放者套用」(高估非主將情形)或完全不建模。allies[0] 是隊伍主將慣例
       // (同 who==="leader" 分支既有假設), 只在 caster 就是 allies[0] 時才放行本效果段。
       if (e.ifLeader && !(allies && allies[0] === caster)) { if (TRACE) lg(`　▸ ${effDesc(k, e, caster)}〔限主將〕${caster.nm}非主將, 未觸發`); continue; }
+      // 批44 A: e.ifLeaderIs —— 效果級「隊伍主將(allies[0])的武將名須匹配指定值」條件閘門,
+      // 對稱既有 e.ifLeader(布林, 只判斷「是否為主將」)。原文常見TROOP兵種戰法「若XX統領,
+      // 數值提升/額外效果」措辭(白毦兵/丹陽兵/先登死士/藤甲兵/西涼鐵騎/白馬義從等8筆家族,
+      // 見 engine_limitations.md), 過去只有「是否為主將」(ifLeader)與「chargeup專屬曹純
+      // 力²硬編碼」(leaderBonus)兩種機制, 皆無法表達「主將須為特定武將(可代入任意人選)」這種
+      // 通用條件。判斷式與 ifLeader 相同(allies[0]===caster), 額外比對 allies[0].g.name===
+      // e.ifLeaderIs(指定武將的中文名, 與 tactics_parsed.json _todo 內文一致, 如"陳到")。也接受
+      // 陣列(如虎衛軍「若典韋或許褚統領」, OR 語意: 名字在陣列內任一即符合)。與 ifLeader 是不同
+      // 的判斷(ifLeaderIs 蘊含 ifLeader, 但額外要求身份匹配), 兩者不會同時出現在同一效果上,
+      // 若同時存在則兩個條件皆需滿足(允許但無實際資料使用此組合)。
+      if (e.ifLeaderIs) { const names = Array.isArray(e.ifLeaderIs) ? e.ifLeaderIs : [e.ifLeaderIs]; if (!(allies && allies[0] === caster && caster.g && names.includes(caster.g.name))) { if (TRACE) lg(`　▸ ${effDesc(k, e, caster)}〔限${names.join("/")}統領〕${caster.nm}非${names.join("/")}或非主將, 未觸發`); continue; } }
       // 批43 B: e.ifStackMaxed —— 效果級「施放者自身的 k==="stack" 疊層(見 u.stack, 批26既有
       // 「每次發動/普攻+1層增傷」原語)已疊滿(caster.stack.n>=caster.stack.max)」條件閘門。
       // 原文族「疊加N次後, 使我軍全體減傷X%, 持續2回合」(如長驅直入「疊加5次後...降低16%...
@@ -1224,6 +1241,7 @@
       const activeOnly = k === "amp" && !!e.activeOnly;
       const chargeOnly = k === "amp" && !!e.chargeOnly;
       const ifLeaderTopup = (k === "amp" || k === "mitig") && !!e.ifLeader;  // 批41 B: 見下方dtSrc註解
+      const ifLeaderIsTopup = (k === "amp" || k === "mitig") && !!e.ifLeaderIs;  // 批44 A: 同ifLeaderTopup, 見下方dtSrc註解
       const udFlags = (e.undispellable || e.dmgType || normalOnly || activeOnly || chargeOnly) ? { undispellable: !!e.undispellable, dmgType: e.dmgType, normalOnly, activeOnly, chargeOnly } : undefined;
       // dmgType 存在時, src 附加類型尾碼區分 dedup key(同一戰法內若有兩條不同 dmgType 的
       // amp/mitig, 如暫避其鋒「智力最高者減兵刃傷害」+「武力最高者減謀略傷害」, 兩者若共用
@@ -1241,6 +1259,10 @@
       if (activeOnly && src) dtSrc = (dtSrc || src) + ":activeOnly";
       if (chargeOnly && src) dtSrc = (dtSrc || src) + ":chargeOnly";
       if (ifLeaderTopup && src) dtSrc = (dtSrc || src) + ":ifLeader";
+      // 批44 A: ifLeaderIs top-up 尾碼 —— 同批41 B ifLeader top-up的理由(避免base段+差額段
+      // 共用dtSrc被pushAdd同kind+同src去重互相覆蓋), 用於白毦兵等「若XX統領, 數值更高」家族的
+      // base(無條件)+top-up(ifLeaderIs:"XX")拆法。
+      if (ifLeaderIsTopup && src) dtSrc = (dtSrc || src) + ":ifLeaderIs";
       for (const u of dests) {
         if (k === "amp") { const v = svVal(e.val); who === "enemy" && v > 0 ? u.pushAdd("mitig", -v, e.dur, dtSrc, udFlags) : u.pushAdd("amp", v, e.dur, dtSrc, udFlags); }
         else if (k === "mitig") u.pushAdd("mitig", svVal(e.val), e.dur, dtSrc, udFlags);
