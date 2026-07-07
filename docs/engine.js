@@ -1116,16 +1116,24 @@
       const normalOnly = (k === "amp" || k === "mitig") && !!e.normalOnly;
       const activeOnly = k === "amp" && !!e.activeOnly;
       const chargeOnly = k === "amp" && !!e.chargeOnly;
+      const ifLeaderTopup = (k === "amp" || k === "mitig") && !!e.ifLeader;  // 批41 B: 見下方dtSrc註解
       const udFlags = (e.undispellable || e.dmgType || normalOnly || activeOnly || chargeOnly) ? { undispellable: !!e.undispellable, dmgType: e.dmgType, normalOnly, activeOnly, chargeOnly } : undefined;
       // dmgType 存在時, src 附加類型尾碼區分 dedup key(同一戰法內若有兩條不同 dmgType 的
       // amp/mitig, 如暫避其鋒「智力最高者減兵刃傷害」+「武力最高者減謀略傷害」, 兩者若共用
       // 同一個 src(戰法名)會被 pushAdd 的「同kind+同src刷新」去重機制互相蓋掉, 見 rateup 的
       // 既有 prepOnly/nativeOnly 尾碼慣例同理)。批28 B3: normalOnly 同理附加尾碼。批31 A/
       // 批40 B: activeOnly/chargeOnly 同理附加尾碼。
+      // 批41 B: ifLeader top-up 尾碼 —— 圍師必闕修R27時新增「基礎mitig(無條件0.39)+差額
+      // mitig(ifLeader:true,0.06)」的base+top-up拆法(比照水淹七軍dot的既有precedent, 但dot
+      // 走 u.dots.push 不去重, amp/mitig走pushAdd同kind+同src會覆蓋), 若不加尾碼兩條mitig
+      // (who同ally, dmgType同intel)會共用dtSrc, 後套用的ifLeader top-up會把基礎段整個蓋掉。
+      // 補尾碼":ifLeader"區分(同leaderBonus既有的":leaderBonus"尾碼慣例, 見k==="chargeup"分支),
+      // 讓兩條並存疊加。
       let dtSrc = (src && e.dmgType) ? src + ":" + e.dmgType : src;
       if (normalOnly && src) dtSrc = (dtSrc || src) + ":normalOnly";
       if (activeOnly && src) dtSrc = (dtSrc || src) + ":activeOnly";
       if (chargeOnly && src) dtSrc = (dtSrc || src) + ":chargeOnly";
+      if (ifLeaderTopup && src) dtSrc = (dtSrc || src) + ":ifLeader";
       for (const u of dests) {
         if (k === "amp") { const v = svVal(e.val); who === "enemy" && v > 0 ? u.pushAdd("mitig", -v, e.dur, dtSrc, udFlags) : u.pushAdd("amp", v, e.dur, dtSrc, udFlags); }
         else if (k === "mitig") u.pushAdd("mitig", svVal(e.val), e.dur, dtSrc, udFlags);

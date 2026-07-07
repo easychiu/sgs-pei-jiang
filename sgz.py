@@ -1460,6 +1460,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         normal_only = bool(e.get("normalOnly")) if k in ("amp", "mitig") else False
         active_only = bool(e.get("activeOnly")) if k == "amp" else False  # 批31 A: 對稱於normalOnly, 目前僅amp支援(士爭先赴)
         charge_only = bool(e.get("chargeOnly")) if k == "amp" else False  # 批40 B: 對稱activeOnly, 僅amp支援(一鼓作氣/藏刀)
+        if_leader_topup = bool(e.get("ifLeader")) if k in ("amp", "mitig") else False  # 批41 B: 見下方dt_src註解
         ud_flags = {"undispellable": bool(e.get("undispellable")), "dmgType": dmg_type, "normalOnly": normal_only, "activeOnly": active_only, "chargeOnly": charge_only} \
             if (e.get("undispellable") or dmg_type or normal_only or active_only or charge_only) else None
         # dmgType 存在時, src 附加類型尾碼區分 dedup key(同一戰法內若有兩條不同 dmgType 的
@@ -1469,6 +1470,14 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # normalOnly與非normalOnly的amp共用同一src互相覆蓋); src 為 None 時(兵書/裝備/緣分
         # 無 nameZh) 尾碼無意義, 維持 None(不影響去重, 因 push_add 的 src=None 本就不去重)。
         # 批31 A/批40 B: activeOnly/chargeOnly 同理附加尾碼。
+        # 批41 B: ifLeader top-up 尾碼 —— 圍師必闕修R27時新增「基礎mitig(無條件0.39)+差額
+        # mitig(ifLeader:true,0.06)」的base+top-up拆法(比照水淹七軍dot的既有precedent), 但
+        # dot走u.dots.append(不去重), amp/mitig走push_add(同kind+同src會互相覆蓋, 見上方
+        # dmgType/normalOnly同款尾碼修法)——若不加尾碼, 兩條mitig(who同ally, dmgType同intel)
+        # 會共用同一個dt_src, 後套用的那條(ifLeader top-up)會把先套用的基礎段整個蓋掉, 導致
+        # 非主將時仍是0.39正確但主將時只剩0.06(遺失基礎段)而非0.39+0.06=0.45。補尾碼
+        # ":ifLeader"區分(同leaderBonus既有的":leaderBonus"尾碼慣例, 見k=="chargeup"分支),
+        # 讓兩條並存疊加。
         dt_src = (src + ":" + dmg_type) if (src and dmg_type) else src
         if normal_only and src:
             dt_src = (dt_src or src) + ":normalOnly"
@@ -1476,6 +1485,8 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             dt_src = (dt_src or src) + ":activeOnly"
         if charge_only and src:
             dt_src = (dt_src or src) + ":chargeOnly"
+        if if_leader_topup and src:
+            dt_src = (dt_src or src) + ":ifLeader"
         for u in dests:
             if k == "amp":
                 v = sv_val(e["val"])
@@ -4630,6 +4641,38 @@ def demo():
         f"萬軍奪帥: 5態應獨立判定(45%各自擲骰), 不應呈現全有或全無的單一stun語意殘留, 本次結果{fired111}(若剛好全真/全假需換種子重驗, 但邏輯上4個獨立0.45擲骰同時全中或全不中機率僅約(0.45^4+0.55^4)≈8.3%, 不構成系統性問題)"
 
     print(f"    [批39] 象兵ifTargetHas自查+everyRound(108), R26統領揭露5筆(109), onHit dmgType過濾(110), 萬軍奪帥五態拆分(111)驗證通過")
+
+    # --- 批41: 鷹視狼顧/錦帆軍0分修復 + R27 ifLeader top-up 尾碼去重修正 ---
+    # 112) 圍師必闕(真實資料): R27修復新增「基礎mitig(無條件0.39)+差額mitig(ifLeader:true,0.06)」
+    # 的 base+top-up 拆法(比照水淹七軍 dot 既有precedent)。dot 走 u.dots.append 不去重, 但
+    # amp/mitig 走 push_add(同kind+同src會互相覆蓋), 若不補尾碼區分dedup key, 兩條mitig(who
+    # 同ally, dmgType同intel)會共用同一個dt_src, 後套用的ifLeader top-up段會把先套用的基礎
+    # 段整個蓋掉。驗證: 非主將施放者只吃基礎0.39, 主將施放者應吃0.39+0.06=0.45(兩段並存疊加,
+    # 而非互相覆蓋只剩其中一段)。
+    wsbq112_tac = TACTICS["圍師必闕"]
+    wsbq112_leader = Unit(POOL["張飛"], "槍")
+    wsbq112_other = Unit(POOL["張飛"], "槍")
+    apply_effects(wsbq112_leader, None, wsbq112_tac, [wsbq112_leader, wsbq112_other], [], no_heal=True)
+    wsbq112_leader_mitig = wsbq112_leader.addbonus("mitig", "intel")
+    wsbq112_sub = Unit(POOL["張飛"], "槍")
+    wsbq112_leader2 = Unit(POOL["張飛"], "槍")
+    apply_effects(wsbq112_sub, None, wsbq112_tac, [wsbq112_leader2, wsbq112_sub], [], no_heal=True)
+    wsbq112_sub_mitig = wsbq112_sub.addbonus("mitig", "intel")
+    assert abs(wsbq112_leader_mitig - wsbq112_sub_mitig - 0.06) < 1e-6, \
+        f"圍師必闕: 主將施放者的mitig(intel)應比非主將多0.06(ifLeader top-up段疊加, 非覆蓋), 實得主將={wsbq112_leader_mitig}, 非主將={wsbq112_sub_mitig}, 差={wsbq112_leader_mitig - wsbq112_sub_mitig}"
+
+    # 113) 鷹視狼顧(真實資料, v18零分修復): amp(who:self,val:0.16)補ifLeader後, 非主將施放者
+    # 不應吃這16%奇謀增傷(謀略傷害), 主將施放者應吃到。
+    yslg113_tac = TACTICS["鷹視狼顧"]
+    yslg113_leader = Unit(POOL["司馬懿"], "槍")
+    yslg113_other = Unit(POOL["張飛"], "槍")
+    apply_effects(yslg113_leader, None, yslg113_tac, [yslg113_leader, yslg113_other], [], no_heal=True)
+    assert abs(yslg113_leader.addbonus("amp", "intel") - 0.16) < 1e-6, "鷹視狼顧: 主將施放者應吃到16%奇謀增傷(amp intel)"
+    yslg113_sub = Unit(POOL["司馬懿"], "槍")
+    apply_effects(yslg113_sub, None, yslg113_tac, [yslg113_other, yslg113_sub], [], no_heal=True)
+    assert abs(yslg113_sub.addbonus("amp", "intel")) < 1e-9, "鷹視狼顧: 非主將施放者不應吃16%奇謀增傷(ifLeader閘門應擋下, v18零分修復)"
+
+    print(f"    [批41] 鷹視狼顧/錦帆軍v18零分修復+R27 ifLeader top-up尾碼去重(112/113)驗證通過")
 
     print("self-check OK")
 

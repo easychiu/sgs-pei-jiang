@@ -1098,7 +1098,14 @@ TEXT_DISC_KEYS = ("_todo", "_note", "_note2", "_note_self", "_approx")
 
 
 def _disclosure_texts(p):
-    """收集戰法頂層 + 所有效果層級的「非空字串」揭露文字(裸 bool 如 _est:true 不算)。"""
+    """收集戰法頂層 + 所有效果層級的「非空字串」揭露文字(裸 bool 如 _est:true 不算)。
+    批41 B(R27設計時發現的既有盲點修復): 原本只掃 p 頂層 + p["effects"], 完全遺漏
+    p["extraHits"]/p["choices"](及其內部 effects)的揭露文字——火燒連營的「自身為主將時
+    提高至70%」條件實際已在 extraHits[0]._note 誠實揭露(取主將滿級值), 但因未被此函式
+    掃到, 會被任何倚賴 _topic_disclosed(effect=None) 的規則(R20/R25/R26/新R27)誤判為
+    未揭露。全庫核對(scratchpad, 17處extraHits/choices含揭露文字)後補掃描, 只會讓既有
+    豁免範圍變寬(不會把已抓到的真違規變不違規, 因現況全庫0違規基準線), 淨效果是消除
+    這類假陽性, 不影響任何其他規則的既有判定。"""
     out = []
     for k in TEXT_DISC_KEYS:
         v = p.get(k)
@@ -1109,6 +1116,21 @@ def _disclosure_texts(p):
             v = e.get(k)
             if isinstance(v, str) and v.strip():
                 out.append(v)
+    for eh in p.get("extraHits", []) or []:
+        for k in TEXT_DISC_KEYS:
+            v = eh.get(k)
+            if isinstance(v, str) and v.strip():
+                out.append(v)
+    for ch in p.get("choices", []) or []:
+        for k in TEXT_DISC_KEYS:
+            v = ch.get(k)
+            if isinstance(v, str) and v.strip():
+                out.append(v)
+        for e in ch.get("effects", []) or []:
+            for k in TEXT_DISC_KEYS:
+                v = e.get(k)
+                if isinstance(v, str) and v.strip():
+                    out.append(v)
     return out
 
 
@@ -2129,6 +2151,204 @@ def _has_leader_bonus(p):
     return any(e.get("leaderBonus") for e in (p.get("effects") or []))
 
 
+# ---------------------------------------------------------------------------
+# R27(批41): 主將身份揭露一致性防線 —— 原文含「自身為主將時/若為主將/若自身為主將/
+# 若我軍主將」的施放者身份條件式加成措辭(全庫40餘筆含此類措辭, 見批41任務背景), 但戰法
+# 整體既無 ifLeader(批26原語, 效果級「施放者須為隊伍主將」布林閘門)、也無 leaderBonus
+# (R26管轄的另一種「特定武將統領」條件, 語意不同但同樣可能承載主將相關條件)、且無任何
+# 提及「主將/leader/ifLeader」字面的揭露文字(_todo/_note/_note2/_note_self/_approx,
+# 戰法級全文掃描, 效果級無法窄化——原因見下方「掃描範圍」說明), 視為「主將身份條件式
+# 加成被沉默省略」的違規。
+#
+# 掃描範圍(戰法級而非批37效果級窄化): 「自身為主將時」條件通常修飾整句效果描述中的某個
+# 數值(如「基礎值提升至X」「機率提升至Y」「傷害率提升至Z」), 不對應單一固定k類別(可能是
+# amp/mitig/stat/stack/dot任一種, 甚至像奉令平虜完全落在effects=[]的未建模範圍裡), 故比照
+# R3/R5/R8/R16/R20/R26同慣例採 _topic_disclosed(p, keywords, effect=None) 戰法整體層級
+# 掃描, 不做R13/R25式效果級精準化。
+#
+# 低誤報設計:
+# - 修復方式不強制要求ifLeader欄位本身——若原文是「基礎值A, 主將時提升至B」這種對既有
+#   機率/數值的縮放(非新增獨立效果段), ifLeader二元閘門無法精確表達(同engine_limitations.md
+#   第9節「觸發機率的按施放者身份條件縮放」缺口, 見仁德載世R24precedent), 此時補一則提及
+#   「主將」字面的_todo誠實揭露即可豁免, 不強制修欄位; 若原文是「基礎值A(無條件)+主將時
+#   額外加成到B」這種可拆分成「基礎段+ifLeader top-up差額段」的複合效果(見水淹七軍批37 B
+#   precedent: 基礎dot 0.96無條件+差額dot 0.12僅ifLeader), 則應比照該precedent用兩段
+#   同k效果(基礎+top-up)精確建模。兩種修法本規則皆不強制擇一, 只要求「不可沉默省略」。
+# - 排除「分擔效果無效」等否定句型(校勝帷幄「自身為主將時分擔效果無效」是主將時*關閉*
+#   某效果, 非新增加成, 語意方向相反, 但實務上這類戰法通常仍會在其他地方留下「主將」
+#   相關揭露, 由_topic_disclosed戰法級掃描天然涵蓋, 不需要額外正則排除——保留此註解供
+#   未來若出現真正只靠這條排除才能通過的案例時參考)。
+# - 版本區塊感知(split_version_blocks): 只在含匹配的版本區塊內核對, 避免跨版本誤配
+#   (比照R22/R26慣例)。
+# ---------------------------------------------------------------------------
+R27_LEADER_COND_RE = re.compile(r"自身為主將時|若自身為主將|自身若為主將|若為主將|若我軍主將")
+R27_TOPIC_KW = ("主將", "ifLeader", "leader", "leaderBonus")
+
+
+def _has_if_leader(p):
+    if p.get("ifLeader"):
+        return True
+    for e in p.get("effects") or []:
+        if e.get("ifLeader"):
+            return True
+    for eh in p.get("extraHits") or []:
+        if eh.get("ifLeader"):
+            return True
+    for ch in p.get("choices") or []:
+        if ch.get("ifLeader"):
+            return True
+        for e in ch.get("effects") or []:
+            if e.get("ifLeader"):
+                return True
+    return False
+
+
+def check_r27(p, txt):
+    violations = []
+    if _has_if_leader(p) or _has_leader_bonus(p):
+        return violations
+    for block in split_version_blocks(txt):
+        for clause in split_clauses(block):
+            m = R27_LEADER_COND_RE.search(clause)
+            if not m:
+                continue
+            if _topic_disclosed(p, R27_TOPIC_KW):
+                return violations
+            violations.append({
+                "name": p["nameZh"], "rule": "R27",
+                "message": f"原文「{m.group(0)}」為施放者主將身份條件式加成, 但戰法/效果皆無"
+                           "ifLeader(批26原語)/leaderBonus, 且無提及「主將/leader」的揭露"
+                           "文字, 主將身份加成完全被沉默省略",
+                "evidence": clause.strip()[:120],
+            })
+            break
+        if violations:
+            break
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# R28(批41): 數值一致性抽查 —— 原文明確宣告「傷害率X%→Y%」「治療率X%→Y%」的滿級值Y, 與
+# 對應 parsed coef(×100)比對, 偏差>5%且無揭露解釋(EV折算/機率折入/版本分支/取滿級值等)
+# 視為違規(見批41任務背景: 錦帆軍coef方向搞反是本規則的直接觸發案例)。
+#
+# 設計取捨(寧缺勿濫優先於覆蓋率, 見任務指示"假陽性寧缺勿濫,參考R25方法論"):
+# - 本規則對「一個宣告↔一個coef欄位」的精確配對要求極高信心才觸發: 只在同一版本區塊內
+#   「傷害率宣告數」與「戰法內dmg類coef欄位數」相等(=1:1可嚴格排序配對)時才比較, 或
+#   「治療率宣告數」與「heal類coef欄位數」相等時才比較。多段宣告(如百步穿楊兩個傷害率
+#   子句對應兩個不同coef欄位)因為「宣告在文字裡的順序」與「coef欄位在JSON裡的收錄順序」
+#   未必一致(順序配對曾在此規則的前期試跑中產生大量假陽性, 见battle41 scratchpad試跑
+#   記錄), 沒有可靠的通用配對演算法, 保守跳過(不判定, 比照R1/R13"窄化不到單一效果時
+#   退回不判定"的既有慣例, 只是本規則退回的是「不觸發」而非「戰法級掃描」)。
+# - 每個戰法只在「唯一dmg段」或「唯一heal段」的簡單情形下比較, 大幅降低誤配風險。
+# - 揭露豁免用兩層判定: (1) 主題關鍵字(EV/折算/期望/近似/取滿級值/版本/分支/機率折入/
+#   輪替/EV折算), 或 (2) 揭露文字內逐字出現該宣告的百分比字串(如"222%"或"128%→256%"的
+#   任一段數字), 因為維護者慣例常直接把原文百分比抄進_note裡說明折算來源(如"折算0.535×
+#   1.0≈0.54(原coef 1.0=每回合必觸發, 高估約1.9×)"), 逐字比對比關鍵字更精確不會誤判。
+#   兩者任一命中即豁免(戰法級 _topic_disclosed 全文掃描, 比照R20/R26慣例)。
+# - 版本區塊感知(split_version_blocks): 只用「含宣告」的第一個版本區塊(比照R2/R22慣例),
+#   避免跨版本誤配。
+# ---------------------------------------------------------------------------
+R28_DMG_RE = re.compile(r"傷害率\s*(\d+(?:\.\d+)?)\s*%?\s*(?:→|~|-)?\s*(\d+(?:\.\d+)?)?\s*%")
+R28_HEAL_RE = re.compile(r"治療率\s*(\d+(?:\.\d+)?)\s*%?\s*(?:→|~|-)?\s*(\d+(?:\.\d+)?)?\s*%")
+R28_TOPIC_KW = ("EV", "折算", "期望", "近似", "取滿級值", "版本", "分支", "機率折入", "輪替",
+                "折半", "高估", "低估")
+R28_TOLERANCE = 0.05
+
+
+def _r28_dmg_coefs(p):
+    """收集戰法內「傷害類」coef欄位(非heal), 回傳list of (label, value)。只收頂層+
+    effects(排除k==heal)+extraHits+choices(含choices.effects, 排除k==heal), 與R25/R13
+    既有「傷害承載段」認定範圍一致(見_extra_hits_has_damage/_choices_has_damage)。"""
+    out = []
+    if p.get("coef"):
+        out.append(("top.coef", p["coef"]))
+    for e in p.get("effects") or []:
+        if e.get("k") != "heal" and e.get("coef"):
+            out.append((f'effects.{e.get("k")}.coef', e["coef"]))
+    for eh in p.get("extraHits") or []:
+        if eh.get("coef"):
+            out.append(("extraHits.coef", eh["coef"]))
+    for ch in p.get("choices") or []:
+        if ch.get("coef"):
+            out.append(("choices.coef", ch["coef"]))
+        for e in ch.get("effects") or []:
+            if e.get("k") != "heal" and e.get("coef"):
+                out.append((f'choices.effects.{e.get("k")}.coef', e["coef"]))
+    return out
+
+
+def _r28_heal_coefs(p):
+    """收集戰法內 k==heal 的 coef 欄位, 回傳 list of (label, value)。"""
+    out = []
+    for e in p.get("effects") or []:
+        if e.get("k") == "heal" and e.get("coef") is not None:
+            out.append(("effects.heal.coef", e["coef"]))
+    for ch in p.get("choices") or []:
+        for e in ch.get("effects") or []:
+            if e.get("k") == "heal" and e.get("coef") is not None:
+                out.append(("choices.effects.heal.coef", e["coef"]))
+    return out
+
+
+def _r28_topic_disclosed(p, pct_strs):
+    """R28專屬揭露判定: 主題關鍵字 或 宣告的百分比字串逐字出現在揭露文字中, 任一命中即豁免。"""
+    texts = _disclosure_texts(p)
+    for txt in texts:
+        if any(kw in txt for kw in R28_TOPIC_KW):
+            return True
+        if any(pct in txt for pct in pct_strs if pct):
+            return True
+    return False
+
+
+def check_r28(p, txt):
+    violations = []
+    dmg_coefs = _r28_dmg_coefs(p)
+    heal_coefs = _r28_heal_coefs(p)
+    if not dmg_coefs and not heal_coefs:
+        return violations
+    for block in split_version_blocks(txt):
+        dmg_matches = list(R28_DMG_RE.finditer(block))
+        heal_matches = list(R28_HEAL_RE.finditer(block))
+        if not dmg_matches and not heal_matches:
+            continue
+        # 傷害率: 只在「宣告恰好1筆」且「dmg類coef欄位恰好1筆」時比較(見上方設計取捨)
+        if len(dmg_matches) == 1 and len(dmg_coefs) == 1:
+            m = dmg_matches[0]
+            hi = m.group(2) or m.group(1)
+            val = round(float(hi) / 100, 4)
+            label, cval = dmg_coefs[0]
+            if abs(cval - val) > R28_TOLERANCE * max(val, 0.01):
+                pct_strs = [m.group(1) + "%", (m.group(2) or "") + "%", m.group(0)]
+                if not _r28_topic_disclosed(p, pct_strs):
+                    violations.append({
+                        "name": p["nameZh"], "rule": "R28",
+                        "message": f"原文宣告「{m.group(0)}」滿級值{val*100:.1f}%, 但{label}="
+                                   f"{cval}(偏差{abs(cval - val)*100:.1f}個百分點), 且無揭露"
+                                   "解釋(EV折算/版本分支等), 疑似數值誤植或敘事方向錯誤",
+                        "evidence": block.strip()[:150],
+                    })
+        # 治療率: 同理只在雙方各恰好1筆時比較
+        if len(heal_matches) == 1 and len(heal_coefs) == 1:
+            m = heal_matches[0]
+            hi = m.group(2) or m.group(1)
+            val = round(float(hi) / 100, 4)
+            label, cval = heal_coefs[0]
+            if abs(cval - val) > R28_TOLERANCE * max(val, 0.01):
+                pct_strs = [m.group(1) + "%", (m.group(2) or "") + "%", m.group(0)]
+                if not _r28_topic_disclosed(p, pct_strs):
+                    violations.append({
+                        "name": p["nameZh"], "rule": "R28",
+                        "message": f"原文宣告「{m.group(0)}」滿級值{val*100:.1f}%, 但{label}="
+                                   f"{cval}(偏差{abs(cval - val)*100:.1f}個百分點), 且無揭露"
+                                   "解釋(EV折算/版本分支等), 疑似數值誤植或敘事方向錯誤",
+                        "evidence": block.strip()[:150],
+                    })
+        break  # 只用第一個含宣告的版本區塊(同R2/R22慣例)
+    return violations
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
@@ -2137,6 +2357,7 @@ RULES = [
     ("R16", check_r16), ("R17", check_r17), ("R18", check_r18), ("R19", check_r19),
     ("R20", check_r20), ("R21", check_r21), ("R22", check_r22),
     ("R23", check_r23), ("R24", check_r24), ("R25", check_r25), ("R26", check_r26),
+    ("R27", check_r27), ("R28", check_r28),
 ]
 
 
@@ -2476,6 +2697,43 @@ SELFTEST_CASES = {
         ("陣營泛稱條件(非特定武將)不應誤報",
          _base_tactic(effects=[{"k": "mitig", "who": "ally", "val": 0.1, "dur": 99}]),
          "若統領為蠻族，部隊每多1名蠻族武將結算的傷害額外降低5%→10%", False),
+    ],
+    "R27": [
+        ("鷹視狼顧回歸(修復前無ifLeader應抓到)",
+         _base_tactic(type="command", coef=1.54, rate=0.8,
+                      effects=[{"k": "amp", "who": "self", "val": 0.16, "dur": 99, "_approx": "crit-ev"}]),
+         "第5回合起，每回合對1→2個敵軍單體造成謀略傷害；自身為主將時，獲得8%→16%奇謀機率", True),
+        ("鷹視狼顧回歸(修復後補ifLeader不應誤報)",
+         _base_tactic(type="command", coef=1.54, rate=0.8,
+                      effects=[{"k": "amp", "who": "self", "val": 0.16, "dur": 99, "ifLeader": True}]),
+         "第5回合起，每回合對1→2個敵軍單體造成謀略傷害；自身為主將時，獲得8%→16%奇謀機率", False),
+        ("有揭露(仁德載世式機率縮放停損)不應誤報",
+         _base_tactic(coef=0, effects=[{"k": "mitig", "who": "enemy", "val": 0.1, "dur": 1,
+                                        "_todo": "自身為主將時機率縮放, ifLeader無法表達複合語意, 暫不建模"}]),
+         "自身為主將時，施加虛弱狀態的機率提高至12.5%→25%", False),
+        ("有leaderBonus不應誤報",
+         _base_tactic(effects=[{"k": "chargeup", "who": "self", "val": 0.05, "dur": 99,
+                                 "leaderBonus": {"general": "曹純", "k": 0.032}}]),
+         "自身為主將時，額外提升5%突擊發動機率", False),
+    ],
+    "R28": [
+        ("錦帆軍回歸(修復前coef方向搞反應抓到): 宣告64%但coef=1.28(2倍)",
+         _base_tactic(type="command", coef=1.28, rate=0.45),
+         "部隊普通攻擊時，有45%機率使目標進入潰逃狀態（傷害率32%→64%，受武力影響），持續2回合", True),
+        ("錦帆軍回歸(修復後coef=0.64與宣告一致不應誤報)",
+         _base_tactic(type="command", coef=0.64, rate=0.45),
+         "部隊普通攻擊時，有45%機率使目標進入潰逃狀態（傷害率32%→64%，受武力影響），持續2回合", False),
+        ("治療率宣告與heal coef不符應抓到",
+         _base_tactic(coef=0, effects=[{"k": "heal", "who": "ally", "coef": 0.5, "dur": 1}]),
+         "治療我軍單體（治療率100%，受智力影響）", True),
+        ("有EV折算揭露(關鍵字)不應誤報",
+         _base_tactic(coef=0, effects=[{"k": "heal", "who": "ally", "coef": 0.5, "dur": 1,
+                                        "_note": "50%機率×治療率100%期望折算=0.5"}]),
+         "治療我軍單體（治療率100%，受智力影響）", False),
+        ("多段宣告(N!=1)保守不判定不應誤報(避免多段誤配, 見任務背景方法論)",
+         _base_tactic(type="command", coef=0.64, rate=0.45,
+                      extraHits=[{"coef": 1.1, "kind": "phys", "who": "sameTarget", "rate": 0.6}]),
+         "部隊普通攻擊時，使目標進入潰逃狀態（傷害率32%→64%）；若目標已潰逃則造成兵刃攻擊（傷害率55%→110%）", False),
     ],
 }
 
