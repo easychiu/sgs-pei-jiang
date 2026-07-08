@@ -5195,6 +5195,56 @@ def demo():
 
     print(f"    [批46 A] rateup e.scaleDiv曲線族泛化: 向後相容(131)/十二奇策scaleDiv:335七點齊發精確驗算(132)/舌戰群儒同族補遺scale補上但曲線族未定不外推(133)/先成其慮對照組無scale(134)驗證通過")
 
+    # --- 批47 A: 白馬義從「若公孫瓚統領, 提高發動率受速度影響」落地(ifLeaderIs+scale:"speed"
+    # +scaleDiv:1003, 與base(val:0.1)靠同src+同kind的push_add「同來源刷新覆蓋」拼出
+    # base+conditional-override, 見tactic_corrections.json「白馬義從」effects[1]._note完整推導)。
+    # 135) 資料層核對: 應有兩條rateup(base無條件0.1 + 公孫瓚topup 0.10293/scale:speed/
+    #      scaleDiv:1003), 且topup段ifLeaderIs=="公孫瓚"。
+    bmyc_tac = TACTICS["白馬義從"]
+    bmyc_rus = [e for e in bmyc_tac["effects"] if e["k"] == "rateup"]
+    assert len(bmyc_rus) == 2, "白馬義從應有2條rateup(base無條件 + 公孫瓚統領scale topup)"
+    bmyc_base, bmyc_topup = bmyc_rus[0], bmyc_rus[1]
+    assert abs(bmyc_base["val"] - 0.1) < 1e-9 and bmyc_base.get("ifLeaderIs") is None, \
+        "白馬義從 effects[0](base)應為無條件val=0.1(非公孫瓚統領時的固定10%發動率)"
+    assert bmyc_topup.get("ifLeaderIs") == "公孫瓚", "白馬義從 topup段應帶ifLeaderIs=\"公孫瓚\"(批47 A落地)"
+    assert bmyc_topup.get("scale") == "speed", "白馬義從 topup段應帶scale=\"speed\"(受速度影響, 原文明載)"
+    assert bmyc_topup.get("scaleDiv") == 1003, \
+        "白馬義從 topup段應帶scaleDiv=1003(user Lv1兩點+加法定律換算的Lv10等價乘法形, 見calibration_anchors.json baima_yicong_20260708)"
+    assert abs(bmyc_topup["val"] - 0.10293) < 1e-9, "白馬義從 topup段val應為0.10293(Lv10基值10.293%, user本批提供)"
+
+    # 136) 行為核對(非公孫瓚統領): 張飛統領白馬義從時, topup段的ifLeaderIs閘門應擋下,
+    #      addbonus("rateup")應精確等於base的固定10%(不受速度影響, 沿用原有行為)。
+    bmyc_zhangfei = Unit(POOL["張飛"], "騎")
+    bmyc_zhangfei.push_mod("speed", 200.0 / bmyc_zhangfei.eff("speed"), 9)  # 刻意調到高速度, 驗證非公孫瓚時不受速度影響
+    apply_effects(bmyc_zhangfei, None, bmyc_tac, [bmyc_zhangfei], [], no_heal=True)
+    assert abs(bmyc_zhangfei.addbonus("rateup") - 0.1) < 1e-9, \
+        "白馬義從: 張飛統領(非公孫瓚)時, 即使高速度也應維持固定10%發動率加成(topup段ifLeaderIs擋下)"
+
+    # 137) 行為核對(公孫瓚統領, user Lv1兩點回推的speed=133.78錨點): 公孫瓚統領白馬義從、
+    #      速度精確調至133.78時, addbonus("rateup")應等於本批Lv10公式值≈10.64%(±0.01%),
+    #      精確覆蓋掉base的10%(同src+同kind push_add「同來源刷新覆蓋」, 非疊加成20.64%)。
+    bmyc_gsz = Unit(POOL["公孫瓚"], "騎")
+    bmyc_gsz.push_mod("speed", 133.78 / bmyc_gsz.eff("speed"), 9)
+    assert abs(bmyc_gsz.eff("speed") - 133.78) < 1e-6, "測試前置條件: 公孫瓚速度應精確落在133.78"
+    apply_effects(bmyc_gsz, None, bmyc_tac, [bmyc_gsz], [], no_heal=True)
+    got_bmyc_pct = bmyc_gsz.addbonus("rateup") * 100
+    assert abs(got_bmyc_pct - 10.64) < 0.01, \
+        f"白馬義從: 公孫瓚統領+速度133.78時rateup加成應≈10.64%(Lv10公式10.293%+0.010263%×(133.78-100)), got={got_bmyc_pct:.4f}%"
+    assert abs(got_bmyc_pct - 20.64) > 1.0, \
+        "白馬義從: 公孫瓚統領時應是topup覆蓋base(≈10.64%), 不是base+topup疊加(≈20.64%)——同src+同kind push_add應互相覆蓋而非累加"
+
+    # 138) 加法定律等價性直接驗算: base(speed=100)理論值應為10.293%整(scaleDiv換算的基準點),
+    #      與calibration_anchors.json level_additive_law_20260708記載的Lv10基值一致。
+    bmyc_gsz2 = Unit(POOL["公孫瓚"], "騎")
+    bmyc_gsz2.push_mod("speed", 100.0 / bmyc_gsz2.eff("speed"), 9)
+    assert abs(bmyc_gsz2.eff("speed") - 100.0) < 1e-6
+    apply_effects(bmyc_gsz2, None, bmyc_tac, [bmyc_gsz2], [], no_heal=True)
+    got_base_pct = bmyc_gsz2.addbonus("rateup") * 100
+    assert abs(got_base_pct - 10.293) < 0.01, \
+        f"白馬義從: 公孫瓚統領+速度100(scale=1基準點)時rateup加成應=10.293%(Lv10基值), got={got_base_pct:.4f}%"
+
+    print(f"    [批47 A] 白馬義從「若公孫瓚統領, 提高發動率受速度影響」落地: 資料層base+topup雙rateup(135)/非公孫瓚統領固定10%不受速度影響(136)/公孫瓚統領+速度133.78精確10.64%(137, user Lv1兩點+加法定律換算)/speed=100基準點10.293%(138)驗證通過")
+
     print("self-check OK")
 
 
