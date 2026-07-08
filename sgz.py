@@ -139,13 +139,19 @@ def locked_scale_of(caster, e):
 # 才翻倍(對比 SCALE 只要+350即450), 反解 c=0.002598(6組獨立點一致到小數第6位, 取0.0026)。
 # chargeup 尚無獨立實測, 暫共用同常數(假設同曲線, 待未來樣本校準)。
 RATE_SCALE_C = 0.0026
+RATE_SCALE_DEFAULT_DIV = 1 / RATE_SCALE_C  # ≈384.6154 —— rateup/chargeup 預設曲線除數(向後相容, 與 engine.js 同款)
+
+# 批46 A: e["scaleDiv"](可選) —— 覆蓋預設除數384.6, 供不同曲線族的rateup戰法各自標記(比照
+# amp/mitig 的 scale_of 第三參數 scale_div 慣例)。實測依據: 十二奇策(docs/data/
+# calibration_anchors.json → shierqice_20260707) user七點齊發精確收斂 D=335.1±0.15。
 
 
-def rate_scale_of(caster, scale):
+def rate_scale_of(caster, scale, scale_div=None):
     if not scale:
         return 1.0
+    div = scale_div or RATE_SCALE_DEFAULT_DIV
     v = caster.charm if scale == "charm" else caster.eff(scale)
-    return 1 + (v - 100) * RATE_SCALE_C
+    return 1 + (v - 100) / div
 
 
 def morale_mult(m):
@@ -1774,7 +1780,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 # 加成(批7: 太平道法「受智力影響」, 見 docs/data/calibration_anchors.json → rate_scale)。
                 # prepOnly/nativeOnly/inheritedOnly(批8, nativeOnly反向) 修飾旗標存進 adds[4], 由
                 # addbonus_for() 在主動擲骰處依戰法屬性篩選加總。
-                rv = e["val"] * rate_scale_of(caster, e["scale"]) if e.get("scale") else e["val"]
+                rv = e["val"] * rate_scale_of(caster, e["scale"], e.get("scaleDiv")) if e.get("scale") else e["val"]
                 rflags = {"prepOnly": bool(e.get("prepOnly")), "nativeOnly": bool(e.get("nativeOnly")),
                           "inheritedOnly": bool(e.get("inheritedOnly"))} \
                     if (e.get("prepOnly") or e.get("nativeOnly") or e.get("inheritedOnly")) else None
@@ -1786,7 +1792,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 u.push_add("rateup", rv, e["dur"], r_src, rflags)
             elif k == "chargeup":                      # 提高(自身或對象)突擊戰法發動機率; 排除 proc=True 特技偽戰法見突擊擲骰處註解
                 # chargeup 同樣支援 scale(未有實測前與 rateup 共用 RATE_SCALE_C, 假設同曲線, 見上方常數註解)
-                cv = e["val"] * rate_scale_of(caster, e["scale"]) if e.get("scale") else e["val"]
+                cv = e["val"] * rate_scale_of(caster, e["scale"], e.get("scaleDiv")) if e.get("scale") else e["val"]
                 cflags = {"prepOnly": bool(e.get("prepOnly")), "nativeOnly": bool(e.get("nativeOnly"))} \
                     if (e.get("prepOnly") or e.get("nativeOnly")) else None
                 c_src = (src + ":" + "".join(k2 for k2 in ("prepOnly", "nativeOnly") if cflags.get(k2))) \
@@ -5134,6 +5140,60 @@ def demo():
     assert dmgj130_tac["effects"][0].get("targetSel") == "maxTroop", "定謀貴決: effects[0]應帶targetSel:\"maxTroop\"(批45 C精確落地, 取代批21撤回後的無targetSel近似)"
 
     print(f"    [批45 C] TARGETSEL_KEY.maxTroop(兵力最高準則): 精確選標方向驗證(129)/定謀貴決真實資料回歸(130)驗證通過")
+
+    # --- 批46 A: rateup 支援 e.scaleDiv(曲線族泛化) + 十二奇策官方卡七點齊發破案曲線落地 ---
+    # 131) rate_scale_of 第三參數 scale_div: 未傳(None)應與舊版 RATE_SCALE_C(除數384.6)行為
+    #      逐位元一致(向後相容, 太平道法等既有資料零回歸)。
+    assert abs(rate_scale_of(POOL["張角"], None)) < 1e-12 or rate_scale_of(POOL["張角"], None) == 1.0, \
+        "rate_scale_of: scale=None 應回傳1.0(無縮放), 與舊版行為一致"
+    _rsu = Unit(POOL["張角"], "騎")
+    _rsu.push_mod("intel", 426.57 / _rsu.eff("intel"), 9)
+    assert abs(_rsu.eff("intel") - 426.57) < 1e-6
+    _default_scaled = rate_scale_of(_rsu, "intel")
+    _explicit_default_div_scaled = rate_scale_of(_rsu, "intel", RATE_SCALE_DEFAULT_DIV)
+    assert abs(_default_scaled - _explicit_default_div_scaled) < 1e-12, \
+        "rate_scale_of: 未傳scale_div應等同顯式傳入RATE_SCALE_DEFAULT_DIV(384.6154...), 向後相容"
+
+    # 132) 十二奇策(荀攸自帶): rateup 效果應帶 scale:"intel"+scaleDiv:335(本批A項落地), 用
+    #      calibration_anchors.json → shierqice_20260707 的 rate_boost_samples_v2 七點齊發實測
+    #      (D=335.1±0.15) 逐點驗算, 容差0.01(對應user錨點記載的精度)。
+    sq_tac = TACTICS["十二奇策"]
+    sq_ru = next(e for e in sq_tac["effects"] if e["k"] == "rateup")
+    assert sq_ru.get("scale") == "intel" and sq_ru.get("scaleDiv") == 335, \
+        "十二奇策 rateup 應帶 scale:\"intel\", scaleDiv:335(批46 A精確落地, 取代預設384.6曲線)"
+    sq_samples = [
+        (420.09, 11.73), (444.85, 12.18), (401.74, 11.4), (415.6, 11.65),
+        (421.23, 11.75), (433.9, 11.98), (448.02, 12.23),
+    ]
+    for intel_v, expect_pct in sq_samples:
+        sq_u = Unit(POOL["荀攸"], "槍")
+        sq_u.push_mod("intel", intel_v / sq_u.eff("intel"), 9)
+        assert abs(sq_u.eff("intel") - intel_v) < 1e-6, f"測試前置條件: 智力應精確落在{intel_v}"
+        got_scale = rate_scale_of(sq_u, sq_ru["scale"], sq_ru["scaleDiv"])
+        got_pct = sq_ru["val"] * got_scale * 100
+        assert abs(got_pct - expect_pct) < 0.01, \
+            f"十二奇策智力{intel_v}時rateup加成應≈{expect_pct}%(D=335曲線), got={got_pct:.4f}%"
+
+    # 133) 全庫同族補遺核對: 舌戰群儒(「發動機率...受智力影響」同族措辭)的兩段rateup應補上
+    #      scale:"intel"(批38遺留_todo, 本批B項補上), 但scaleDiv曲線族未定(無獨立實測樣本佐證
+    #      是否與十二奇策同屬335家族), 應沿用預設384.6, 不擅自外推借用335(比照批35「曲線族
+    #      未定不擅自套用非預設除數」慣例)。
+    sgq_tac = TACTICS["舌戰群儒"]
+    sgq_rus = [e for e in sgq_tac["effects"] if e["k"] == "rateup"]
+    assert len(sgq_rus) == 2, "舌戰群儒應有2條rateup(降敵/增己及隨機友軍)"
+    assert all(e.get("scale") == "intel" for e in sgq_rus), \
+        "舌戰群儒2條rateup皆應補scale:\"intel\"(批46 B, 原文「受智力影響」)"
+    assert all(e.get("scaleDiv") is None for e in sgq_rus), \
+        "舌戰群儒2條rateup不應標scaleDiv(曲線族未定, 沿用預設384.6, 不外推借用十二奇策的335)"
+
+    # 134) 先成其慮(對照組): rateup段原文無「受智力影響」標記(僅前一句傷害段受智力影響),
+    #      應維持不帶scale(val=0.15固定值, 不隨智力縮放)。
+    xcq_tac = TACTICS["先成其慮"]
+    xcq_ru = next(e for e in xcq_tac["effects"] if e["k"] == "rateup")
+    assert xcq_ru.get("scale") is None, \
+        "先成其慮 rateup 段原文無「受智力影響」標記, 不應帶scale(對照組, 確認未誤套用)"
+
+    print(f"    [批46 A] rateup e.scaleDiv曲線族泛化: 向後相容(131)/十二奇策scaleDiv:335七點齊發精確驗算(132)/舌戰群儒同族補遺scale補上但曲線族未定不外推(133)/先成其慮對照組無scale(134)驗證通過")
 
     print("self-check OK")
 

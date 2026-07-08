@@ -53,8 +53,18 @@
   // user 實測太平道法(黃巾/張角, docs/data/calibration_anchors.json → rate_scale): 智力484.6
   // 才翻倍(對比 SCALE 只要+350即450), 反解 c=0.002598(6組獨立點一致到小數第6位, 取0.0026)。
   // chargeup 尚無獨立實測, 暫共用同常數(假設同曲線, 待未來樣本校準)。
-  const RATE_SCALE_C = 0.0026;
-  const rateScaleOf = (caster, scale) => scale === "charm" ? 1 + (caster.charm - 100) * RATE_SCALE_C : (scale ? 1 + (caster.eff(scale) - 100) * RATE_SCALE_C : 1);
+  const RATE_SCALE_C = 0.0026;                        // 對應除數 1/0.0026≈384.6(太平道法曲線, RATE_SCALE_DEFAULT_DIV 的等價斜率寫法, 兩者數學等價, 保留常數名稱向後相容)
+  const RATE_SCALE_DEFAULT_DIV = 1 / RATE_SCALE_C;    // ≈384.6154 —— rateup/chargeup 預設曲線除數(向後相容, 未標 e.scaleDiv 的既有資料沿用此值, 結果與舊版 RATE_SCALE_C 逐位元一致)
+  // 批46 A: e.scaleDiv(比照 amp/mitig 的 scaleOf 第三參數慣例) —— 效果級可選欄位, 覆蓋預設除數,
+  // 供逐效果標記走哪條「發動機率受X影響」曲線。實測依據: 十二奇策(docs/data/
+  // calibration_anchors.json → shierqice_20260707) user七點齊發精確收斂 D=335.1±0.15, 與太平道法
+  // 的384.6是兩條不同斜率的獨立曲線(同語意「受智力影響提高發動機率」, 但不同戰法数值出處不同,
+  // 比照 SCALE_G 的 375/350 慣例, 不擅自把預設384.6改掉, 只在有明確實測錨點佐證的效果才標
+  // scaleDiv:335)。
+  const rateScaleOf = (caster, scale, scaleDiv) => {
+    const div = scaleDiv || RATE_SCALE_DEFAULT_DIV;
+    return scale === "charm" ? 1 + (caster.charm - 100) / div : (scale ? 1 + (caster.eff(scale) - 100) / div : 1);
+  };
   // 批18: 傷兵池(治療上限) —— user 遊戲實測: 受到的傷害按「當時回合數」轉化為「可救援(計入
   // 傷兵池, 治療只能回這部分)」vs「不可救援(直接陣亡, 治療無法挽回)」, 轉化率隨回合遞減
   // (見 docs/data/calibration_anchors.json → wounded_pool)。1~3回合90%、4~6回合80%、
@@ -887,11 +897,11 @@
       case "healGiven": return `施放治療效果${val >= 0 ? "+" : ""}${p(val)}${d}` + sfx;
       case "dispel": return `驅散〔${e.what === "buffs" ? "增益" : "減益"}〕`;
       case "fakeReport": return `偽報·被動指揮戰法失效${d || "(1回合)"}`;
-      // rateup/chargeup 的 scale 用獨立的 RATE_SCALE_C(非上面 amp/mitig/stat 共用的 scaleOf/SCALE),
-      // 故不沿用外層算好的 val/sfx, 另外用 rateScaleOf 算實際值(批7)。
+      // rateup/chargeup 的 scale 用獨立的 rateScaleOf(非上面 amp/mitig/stat 共用的 scaleOf/SCALE),
+      // 故不沿用外層算好的 val/sfx, 另外用 rateScaleOf 算實際值(批7; 批46 A: e.scaleDiv 透傳)。
       case "rateup": case "chargeup": {
         const rsfx = e.scale && caster ? `〔受${STAT_ZH[e.scale] || e.scale}影響〕` : "";
-        const rv = e.scale && caster ? e.val * rateScaleOf(caster, e.scale) : e.val;
+        const rv = e.scale && caster ? e.val * rateScaleOf(caster, e.scale, e.scaleDiv) : e.val;
         const label = k === "rateup" ? "主動戰法發動機率" : "突擊發動機率";
         return `${label}+${p(rv)}${d}${rsfx}`;
       }
@@ -1429,11 +1439,13 @@
         else if (k === "healblock") u.healblock = Math.max(u.healblock, (e.dur ?? 1) + 1);  // 批8: 禁療 —— heal 套用處(applyEffects 開頭)已排除 healblock 中的目標
         else if (k === "lifesteal") u.pushAdd("lifesteal", e.val, e.dur, src);  // 批8: 倒戈 —— 實際回血在 hit() 結算傷害後(見 hit() 內 lifesteal 段), 這裡只掛加成值
         else if (k === "rateup") {                       // 提高(自身或對象)主動戰法發動機率
-          // scale: 施放當下(caster 戰鬥內即時素質)用 RATE_SCALE_C(獨立於全域 SCALE) 縮放實際加成
+          // scale: 施放當下(caster 戰鬥內即時素質)用 rateScaleOf(獨立於全域 SCALE) 縮放實際加成
           // (批7: 太平道法「受智力影響」, 見 docs/data/calibration_anchors.json → rate_scale)。
           // prepOnly/nativeOnly/inheritedOnly(批8, nativeOnly反向) 修飾旗標存進 adds[4], 由
-          // addbonusFor() 在主動擲骰處依戰法屬性篩選加總。
-          const rv = e.scale ? e.val * rateScaleOf(caster, e.scale) : e.val;
+          // addbonusFor() 在主動擲骰處依戰法屬性篩選加總。批46 A: e.scaleDiv(選填) —— 覆蓋預設
+          // 除數384.6, 供不同曲線族的rateup戰法各自標記(見十二奇策 scaleDiv:335, calibration_
+          // anchors.json → shierqice_20260707)。
+          const rv = e.scale ? e.val * rateScaleOf(caster, e.scale, e.scaleDiv) : e.val;
           const flags = (e.prepOnly || e.nativeOnly || e.inheritedOnly) ? { prepOnly: !!e.prepOnly, nativeOnly: !!e.nativeOnly, inheritedOnly: !!e.inheritedOnly } : undefined;
           // 同一戰法(如太平道法)可能有多條 rateup(一般 + prepOnly 額外), src 相同的話 pushAdd
           // 的「同kind+同src刷新」去重會把前一條蓋掉; 用 flags 組出不同的 dedup key 尾碼區分,
@@ -1442,8 +1454,8 @@
           u.pushAdd("rateup", rv, e.dur, rSrc, flags);
         }
         else if (k === "chargeup") {                    // 提高(自身或對象)突擊戰法發動機率; 排除 t.proc===true 特技偽戰法見突擊擲骰處註解
-          // chargeup 同樣支援 scale(未有實測前與 rateup 共用 RATE_SCALE_C, 假設同曲線, 見上方常數註解)
-          const cv = e.scale ? e.val * rateScaleOf(caster, e.scale) : e.val;
+          // chargeup 同樣支援 scale(未有實測前與 rateup 共用預設曲線, 假設同曲線, 見上方常數註解); e.scaleDiv 比照 rateup 透傳(批46 A, 目前 chargeup 尚無獨立實測需要非預設曲線的樣本, 保留擴充點)
+          const cv = e.scale ? e.val * rateScaleOf(caster, e.scale, e.scaleDiv) : e.val;
           const cflags = (e.prepOnly || e.nativeOnly) ? { prepOnly: !!e.prepOnly, nativeOnly: !!e.nativeOnly } : undefined;
           const cSrc = (src && cflags) ? src + ":" + ["prepOnly", "nativeOnly"].filter(f => cflags[f]).join("") : src;
           u.pushAdd("chargeup", cv, e.dur, cSrc, cflags);

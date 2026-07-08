@@ -545,7 +545,11 @@ KNOWN_EFFECT_FIELDS = {
     "scaleDiv", "capVal",  # 批35: 曲線族原語泛化 —— 與 scale 同層級的跨k通用欄位(任何帶 scale
     # 的效果都可選配), scaleDiv覆蓋SCALE縮放除數(預設350), capVal為縮放後值上限clamp,
     # 見 engine.js/sgz.py 的 SCALE_G/scale_of/cap_val_of + lockedScaleOf/locked_scale_of。
-    # 現階段全庫只有機鑑先識(block)實際使用, 但欄位本身語意不限定k=="block"。
+    # 批35當時全庫只有機鑑先識(block)實際使用, 但欄位本身語意不限定k=="block"; 批46 A:
+    # rateup 效果也讀 e.scaleDiv(獨立於 SCALE_G 的另一條 rateScaleOf/rate_scale_of 曲線族,
+    # 預設除數384.6, 十二奇策 scaleDiv:335, 見 rateScaleOf/rate_scale_of 定義處), 兩者共用
+    # 同一個欄位名稱與「覆蓋預設除數」語意, 但各自的預設值/曲線函式彼此獨立(scaleDiv的具體
+    # 數值意義依 k 決定用哪條 rateScaleOf 或 scaleOf 曲線, 非全域單一常數)。
     "sameTargets",  # 批45 A: 沿用同一次apply_effects呼叫內先前已命中的群體目標(main_hit_tgts),
     # 取代「coef段與效果段各自獨立pick_targets」的舊近似, 跨所有k種類通用(見 apply_effects
     # 對 e.sameTargets 的判斷式, engine_limitations.md 第45節)。
@@ -1684,8 +1688,13 @@ ENGINE_CAPABILITY_ALIASES = {
     # SCALE_G/scale_of(scale_div參數)/cap_val_of。
     "曲線族": "scaleDiv/capVal(批35新增, 效果級可選欄位, scaleDiv覆蓋SCALE縮放除數(預設350,"
                 "狀態效果類走375, 見calibration_anchors status_scale_375_20260704), capVal為縮放後"
-                "值上限clamp, 見 engine.js/sgz.py 的 SCALE_G/scale_of/cap_val_of)",
+                "值上限clamp, 見 engine.js/sgz.py 的 SCALE_G/scale_of/cap_val_of; 批46 A: rateup/"
+                "chargeup 系另有獨立曲線(rateScaleOf/rate_scale_of, 預設除數384.6, 十二奇策"
+                "scaleDiv:335, 見calibration_anchors shierqice_20260707), 與此處SCALE_G系(350/375)"
+                "是兩條互不相干的曲線族, 完整清單見engine_limitations.md「曲線圖鑑」節)",
     "375": "scaleDiv(同上; 「除數375」「375曲線」等措辭指此欄位)",
+    "335": "rateup的e.scaleDiv(批46 A新增, 十二奇策專屬曲線, 見calibration_anchors "
+                "shierqice_20260707; 與上方SCALE_G系350/375是不同曲線函式, 不可混用)",
     "值上限": "capVal(批35新增, 效果級可選欄位, 縮放後clamp, 見 cap_val_of/capValOf; "
                 "「狀態效果上限=基礎值×2」慣例不自動套用, 逐效果顯式標)",
     "準備階段鎖定": "lockedScaleOf/locked_scale_of(批35新增, 見 engine.js/sgz.py 對 block 效果"
