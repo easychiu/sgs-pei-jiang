@@ -2,6 +2,13 @@
 // 批48: 單卡AI配將 —— 只選一張武將卡, 自動推薦最強隊伍(兩名隊友+戰法配置), 全瀏覽器端運行。
 // 三階漏斗: 粗篩(啟發式評分, 全池配對) → 海選(小樣本模擬 vs GAUNTLET) → 決選(精算: 貪心配傳承戰法+兵書+兵種營Lv10, 大樣本模擬 vs GAUNTLET)。
 // 只讀取既有資料/引擎(SGZ), 不改動 engine.js 的戰鬥數學。
+// 批49: AI配將語意約束 —— user實測批48抓到「怪點」: SP典韋帶捨身救主(捨身護主向)卻被排當
+// 主將/槍隊主將卻配到盾兵專屬丹陽兵/諸葛恪配丹陽兵沒吃到陶謙ifLeaderIs加成/無主動戰法者
+// 配到只在自身主動戰法發動時才有效的戰法或兵書。決選階段新增: (A)主將位排列比較(語意過濾
+// 「捨身護主類」不得當主將+「ifLeader/ifLeaderIs」優先當主將), (B)兵種雙方案比較(隊伍適性
+// 加權前2名兵種各跑一輪, 取較優者), (C)戰法/兵書指派語意過濾(ifLeaderIs指名不在隊者降檔,
+// teamGate不滿足陣法排除, TROOP類戰法兵種不符排除, activeOnly/activeFired類戰法或兵書無
+// active持有者排除), (D)推薦理由文字(緣分/陣營/角色互補/主將安排原因)。
 (function (root) {
   // ---- 角色分類: 用戰法 effects 的 k 粗分「輸出/控制/治療/輔助」, 供粗篩角色互補評分 ----
   const CTRL_KS = new Set(["stun", "silence", "disarm", "dodge", "chaos", "taunt", "healblock", "immune"]);
@@ -23,6 +30,128 @@
   }
   function generalRoles(g) {                         // 武將自帶戰法角色集合(供粗篩角色互補評分)
     return tacticRoles(g.tactic);
+  }
+
+  // ---- 批49 A: 主將位語意判斷 ----
+  // 「捨身護主類」戰法 —— 結構特徵是「為主將擋/代主將反擊」, 語意上該戰法只有「holder 不是
+  // 主將」時才有意義(捨身救主: 自身受擊時減傷, 設計上是給副將擋刀; 古之惡來/虎衛軍等則是
+  // 引擎 counter.guardFor 欄位, guardFor==="leader" 結構上要求 allies[0]!==caster 才會觸發,
+  // holder 若自己就是主將, guardFor 分支形同虛設)。guardFor 有引擎欄位可查, 但捨身救主一類
+  // 「純自身減傷、無 guardFor 欄位」的設計意圖無法從 effects 結構穩定辨識(高自減傷被動不少,
+  // 硬用數值門檻會誤傷藏器待時等非護主向戰法), 故額外併入一份少量、經校對確認的具名清單
+  // (捨身救主=SP典韋、古之惡來=典韋, 皆為「代主將擋/反擊」的明文設計)。
+  const GUARD_LEADER_NAMES = new Set(["捨身救主", "古之惡來"]);
+  function hasGuardForEffect(t) {
+    return !!(t && (t.effects || []).some(e => e.guardFor === "leader"));
+  }
+  function isGuardLeaderTactic(t) {
+    if (!t) return false;
+    if (GUARD_LEADER_NAMES.has(t.nameZh)) return true;
+    return hasGuardForEffect(t);
+  }
+  // 持有 ifLeader/ifLeaderIs 效果(戰法級或效果級)者「當主將才有意義」——優先當主將。
+  // ifLeaderIs 額外指名武將, 若隊上有該武將, 該武將應為主將人選(非僅「優先」, 是唯一能觸發者)。
+  function leaderSeekingInfo(t) {
+    if (!t) return { seeks: false, names: null };
+    const effs = t.effects || [];
+    const namedEffs = effs.filter(e => e.ifLeaderIs);
+    if (namedEffs.length) {
+      const names = new Set();
+      namedEffs.forEach(e => (Array.isArray(e.ifLeaderIs) ? e.ifLeaderIs : [e.ifLeaderIs]).forEach(n => names.add(n)));
+      return { seeks: true, names };
+    }
+    const hasIfLeader = effs.some(e => e.ifLeader) || (t.when && t.when.ifLeader);
+    return { seeks: hasIfLeader, names: null };
+  }
+  // 一個武將在候選隊中「是否適合當主將」的粗分類(供排列篩選/排序): forbid(捨身護主類, 不得
+  // 當主將) > seek(ifLeader/ifLeaderIs 持有者, 優先當主將) > named(ifLeaderIs 指名到隊上某
+  // 武將, 該武將應為主將) > neutral(其餘, 按統率/指揮系戰法排序)。
+  function leaderFitness(g) {
+    const t = g.tactic;
+    if (isGuardLeaderTactic(t)) return "forbid";
+    const info = leaderSeekingInfo(t);
+    if (info.seeks) return "seek";
+    return "neutral";
+  }
+  // 一隊三人中, 是否有 ifLeaderIs 指名到隊上另一位武將(如丹陽兵指名陶謙) —— 若有, 被指名者
+  // 應為主將(即使指名者自己不在隊上, 只要隊上有人持有該 ifLeaderIs 戰法且指名對象也在隊上)。
+  // 這裡只看「自帶」戰法, 傳承戰法的 ifLeaderIs 由決選階段 pickInheritTactics 之後另行核對
+  // (見 stage3 排列比較, 傳承戰法要等貪心指派完成才知道, 故主將排列先用自帶戰法近似排序,
+  // 傳承戰法造成的「應為主將」只在指派後才確定, 已超出「排列比較」的合理成本範圍, 留待
+  // pickInheritTactics 內以「隊上已定主將」為前提做語意過濾, 不倒過來動搖主將排列)。
+  function namedLeaderInTeam(POOL, team) {            // team: [name,...], 回傳 ifLeaderIs 指名且在隊上的武將名(找不到回 null)
+    for (const n of team) {
+      const g = POOL && POOL[n];
+      if (!g || !g.tactic) continue;
+      const info = leaderSeekingInfo(g.tactic);
+      if (info.seeks && info.names) {
+        for (const cand of info.names) if (team.includes(cand)) return cand;
+      }
+    }
+    return null;
+  }
+
+  // 產生一隊(3人)語意合法的主將排列 —— 全部3種「誰當主將」排列(其餘兩人順序不影響模擬,
+  // 固定按原順序排 index1/2), 過濾掉 forbid(捨身護主類)者當主將的排列, 若濾光則回退成
+  // 「僅保留非forbid的一種」(全員皆forbid的極端情況不太可能發生, 保守回退避免拋出空陣列)。
+  // ifLeaderIs 指名對象在隊上時, 只保留該武將當主將的排列(唯一有意義的安排)。
+  function leaderPermutations(POOL, team) {
+    const named = namedLeaderInTeam(POOL, team);
+    const perms = team.map((leaderName) => {
+      const rest = team.filter(n => n !== leaderName);
+      return [leaderName, ...rest];
+    });
+    if (named) {
+      const only = perms.filter(p => p[0] === named);
+      if (only.length) return only;
+    }
+    const legal = perms.filter(p => leaderFitness(POOL[p[0]]) !== "forbid");
+    return legal.length ? legal : perms.slice(0, 1);
+  }
+  function leaderReason(POOL, team) {                 // 供 D 項推薦理由: 描述主將安排原因
+    const leader = POOL[team[0]];
+    if (!leader) return "";
+    const t = leader.tactic;
+    if (isGuardLeaderTactic(t)) return "";            // 不應發生(排列已過濾), 保底不生成矛盾說詞
+    const info = leaderSeekingInfo(t);
+    if (info.names && info.names.size) return `${team[0]}居主將以觸發「${t.nameZh}」統領加成`;
+    if (info.seeks) return `${team[0]}居主將以發揮「${t.nameZh}」主將限定效果`;
+    const guards = team.slice(1).filter(n => POOL[n] && isGuardLeaderTactic(POOL[n].tactic));
+    if (guards.length) return `${guards.join("、")}居副將以發揮「${(POOL[guards[0]].tactic || {}).nameZh || ""}」`;
+    return "";
+  }
+
+  // ---- 批49 C: 戰法/兵書指派語意過濾輔助 ----
+  // TROOP 類(cat==="TROOP")戰法多為「XX兵專屬」, 僅特定兵種可用。troopLimit 這個 metadata
+  // 只存在於 data/tactics.json(未隨 tactics_parsed.json 流入瀏覽器, 見 docs/data/
+  // engine_limitations.md 對應段落: 全庫從未真正接上引擎戰鬥邏輯, 純資料庫欄位), 故在此以
+  // 少量、對照 data/tactics.json troopLimit 欄位人工校對過的具名對照表補上, 供貪心指派時
+  // 排除「隊伍選定兵種與戰法專屬兵種不符」的指派(如丹陽兵=盾兵專屬, 配給槍隊即整戰法浪費)。
+  const TROOP_ONLY = {
+    "丹陽兵": "盾", "先登死士": "弓", "大戟士": "槍", "引弦力戰": "弓", "擊其惰歸": "盾",
+    "無當飛軍": "弓", "白毦兵": "槍", "白馬義從": "弓", "百騎劫營": "騎", "萬箭齊發": "弓",
+    "藤甲兵": "盾", "虎衛軍": "盾", "虎豹騎": "騎", "西涼鐵騎": "騎", "解煩衛": "槍",
+    "象兵": "騎", "錦帆軍": "弓", "鐵騎驅馳": "騎", "陷陣營": "盾", "青州兵": "槍",
+    "飛熊軍": "騎", "左右開弓": "弓",
+  };
+  function troopMismatch(t, troop) {                  // true=戰法要求的兵種與隊伍選定兵種不符, 應整條排除
+    if (!t || t.cat !== "TROOP") return false;
+    const need = TROOP_ONLY[t.nameZh];
+    return !!need && need !== troop;
+  }
+  // 「主動觸發依賴」戰法/兵書 —— 效果掛 activeOnly(僅主動戰法造成的傷害才吃, 如鬼謀/士爭
+  // 先赴)或戰法級 when.on==="activeFired" 且未指定 who(隱含=自身, 綁定「自己」的主動戰法
+  // 成功發動這件事, 如士爭先赴), 對「整套 kit 無 type:"active" 戰法」的持有者(含傳承後)
+  // 而言形同虛設, 指派時應排除。teamHasActiveTactic 檢查含自帶+已指派傳承戰法。
+  function requiresOwnActive(t) {
+    if (!t) return false;
+    if ((t.effects || []).some(e => e.activeOnly)) return true;
+    if (t.when && t.when.on === "activeFired" && (t.when.who === undefined || t.when.who === "self")) return true;
+    return false;
+  }
+  function holderHasActiveTactic(g, inheritedNames, TAC_DATA) {
+    if (g.tactic && g.tactic.type === "active") return true;
+    return (inheritedNames || []).some(nm => TAC_DATA[nm] && TAC_DATA[nm].type === "active");
   }
 
   // ---- 粗篩: 啟發式評分(毫秒級), 全池配對取前 N ----
@@ -123,8 +252,8 @@
     return { names, bs, eq: names.map(() => []), ad, inh };
   }
 
-  function vsGauntletWinRate(POOL, team, params, gauntlet, n, scenario) {
-    const troopA = SGZ.teamTroop(POOL, team);
+  function vsGauntletWinRate(POOL, team, params, gauntlet, n, scenario, troopAOverride) {
+    const troopA = troopAOverride || SGZ.teamTroop(POOL, team);
     let totalWin = 0, count = 0;
     for (const foe of gauntlet) {
       const fp = defaultParamsFor(POOL, foe.names);
@@ -136,17 +265,49 @@
     return count ? totalWin / count : 0;
   }
 
+  // ---- 批49 B: 兵種雙方案 —— 「隊伍適性加權」前2名兵種(主將適性加權高一點, 主將S優先於
+  // 副將S, 貼合「主將兵種適性決定戰場定位」的直覺), 供決選階段各跑一輪比較, 取較優者。----
+  function weightedTroopRanking(POOL, team) {
+    const scored = SGZ.TROOPS.map(tp => {
+      const s = team.reduce((a, n, i) => a + SGZ.aptPct(POOL[n], tp) * (i === 0 ? 1.5 : 1), 0);
+      return { troop: tp, score: s };
+    });
+    scored.sort((a, b) => b.score - a.score);
+    return scored;
+  }
+  function top2Troops(POOL, team) {
+    const ranked = weightedTroopRanking(POOL, team);
+    const out = [ranked[0].troop];
+    if (ranked[1] && ranked[1].troop !== ranked[0].troop) out.push(ranked[1].troop);
+    return out;
+  }
+
   // ---- 決選: 貪心配傳承戰法 —— 按 quality S>A>B 優先 + type 與隊伍現有戰法互補(避免同隊重複 command/charge 過量) + 不與自帶衝突(同名) ----
-  function pickInheritTactics(POOL, TAC_DATA, TAC_TIER, NONEQUIP, team) {
+  // 批49 C: team 現為「主將排列後」的陣列(team[0]=主將), troop 為本輪決選採用的兵種(供 TROOP
+  // 類戰法兵種匹配過濾)。新增語意過濾: (1) teamGate 不滿足的陣法整條排除(如潛龍陣三陣營異等
+  // 但隊伍不符); (2) TROOP 類戰法要求的兵種與 troop 不符者整條排除(非降檔, 直接不指派);
+  // (3) activeOnly/activeFired 依賴「持有者自身有主動戰法」的戰法, 持有者(含此次已指派的
+  // 傳承)沒有 type:"active" 戰法時排除; (4) ifLeaderIs 指名武將不在隊上時降檔(排到候選池
+  // 最後, 除非其 base 段本身仍勝過其他選項才會被選中——用「附加惰性排序鍵」而非直接排除,
+  // 因為 base 段仍可能生效, 只是「統領增益」這塊機會成本高)。
+  function pickInheritTactics(POOL, TAC_DATA, TAC_TIER, NONEQUIP, team, troop, teamFactions) {
     const tierRank = { S: 0, A: 1, B: 2 };
+    const factions = teamFactions || team.map(n => POOL[n] && POOL[n].faction);
     const names = Object.keys(TAC_DATA).filter(nm => !NONEQUIP.has(nm));
     const pool = names.map(nm => ({ nm, t: TAC_DATA[nm], tier: TAC_TIER[nm] || "C" }))
       .filter(x => x.t && x.t.type !== "none")
-      .sort((a, b) => (tierRank[a.tier] ?? 9) - (tierRank[b.tier] ?? 9));
+      .filter(x => !(x.t.teamGate && !teamGateOkLocal(x.t.teamGate, factions)))     // (1) teamGate 不滿足整條排除
+      .filter(x => !troopMismatch(x.t, troop))                                     // (2) TROOP 兵種不符整條排除
+      .sort((a, b) => {
+        const dl = (leaderIsUndeployed(a.t, team) ? 1 : 0) - (leaderIsUndeployed(b.t, team) ? 1 : 0);   // (4) ifLeaderIs指名不在隊降檔
+        if (dl) return dl;
+        return (tierRank[a.tier] ?? 9) - (tierRank[b.tier] ?? 9);
+      });
     // 陣法/兵種類(FORMATION/TROOP)全隊只應有一人持有(同 app.js teamHasCat 慣例), 貪心指派時
     // 隊上已有人佔用該分類後, 後續其他人不再指派同分類的傳承戰法(留給未來更精細的位置感知再優化)。
     const teamCatTaken = new Set();
     const inh = team.map(() => [null, null]);
+    const inhNames = team.map(() => []);                // 供 (3) 逐步累積判斷「此人是否已有主動戰法」
     const used = new Set();                            // 已指派的戰法名(隊內不重複)
     for (let slot = 0; slot < 2; slot++) {              // 每人最多2個傳承欄
       for (let i = 0; i < team.length; i++) {
@@ -155,15 +316,29 @@
         const nativeName = g.tacticName;
         const pick = pool.find(x => !used.has(x.nm) && x.nm !== nativeName &&
           !inh[i].includes(x.nm) &&
-          !((x.t.cat === "FORMATION" || x.t.cat === "TROOP") && teamCatTaken.has(x.t.cat))
+          !((x.t.cat === "FORMATION" || x.t.cat === "TROOP") && teamCatTaken.has(x.t.cat)) &&
+          !(requiresOwnActive(x.t) && !holderHasActiveTactic(g, inhNames[i], TAC_DATA))   // (3) 無主動戰法者排除主動依賴戰法
         );
         if (pick) {
-          inh[i][slot] = pick.nm; used.add(pick.nm);
+          inh[i][slot] = pick.nm; used.add(pick.nm); inhNames[i].push(pick.nm);
           if (pick.t.cat === "FORMATION" || pick.t.cat === "TROOP") teamCatTaken.add(pick.t.cat);
         }
       }
     }
     return inh.map(a => a.filter(Boolean));
+  }
+  function teamGateOkLocal(gate, factions) {          // 對稱 engine.js teamGateOk(不 import 內部函式, 這裡自帶一份供指派前置過濾)
+    if (!gate || !gate.factions) return true;
+    const uniq = new Set(factions).size;
+    if (gate.factions === "allDiff") return uniq === factions.length;
+    if (gate.factions === "allSame") return uniq === 1;
+    return true;
+  }
+  function leaderIsUndeployed(t, team) {              // true = 此戰法 ifLeaderIs 指名的武將都不在隊上(統領加成必吃不到, 只剩 base 段)
+    const info = leaderSeekingInfo(t);
+    if (!info.seeks || !info.names) return false;
+    for (const n of info.names) if (team.includes(n)) return false;
+    return true;
   }
 
   // ---- 主流程: runMatchmaker(POOL, BONDS, TAC_DATA, TAC_TIER, NONEQUIP, anchorName, opts) ----
@@ -175,6 +350,7 @@
     const stage2Keep = (opts && opts.stage2Keep) || 20;
     const stage2N = (opts && opts.stage2N) || 150;
     const stage3N = (opts && opts.stage3N) || 800;
+    const comboN = (opts && opts.comboN) || 150;        // 批49 A/B: 主將排列×兵種雙方案比較用的小樣本(預設150, 對稱user規格「n=150」)
     const topOut = (opts && opts.topOut) || 5;
 
     if (!POOL[anchorName]) throw new Error("武將不存在於當前資料池: " + anchorName);
@@ -206,26 +382,41 @@
     const finalists = withWin.slice(0, stage2Keep);
     await tick();
 
-    // Stage 3: 決選(精算) — 貪心配傳承戰法 + 兵書預設 + 兵種營Lv10, 大樣本模擬(同上: 時間預算分片)
+    // Stage 3: 決選(精算) — 貪心配傳承戰法 + 兵書預設 + 兵種營Lv10, 大樣本模擬(同上: 時間預算分片)。
+    // 批49 A/B: 決選前先跑一輪「組合比較」——主將排列(語意過濾後最多3種)× 兵種雙方案(隊伍
+    // 適性加權前2名), 每種組合用小樣本(comboN)快篩, 取勝率最高的組合才進最終大樣本(stage3N)
+    // 精算, 避免把「排列比較」的額外模擬量全數乘上 stage3N(會讓總時長暴增數倍, 超出45s預算)。
     const results = [];
     sliceStart = nowMs();
     for (let i = 0; i < finalists.length; i++) {
       const c = finalists[i];
-      const inh = pickInheritTactics(POOL, TAC_DATA, TAC_TIER, NONEQUIP, c.team);
-      const params = defaultParamsFor(POOL, c.team);
-      params.inh = inh;
-      const troopA = SGZ.teamTroop(POOL, c.team);
+      const leaderPerms = leaderPermutations(POOL, c.team);        // A: 語意過濾後的主將排列(1~3種)
+      let bestCombo = null;
+      for (const perm of leaderPerms) {
+        const troops2 = top2Troops(POOL, perm);                    // B: 該排列下的兵種雙方案(1~2種)
+        for (const troop of troops2) {
+          const factions = perm.map(n => POOL[n] && POOL[n].faction);
+          const inh = pickInheritTactics(POOL, TAC_DATA, TAC_TIER, NONEQUIP, perm, troop, factions);
+          const params = defaultParamsFor(POOL, perm);
+          params.inh = inh;
+          const win = vsGauntletWinRate(POOL, perm, params, gauntlet, comboN, scenario, troop);
+          if (!bestCombo || win > bestCombo.win) bestCombo = { team: perm, troop, inh, params, win };
+        }
+      }
+      // 精算: 取上一步最佳組合, 大樣本(stage3N) vs GAUNTLET 精確評分
+      const { team, troop, inh, params } = bestCombo;
       let totalWin = 0, totalRounds = 0, count = 0;
       for (const foe of gauntlet) {
         const fp = defaultParamsFor(POOL, foe.names);
         const troopB = SGZ.teamTroop(POOL, foe.names);
-        const r = SGZ.simulate(POOL, c.team, foe.names, stage3N, troopA, troopB,
+        const r = SGZ.simulate(POOL, team, foe.names, stage3N, troop, troopB,
           params.bs, fp.bs, params.eq, fp.eq, params.ad, fp.ad, params.inh, fp.inh, scenario, 10, 10);
         totalWin += r.winA; totalRounds += r.rounds; count++;
       }
       results.push({
-        team: c.team, win: totalWin / count, rounds: totalRounds / count,
-        troop: troopA, bs: params.bs, inh, ad: params.ad,
+        team, win: totalWin / count, rounds: totalRounds / count,
+        troop, bs: params.bs, inh, ad: params.ad,
+        reason: buildReason(POOL, BONDS, team, troop),           // D: 推薦理由
       });
       onProgress("stage3", Math.round(((i + 1) / finalists.length) * 100));
       if (nowMs() - sliceStart > 80) { await tick(); sliceStart = nowMs(); }
@@ -234,9 +425,33 @@
     return { top: results.slice(0, topOut), gauntlet };
   }
 
+  // ---- 批49 D: 推薦理由 —— 命中的緣分名/陣營加成/角色互補標籤/主將安排原因, 供user判斷推薦合理性 ----
+  function buildReason(POOL, BONDS, team, troop) {
+    const parts = [];
+    const bonds = (BONDS || []).filter(b => (b.generals || []).filter(n => team.includes(n)).length >= (b.triggerCount || 99));
+    if (bonds.length) parts.push("緣分：" + bonds.map(b => b.name).join("、"));
+    const facCount = {};
+    team.forEach(n => { const f = POOL[n] && POOL[n].faction; facCount[f] = (facCount[f] || 0) + 1; });
+    const maxFacEntry = Object.entries(facCount).sort((a, b) => b[1] - a[1])[0];
+    if (maxFacEntry && maxFacEntry[1] >= 2) parts.push(`陣營：${maxFacEntry[1]}人同屬「${maxFacEntry[0]}」`);
+    const roleUnion = new Set();
+    team.forEach(n => POOL[n] && generalRoles(POOL[n]).forEach(r => roleUnion.add(r)));
+    const ROLE_LABEL = { dmg: "輸出", ctrl: "控制", heal: "治療", support: "輔助" };
+    if (roleUnion.size) parts.push("角色互補：" + Array.from(roleUnion).map(r => ROLE_LABEL[r] || r).join("、"));
+    const lr = leaderReason(POOL, team);
+    if (lr) parts.push("主將安排：" + lr);
+    parts.push(`兵種：${troop}兵`);
+    return parts.join("　｜　");
+  }
+
   const nowMs = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
   function tick() { return new Promise(res => setTimeout(res, 0)); }
 
-  root.Matchmaker = { run, buildGauntlet, stage1Heuristic, heuristicScore, tacticRoles, generalRoles, defaultParamsFor, pickInheritTactics, GAUNTLET_DEF };
+  root.Matchmaker = {
+    run, buildGauntlet, stage1Heuristic, heuristicScore, tacticRoles, generalRoles, defaultParamsFor, pickInheritTactics, GAUNTLET_DEF,
+    // 批49: 供 E2E 測試腳本直接驗證語意約束
+    isGuardLeaderTactic, leaderFitness, leaderPermutations, leaderSeekingInfo, namedLeaderInTeam,
+    troopMismatch, requiresOwnActive, holderHasActiveTactic, weightedTroopRanking, top2Troops, buildReason,
+  };
   if (typeof module !== "undefined" && module.exports) module.exports = root.Matchmaker;
 })(typeof window !== "undefined" ? window : globalThis);

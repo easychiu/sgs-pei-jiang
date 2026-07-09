@@ -397,7 +397,9 @@ async function runAiMatch() {
     const res = await Matchmaker.run(
       { POOL, BONDS: SGZ.bonds(), TAC_DATA, TAC_TIER, NONEQUIP, scenario: CURRENT_SEASON },
       anchor,
-      { stage1Limit: 150, stage2Keep: 20, stage2N: 60, stage3N: 500, topOut: 5, onProgress }
+      // 批49: 新增決選前「主將排列×兵種雙方案」組合快篩(comboN), 為維持總時長預算(<45s),
+      // 海選 stage2N 從60降到50、comboN取50(對稱user規格「必要時海選n降到50補償」)。
+      { stage1Limit: 150, stage2Keep: 20, stage2N: 50, comboN: 50, stage3N: 500, topOut: 5, onProgress }
     );
     const ms = Math.round(performance.now() - t0);
     stxt.textContent = `完成　耗時 ${(ms / 1000).toFixed(1)} 秒`;
@@ -427,6 +429,7 @@ function renderAiResults(anchor, top, gauntlet) {
           <div class="ai-win">勝率 <b class="gold">${pct(r.win)}%</b>　平均 ${r.rounds.toFixed(1)} 回合　<span style="color:#9a8b6a">(vs 天梯陣容平均)</span></div>
           ${inhTxt ? `<div class="sub">傳承戰法：${inhTxt}</div>` : ""}
           ${bsTxt ? `<div class="sub">兵書：${bsTxt}</div>` : ""}
+          ${r.reason ? `<div class="sub" style="color:#9a8b6a">推薦理由：${r.reason}</div>` : ""}
         </div>
         <button class="primary ai-apply" data-i="${i}">帶入模擬</button>
       </div>`;
