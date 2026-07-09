@@ -301,7 +301,12 @@
     return candidates;
   }
 
-  // ---- GAUNTLET: 固定天梯陣容組, 覆蓋兵刃/謀略/控制/治療不同風格 ----
+  // ---- GAUNTLET: 固定天梯陣容組 —— 批54前(手選6隊, 中等強度)覆蓋兵刃/謀略/控制/治療不同風格。----
+  // 批54: user診斷坐實——舊天梯強度太弱, 所有配將器推薦隊(甚至白板馬鈞)vs舊天梯都飽和在
+  // 95~100%勝率, 勝率失去鑑別力(使用者填不同卡看到的勝率都差不多高)。原因: GAUNTLET_DEF
+  // 是批48手選的「中等隊」, 從未用批51/52的全池聯賽制實測校準過強度基準。
+  // 保留 GAUNTLET_DEF 供 fallback(ratings.json 缺失時, 如league.js自身重新生成評分時的
+  // 冷啟動, 或瀏覽器離線測試) —— 向後相容, league.js/舊呼叫點不受影響。
   const GAUNTLET_DEF = [
     { names: ["呂布", "趙雲", "關羽"], label: "兵刃猛攻" },
     { names: ["諸葛亮", "周瑜", "陸遜"], label: "謀略持續傷害" },
@@ -310,7 +315,96 @@
     { names: ["馬超", "黃忠", "張飛"], label: "兵刃爆發二型" },
     { names: ["劉備", "孫權", "孫策"], label: "指揮輔助" },
   ];
-  function buildGauntlet(POOL) {                      // 過濾掉資料缺失(如某將 tactic 未建模)的成員, 保留可用隊伍
+  // 批54: 強天梯 —— 從 ratings.json(批51/52全池聯賽制實測, 見docs/league.js) 的每位武將
+  // .teams 攤平取「聯賽實測勝率最高」的隊伍, 依「成員去重」做多樣性過濾(避免天梯6~12隊
+  // 全是同一組核心武將的排列組合——實測發現全池571隊裡勝率最高的一大票隊伍幾乎都共用
+  // 「SP法正+關銀屏」這組槍隊核心, top100隊裡法正出現89次/關銀屏86次, 直接取topN或僅用
+  // 「與上一隊最多共用1人」的寬鬆過濾都無法阻止這兩人反覆出現在多支天梯隊——故改用「每位
+  // 武將全天梯只能出場1次」的硬性去重(usedMembers, 一旦某將入選任一天梯隊即整批鎖住不得
+  // 再入選其他隊), 逼天梯真正覆蓋不同核心組合而非同一組核心的排列組合), 且盡量覆蓋四種
+  // 兵種(槍/弓/騎/盾)各1~2支。
+  // 過濾規則: 依隊伍勝率降冪掃描, 用「兵種輪詢」(每輪嘗試槍→弓→騎→盾各挑1支)取代單純
+  // 掃全序, 讓弱勢兵種(場次少/評分低的騎兵隊等)不會被強勢兵種(槍兵隊集中在高分區)擠光。
+  function seedGauntletTeamsFromRatings(RATINGS) {
+    if (!RATINGS) return [];
+    const seen = new Map();          // teamKey(sorted) -> {team(原順序), winRate, troop}
+    for (const rec of Object.values(RATINGS)) {
+      if (!rec || !Array.isArray(rec.teams)) continue;
+      for (const t of rec.teams) {
+        if (!t || !Array.isArray(t.team) || t.team.length !== 3) continue;
+        const key = t.team.slice().sort().join("|");
+        const prev = seen.get(key);
+        if (!prev || (t.winRate || 0) > prev.winRate) seen.set(key, { team: t.team, winRate: t.winRate || 0, troop: t.troop || null });
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) => b.winRate - a.winRate);
+  }
+  // 批54實測校準(過程見scratchpad/b54_validate.js多輪試跑): ratings.json 全池571隊裡「真正
+  // 頂尖」的隊伍高度集中在少數幾位glue武將(SP法正/關銀屏/魯肅/王異/諸葛亮反覆組合, top100
+  // 隊裡法正出現89次/關銀屏86次)——嘗試過「每位武將全天梯只出場1次」的硬性去重, 結果只能
+  // 湊出7隊且第4隊以後驟降至29~44%勝率(排名150名以後的隊伍本身戰力就明顯較弱), 拖累天梯
+  // 整體強度, 反讓「拼圖式塞入強核」的候選能靠痛扁天梯後段弱隊洗高平均勝率, 白板馬鈞都能到
+  // 86%——不符「vs頂尖天梯」的語意。改成「member cap=6不分兵種」測試後, 雖天梯整體夠強
+  // (8隊皆80~98%), 卻又暴露另一個問題: 天梯8隊有6隊是槍/弓兵(法正/關銀屏/魯肅/王異圈子
+  // 幾乎只打槍弓), 讓「弓兵S級適性+自帶強戰法」的呂布能靠單一兵種相性優勢衝到91%勝率——
+  // 這不是呂布真的環境強(呂布在對571隊隨機對手的全池聯賽裡實際只是C階/rank165/勝率
+  // 42.8%, 見ratings.json), 而是天梯兵種覆蓋太窄, 給了「兵種相性剋制」這個單一因素過大的
+  // 槓桿。最終方案: 「glue武將」(法正/關銀屏/魯肅/王異/諸葛亮——反覆出現在各兵種top隊的
+  // 高流動性核心, 允許沿用, 不然槍弓以外的兵種找不到夠強的隊伍)cap放寬到8, 其餘「非glue」
+  // 成員(隊伍裡的第三人)cap收緊到1(不重複), 且用兵種輪詢強制湊滿槍/弓/騎/盾各2支——讓
+  // 天梯維持高強度(全數76%+)之餘, 四種兵種都有代表隊伍, 不會被單一兵種相性優勢鑽漏洞。
+  const RATINGS_GAUNTLET_GLUE = new Set(["法正", "關銀屏", "魯肅", "王異", "諸葛亮"]);
+  const RATINGS_GAUNTLET_GLUE_CAP = 8;
+  const RATINGS_GAUNTLET_OTHER_CAP = 1;
+  const RATINGS_GAUNTLET_TROOPS = ["槍", "弓", "騎", "盾"];
+  const RATINGS_GAUNTLET_PER_TROOP = 2;
+  function buildRatingsGauntlet(RATINGS, { perTroop = RATINGS_GAUNTLET_PER_TROOP } = {}) {
+    const rows = seedGauntletTeamsFromRatings(RATINGS);
+    if (!rows.length) return null;
+    const picked = [];
+    const pickedKeys = new Set();
+    const usage = new Map();          // baseOf(name) -> 已入選天梯隊數
+    const troopCount = new Map();
+    const tryPick = (filterTroop) => {
+      for (const row of rows) {
+        const key = row.team.slice().sort().join("|");
+        if (pickedKeys.has(key)) continue;
+        if (filterTroop && row.troop !== filterTroop) continue;
+        if ((troopCount.get(row.troop) || 0) >= perTroop) continue;
+        const bases = row.team.map(baseOf);
+        const ok = bases.every(b => {
+          const cap = RATINGS_GAUNTLET_GLUE.has(b) ? RATINGS_GAUNTLET_GLUE_CAP : RATINGS_GAUNTLET_OTHER_CAP;
+          return (usage.get(b) || 0) < cap;
+        });
+        if (!ok) continue;
+        picked.push(row);
+        pickedKeys.add(key);
+        bases.forEach(b => usage.set(b, (usage.get(b) || 0) + 1));
+        troopCount.set(row.troop, (troopCount.get(row.troop) || 0) + 1);
+        return true;
+      }
+      return false;
+    };
+    for (let round = 0; round < perTroop; round++) {
+      for (const tp of RATINGS_GAUNTLET_TROOPS) tryPick(tp);
+    }
+    picked.sort((a, b) => b.winRate - a.winRate);
+    return picked.map((row, i) => ({
+      names: row.team, label: `聯賽第${i + 1}強（${row.troop || "?"}兵・勝率${Math.round(row.winRate * 100)}%）`,
+    }));
+  }
+  // 批54: buildGauntlet(POOL, RATINGS) —— RATINGS 存在且能組出 >=6 隊強天梯時採用, 否則
+  // fallback 回舊手選天梯(GAUNTLET_DEF)。RATINGS 為可選第二參數(舊呼叫點如league.js只傳
+  // POOL 時 arguments.length===1, 不受影響, 向後相容)。
+  function buildGauntlet(POOL, RATINGS) {
+    if (RATINGS) {
+      const strong = buildRatingsGauntlet(RATINGS);
+      if (strong) {
+        const filtered = strong.map(d => ({ ...d, names: d.names.filter(n => POOL[n]) }))
+          .filter(d => d.names.length === 3);
+        if (filtered.length >= 6) return filtered;
+      }
+    }
     return GAUNTLET_DEF.map(d => ({ ...d, names: d.names.filter(n => POOL[n]) }))
       .filter(d => d.names.length === 3);
   }
@@ -453,7 +547,9 @@
     const topOut = (opts && opts.topOut) || 5;
 
     if (!POOL[anchorName]) throw new Error("武將不存在於當前資料池: " + anchorName);
-    const gauntlet = buildGauntlet(POOL);
+    // 批54: 傳入 RATINGS 供 buildGauntlet 組「強天梯」(vs 頂尖對手, 見該函式註解), RATINGS
+    // 缺失時內部優雅退化回舊手選天梯 GAUNTLET_DEF, 呼叫端(app.js單卡配將)不需額外改動。
+    const gauntlet = buildGauntlet(POOL, RATINGS);
 
     // Stage 1: 粗篩(啟發式, 全池配對) — 分片跑避免長任務凍結 UI。批53: 雙路構造合併——
     // (A-1)「M為核心」角色互補湊隊友(批48-49既有邏輯) + (A-2)「M為拼圖」塞進ratings.json
@@ -583,6 +679,8 @@
     vsGauntletWinRate,
     // 批53: 「M為拼圖」路徑, 供 E2E 測試腳本直接驗證(如檢查華雄的候選是否含SP法正/關銀屏強核)
     stage1Guest, seedSquadsFromRatings,
+    // 批54: 強天梯, 供 league.js/驗證腳本直接檢視組成或重跑診斷
+    buildRatingsGauntlet, seedGauntletTeamsFromRatings,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = root.Matchmaker;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -434,7 +434,14 @@ async function runAiMatch() {
       anchor,
       // 批49: 新增決選前「主將排列×兵種雙方案」組合快篩(comboN), 為維持總時長預算(<45s),
       // 海選 stage2N 從60降到50、comboN取50(對稱user規格「必要時海選n降到50補償」)。
-      { stage1Limit: 150, stage2Keep: 20, stage2N: 50, comboN: 50, stage3N: 500, topOut: 5, onProgress }
+      // 批54: 天梯從6隊(GAUNTLET_DEF)換成8隊強天梯(vs頂尖天梯), 每候選的模擬成本隨天梯隊數
+      // 等比增加(+33%), 實測4案例(華雄/華佗/呂布/馬鈞)平均耗時逼近甚至偶爾超過45s預算
+      // (單次51s)——僅調stage3N不夠(stage2/決選前組合快篩comboN成本佔比更高, 因每候選要跑
+      // leaderPerms(最多3)×兵種雙方案(最多2)組合, 乘數效應比stage3單次大樣本更敏感), 改為
+      // stage2N 50→42、comboN 50→40、stage3N 500→380 同步下修(各降約15~24%), 找回時長
+      // 餘裕。大樣本精算階段的統計誤差仍在可接受範圍(380局/敵隊×8敵隊=3040局精算樣本,
+      // 與批49-53時期6隊×500局=3000局精算樣本量同級, 精度未明顯犧牲)。
+      { stage1Limit: 150, stage2Keep: 20, stage2N: 42, comboN: 40, stage3N: 380, topOut: 5, onProgress }
     );
     const ms = Math.round(performance.now() - t0);
     stxt.textContent = `完成　耗時 ${(ms / 1000).toFixed(1)} 秒`;
@@ -451,7 +458,13 @@ function renderAiResults(anchor, top, gauntlet) {
   const box = $("#aiResult");
   if (!top.length) { box.innerHTML = `<div class="sub">找不到合適隊伍</div>`; return; }
   const gLabel = gauntlet.map(g => g.label).join("・");
-  box.innerHTML = `<div class="sub" style="margin:8px 0">天梯陣容基準（GAUNTLET）：${gLabel}</div>` +
+  // 批54: 天梯從「6支手選中等隊」換成「聯賽實測頂尖隊」(RATINGS存在時, 見matchmaker.js
+  // buildGauntlet), 勝率語意也隨之改變——不再是「vs泛用中等對手」, 而是「vs頂尖天梯」,
+  // 50%左右已代表能與頂尖強敵五五開(本身已是強隊), 不是「弱」。UI明確標註基準, 避免
+  // 使用者誤解(尤其批53前的舊天梯下, 好隊勝率普遍飽和95~100%, 使用者若沿用舊直覺可能
+  // 誤以為新的50~70%代表隊伍變弱, 實則是天梯基準變嚴)。
+  box.innerHTML = `<div class="sub" style="margin:8px 0">天梯陣容基準（GAUNTLET・vs頂尖天梯）：${gLabel}<br>
+    <span style="color:#9a8b6a">＊此天梯取自聯賽實測全池最強隊伍, 非泛用中等對手——勝率50%左右已代表「與頂尖強敵五五開」, 本身就是強隊表現, 並非弱。</span></div>` +
     top.map((r, i) => {
       const heads = r.team.map(n => `<div class="ai-head" style="background-image:url('${cardSrc(n)}')" title="${n}"></div>`).join("");
       const inhTxt = r.team.map((n, k) => (r.inh[k] || []).length ? `${n}：${r.inh[k].join("＋")}` : "").filter(Boolean).join("　");
@@ -467,7 +480,7 @@ function renderAiResults(anchor, top, gauntlet) {
         <div class="ai-heads">${heads}</div>
         <div class="ai-info">
           <div class="ai-team">${r.team.join("　／　")}　<span class="gold">[${r.troop}兵]</span>　${roleTag}</div>
-          <div class="ai-win">勝率 <b class="gold">${pct(r.win)}%</b>　平均 ${r.rounds.toFixed(1)} 回合　<span style="color:#9a8b6a">(vs 天梯陣容平均)</span></div>
+          <div class="ai-win">勝率 <b class="gold">${pct(r.win)}%</b>　平均 ${r.rounds.toFixed(1)} 回合　<span style="color:#9a8b6a">(vs 頂尖天梯平均)</span></div>
           ${inhTxt ? `<div class="sub">傳承戰法：${inhTxt}</div>` : ""}
           ${bsTxt ? `<div class="sub">兵書：${bsTxt}</div>` : ""}
           ${r.reason ? `<div class="sub" style="color:#9a8b6a">推薦理由：${r.reason}</div>` : ""}
