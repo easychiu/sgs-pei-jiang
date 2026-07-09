@@ -596,6 +596,21 @@ KNOWN_EFFECT_FIELDS = {
     # extraHits一種context被實作, 不可比照全域登記, 否則會讓「掛在effects[]上不生效」的真缺口
     # 被白名單靜默放行)。將行其疾的用法屬於後者(effects[]直接掛, 非extraHits[]), 已移除該欄位
     # 並保留其誠實揭露(_todo已載明此為未解決的overshoot), 見tactic_corrections.json。
+    # 批C: 批52續系列(rateLeader/rateSub/ifSub/ifGender/scaleIfSub/scaleIfLeader)在 apply_effects()/
+    # applyEffects() 的效果級通用前置判斷段落實作(與 ifLeader/ifLeaderIs 同一層級, k 分派之前
+    # 就讀取, 跨所有k種類通用), 但當時新增時遺漏同步登記進本白名單, 導致R9把這些真實可用的效果
+    # 級欄位誤判成「引擎不讀的幽靈欄位」。核對位置: sgz.py 1605/1607行(rateLeader/rateSub,
+    # 效果級「主將/副將時用不同觸發率」)、1629行(ifSub, 效果級「施放者須為副將」)、1632行
+    # (ifGender, 效果級「施放者性別須匹配」)、1803/1805行(heal分支內scaleIfSub/scaleIfLeader,
+    # 「僅副將/主將時套用scale縮放」)、2070/2072行(非heal效果的scaleIfSub/scaleIfLeader鏡像,
+    # 同一組欄位名稱、同一語意, 只是掛在不同k分支各自實作, 故仍歸為全域已知欄位而非
+    # PER_KIND_FIELDS["heal"]專屬)。對稱engine.js同名分支(1220-1223/1237-1240/1407-1410/
+    # 1645-1649行)。
+    "rateLeader", "rateSub",  # 批52續: 效果級「主將/副將時採用不同機率值」, 取代基礎e.rate
+    "ifSub",  # 批52: 效果級「施放者須為隊伍副將(非index 0)」條件閘門, 對稱ifLeader
+    "ifGender",  # 批52: 效果級「施放者性別須匹配Male/Female(或中文男/女)」條件閘門
+    "scaleIfSub", "scaleIfLeader",  # 批52/52c: 「僅副將/主將身份時才套用e.scale縮放」旗標,
+    # heal與非heal效果(如義膽雄心)各自有一份實作但欄位語意/名稱相同
 }
 PER_KIND_FIELDS = {
     "amp": {"val", "dmgType", "normalOnly", "activeOnly", "chargeOnly",
@@ -612,7 +627,10 @@ PER_KIND_FIELDS = {
     # globalEffects(全場觸發後套用的效果陣列) —— 傲睨王侯「敵軍目標受普攻時觸發1個破綻,
     # 該目標降3%可疊…單目標破綻全觸發→…全場破綻觸發後→…」per-target疊層+雙閾值原語,
     # 見 engine.js/sgz.py k=="stat"&&e.stackKey 分支與 engine_limitations.md 第40節。
-    "dot": {"coef", "kind"},  # 批23 A3: e.kind(dot段自帶傷害類型, 優先於t.kind, 見damage()呼叫端)
+    "dot": {"coef", "kind", "coefLeader"},  # 批23 A3: e.kind(dot段自帶傷害類型, 優先於t.kind,
+    # 見damage()呼叫端); coefLeader: 批52續, 主將時採用較高傷害率(取代基礎e.coef), 見sgz.py
+    # 2270-2273行/engine.js 1825-1827行, 火燒連營首次登記(雖然該戰法實際案例是extraHits段
+    # 用ifLeader/ifSub互斥拆分, 非dot段本身用coefLeader, 但欄位本身確實只在k=="dot"分支實作)
     "extra": {"val"}, "stack": {"per", "max", "stackPer"},  # stackPer: 批26 B2, "round"預設/"cast"每次發動遞增
     "decay": {"v0", "rounds"}, "swap": set(), "pierce": {"val"}, "counter": {"coef", "kind", "prob", "guardFor"},  # guardFor: 批28 B1, 守護式反擊("leader"=登記進主將counter_guards, 由代為受擊者反擊)
     "taunt": set(), "shield": {"amt", "pct"}, "dodge": {"prob"}, "surehit": set(),

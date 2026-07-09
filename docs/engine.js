@@ -791,6 +791,9 @@
     if (type === "huchen" || type === "虎嗔") return !!u.huchen;
     if (type === "capture" || type === "捕獲" || type === "captured") return (u.captured || 0) > 0;
     if (type === "stun" || type === "silence" || type === "disarm" || type === "chaos" || type === "insight") return u[type] > 0;
+    // 批C: 群攻(extra)狀態查詢——對稱sgz.py target_has同名分支, 見其詳細註解(引弦力戰「若已
+    // 處於群攻狀態」需要判斷持有者自身是否已有extra加成)。
+    if (type === "extra" || type === "群攻") return u.addbonus("extra") > 0;
     // 批52g: 具名 dot(水攻/沙暴…)
     if (u.dots.some(d => d[3] === type)) return true;
     return false;
@@ -1899,7 +1902,7 @@
           if (TRACE) lg(`　▸ ${u.nm} 獲得${bVal >= 1 ? "抵禦" : `警戒(減傷${Math.round(bVal * 100)}%)`}(${e.times ?? 1}次)`);
         }
         else if (k === "surehit") u.surehitDur = Math.max(u.surehitDur, (e.dur ?? 1) + 1);
-        else if (k === "healblock") u.healblock = Math.max(u.healblock, (e.dur ?? 1) + 1);  // 批8: 禁療 —— heal 套用處(applyEffects 開頭)已排除 healblock 中的目標
+        else if (k === "healblock") { if (!u.isImmuneTo("healblock")) u.healblock = Math.max(u.healblock, (e.dur ?? 1) + 1); }  // 批8: 禁療 —— heal 套用處(applyEffects 開頭)已排除 healblock 中的目標; 批C: isImmuneTo("healblock")查詢方法自批16即存在但施加端從未讀取(對稱ambush的既有寫法, 見上方k==="ambush"分支), 補上判斷式使k=="immune"(types含healblock)真正生效
         else if (k === "lifesteal") u.pushAdd("lifesteal", e.val, e.dur, src);  // 批8: 倒戈 —— 實際回血在 hit() 結算傷害後(見 hit() 內 lifesteal 段), 這裡只掛加成值
         else if (k === "rateup") {                       // 提高(自身或對象)主動戰法發動機率
           // scale: 施放當下(caster 戰鬥內即時素質)用 rateScaleOf(獨立於全域 SCALE) 縮放實際加成
@@ -2058,8 +2061,12 @@
           // 戰法(只帶 on, 無回合欄位)是無副作用的 no-op, 只在新資料明確加上回合窗口時才生效。
           if (!roundOk(t0, CUR_R)) continue;
           if (holder.hitFlags.has(t0)) continue;             // 同回合每單位每戰法最多觸發1次(防無限鏈), 鍵用t0(戰法原始物件)不受choices合成視圖影響
-          // 批52: rateScaleIfGender —— 女性持有者觸發率受 rateScale 屬性縮放(魅惑)
+          // 批C: t.rateLeader —— 主將時採用較高觸發率(對稱既有active型戰法頂層rateLeader分派,
+          // 見fight()主迴圈「批52续: t.rateLeader」段; 淵然難測發現此欄位雖已存在於資料但從未
+          // 被本反應式onHitFor()讀取, 是「資料寫了但引擎端遺漏對應讀取」的死欄位, 本次補上)。
           let fireRate = t0.rate;
+          if (t0.rateLeader != null && alliesOf(holder) && alliesOf(holder)[0] === holder) fireRate = t0.rateLeader;
+          // 批52: rateScaleIfGender —— 女性持有者觸發率受 rateScale 屬性縮放(魅惑)
           if (t0.rateScaleIfGender && t0.rateScale) {
             const gmap = { "男": "Male", "女": "Female", Male: "Male", Female: "Female", male: "Male", female: "Female" };
             const want = gmap[t0.rateScaleIfGender] || t0.rateScaleIfGender;

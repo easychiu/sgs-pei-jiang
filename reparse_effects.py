@@ -845,7 +845,17 @@ def apply_corrections(parsed, corrections):
         for k in DISCLOSURE_KEYS:
             if k in corr:                                  # 裸頂層鍵寫法(較常見, 27筆); _addTopLevel 包一層寫法(5筆)已在上面併入
                 disclosure_src.setdefault(k, corr[k])
+        # 批C: val is None(JSON null) = 清除該揭露鍵(比照上方 "set" dict 的 None=清除慣例,
+        # 批15docstring 訂立但當時只給 "set" 做, 這裡遺漏對稱處理) —— 過去若不寫 val 直接是
+        # None, 會把字面 None 寫進 parsed 的 _todo/_note 等欄位(而非刪除該鍵), 讓某個_todo
+        # 缺口被引擎新原語解決、想要撤回該_todo字串時, 只能被迫留著一段已經過時的舊文字或讓
+        # parsed 檔出現值為 null 的_todo鍵(下游若有程式碼假設_todo存在即為str會出錯)。
         for fld, val in disclosure_src.items():
+            if val is None:
+                if fld in p:
+                    del p[fld]
+                    changed_this = True
+                continue
             if p.get(fld) != val:
                 p[fld] = val
                 changed_this = True

@@ -1087,6 +1087,13 @@ def target_has(u, ctype):
         return getattr(u, "captured", 0) > 0
     if ctype in ("stun", "silence", "disarm", "chaos", "insight"):
         return getattr(u, ctype) > 0
+    # 批C: 群攻(extra, 普通攻擊時對目標同部隊其他武將造成傷害)狀態查詢——引弦力戰「若已處於
+    # 群攻狀態，則提高武力」需要判斷持有者自身是否已有群攻加成, 過去target_has完全不認得
+    # "extra"/群攻這個ctype(只能落到最後的dot具名比對, 恆假)。用addbonus("extra")>0判斷
+    # (同象兵「自身有灼燒(dot)時才獲得群攻(extra)」測試案例的反向查詢: 那裡是查dot決定要不要
+    # 給extra, 這裡是查extra本身是否已存在)。
+    if ctype in ("extra", "群攻"):
+        return u.addbonus("extra") > 0
     # 批52g: 具名 dot 狀態
     if any((len(d) > 3 and d[3] == ctype) for d in u.dots):
         return True
@@ -2356,7 +2363,13 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             elif k == "surehit":                       # 必中: 無視對方 dodge
                 u.surehit_dur = max(u.surehit_dur, e.get("dur", 1) + 1)
             elif k == "healblock":                     # 批8: 禁療 —— heal 套用處(apply_effects 開頭)已排除 healblock 中的目標
-                u.healblock = max(u.healblock, e.get("dur", 1) + 1)
+                # 批C: is_immune_to("healblock") 查詢方法自批16 immuneTo落地起即存在(單元測試
+                # 也涵蓋healblock在內的清單, 見demo()斷言), 但施加healblock的這個分支從未真正
+                # 讀取過此查詢(「有能力查, 卻沒接上施加端」的靜默缺口, 同reparse_effects.py
+                # apply_corrections()disclosure key None處理發現的同類「原語存在但未接上」問題)。
+                # 補上判斷式, 讓k=="immune"(types含"healblock")真正能免疫此debuff。
+                if not u.is_immune_to("healblock"):
+                    u.healblock = max(u.healblock, e.get("dur", 1) + 1)
             elif k == "lifesteal":                     # 批8: 倒戈 —— 實際回血在 hit() 結算傷害後(見 hit() 內 lifesteal 段), 這裡只掛加成值
                 u.push_add("lifesteal", e["val"], e["dur"], src)
             elif k == "rateup":                        # 提高(自身或對象)主動戰法發動機率
@@ -2523,8 +2536,14 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     continue
                 if id(t0) in holder.hit_flags:          # 同回合每單位每戰法最多觸發1次(防無限鏈), 鍵用t0(戰法原始物件)不受choices合成視圖影響
                     continue
-                # 批52: rateScaleIfGender —— 原文「若自身為女性, 觸發機率額外受智力影響」(魅惑)
+                # 批C: t.rateLeader —— 主將時採用較高觸發率(對稱批52续既有的active型戰法頂層
+                # rateLeader分派, 見fight()主迴圈「批52续: t.rateLeader」段; 淵然難測「自身為
+                # 主將時，基礎機率提升至30%→60%」發現此欄位雖已存在於資料但from未被本反應式
+                # on_hit_for()讀取, 是「資料寫了但引擎端遺漏對應讀取」的死欄位, 本次補上)。
                 _fire_rate = t0["rate"]
+                if t0.get("rateLeader") is not None and allies_of(holder) and allies_of(holder)[0] is holder:
+                    _fire_rate = t0["rateLeader"]
+                # 批52: rateScaleIfGender —— 原文「若自身為女性, 觸發機率額外受智力影響」(魅惑)
                 if t0.get("rateScaleIfGender") and t0.get("rateScale"):
                     gmap = {"男": "Male", "女": "Female", "Male": "Male", "Female": "Female",
                             "male": "Male", "female": "Female"}
