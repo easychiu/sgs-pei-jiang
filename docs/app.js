@@ -427,7 +427,10 @@ async function runAiMatch() {
   const t0 = performance.now();
   try {
     const res = await Matchmaker.run(
-      { POOL, BONDS: SGZ.bonds(), TAC_DATA, TAC_TIER, NONEQUIP, scenario: CURRENT_SEASON },
+      // 批53: 傳入 RATINGS(data/ratings.json的.generals, 批51/52全池聯賽制評分) 供「M為拼圖」
+      // 路徑(matchmaker.js stage1Guest)當強核種子來源。RATINGS 可能為 null(ratings.json 載入
+      // 失敗/缺檔), stage1Guest 內已對此優雅退化(見該函式註解), 不影響「M為核心」路徑。
+      { POOL, BONDS: SGZ.bonds(), TAC_DATA, TAC_TIER, NONEQUIP, scenario: CURRENT_SEASON, RATINGS },
       anchor,
       // 批49: 新增決選前「主將排列×兵種雙方案」組合快篩(comboN), 為維持總時長預算(<45s),
       // 海選 stage2N 從60降到50、comboN取50(對稱user規格「必要時海選n降到50補償」)。
@@ -453,11 +456,17 @@ function renderAiResults(anchor, top, gauntlet) {
       const heads = r.team.map(n => `<div class="ai-head" style="background-image:url('${cardSrc(n)}')" title="${n}"></div>`).join("");
       const inhTxt = r.team.map((n, k) => (r.inh[k] || []).length ? `${n}：${r.inh[k].join("＋")}` : "").filter(Boolean).join("　");
       const bsTxt = r.team.map((n, k) => (r.bs[k] || []).length ? `${n}：${(r.bs[k] || []).map(bsLabel).join("＋")}` : "").filter(Boolean).join("　");
+      // 批53: M角色徽章 —— leader(核心陣容, M當主將)/support(拼圖式, M頂替進他人強核當副將),
+      // 讓使用者一眼看出這隊「強在哪裡」(是M自己扛, 還是M搭上了現成強核), 呼應user訴求
+      // 「配將器結果卡標註M角色+推薦理由」。
+      const roleTag = r.anchorRole === "support"
+        ? `<span class="ai-role ai-role-support" title="${anchor}頂替進他人強核當副將, 隊伍強度主要來自其他兩位">拼圖・副將</span>`
+        : `<span class="ai-role ai-role-leader" title="${anchor}為隊伍核心">核心・主將</span>`;
       return `<div class="ai-card">
         <div class="ai-rank">#${i + 1}</div>
         <div class="ai-heads">${heads}</div>
         <div class="ai-info">
-          <div class="ai-team">${r.team.join("　／　")}　<span class="gold">[${r.troop}兵]</span></div>
+          <div class="ai-team">${r.team.join("　／　")}　<span class="gold">[${r.troop}兵]</span>　${roleTag}</div>
           <div class="ai-win">勝率 <b class="gold">${pct(r.win)}%</b>　平均 ${r.rounds.toFixed(1)} 回合　<span style="color:#9a8b6a">(vs 天梯陣容平均)</span></div>
           ${inhTxt ? `<div class="sub">傳承戰法：${inhTxt}</div>` : ""}
           ${bsTxt ? `<div class="sub">兵書：${bsTxt}</div>` : ""}

@@ -163,6 +163,11 @@ select{background:#2a2018;color:var(--ink);border:1px solid var(--line);
 .ai-team{font-size:15px;color:var(--ink)}
 .ai-win{font-size:13px;color:#b8a987;margin-top:2px}
 .ai-apply{white-space:nowrap;font-size:14px;padding:9px 16px}
+/* 批53: M角色徽章 —— leader(核心陣容)/support(拼圖式塞進他人強核) */
+.ai-role{display:inline-block;font-size:11px;padding:2px 7px;border-radius:9px;vertical-align:middle;
+  border:1px solid var(--line)}
+.ai-role-leader{color:var(--gold2);border-color:var(--gold2)}
+.ai-role-support{color:#8ac1d8;border-color:#4a7a8f;background:#12242c}
 @media(max-width:620px){.ai-card{flex-wrap:wrap}.ai-apply{margin-left:auto}}
 
 /* 圖鑑 */

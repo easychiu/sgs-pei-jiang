@@ -218,10 +218,14 @@
     return Math.round(score);
   }
 
+  const baseOf = n => (n || "").replace(/^SP\s*/, "");
+
+  // ---- 批53 A-1: 「M為核心」路徑 —— 沿用批48-49既有邏輯, 角色互補湊隊友(anchor固定在
+  // team[0], 之後 stage2/stage3 的 leaderPermutations 仍會依語意重新排列主將, 這裡的順序
+  // 只是候選生成階段的暫定順序)。----
   function stage1Heuristic(POOL, BONDS, anchorName, { limit = 250 } = {}) {
     const anchor = POOL[anchorName];
     const names = Object.keys(POOL).filter(n => n !== anchorName);
-    const baseOf = n => n.replace(/^SP\s*/, "");
     const anchorBase = baseOf(anchorName);
     const candidates = [];
     for (let i = 0; i < names.length; i++) {
@@ -235,6 +239,66 @@
     }
     candidates.sort((a, b) => b.score - a.score);
     return candidates.slice(0, limit);
+  }
+
+  // ---- 批53 A-2: 「M為拼圖」路徑 —— user實測坐實批48-49假設「選的卡=隊伍核心」的盲點:
+  // 冷門/純輸出卡的最強用法常是「塞進現成強核當拼圖」(實例: 華雄自己當主將隊只5成多, 但
+  // 塞進SP法正/關銀屏那組現成強核可達8成7)。做法借批52 league.js buildGuestTeams思路: 用
+  // ratings.json(全池聯賽制評分, 見docs/league.js)裡「已知強核」當種子, 對每個強核嘗試把M
+  // 頂替進去(頂替一個非主將位——保留原隊主將位的統領/主動戰法安排, 該位置通常是該隊之所以
+  // 強的關鍵, 同批52 buildGuestTeams的取捨), 產生候選團隊。
+  //
+  // 種子強核來源: RATINGS(data/ratings.json的.generals, 每位武將的.teams含該將所有已知隊,
+  // 含anchor隊與客串隊)——攤平去重成「隊伍→勝率」映射, 依勝率降冪排序, 取前 seedLimit 支
+  // 當候選種子核(不需要重新聯賽, 直接複用批51/52已算好的571支隊伍全池, 見批52 note)。
+  // RATINGS 缺失(未載入data/ratings.json, 如舊瀏覽器快取或離線測試)時優雅退化為空陣列——
+  // 呼叫端(run())只是少了這一路候選, 「M為核心」路徑仍照常運作, 不拋錯。
+  function seedSquadsFromRatings(RATINGS) {
+    if (!RATINGS) return [];
+    const seen = new Map();          // teamKey(sorted) -> {team(原順序), winRate}
+    for (const rec of Object.values(RATINGS)) {
+      if (!rec || !Array.isArray(rec.teams)) continue;
+      for (const t of rec.teams) {
+        if (!t || !Array.isArray(t.team) || t.team.length !== 3) continue;
+        const key = t.team.slice().sort().join("|");
+        const prev = seen.get(key);
+        if (!prev || (t.winRate || 0) > prev.winRate) seen.set(key, { team: t.team, winRate: t.winRate || 0 });
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) => b.winRate - a.winRate);
+  }
+
+  // 對每個強核種子, 嘗試把 anchorName 頂替進去(跳過核心已含同源武將的種子, 如SP版本/本體
+  // 撞名), 用 heuristicScore 粗評「頂替位1」vs「頂替位2」何者較優(同批52 buildGuestTeams
+  // 手法: 保留種子隊的原主將位, 只在兩個非主將位之間選頂替點), 取分數較優的一種當候選團隊。
+  // seedLimit 控制嘗試的種子數量(全池571支隊伍太多, 只取排名最前面的一批強核, 因為拼圖路徑
+  // 的價值在於「M能不能搭上現成最強隊」, 排名靠後的種子核本身勝率就不出色, 頂替後也難超車)。
+  function stage1Guest(POOL, BONDS, RATINGS, anchorName, { seedLimit = 120 } = {}) {
+    const anchor = POOL[anchorName];
+    if (!anchor) return [];
+    const anchorBase = baseOf(anchorName);
+    const seeds = seedSquadsFromRatings(RATINGS).slice(0, seedLimit);
+    const candidates = [];
+    const dedupe = new Set();
+    for (const seed of seeds) {
+      const squad = seed.team.filter(n => POOL[n]);       // 防禦: 種子隊含資料池已無的武將(理論上不會, 保守過濾)
+      if (squad.length !== 3) continue;
+      const bases = squad.map(baseOf);
+      if (bases.includes(anchorBase)) continue;            // M自己(或其SP/本體)已在此強核, 跳過(頂替自己無意義)
+      const [leader, s1, s2] = squad;
+      const g1 = POOL[s1], g2 = POOL[s2];
+      if (!g1 || !g2) continue;
+      // 保留種子隊主將位(該隊之所以強, 主將位安排通常已針對種子隊本身優化), 只在兩個副將位
+      // 之間選頂替點: 用 heuristicScore 粗評「M替掉位1」vs「M替掉位2」, 取分數較優者。
+      const scoreReplace1 = heuristicScore(POOL, BONDS, POOL[leader], anchor, g2);   // M頂替位1(s1)
+      const scoreReplace2 = heuristicScore(POOL, BONDS, POOL[leader], g1, anchor);   // M頂替位2(s2)
+      const team = scoreReplace1 >= scoreReplace2 ? [leader, anchorName, s2] : [leader, s1, anchorName];
+      const key = team.slice().sort().join("|");
+      if (dedupe.has(key)) continue;
+      dedupe.add(key);
+      candidates.push({ team, score: Math.max(scoreReplace1, scoreReplace2), seedWinRate: seed.winRate, guestSeed: true });
+    }
+    return candidates;
   }
 
   // ---- GAUNTLET: 固定天梯陣容組, 覆蓋兵刃/謀略/控制/治療不同風格 ----
@@ -374,10 +438,14 @@
 
   // ---- 主流程: runMatchmaker(POOL, BONDS, TAC_DATA, TAC_TIER, NONEQUIP, anchorName, opts) ----
   // opts: { scenario, onProgress(stage, pct), stage1Limit, stage2Keep, stage2N, stage3N }
+  // 批53: ctx 新增可選 RATINGS(data/ratings.json的.generals, 見docs/league.js) —— 供「M為
+  // 拼圖」路徑(stage1Guest)當強核種子來源。缺失時該路徑退化為空陣列, 只剩「M為核心」路徑,
+  // 行為與批48-52相同(向後相容, 不破壞既有呼叫點如league.js/scratchpad驗證腳本)。
   async function run(ctx, anchorName, opts) {
-    const { POOL, BONDS, TAC_DATA, TAC_TIER, NONEQUIP, scenario } = ctx;
+    const { POOL, BONDS, TAC_DATA, TAC_TIER, NONEQUIP, scenario, RATINGS } = ctx;
     const onProgress = opts && opts.onProgress || (() => {});
     const stage1Limit = (opts && opts.stage1Limit) || 260;
+    const guestSeedLimit = (opts && opts.guestSeedLimit) || 120;   // 批53 A-2: 拼圖路徑嘗試的強核種子數上限
     const stage2Keep = (opts && opts.stage2Keep) || 20;
     const stage2N = (opts && opts.stage2N) || 150;
     const stage3N = (opts && opts.stage3N) || 800;
@@ -387,9 +455,21 @@
     if (!POOL[anchorName]) throw new Error("武將不存在於當前資料池: " + anchorName);
     const gauntlet = buildGauntlet(POOL);
 
-    // Stage 1: 粗篩(啟發式, 全池配對) — 分片跑避免長任務凍結 UI
+    // Stage 1: 粗篩(啟發式, 全池配對) — 分片跑避免長任務凍結 UI。批53: 雙路構造合併——
+    // (A-1)「M為核心」角色互補湊隊友(批48-49既有邏輯) + (A-2)「M為拼圖」塞進ratings.json
+    // 已知強核(批53新增), 依 teamKey 去重合併後一起送進 stage2 海選(同一套漏斗, 不特殊
+    // 待遇——拼圖路徑候選數天然少很多(至多guestSeedLimit支), 不會排擠核心路徑的名額)。
     onProgress("stage1", 0);
-    const candidates = stage1Heuristic(POOL, BONDS, anchorName, { limit: stage1Limit });
+    const coreCandidates = stage1Heuristic(POOL, BONDS, anchorName, { limit: stage1Limit });
+    const guestCandidates = stage1Guest(POOL, BONDS, RATINGS, anchorName, { seedLimit: guestSeedLimit });
+    const seenKeys = new Set(coreCandidates.map(c => c.team.slice().sort().join("|")));
+    const mergedGuest = guestCandidates.filter(c => {
+      const key = c.team.slice().sort().join("|");
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    });
+    const candidates = coreCandidates.concat(mergedGuest);
     onProgress("stage1", 100);
     await tick();
 
@@ -444,10 +524,16 @@
           params.bs, fp.bs, params.eq, fp.eq, params.ad, fp.ad, params.inh, fp.inh, scenario, 10, 10);
         totalWin += r.winA; totalRounds += r.rounds; count++;
       }
+      // 批53: M(anchorName)在最終排列中的角色 —— 主將(team[0]===anchorName)或副將。UI據此
+      // 標註「M當主將／M當副將(拼圖)」, 不論候選來自A-1核心路徑或A-2拼圖路徑, 一律以「決選後
+      // 實際排列」判斷(拼圖路徑候選也可能因語意排列篩選/組合快篩結果被排到主將位, 反之核心
+      // 路徑候選也可能因guardFor等語意約束被排到副將位——role以事實為準, 不看候選來源)。
+      const anchorRole = team[0] === anchorName ? "leader" : "support";
       results.push({
         team, win: totalWin / count, rounds: totalRounds / count,
         troop, bs: params.bs, inh, ad: params.ad,
-        reason: buildReason(POOL, BONDS, team, troop),           // D: 推薦理由
+        anchorRole,
+        reason: buildReason(POOL, BONDS, team, troop, anchorName, anchorRole),   // D: 推薦理由(批53: 補M角色說明)
       });
       onProgress("stage3", Math.round(((i + 1) / finalists.length) * 100));
       if (nowMs() - sliceStart > 80) { await tick(); sliceStart = nowMs(); }
@@ -457,8 +543,18 @@
   }
 
   // ---- 批49 D: 推薦理由 —— 命中的緣分名/陣營加成/角色互補標籤/主將安排原因, 供user判斷推薦合理性 ----
-  function buildReason(POOL, BONDS, team, troop) {
+  // 批53: 新增 anchorName/anchorRole 參數, 補一句「M當主將／M塞進XX當拼圖副將」說明——user
+  // 的核心訴求是「用這張卡能排出的最強陣容」, 尤其當M是拼圖式塞進他人強核時, 使用者需要
+  // 明確知道「這隊為什麼強」不是M自己的功勞, 而是M搭上了現成強核(如SP法正/關銀屏)。
+  function buildReason(POOL, BONDS, team, troop, anchorName, anchorRole) {
     const parts = [];
+    if (anchorName) {
+      if (anchorRole === "leader") parts.push(`${anchorName}當主將（核心陣容）`);
+      else {
+        const others = team.filter(n => n !== anchorName);
+        parts.push(`${anchorName}塞進「${others.join("／")}」強核當副將（拼圖式搭配）`);
+      }
+    }
     const bonds = (BONDS || []).filter(b => (b.generals || []).filter(n => team.includes(n)).length >= (b.triggerCount || 99));
     if (bonds.length) parts.push("緣分：" + bonds.map(b => b.name).join("、"));
     const facCount = {};
@@ -485,6 +581,8 @@
     troopMismatch, requiresOwnActive, holderHasActiveTactic, weightedTroopRanking, top2Troops, buildReason,
     // 批50: 供漏斗驗證實驗腳本(scratchpad/funnel_validate.js)直接呼叫, 與 stage2 用同一支勝率函式(口徑一致)
     vsGauntletWinRate,
+    // 批53: 「M為拼圖」路徑, 供 E2E 測試腳本直接驗證(如檢查華雄的候選是否含SP法正/關銀屏強核)
+    stage1Guest, seedSquadsFromRatings,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = root.Matchmaker;
 })(typeof window !== "undefined" ? window : globalThis);
