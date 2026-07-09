@@ -86,6 +86,9 @@
  ],
  "corrections": {
   "十勝十敗": {
+   "set": {
+    "_todo": null
+   },
    "effects": [
     {
      "k": "mitig",
@@ -97,11 +100,25 @@
      "k": "insight",
      "who": "leader",
      "dur": 2
+    },
+    {
+     "k": "heal",
+     "who": "ally",
+     "coef": 0.5,
+     "scale": "intel",
+     "rate": 0.3,
+     "when": {
+      "on": "activeFired",
+      "who": "ally",
+      "casterIsLeader": true
+     },
+     "_note": "批A(11筆高嚴重重建): 本文「若我軍主將發動主動或突擊戰法時,自身有30%概率治療我軍單體(治療率50%,受智力影響)」→ 新原語when.casterIsLeader(效果級, activeFired反應式旗標): who:\"ally\"(批38既有, 廣播監聽隊伍任一人發動主動/突擊戰法事件給持有者)+casterIsLeader:true(批A新增, 追加篩選「觸發事件的那個人u本身是否為其隊伍主將allies[0]」, 而非要求持有者holder是主將——十勝十敗常由副將攜帶, holder(副將)監聽u(主將)發動戰法的事件, 兩者是不同單位)。heal(who:ally無targetSel/n, 沿用「我方最殘一人」預設語意對應原文「我軍單體」)+coef:0.5(治療率50%)+scale:intel(受智力影響)+rate:0.3(30%概率)。"
     }
    ],
    "_evidence": "戰鬥前2回合，使我軍主將獲得洞察狀態（免疫所有控制效果），受到的傷害降低50%（減傷為固定值）。若我軍主將發動主動或突擊戰法時，自身有30%概率治療我軍單體（治療率50%，受智力影響）。（注：治療效果為2025年4月新增, 見tactics_overrides.json）",
-   "_bucket": "batch31_scan",
-   "_todo": "批31 A全庫掃描新發現(非brief原點名清單, 見tactics_overrides.json「十勝十敗」effectText): 「若我軍主將發動主動或突擊戰法時，自身有30%概率治療我軍單體」heal段完全未建模——本批新增的when.on:\"activeFired\"只監聽「施放者自己」的主動/突擊戰法發動事件(active_fired_tacs/active_fired_effect_tacs皆以持有者u自身為預篩與觸發對象), 本戰法要監聽的卻是「我軍主將」(隊伍index 0, 可能是另一個單位, 持有本戰法者未必是主將本人), 與神機妙算(監聽敵方)/經天緯地/十二奇策(監聽我軍全體任一人)同屬「監聽非自己單位的戰法發動事件」缺口, 只是這裡監聽對象限定「隊伍固定位置(主將)」——若持有者u自己剛好就是主將(allies[0])則會退化成u監聽自己, 這種特殊情形本批activeFired其實可以表達(u.active_fired_tacs命中u自己的active/charge發動), 但一般情形(持有者是副將, 監聽主將)仍需要跨單位廣播機制, 現有活動未建模, 誠實維持現況(heal段完全缺失, 較現有mitig/insight兩段更保守但未涵蓋原文全部機制), 供未來批次評估是否值得為「監聽隊伍固定位置(主將)的戰法發動」新增專門機制。"
+   "_bucket": "batchA_11severe",
+   "_note": "批A: 補建heal段(見effects[2]_note), 落地新原語when.casterIsLeader(activeFired反應式的效果級旗標, 限定觸發事件的發動者u本身須為其隊伍主將, 見docs/engine.js activeFiredFor()/sgz.py active_fired_for()的caster_is_leader_ok()判斷式)。取代批31 A的完全空白_todo(見下方_history)。",
+   "_history": "批31 A(batch31_scan桶)曾因activeFired只能監聽「持有者自身」發動戰法、無法監聽「隊伍固定位置(主將)」發動戰法而完全跳過heal段, 誠實記為_todo。本批新增casterIsLeader原語解決此缺口(who:\"ally\"廣播負責「誰能聽到事件」, casterIsLeader負責「事件的發動者是不是主將」, 兩者疊加後可精確表達「我軍主將發動戰法時, 全隊(含非主將的持有者)都能收到並判定」)。"
   },
   "天下無雙": {
    "effects": [
@@ -195,7 +212,7 @@
    ],
    "_evidence": "基礎機率30%; 主將時目標水攻/沙暴每種+20%震懾(上限70%); 5次獨立",
    "_bucket": "batch52g",
-   "_note": "批52g user確認: 30+20+20上限; effectsPerHit 逐擊判定",
+   "_note": "批52g user確認: 30+20+20上限; effectsPerHit 逐擊判定。批B: 「自身為主將時」的震懾機率加成條件已用effects[0].rateStatusBonus.ifLeader精確實作(非無條件, 見sgz.py/engine.js對b.ifLeader的判斷: 僅主將持有時, 命中目標的水攻/沙暴狀態數才會疊加+20%/種上限+40%;非主將持有時維持基礎30%不受狀態數影響), 基礎30%機率則不分主將/副將皆生效, 與原文「基礎機率30%」(全員皆有)+「自身為主將時...每多一種狀態使自身提高20%震懾機率」(僅主將才有此加成)精確對應。",
    "effectText": "基礎機率30%; 主將時目標水攻/沙暴每種+20%震懾(上限70%); 5次獨立"
   },
   "以逸待勞": {
@@ -616,13 +633,13 @@
      "k": "amp",
      "who": "enemy",
      "val": 0.2,
-     "dur": 2,
+     "dur": 1,
      "_approx": "受到傷害+20%(可疊加); 引擎amp(enemy,val>0)轉全體易傷語意本身仍是『敵單體嘲諷我軍全體=我軍集火該目標』的聚焦價值近似(taunt反向語意仍未建模, 見_note), 但選標本身現已用targetSel:\"maxTroop\"(批45 C新增, 見engine_limitations.md第17節)精確命中『敵軍兵力最高』的武將, 不再是batch20/21停損的『隨機/群體套用』近似; 疊加不建模。",
      "targetSel": "maxTroop"
     }
    ],
    "_evidence": "使敵軍兵力最高的武將嘲諷我軍全體，並使其受到的傷害提高 10%→20%（可疊加），持續 2 回合",
-   "_note": "移除taunt(who:self): 引擎taunt語意為目標被迫攻擊施放者, who:self時dests=[caster]→caster.tauntBy=caster(施放者強制攻擊自己, 自傷級失真), 與原文『我軍被迫集火敵單體』方向相反。批20覆核: 「敵軍兵力最高」可用targetSel:'mostDamaged'(TARGETSEL_KEY已支援, 見sgz.py)精確選標, 但taunt本身(反向嘲諷=我方被迫攻擊該敵將)這個「我方全隊被迫攻擊指定敵方單體」的語意目前無對應原語(taunt只有「敵方被迫攻擊我方施放者」一種方向, 無「我方被迫攻擊敵方指定目標」的反向版本); 現有amp(enemy)近似(把「被迫集火」的價值近似成「目標更容易受到我方傷害」)是目前可行的最佳近似, 維持不變, 加強揭露原因見上。 批21覆核後撤回: 曾嘗試補targetSel:\"mostDamaged\", 但TARGETSEL_KEY.mostDamaged是min(troop)(兵力最低=最受損), 與原文「兵力最高」語意相反(engine目前只有minTroop, 無maxTroop準則, 見TARGETSEL_KEY/TARGETSEL_MIN, sgz.py 710-715行)。若真的套用targetSel:mostDamaged會把debuff精確地扣到錯的人(兵力最低者, 而非原文要求的兵力最高者)上, 比維持現況(隨機/群體套用, 至少不是「精確選錯人」)更嚴重的錯誤, 已撤回此欄位, 恢復不含targetSel的版本, 待engine補上maxTroop準則後再處理, 詳見engine_limitations.md新增章節。 | 批45 C: 追根因發現批21的「撤回」實際上只改了_note文字聲稱已撤回, 從未真正刪除effects[0]的targetSel:\"mostDamaged\"欄位本身——資料與揭露矛盾持續存活4批(21→44)未被抓到, 現已真正刪除該欄位, 恢復不含targetSel的版本(隨機/群體套用近似, 維持batch20/21既有結論不變)。追查R14為何沒抓到: R14的STALE_ASSERT_RE只認「coef=X/dur=X/rate=X」這類精確數字斷言句型, 「撤回targetSel」是揭露「刪除了某欄位」而非「某數值不一致」, 不在R14掃描範圍內, 需要新增獨立偵測邏輯(見R20_WITHDRAWAL_KW/check_r20下方新增分支)。 | 批45 C: engine新增TARGETSEL_KEY.maxTroop(兵力最高準則, 對稱既有minTroop)後, 此戰法「敵軍兵力最高」的選標語意可以精確落地, 已補targetSel:\"maxTroop\"(不再是batch21撤回後的無targetSel近似, 見上方回填的_approx)。「我方全隊被迫攻擊該敵軍指定目標」的taunt反向語意(amp near似的根本取捨)仍未建模, 維持既有揭露不變。",
+   "_note": "移除taunt(who:self): 引擎taunt語意為目標被迫攻擊施放者, who:self時dests=[caster]→caster.tauntBy=caster(施放者強制攻擊自己, 自傷級失真), 與原文『我軍被迫集火敵單體』方向相反。批20覆核: 「敵軍兵力最高」可用targetSel:'mostDamaged'(TARGETSEL_KEY已支援, 見sgz.py)精確選標, 但taunt本身(反向嘲諷=我方被迫攻擊該敵將)這個「我方全隊被迫攻擊指定敵方單體」的語意目前無對應原語(taunt只有「敵方被迫攻擊我方施放者」一種方向, 無「我方被迫攻擊敵方指定目標」的反向版本); 現有amp(enemy)近似(把「被迫集火」的價值近似成「目標更容易受到我方傷害」)是目前可行的最佳近似, 維持不變, 加強揭露原因見上。 批21覆核後撤回: 曾嘗試補targetSel:\"mostDamaged\", 但TARGETSEL_KEY.mostDamaged是min(troop)(兵力最低=最受損), 與原文「兵力最高」語意相反(engine目前只有minTroop, 無maxTroop準則, 見TARGETSEL_KEY/TARGETSEL_MIN, sgz.py 710-715行)。若真的套用targetSel:mostDamaged會把debuff精確地扣到錯的人(兵力最低者, 而非原文要求的兵力最高者)上, 比維持現況(隨機/群體套用, 至少不是「精確選錯人」)更嚴重的錯誤, 已撤回此欄位, 恢復不含targetSel的版本, 待engine補上maxTroop準則後再處理, 詳見engine_limitations.md新增章節。 | 批45 C: 追根因發現批21的「撤回」實際上只改了_note文字聲稱已撤回, 從未真正刪除effects[0]的targetSel:\"mostDamaged\"欄位本身——資料與揭露矛盾持續存活4批(21→44)未被抓到, 現已真正刪除該欄位, 恢復不含targetSel的版本(隨機/群體套用近似, 維持batch20/21既有結論不變)。追查R14為何沒抓到: R14的STALE_ASSERT_RE只認「coef=X/dur=X/rate=X」這類精確數字斷言句型, 「撤回targetSel」是揭露「刪除了某欄位」而非「某數值不一致」, 不在R14掃描範圍內, 需要新增獨立偵測邏輯(見R20_WITHDRAWAL_KW/check_r20下方新增分支)。 | 批45 C: engine新增TARGETSEL_KEY.maxTroop(兵力最高準則, 對稱既有minTroop)後, 此戰法「敵軍兵力最高」的選標語意可以精確落地, 已補targetSel:\"maxTroop\"(不再是batch21撤回後的無targetSel近似, 見上方回填的_approx)。「我方全隊被迫攻擊該敵軍指定目標」的taunt反向語意(amp near似的根本取捨)仍未建模, 維持既有揭露不變。 | 批B(R4): amp.dur由2改1, 貼本文「使敵軍兵力最高的武將嘲諷我軍全體，並使其受到的傷害提高10%→20%（可疊加），持續1回合」——舊值2與本文「持續1回合」不符(疑似與其他戰法的常見『2回合』慣例值混淆), 本次核對本文後訂正為1, 其餘(targetSel:maxTroop精確選標/taunt反向語意未建模)維持既有._note記錄不變。",
    "_bucket": "batch20_named"
   },
   "屠几上肉": {
@@ -920,7 +937,7 @@
    ],
    "_evidence": "準備1回合，對敵軍群體（2人）發動一次兵刃攻擊（傷害率260%）；並有60%概率（受速度影響）捕獲敵軍單體武將（捕獲效果無法被淨化），使其無法行動和造成傷害、禁用指揮和被動戰法、進入禁療狀態，且無法被其友方武將選中，持續2回合；同時最多捕獲一名武將，若施放時已有敵軍武將被捕獲，則轉而對其造成兵刃傷害（傷害率530%）。",
    "_todo": "「若敵軍主將被捕獲，其陣營所有非主將武將施放的任何戰法有15%→30%機率失敗」為條件觸發的跨單位debuff(需先判定被捕獲者是否為主將, 再對其隊友施加「戰法失敗率」機制), 引擎無對應原語(無「戰法施放失敗率」概念, 亦無「條件式跨單位」觸發), 未編碼。",
-   "_note": "批52j: 全文庫同步user版; capture獨立狀態",
+   "_note": "批52j: 全文庫同步user版; capture獨立狀態 | 批B(R12): 本文「捕獲效果無法被淨化」為防禦性宣告(本捕獲狀態刻意設計成不可被淨化/清除移除, 而非「本戰法需要施放淨化」), 引擎dispel_unit()已刻意排除u.captured於清除範圍外(見sgz.py 1169行「批52j: captured 刻意不清除 —— 捕獲「無法被淨化」」與對稱的engine.js實作), 與本文完全吻合, 非缺口, 不需額外dispel效果。",
    "_bucket": "batch52j",
    "set": {
     "coef": 2.6,
@@ -1194,10 +1211,26 @@
    "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=amp] 缺 e['n'], 原文目標為「單體」, 補 e['n']=1。"
   },
   "結盟": {
-   "effects": [],
-   "_evidence": "選擇一名異性友軍，持續2回合，目標受到治療效果或功能性增益狀態時，自身有45%→90%機率獲得相同效果（治療效果為50%）",
-   "_bucket": "batch12_modeC_empty_effects",
-   "_todo": "「目標受到治療/增益時自身鏡像獲得」為反應式觸發, 引擎when.on僅支援受擊(attacked/damaged), 無「友軍受益」事件點, 且需求「選擇異性友軍」的動態鎖定, 現有原語無法表達, 保留_todo"
+   "set": {
+    "rate": 0.9
+   },
+   "effects": [
+    {
+     "k": "heal",
+     "who": "self",
+     "ofDamage": 0.5,
+     "when": {
+      "on": "healed",
+      "who": "otherAlly"
+     },
+     "rate": 0.9,
+     "_note": "批A(11筆高嚴重重建): 本文「目標受到治療效果時,自身有45%→90%機率獲得相同效果(治療效果為50%)」→ on:\"healed\"(批43既有receiver-framed事件)+e.ofDamage:0.5(本次治療鏡像50%, 對應原文「治療效果為50%」的固定折算值)。who:\"otherAlly\"(而非\"ally\")係刻意選擇, 非筆誤: 「目標」是原文選定的另一名友軍(結盟本身即是「選擇一名異性友軍」的動作), 不含自己; 且測試時發現若用who:\"ally\"(涵蓋自己), 本效果自身的who:\"self\"治療(caster醫自己)結算完成後會呼叫healedFor(hurt=caster,...)反過來廣播「caster自己受到治療」事件, 而caster.onHealEffectTacs剛好持有同一顆監聽who:\"ally\"的效果(涵蓋自己), 觸發自我遞迴二次治療(100→150的自我疊加, 已用scratchpad/smoke_batchA.js的回歸測試證實此差異)——otherAlly明確排除hurt自己(見healedFor()的groups陣列: otherAlly持有者清單為allies.filter(a=>a!==hurt)), 語意正確(原文「目標」本就不含自己)且天然避開此自我觸發問題, 一舉兩得。本批順帶修engine.js/sgz.py既有bug: e.ofDamage過去只讀opt.dmg(傷害比例治療來源), on:\"healed\"呼叫healedFor()傳的是opt.healAmt從未被讀取(healAmt參數存在但死路徑), 現補上opt.healAmt分支使ofDamage真正對on:healed事件生效(見engine.js applyEffects heal分支/sgz.py同函式, _note標記\"批A\")。"
+    }
+   ],
+   "_evidence": "2023→10→25 更新（增強） / 選擇一名異性友軍，持續 2 回合，目標受到治療效果或功能性增益狀態時，自身有 45%→90% 機率獲得相同效果（治療效果為 50%）（發動機率 30%→55%）",
+   "_bucket": "batchA_11severe",
+   "_note": "本文「選擇一名異性友軍,持續2回合,目標受到治療效果或功能性增益狀態時,自身有45%→90%機率獲得相同效果(治療效果為50%)」拆兩部分: (1)治療效果鏡像→heal(ofDamage:0.5)+on:healed精確落地(見effects[0]_note); (2)「功能性增益狀態」鏡像(非治療的其他buff, 如目標獲得amp/mitig/rateup等buff時自己也獲得)→仍缺對應事件, 詳見下方_todo。頂層rate改為0.9(對應戰法本身「發動機率30%→55%」的滿級值, 這是「選定異性友軍」這個準備動作的成功率, 非鏡像觸發率——鏡像觸發率45%→90%取滿值0.9已放在effects[0].rate; 頂層rate語意上略有混用(戰法本身發動率vs鏡像觸發率共用0.9恰好同值, 純屬巧合非刻意複用), 因reparse管線的t.rate同時控制reactive on:healed事件的整體閘門(見engine.js dealtDamageFor/healedFor對t.rate的讀取模式類推), 若日後需要精確拆分兩個獨立機率需額外欄位, 本批暫以同值0.9合併表達, 已知簡化)。",
+   "_todo": "(1)「選擇一名異性友軍」的動態鎖定: on:\"healed\"事件廣播機制是「監聽隊伍全體任一其他人」(who:\"otherAlly\", 已排除自己), 但無法進一步收斂到「僅監聽被選定的那一位異性隊友」——引擎無「持有者選定特定他人、之後只監聽該特定人事件」的鎖定機制(對比lockTarget是持有者自己鎖定攻擊目標，方向不同), 現況為粗近似(監聽全隊其他人, 未做性別篩選也未收斂到單一鎖定對象), 較原文寬鬆(命中率偏高——任一隊友受治療都可能觸發, 非僅鎖定的那一位)。若需精確需要「選標+跨回合鎖定+限定事件來源為該鎖定對象」的複合新原語。(2)「功能性增益狀態」鏡像(非治療的buff, 如目標獲得mitig/amp/rateup/first等增益狀態時自身也獲得同一效果)完全未建模: 需要receiver-framed「獲得功能性增益」事件廣播(on:\"buffed\"), 現有事件點(attacked/damaged/dealtDamage/activeFired/healed)皆非此類語意, 且「獲得相同效果」要求能讀取「觸發事件當下具體是哪個buff類型/數值」再原樣複製一份給持有者, 比healed(只需要一個治療量數字)複雜得多(需要複製效果物件本身的完整結構), 現有架構无對應機制, 誠實維持空白, 與奉令平虜(同一批, 同樣卡在「無buffed事件」)為同源缺口。"
   },
   "腹背受敵": {
    "set": {
@@ -2319,14 +2352,14 @@
     },
     {
      "k": "taunt",
-     "who": "enemy",
+     "who": "enemyLeader",
      "dur": 4,
-     "_approx": "原文「嘲諷敵軍主將」應只鎖定敵方隊伍index0(固定主將位), 但taunt效果層級的who=enemy只能選'全體敵軍'或(ctrl_k群體邏輯下)'n個隨機敵軍', 無等同extraHits段'enemyLeader'的固定主將選標項; 現用n=1(戰法頂層, 見parsed.n)近似成'隨機挑1名敵軍中招', 比精確的'固定敵方主將'更寬鬆錯位(可能嘲諷到非主將的副將, 也可能巧合選中主將), 屬引擎已知限制(見docs/data/engine_limitations.md)"
+     "_note": "批B(崩潰修復): who由\"enemy\"改\"enemyLeader\"——批52新增who==\"enemyLeader\"固定選標(對稱既有extraHits.who==\"enemyLeader\", 見sgz.py/engine.js applyEffects對CTRL_K家族who==\"enemyLeader\"的通用判斷: dests=[enemies[0]])後, 「嘲諷敵軍主將」已可精確表達, 取代舊版who:\"enemy\"+頂層n=1(隨機挑1名敵軍近似, 可能誤中副將)的近似, 不再需要_approx揭露。"
     }
    ],
    "_evidence": "戰鬥開始時，嘲諷敵軍主將（強迫目標攻擊自己），並使自己的統率提高 30→60 點，持續 4 回合",
    "_bucket": "batch20_named",
-   "_note": "批20任務點名修正: 補充_approx揭露(taunt目標的固定主將vs隨機單體錯位, 見上); stat.dur=4/add=60維持既有版本(2023-05-09增強版, 40→60點統率已是原文區間上限, 現值符合)不變。"
+   "_note": "批20任務點名修正: 補充_approx揭露(taunt目標的固定主將vs隨機單體錯位, 見上); stat.dur=4/add=60維持既有版本(2023-05-09增強版, 40→60點統率已是原文區間上限, 現值符合)不變。 | 批B: taunt.who改enemyLeader(批52新增原語落地, 見effects[1]._note),「近似」缺口已解決, 移除舊_approx。"
   },
   "白衣渡江": {
    "effects": [
@@ -2581,17 +2614,28 @@
    "set": {
     "kind": "phys",
     "rate": 0.125,
-    "when": null
+    "when": null,
+    "_note2": null
    },
    "effects": [
     {
      "k": "amp",
      "who": "enemy",
      "val": -0.15,
+     "perStack": -0.15,
+     "stackKey": true,
+     "maxStacks": 3,
      "dur": 2,
      "scale": "command",
      "n": 1,
-     "_note2": "批35 C: 兄弟掃描(狀態屬性曲線375族) —— 本效果帶scale但曲線族(350/375)未經實測樣本裁決, 現行沿用全域SCALE(除數350)預設, 曲線族未定(350/375待實測); 僅機鑑先識(警戒)有六點實測錨點佐證375(見calibration_anchors status_scale_375_20260704), 本效果不擅自套用375, 待未來實測樣本才裁決。"
+     "when": {
+      "on": "dealtDamage",
+      "who": "ally",
+      "casterIsLeader": true,
+      "dmgAbove": 300
+     },
+     "rate": 0.5,
+     "_note": "批A(11筆高嚴重重建): 本文首段「當我軍主將造成大於300的傷害時,有50%機率使敵軍單體造成的最終傷害降低15%(受統率影響),持續2回合,最多疊加3次」→ 落地兩個新原語: (1)when.dmgAbove:300(戰法級, dealtDamage反應式的傷害量閾值閘門, 對稱既有dmgType) + when.casterIsLeader:true(復用十勝十敗新增的同名旗標, 限定觸發事件的造成傷害者src本身須為隊伍主將)+ who:\"ally\"(廣播, 因持有者可能是副將監聽主將觸發的事件); (2)k:\"amp\"+e.stackKey(新, 對稱既有k:\"stat\"+stackKey, 見docs/engine.js/sgz.py k==\"amp\"分支的amp_layers/ampLayers per-target疊層計數)+maxStacks:3(封頂)+perStack:-0.15(每層-15%)——每次觸發時隨機選中的敵軍單體(dests由n:1的既有pickTargets邏輯決定)各自累計層數, 同一目標多次被選中才會疊到2/3層, 貼合原文「敵軍單體(隨機)...最多疊加3次」的語意。rate:0.5(50%機率)。既有的_note2(scale曲線族350/375未定案)維持不動。"
     },
     {
      "k": "settle",
@@ -2608,11 +2652,10 @@
      }
     }
    ],
-   "_evidence": "戰鬥前2回合，有50%機率（受統率影響）令主將對敵軍全體造成1次兵刃傷害（傷害率25%，受主將統率影響）；戰鬥第6回合，自身對敵軍單體造成一次斬殺傷害",
-   "_note": "批15修正: (1) kind由intel(謀略)修正為phys(兵刃)——原文明確「造成1次兵刃傷害」, 批14誤標為謀略傷害, 傷害種類判定錯誤(影響武力/智力減傷計算)。(2) rate由0.5改為0.125(=0.5×2/8, EV折算): 原文「戰鬥前2回合，有50%機率」是限定在前2回合的機率, 但healOnly/主動擲骰通道原本每回合都以0.5機率結算(無視「前2回合」限定), 約4倍高估這段傷害的觸發頻率; 若改用戰法級t.when:{until:2}精確限定回合, 會連帶讓「戰鬥第6回合」的settle效果(見下方_todo)在when視窗開啟時(第1回合)就被一次性套用並永久消耗掉觸發機會, 導致第6回合反而不會再觸發settle(settle效果本身的e.when:{rounds:[6]}目前引擎未實作/未讀取, 詳見_todo)——兩害相權,改用EV折算(rate=0.125)而非t.when, 避免對settle造成新的次生偏移, 僅需承受coef段本身用EV近似(較「精確前2回合」寬鬆, 但不影響settle時機)。amp(-0.15, dur2, scale command)疊加3次的機制仍受限於pushAdd同src刷新去重, 沿用既有做法。 | 批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=amp] 缺 e['n'], 原文目標為「單體」, 補 e['n']=1。",
-   "_todo": "批43 B(全庫兄弟遷移掃描重新核對, 發現舊_evidence/_todo皆遺漏原文首段完整語意): data/tactics.json的完整effectText為「當我軍主將造成大於300的傷害時，有50%機率使敵軍單體造成的最終傷害降低15%（受統率影響），持續2回合，最多疊加3次；戰鬥前2回合...；戰鬥第6回合...（傷害率100%+25%×最終降傷施加次數）」——本batch corrections的_evidence只節錄了後兩段(前2回合傷害/第6回合斬殺), 完全遺漏最關鍵的首段觸發條件與疊層機制, 過去_todo「疊加3次未建模」的描述本身正確, 但成因描述不完整(不只是「pushAdd同src刷新不疊」, 真正缺口更大): (1)觸發條件是「我軍主將造成大於300的傷害時」——dealtDamage事件+傷害量閾值(dmg>300)雙重條件, 現有when.on==\"dealtDamage\"只支援事件本身觸發, 無「傷害量需超過某閾值」的條件欄位(同族「傷害量閾值閘門」缺口, 全庫目前無此原語, 需求方向類似hpBelow但檢查的是本次觸發的dmg值而非caster血量)。(2)debuff對象是「敵軍單體」(隨機), 非dealtDamage事件的固定目標(攻擊時的dst), 若用批42/43的stackKey機制掛在該隨機目標上, 同一目標多次被隨機選中才會疊層, 與原文「50%機率使敵軍單體(隨機)...最多疊加3次」的隨機重選語意大致相容(仍需驗證是否應鎖定同一目標或每次重新隨機), 但先決條件(1)未解決前討論此節意義不大。(3)第6回合斬殺傷害「傷害率100%+25%×最終降傷施加次數」——傷害量隨(1)(2)累計的觸發次數動態縮放, 需要讀取「本場已觸發次數」當作coef的加成分量, 現有coef是靜態值, 無「依某計數器動態調整coef」的原語(對稱amp/mitig的addbonus加總機制, 但套用對象是coef本身而非傷害後乘算)。三項缺口環環相扣(3依賴1/2的觸發次數計數), 綜合評估後認定超出本批「疊層家族兄弟遷移」的原定範圍(新增的是「疊層計數」原語, 而密計誅逆真正卡住的是「傷害量條件閘門」+「動態coef」兩個更上游、更大範圍的缺口), 停損維持現行近似(戰法級rate=0.125 EV折算前2回合傷害+第6回合settle斬殺, 完全不建模首段「大傷害觸發降傷可疊層」機制), 已補齊完整原文供未來核對用。",
-   "_bucket": "batch15_zero_score_fix",
-   "_note2": "批24 A: stale揭露清剿: settle效果的e.when.rounds:[6]自批18起已被引擎正確讀取執行(見_todo更正說明), 資料本身無需變動。"
+   "_evidence": "當我軍主將造成大於300的傷害時，有50%機率使敵軍單體造成的最終傷害降低15%（受統率影響），持續2回合，最多疊加3次；戰鬥前2回合，有50%機率（受統率影響）令主將對敵軍全體造成1次兵刃傷害（傷害率25%，受主將統率影響）；戰鬥第6回合，自身對敵軍單體造成一次斬殺傷害（傷害率100%+25%×最終降傷施加次數）",
+   "_note": "批A: 補建首段觸發+可疊層降傷機制(見effects[0]_note), 落地新原語when.dmgAbove(反應式傷害量閾值閘門)+k:\"amp\"+e.stackKey(amp的per-target疊層變體)。取代批43 B的完全空白_todo(見下方_history)。批15的舊註記(kind修正/rate EV折算/n=1)維持有效不動: kind由intel(謀略)修正為phys(兵刃)——原文明確「造成1次兵刃傷害」; rate=0.125(=0.5×2/8, EV折算)對應「戰鬥前2回合，有50%機率」子句(注意: 此rate只管第2個effects段=settle結算前的頂層coef傷害段, 與effects[0]的新amp段各自獨立rate, 互不影響); 若改用戰法級t.when:{until:2}精確限定回合會連帶讓settle效果的when視窗判斷錯位, 故coef傷害段仍維持EV折算做法不動。",
+   "_todo": "第6回合斬殺傷害「傷害率100%+25%×最終降傷施加次數」的傷害量, 仍未能依「本場已觸發降傷次數」動態縮放coef(維持固定100%, 未計入25%×施加次數的加成)——這是「動態coef」缺口: 現有amp_layers/ampLayers是per-target(掛在被降傷的敵方目標身上)計數, 而settle結算時需要的是「本場累計觸發次數」(可能是跨目標加總, 也可能是「最終那一個目標身上的層數」, 原文「最終降傷施加次數」語意本身有歧義未能100%確定是哪一種), 現有settle原語的base/per是靜態值, 無法讀取另一個效果物件的amp_layers計數並代入coef公式, 需要新增「settle讀取指定amp_layers計數器」的耦合機制(e.g. e.perStackFrom引用另一效果的疊層數)——範圍評估後認定與批A新增的dmgAbove/amp-stackKey屬不同性質的缺口(前者是「事件觸發判斷」, 這裡是「傷害量計算讀取跨效果狀態」), 誠實維持第6回合固定100%不動, 供未來批次評估是否值得為此新增settle的動態coef讀取機制。",
+   "_history": "批15/批28 A1(batch15_zero_score_fix桶)曾建立kind修正/rate EV折算/n=1的既有近似(見_note保留段落); 批43 B兄弟遷移掃描時發現首段「>300傷害觸發可疊層降傷」機制完全遺漏, 因「傷害量閾值閘門+動態coef」兩個上游缺口而完全停損(_todo全空)。本批(batchA)新增dmgAbove+amp-stackKey兩原語, 解決首段觸發判定與per-target疊層, 唯settle的動態coef讀取仍未解決(見上方_todo)。"
   },
   "鷹視狼顧": {
    "set": {
@@ -3541,6 +3584,13 @@
    "_bucket": "batch15_zero_score_fix"
   },
   "陷陣突襲": {
+   "set": {
+    "lockTarget": true,
+    "when": {
+     "on": "activeFired"
+    },
+    "_todo": null
+   },
    "effects": [
     {
      "k": "chargeup",
@@ -3556,17 +3606,39 @@
      "per": 0.03,
      "max": 6,
      "stackPer": "cast",
-     "_note": "批26 B2: 原文「第2回合起，有68%機率額外攻擊1名敵軍並使自身突擊戰法發動率提高3%」——每次此68%分支成功觸發, 突擊發動率永久+3%(可累積), 這正是「每次發動後提升X」的疊加語意(過去無stackPer:'cast'原語, 完全未建模)。現用stack(stackPer:'cast', 批26新增)近似: 每次本戰法成功發動(fire)+1層, 每層+3%(per=0.03), max:6無實際數值依據(原文未提及封頂次數, 取8回合戰鬥保守估計最多6次額外觸發機會作為上限, _est性質)。工程近似細節: stack機制本身只透過caster.amp()疊加自身傷害輸出加成(非chargeup欄位), 與原文「提高突擊戰法發動率」語意並非完全對應(stack影響的是傷害量, 原文影響的是發動機率)——選擇用stack近似的理由: (1)是本批唯一支援「每次發動遞增」語意的原語; (2)「發動率提高」最終仍反映在「更常打出這個戰法的傷害」, 用「自身傷害輸出隨戰鬥推進遞增」的stack近似, 在整體傷害期望值走勢上與原文期望效果方向一致(皆為隨戰鬥推進，此戰法貢獻的傷害佔比提升), 但两者並非嚴格等價, 誠實記錄此近似落差供未來若新增「stack作用於chargeup」的擴充時重新校準。"
+     "_note": "批26 B2: 原文「第2回合起，有68%機率額外攻擊1名敵軍並使自身突擊戰法發動率提高3%」——每次此68%分支成功觸發, 突擊發動率永久+3%(可累積), 這正是「每次發動後提升X」的疊加語意(過去無stackPer:'cast'原語, 完全未建模)。現用stack(stackPer:'cast', 批26新增)近似: 每次本戰法成功發動(fire)+1層, 每層+3%(per=0.03), max:6無實際數值依據(原文未提及封頂次數, 取8回合戰鬥保守估計最多6次額外觸發機會作為上限, _est性質)。工程近似細節: stack機制本身只透過caster.amp()疊加自身傷害輸出加成(非chargeup欄位), 與原文「提高突擊戰法發動率」語意並非完全對應(stack影響的是傷害量, 原文影響的是發動機率)——選擇用stack近似的理由: (1)是本批唯一支援「每次發動遞增」語意的原語; (2)「發動率提高」最終仍反映在「更常打出這個戰法的傷害」, 用「自身傷害輸出隨戰鬥推進遞增」的stack近似, 在整體傷害期望值走勢上與原文期望效果方向一致(皆為隨戰鬥推進，此戰法貢獻的傷害佔比提升), 但两者並非嚴格等價, 誠實記錄此近似落差供未來若新增「stack作用於chargeup」的擴充時重新校準。批A複核: 評估過改用「stackTarget:chargeup」讓stack真正疊加進chargeup(而非amp)——需要新增stack物件的套用目標路由(目前stack固定經由caster.amp()讀取, 若改為可選路由進addbonusFor(\"chargeup\",...)的加總池, 屬中等工程且無其他戰法有類似需求佐證優先度, 本批評估後維持現有amp近似不動, 缺口說明已充分且誠實, 非本批最小實作範圍。"
     }
    ],
-   "_evidence": "自身突擊戰法發動機率提高15%（自身為副將時，受武力影響）且自身成功發動突擊戰法後，對目標發動1次兵刃攻擊（傷害率95%，第2回合起，有68%機率額外攻擊1名敵軍並使自身突擊戰法發動率提高3%）；自身為主將時，普通攻擊有68%機率鎖定敵軍主將",
+   "extraHits": [
+    {
+     "coef": 0.95,
+     "kind": "phys",
+     "n": 1,
+     "who": "sameTarget",
+     "_note": "批52c: 突擊後補刀—掛在activeFired; 對應本文「自身成功發動突擊戰法後，對目標發動1次兵刃攻擊（傷害率95%）」"
+    },
+    {
+     "coef": 0.95,
+     "kind": "phys",
+     "n": 1,
+     "rate": 0.68,
+     "when": {
+      "from": 2
+     },
+     "_note": "批A(11筆高嚴重重建): 本文「第2回合起，有68%機率額外攻擊1名敵軍並使自身突擊戰法發動率提高3%」的「額外攻擊1名敵軍」半段(過去只落地了+3%那一半, 這一半完全缺失)。原文未給獨立傷害率, 本段視為「同一次突擊後攻擊action的延伸」, 沿用主段95%同值(合理推定: 若原文有意給不同數值理應另外標示, 未標示視為與前段一致)。eh.when:{from:2}(新落地: eh.when的from/until已由roundOk支援, 過去無戰法在extraHits段級使用此欄位, 本次是首次落地, 非全新原語)限定第2回合起才可能觸發; 未指定who則預設隨機選標(對應原文「1名敵軍」非「同一目標」, 與上方sameTarget段方向不同, 各自獨立)。"
+    }
+   ],
+   "_evidence": "2023→09→27 更新（增強） / 戰鬥中，自身突擊戰法發動機率提高 15%（自身為副將時，受武力影響）且自身成功發動突擊戰法後，對目標發動 1 次兵刃攻擊（傷害率 95%，第 2 回合起，有 68% 機率額外攻擊 1 名敵軍並使自身突擊戰法發動率提高 3%）；自身為主將時，普通攻擊有 68% 機率鎖定敵軍主將。",
    "_diff": "採用agy 2026-07-03查證的最新官方文字(見tactics_overrides.json), 取代舊版raw文字(2023-09-27前, 描述34%→68%機率鎖定主將+7.5%→15%突擊發動率+獲得3%→6%倒戈, 與現行版本機制已不同)。移除舊版lifesteal(倒戈)效果——舊文字「自身為主將時，獲得3%→6%倒戈」在新版文字中已不存在(被替換成「普通攻擊68%機率鎖定敵軍主將」，純目標鎖定機制，非倒戈增益), 舊lifesteal效果依新文字已無對應語意, 予以移除避免無中生有。",
-   "_todo": "批31 A評估後維持現況, 未動 coef/rate/type(見_note2說明阻塞原因): 「自身成功發動突擊戰法後，對目標發動1次兵刃攻擊（傷害率95%）」本體傷害段原本規劃直接把type改為\"charge\"讓coef走charge原生擲骰通道(取代目前type:\"passive\"+coef+rate:1的每回合無條件套用近似), 但排查後發現這會產生新的迴歸: apply_passives()準備階段的prep套用迴圈只對 t[\"type\"] in (\"passive\",\"command\") 套用該戰法的 effects(見sgz.py/engine.js applyPassives 的 cat_of 迴圈), type:\"charge\"戰法的effects只在fight()主迴圈charge擲骰命中fire===true那一刻才套用——本戰法的chargeup(自身突擊發動率+15%常駐)與stack(每次發動+3%突擊率, stackPer:cast)兩個效果依原文語意都應該是「戰鬥開始就持續生效的常駐自我buff」, 若改type:\"charge\"會導致這兩個效果從「開戰即生效」退化成「必須先成功發動過一次charge才會套用」(而且套用時機也不對, chargeup應該在觸發前就已經生效才能實際影響rate擲骰, 不能等fire之後才補套用), 屬於比現有近似更嚴重的退化。維持type:\"passive\"+coef+rate:1不變(仍是「每回合無條件95%傷害」的近似, 高估「須自身成功發動突擊戰法」這個條件, 但至少chargeup/stack兩個常駐buff正確生效)。真正的修法需要類似裝備proc的「一份JSON戰法在Unit建構時展開成主體(passive, 常駐buff) + 附掛的偽charge子戰法(傷害段, 走charge擲骰通道)」雙態機制, 目前無此通用原語(僅裝備proc有一次性硬編碼實作, 非戰法JSON層可調用), 誠實維持現況揭露, 供未來批次評估是否要新增此雙態原語。「自身為主將時，普通攻擊有68%機率鎖定敵軍主將」的目標鎖定機制未建模(engine_limitations.md 13節「普通攻擊不讀targetSel/lockTarget」已知限制的同類案例, 且此處還疊加ifLeader條件, 現有lockTarget/targetSel皆只作用於戰法本身的coef/effects段, 不影響普通攻擊本身的目標選擇邏輯)。",
-   "_bucket": "rederive_b5"
+   "_note": "批A: 補建「額外攻擊1名敵軍」缺失段(見extraHits[1]_note), 取代批31 A的空白_todo(見下方_history)。本correction同時把過去只存在於docs/data/tactics_parsed.json手工patch(scratchpad/_patch_batch52b.py同類批次, 批52c)的lockTarget/when/extraHits[0]三個欄位正式搬入corrections.json, 使其成為reparse的真實冪等輸出(對稱坐斷東南的同款修復, 見該筆_note)——這些欄位過去雖已在HEAD生效, 但因未寫回本檔, 若未來有人改動corrections.json觸發reparse重跑, 會有被靜默清空的風險(陷陣突襲本身目前尚安全, 因reparse管線的既有steps皆不觸碰這些欄位名, 只是路徑上仍存在此隱患, 一併補齊消除)。coef/rate/type維持批31 A的既有決策不動(見下方_todo, 雙態機制缺口仍真實存在)。",
+   "_todo": "「自身成功發動突擊戰法後，對目標發動1次兵刃攻擊（傷害率95%）」本體傷害段的type:\"passive\"+coef+rate:1近似(取代理想的type:\"charge\"擲骰通道)仍維持批31 A的既有決策不動: 若改type:\"charge\"會讓chargeup/stack兩個常駐buff退化成「必須先成功發動過一次charge才會套用」, 比現有近似更嚴重, 需要類似裝備proc的「一份JSON戰法展開成主體(passive,常駐buff)+附掛偽charge子戰法(傷害段,走charge擲骰通道)」雙態機制, 目前無此通用原語, 誠實維持現況(仍是「每回合無條件95%傷害」的近似, 高估「須自身成功發動突擊戰法」這個條件)。「自身為主將時，普通攻擊有68%機率鎖定敵軍主將」的目標鎖定機制仍未建模(engine_limitations.md 13節「普通攻擊不讀targetSel/lockTarget」已知限制, 現有lockTarget/targetSel皆只作用於戰法本身的coef/effects/extraHits段, 不影響普通攻擊本身的目標選擇邏輯, 且此處還疊加ifLeader條件)。",
+   "_history": "批31 A(rederive_b5桶)評估後停損, 指名「額外攻擊1名敵軍」半段未建模。批A(batchA_11severe)補建此段(extraHits[1])。",
+   "_bucket": "batchA_11severe"
   },
   "死戰不退": {
    "set": {
-    "rate": 0.8033
+    "rate": 1,
+    "_todo": null
    },
    "effects": [
     {
@@ -3577,11 +3649,37 @@
      ],
      "dur": 99,
      "_note": "原文「戰鬥中，使自己免疫混亂」先前完全未建模(整戰法effects為空陣列)。批16新增immuneTo原語精確對應(types:[\"chaos\"], dur=99常駐)。批21補上。"
+    },
+    {
+     "k": "chargeAdd",
+     "who": "self",
+     "max": 20,
+     "rate": 0.8,
+     "when": {
+      "on": "damaged"
+     },
+     "_note": "批A(11筆高嚴重重建): 本文「自身受到傷害時，有80%機率獲得一層蓄威效果，可累積20層」→ 新原語k:\"chargeAdd\"(見docs/engine.js/sgz.py的Unit.charge/self.charge資源池欄位, 對稱既有k:\"stack\"但語意為「剩餘可消耗次數」而非「傷害增益倍率」)。掛在on:\"damaged\"(任意來源傷害皆算, 非僅普攻)+rate:0.8(80%機率)+max:20(封頂層數)。"
+    },
+    {
+     "k": "chargeConsume",
+     "coef": 1.3,
+     "kind": "phys",
+     "rate": 0.5,
+     "scale": "force",
+     "decayPer": 0.08,
+     "maxChain": 5,
+     "when": {
+      "on": "dealtDamage",
+      "normalOnly": true
+     },
+     "_note": "批A(11筆高嚴重重建): 本文「普攻後，有50%機率（受武力影響）消耗一層蓄威對敵軍單體造成一次兵刃傷害（傷害率65%→130%），觸發後可繼續判定，每次觸發後機率降低8%，每回合最多觸發5次」→ 新原語k:\"chargeConsume\"(見docs/engine.js/sgz.py applyEffects/apply_effects的遞迴鏈式判定, 對稱capture的opt.rateChecked慣例避免雙重擲骰)。when:{on:\"dealtDamage\",normalOnly:true}(普攻確實命中造成傷害後觸發, 對稱奮突等既有normalOnly慣例)。coef:1.3(=130%滿級傷害率)+rate:0.5(50%基礎機率)+scale:\"force\"(受武力影響, 沿用既有rateScaleOf縮放慣例)+decayPer:0.08(每次觸發後機率-8%)+maxChain:5(每回合最多觸發5次, 見chargeConsumedThisRound/charge_consumed_this_round逐回合歸零計數器)。"
     }
    ],
-   "_evidence": "普攻後50%機率消耗蓄威造成65→130%兵刃傷害, 觸發後可續判定(每次觸發後-8%, 最多5次連鎖)",
-   "_diff": "移除誤用的stack(per:1.3,max:20; 把'蓄威層'誤當永久疊加增傷, 實為攻擊次數資源池)與extra(val:1恆用固定1.0coef, 無法代表本戰法65→130%coef); rate改用鏈式期望值0.5+0.5×0.42+0.5×0.42×0.34+...≈0.8033取代原0.5(原0.5僅算首次觸發機率,漏算後續4次連鎖期望贡献); type維持passive(PASSIVE分類全數未見charge先例,'受擊獲得資源/普攻消耗'類機制沿用該分類per-round rate擲骰慣例); 免疫混亂無單獨原語未建模",
-   "_bucket": "rederive_b2"
+   "_evidence": "戰鬥中，使自己免疫混亂；自身受到傷害時，有80%機率獲得一層蓄威效果，可累積20層；普攻後，有50%機率（受武力影響）消耗一層蓄威對敵軍單體造成一次兵刃傷害（傷害率65%→130%），觸發後可繼續判定，每次觸發後機率降低8%，每次普攻後最多觸發5次。",
+   "_diff": "移除誤用的stack(per:1.3,max:20; 把'蓄威層'誤當永久疊加增傷, 實為攻擊次數資源池)與extra(val:1恆用固定1.0coef, 無法代表本戰法65→130%coef)。頂層rate改回1(戰法本身無外部發動率限制, 內文的80%/50%機率各自由chargeAdd/chargeConsume效果的e.rate精確表達, 不再需要頂層rate做EV折算近似)。",
+   "_note": "批A: 補建核心「蓄威層+消耗連鎖」機制(見effects[1]/[2]_note), 新原語k:\"chargeAdd\"+k:\"chargeConsume\"(需要新的資源池狀態u.charge+遞迴鏈式判定迴圈, 這是全批唯一需要「新資源池概念」的原語, user brief已明確點名此筆要建, 並指出方向類比為counter型消耗疊層)。取代批16/21(rederive_b2桶)的完全空白_todo(見下方_history)。",
+   "_bucket": "batchA_11severe",
+   "_history": "批16/21(rederive_b2桶)曾精確診斷此機制「需要動態遞減機率的多次觸發消耗品層數, 現有stack只支援固定per值的每回合遞增, 不支援受傷觸發疊層+消耗時遞減觸發率+每回合觸發上限的複合狀態機」, 完全空白_todo。本批(batchA)新增chargeAdd(受擊觸發疊層資源池)+chargeConsume(普攻後鏈式消耗資源池造成傷害, 遞減機率+每回合上限)解決此缺口。"
   },
   "才辯機捷": {
    "effects": [
@@ -3633,22 +3731,33 @@
     {
      "k": "lifesteal",
      "who": "self",
-     "val": 0.225,
+     "val": 0.45,
      "dur": 99,
-     "_approx": "prob-ev: 第5回合起且兵力<50%的條件分支取0.5權重(45%×0.5); 效果級起始回合無法單獨表達(戰法級when會連帶鎖住前4回合的amp)"
+     "everyRound": true,
+     "when": {
+      "from": 5,
+      "hpBelow": 0.5
+     },
+     "_note": "批A(11筆高嚴重重建): 本文「第5回合時，若自身兵力低於50%，獲得45%倒戈，直到戰鬥結束」→ 落地新原語e.when.hpBelow(效果級, 對稱既有戰法級t.when.hpBelow, 見docs/engine.js/sgz.py everyRound分支新增的hpOk/hp_ok判斷式)+when.from:5(第5回合起持續判斷)+everyRound(逐回合重新判定, 對應「兵力低於50%」是動態條件非開戰單次判定)。取代舊版prob-ev折算(0.225=0.45×0.5權重), 現在是真條件分支: 兵力持續<50%時全額45%倒戈生效, 兵力回升到>=50%時自動失效(hpAbove的else分支見下方rateup效果)。val由0.225(EV折算值)改回原文滿級值0.45。"
     },
     {
      "k": "rateup",
      "who": "self",
-     "val": 0.03,
+     "val": 0.06,
      "dur": 99,
-     "_approx": "prob-ev: else分支(第5回合兵力≥50%)主動戰法發動率+6%×0.5權重"
+     "everyRound": true,
+     "when": {
+      "from": 5,
+      "hpAbove": 0.5
+     },
+     "_note": "批A: 本文「否則自身主動戰法發動率提升6%，直到戰鬥結束」(else分支: 第5回合起兵力>=50%)→ when.hpAbove:0.5(新原語, 見上方lifesteal效果_note)+when.from:5+everyRound。取代舊版prob-ev折算(0.03=0.06×0.5權重), 現在是真條件分支。val由0.03(EV折算值)改回原文滿級值0.06。兩效果(lifesteal的hpBelow:0.5/rateup的hpAbove:0.5)在數值恰為50%那一瞬間有邊界縫隙(嚴格<0.5與嚴格>0.5, 不含=0.5那一點皆不觸發)——此邊界縫隙為hpOk既有比較運算子(嚴格不等式)的既定行為, 現實中兵力連續變化恰好停在整數50.00%的機率趨近於0, 可忽略。"
     }
    ],
-   "_evidence": "戰鬥中，自身發動需要準備的主動戰法時，有75%幾率（受武力影響）減少1回合準備時間；戰鬥前4回合，自身主動戰法造成的傷害提高30%（受武力影響）；第5回合時，若自身兵力低於50%，獲得45%倒戈，直到戰鬥結束；否則自身主動戰法發動率提升6%，直到戰鬥結束。",
+   "_evidence": "戰鬥中，自身發動需要準備的主動戰法時，有75%幾率（受武力影響）減少1回合準備時間；戰鬥前4回合，自身主動戰法造成的傷害提高30%（受武力影響）；第5回合時，若自身兵力低於50%，獲得45%倒戈，直到戰鬥結束；否則自身主動戰法發動率提升6%，直到戰鬥結束。（注：否則效果為2023年10月新增）",
    "_todo": "「自身發動需要準備的主動戰法時，有75%機率（受武力影響）減少1回合準備時間」(準備戰法縮短機制)完全未建模: 引擎的prep(準備)機制是固定回合數(t.prep欄位), 無「機率性縮短準備時間」的原語, 予以省略。",
-   "_note": "原資料lifesteal 0.45自首回合常駐=高估(真實第5回合起且限低兵力分支), 且漏掉2023-10新增的else分支rateup。",
-   "_bucket": "batch15_one_point_disclosure"
+   "_note": "批A: 把lifesteal/rateup兩效果從prob-ev折算(戰法級when會連帶鎖住前4回合amp的舊限制)升級為真條件分支(見兩效果各自_note, 新原語e.when.hpBelow/hpAbove)。原資料lifesteal 0.45自首回合常駐=高估(真實第5回合起且限低兵力分支)已修正; 2023-10新增的else分支rateup亦已補上真條件(不再是EV折算)。",
+   "_bucket": "batchA_11severe",
+   "_history": "批15(batch15_one_point_disclosure桶)曾用prob-ev折算(lifesteal 0.225=0.45×0.5權重, rateup 0.03=0.06×0.5權重)近似「第5回合起依兵力%分流」的條件分支, 因「戰法級t.when會連帶鎖住前4回合amp效果」而無法用真條件表達。本批(batchA)新增effect級hpBelow/hpAbove解除此限制, 兩效果均升級為真條件分支(取原文滿級值)。"
   },
   "奮發": {
    "effects": [
@@ -4018,8 +4127,8 @@
    ],
    "_evidence": "戰鬥中，每回合有35%機率（受統率影響，計算公式為：(統率+570)/570，效果機率獨立判定）獨立判定執行以下三種效果：1.轉移傷害降低 2.轉移負面狀態 3.偷取統率（10點，公式(統率+233)/233）",
    "_bucket": "batch30_everyround_migration",
-   "_note": "批24 D3: 用現有原語組合表達「偷統率」——過去(批19)完全empty effects, 僅在_note記錄查證所得的機率/數值公式供未來transfer原語使用。批24評估: 雖仍無專屬transfer原語, 但「偷取統率」本質是「敵方掉統率+我方漲統率」的量對稱效果, 可用兩條stat(add)效果組合近似表達(非嚴格轉移語意, 已用_approx誠實揭露差異)。「轉移傷害降低」與「轉移負面狀態」兩個分支仍完全無法用現有原語表達(需要「把已存在於A身上的某個具體效果/狀態實例搬到B身上」的原語, 與「獨立疊加兩個對稱效果」不同語意), 維持empty(即這兩分支仍是0%建模), 保留於_todo。批30 A: 兩條stat效果補e.everyRound, 取代批24遺留的「prep單次擲骰」近似(見效果_approx)。",
-   "_todo": "「轉移傷害降低」(把敵方已有的減傷效果轉移到我方)與「轉移負面狀態」(把我方群體的負面狀態轉移給敵方)兩者仍需要新的transfer類原語(把某個已存在的效果/狀態實例從一方搬到另一方, 而非目前的dispel移除、redirect傷害轉嫁、或批24 D3新用的「雙方各自套用對稱效果」近似)——「偷統率」分支批24已用stat組合近似落地(見effects/_note), 但這兩個分支的語意更嚴格要求「must be the same instance that existed on the source」(如「敵方的減傷效果」需要先存在才能轉移, 我方沒有這個效果就不會發生轉移), 無法用「無條件疊加對稱效果」的方式近似(因為可能敵方根本沒有減傷效果可轉移, 强行疊加會是無中生有), 需engine.js/sgz.py層級擴充才能解決, 非corrections層可解。機率公式(統率+570)/570已記錄供未來實作參考(本次三選一中的偷統率分支近似取代表值rate:0.333, 另兩分支維持完全未建模)。"
+   "_note": "批24 D3: 用現有原語組合表達「偷統率」——過去(批19)完全empty effects, 僅在_note記錄查證所得的機率/數值公式供未來transfer原語使用。批24評估: 雖仍無專屬transfer原語, 但「偷取統率」本質是「敵方掉統率+我方漲統率」的量對稱效果, 可用兩條stat(add)效果組合近似表達(非嚴格轉移語意, 已用_approx誠實揭露差異)。「轉移傷害降低」與「轉移負面狀態」兩個分支仍完全無法用現有原語表達(需要「把已存在於A身上的某個具體效果/狀態實例搬到B身上」的原語, 與「獨立疊加兩個對稱效果」不同語意), 維持empty(即這兩分支仍是0%建模), 保留於_todo。批30 A: 兩條stat效果補e.everyRound, 取代批24遺留的「prep單次擲骰」近似(見效果_approx)。批A(11筆高嚴重重建)複核: 依user brief要求「雁行陣transfer=現有組合近似已揭露則確認完整」逐項核對——現有偷統率的stat組合近似與_todo揭露內容皆與定稿effectText(data/tactics.json)一致, 機率公式(統率+570)/570、偷統率公式(統率+233)/233皆已正確記錄。決策: 不在本批強行新建transfer原語——「must be the same instance that existed on the source」的嚴格要求(若敵方根本沒有減傷效果, 不該無中生有轉移)若做錯了比不做更糟(如密計誅逆先前heal瞎猜的前車之鑑), 且此二分支需要「buff/debuff實例內省(讀取某單位當前具體持有哪個效果物件)+移除+複製到另一單位」的複合操作, 工程量與風險評估後認定超出本批「11筆最小實作」範圍, 維持誠實空白。僅補強_todo措辭以符合§35規約(停損註記須點名具體缺失原語名稱, 供未來R20 alias掃描比對), 見下方_todo。",
+   "_todo": "「轉移傷害降低」(把敵方已有的減傷效果轉移到我方)與「轉移負面狀態」(把我方群體的負面狀態轉移給敵方)兩者仍需要新的transfer類原語——具體命名: transferMitig(從敵方隨機一位「當前持有mitig>0 buff」的單位, 把該buff實例整個複製到我方隨機一位身上, 若敵方無人持有則不觸發)+transferDebuff(從我方群體隨機1-2位「當前持有負面狀態」的單位, 把該狀態實例整個移到敵方隨機單位身上, 原單位該狀態同時移除, 若我方無人持有負面狀態則不觸發)——兩者皆需要「buff/debuff實例內省(讀取某單位adds/mods/dots等內部狀態陣列, 判斷是否存在特定類型的效果物件並取得其具體數值)+移除該實例+複製到另一單位」的複合操作, 現有dispel(移除)/redirect(傷害轉嫁)/批24D3的「雙方各自套用對稱效果」近似皆非此語意(把某個已存在的效果實例從一方搬到另一方, 而非目前這幾種)。「偷統率」分支批24已用stat組合近似落地(見effects/_note), 但這兩個分支的語意更嚴格要求「must be the same instance that existed on the source」(如「敵方的減傷效果」需要先存在才能轉移, 我方沒有這個效果就不會發生轉移), 無法用「無條件疊加對稱效果」的方式近似(因為可能敵方根本沒有減傷效果可轉移, 强行疊加會是無中生有), 需engine.js/sgz.py層級擴充才能解決, 非corrections層可解。機率公式(統率+570)/570已記錄供未來實作參考(本次三選一中的偷統率分支近似取代表值rate:0.333, 另兩分支維持完全未建模)。"
   },
   "摧鋒斷刃": {
    "set": {
@@ -4522,22 +4631,37 @@
      "k": "stat",
      "who": "self",
      "stat": "intel",
+     "add": true,
+     "perStack": 30,
+     "maxStacks": 5,
+     "stackKey": true,
      "dur": 99,
-     "add": 30,
-     "_approx": "原文最多疊加5次,單層15→30點;引擎無疊層機制,取單次觸發滿級值"
+     "when": {
+      "on": "dealtDamage",
+      "dmgType": "intel"
+     },
+     "_note": "批B(崩潰修復, sgz.py demo()斷言150-151期望): 遷移至e.when.on:\"dealtDamage\"+dmgType過濾+k=\"stat\"&&e.stackKey(add型, 批43 A新增, 對稱虎侯precedent見PER_KIND_FIELDS註解)——取代舊版「引擎無疊層機制, 取單次觸發滿級值」的近似(批28 A2已診斷此近似應可用dealtDamage+stack升級, 現正式落地): 自己每次造成謀略/兵刃傷害時(母戰法無t.when, 效果級各自獨立掛dmgType:\"intel\"/\"phys\", 對應原文「造成謀略傷害」/「造成兵刃傷害」兩條分線), perStack:30(取「15→30點」滿級值, 對稱虎侯perStack:15取其「7.5→15點」滿級值的既有慣例), maxStacks:5(對應「最多疊加5次」), dur:99(原文「戰鬥中」持續整場, 沿用舊版dur:99不變, 非虎侯的短窗dur:2)。本效果為謀略傷害分線(智力)。"
     },
     {
      "k": "stat",
      "who": "self",
      "stat": "force",
+     "add": true,
+     "perStack": 30,
+     "maxStacks": 5,
+     "stackKey": true,
      "dur": 99,
-     "add": 30,
-     "_approx": "原文最多疊加5次,單層15→30點;引擎無疊層機制,取單次觸發滿級值"
+     "when": {
+      "on": "dealtDamage",
+      "dmgType": "phys"
+     },
+     "_note": "批B(崩潰修復, sgz.py demo()斷言150-151期望): 遷移至e.when.on:\"dealtDamage\"+dmgType過濾+k=\"stat\"&&e.stackKey(add型, 批43 A新增, 對稱虎侯precedent見PER_KIND_FIELDS註解)——取代舊版「引擎無疊層機制, 取單次觸發滿級值」的近似(批28 A2已診斷此近似應可用dealtDamage+stack升級, 現正式落地): 自己每次造成謀略/兵刃傷害時(母戰法無t.when, 效果級各自獨立掛dmgType:\"intel\"/\"phys\", 對應原文「造成謀略傷害」/「造成兵刃傷害」兩條分線), perStack:30(取「15→30點」滿級值, 對稱虎侯perStack:15取其「7.5→15點」滿級值的既有慣例), maxStacks:5(對應「最多疊加5次」), dur:99(原文「戰鬥中」持續整場, 沿用舊版dur:99不變, 非虎侯的短窗dur:2)。本效果為兵刃傷害分線(武力)。"
     }
    ],
    "_evidence": "增加15→30點智力……增加15→30點武力，最多疊加5次",
    "_bucket": "batch12_modeA_stat_flat",
-   "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正 | 批28 A2: lint R22新現形——「自己每次造成謀略傷害時,增加15→30點智力」是dealtDamage(批27新增原語, when.on==\"dealtDamage\")的典型適用場景, 但目前仍用單次觸發滿級值近似(如上_approx所述), 未改用dealtDamage+stack組合精確表達逐次觸發遞增。維持現行近似(理由同_approx: 引擎無疊層計數器, 取單次滿級值), 本次補充揭露此近似與dealtDamage原語的關聯, 供未來評估是否值得改用stack(stackPer需新增\"onDealtDamage\"觸發模式, 現僅支援round/cast, 非本批新增範圍)升級。"
+   "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正 | 批B(崩潰修復): 遷移至e.when.on:\"dealtDamage\"+k=\"stat\"stackKey疊層(見effects各自._note), 取代批28 A2已診斷但未落地的舊近似(單次觸發滿級值, 無疊層/無條件觸發)。",
+   "_diff": "舊版: stat(intel/force)各自add:30,dur:99,無when,無疊層(單次滿級近似)。新版: 補e.when.on:\"dealtDamage\"+dmgType過濾(intel段限謀略傷害觸發/force段限兵刃傷害觸發)+stackKey疊層(add:true,perStack:30,maxStacks:5), 精確表達逐次觸發遞增最多5層。"
   },
   "無當飛軍": {
    "set": {
@@ -5137,7 +5261,8 @@
   },
   "白毦兵": {
    "set": {
-    "_todo": null
+    "_todo": null,
+    "rate": 0.45
    },
    "extraHits": [
     {
@@ -5158,7 +5283,7 @@
    ],
    "_evidence": "我軍全體獲得12%攻心，且普通攻擊後有20%→45%機率對攻擊目標再次發起一次謀略攻擊（傷害率55%→110%，受智力影響）",
    "_bucket": "batch12_modeC_empty_effects",
-   "_note": "批12 ModeC: 原effects為空, 補12%攻心(lifesteal); 普攻後二次謀略攻擊機制已由頂層coef=1.1/rate=0.45代表(command型戰法本身即為該機率觸發的傷害), 不重複編碼避免雙重灌傷害。批44 A: 陳到統領條件式提升已用extraHits+ifLeaderIs精確落地(見extraHits[0]._note), 原_todo移除。"
+   "_note": "批12 ModeC: 原effects為空, 補12%攻心(lifesteal); 普攻後二次謀略攻擊機制已由頂層coef=1.1/rate=0.45代表(command型戰法本身即為該機率觸發的傷害), 不重複編碼避免雙重灌傷害。批44 A: 陳到統領條件式提升已用extraHits+ifLeaderIs精確落地(見extraHits[0]._note),原_todo移除。 | 批B(R14): 修正stale矛盾——上述_note聲稱rate=0.45, 但parsed.rate實際仍是舊值1(從未真正同步寫入, R14數字矛盾掃出)。核對engine: type=\"charge\"戰法的頂層rate即「普通攻擊後,此charge是否觸發」的機率(見sgz.py do_normal_attack() 1485行random.random()<t[\"rate\"]+up), 與本文「普通攻擊後有20%→45%機率」精確對應。已改set.rate=0.45(滿級值), 消除矛盾。"
   },
   "神機妙算": {
    "set": {
@@ -5327,17 +5452,31 @@
    "_bucket": "rederive_b6"
   },
   "偽書相間": {
+   "set": {
+    "_todo": null
+   },
    "effects": [
     {
      "k": "chaos",
      "who": "enemy",
-     "dur": 1
+     "dur": 1,
+     "ifTargetHasNot": "chaos",
+     "_note": "批A(11筆高嚴重重建): 本文「否則施加混亂狀態」→ 補上ifTargetHasNot:\"chaos\"(新原語, ifTargetHas反向), 精確表達與extraHits段(見下方)互斥的「僅未混亂目標才施加混亂」語意, 避免同回合對已混亂目標重複刷新chaos(雖dur:1的重複刷新本身無害, 但明確互斥更貼合原文'否則'的if/else結構)。"
     }
    ],
-   "_evidence": "對敵軍單體造成謀略傷害（傷害率 103%→206%，受智力影響），若目標處於混亂狀態則使目標對其友軍單體發動攻擊（傷害率 93%→186%，類型取決於目標武力、智力較高的一項），否則施加混亂（攻擊和戰法無差別選擇目標）狀態，持續 1 回合",
-   "_todo": "「若目標已處於混亂狀態，則使其對友軍單體發動攻擊(傷害率186%)」的條件分支完全未建模(僅編碼else分支「施加混亂」, 未表達「若已混亂則強制攻擊己方」的額外傷害段), 低估已混亂目標情境下的輸出。",
-   "_note": "批12 ModeF: 原文明確為「混亂(攻擊和戰法無差別選擇目標)」而非全鎖定, 原資料用stun近似(部分已有_approx/_note誠實標註近似性質), 改用新增的chaos原語精確表達",
-   "_bucket": "batch15_one_point_disclosure"
+   "extraHits": [
+    {
+     "who": "mainTargetAlly",
+     "coef": 1.86,
+     "kindByStat": "maxForceIntel",
+     "ifTargetHas": "chaos",
+     "_note": "批A(11筆高嚴重重建): 本文「若目標處於混亂狀態則使目標對其友軍單體發動攻擊(傷害率93%→186%,類型取決於目標武力、智力較高的一項)」→ 落地兩個新原語: (1)eh.who:\"mainTargetAlly\"(新, 對稱既有sameTarget/enemyLeader, 但方向反轉——攻擊者不是持有者u自己, 而是main段命中的目標tgt本身被強制對其own隊友出手, 見docs/engine.js/sgz.py fireExtraHits()/fire_extra_hits()的mainTargetAllyAtk/main_target_ally_atk分支); (2)eh.kindByStat:\"maxForceIntel\"(新, 動態比較atk本身force/intel兩項屬性取較高者決定傷害類型, 不同於批34胡笳餘音「取較高者」措辭遇到同類需求時只能靜態近似取intel的舊慣例, 這裡改為真正runtime動態比較, 見effDesc同批新增的ehKind計算式)。ifTargetHas:\"chaos\"(既有原語)確保本段只在main coef段命中的目標「已處於混亂狀態」時才觸發, 與上方effects[0]的ifTargetHasNot互斥對稱。coef:1.86(=186%)。"
+    }
+   ],
+   "_evidence": "2022→05→25 更新（增強） / 對敵軍單體造成謀略傷害（傷害率 103%→206%，受智力影響），若目標處於混亂狀態則使目標對其友軍單體發動攻擊（傷害率 93%→186%，類型取決於目標武力、智力較高的一項），否則施加混亂（攻擊和戰法無差別選擇目標）狀態，持續 1 回合",
+   "_note": "批A: 補建「若目標已混亂則強制攻擊己方友軍」條件分支(見extraHits[0]_note, 新原語mainTargetAlly+kindByStat), 取代批15的完全空白_todo。主段謀略傷害(103%→206%)由頂層coef既有表達, 本次未動; else分支(施加混亂)維持既有chaos, 補ifTargetHasNot使兩分支互斥。",
+   "_bucket": "batchA_11severe",
+   "_history": "批15(batch15_one_point_disclosure桶)曾用chaos原語精確表達else分支(取代舊stun近似), 但if分支(已混亂則強制攻擊己方)完全未建, 誠實記為_todo。本批(batchA)新增mainTargetAlly+kindByStat兩原語解決此缺口。"
   },
   "暴戾無仁": {
    "effects": [
@@ -5457,11 +5596,25 @@
      "everyRound": true,
      "rate": 0.12,
      "_note": "批30 A: 原文『每回合開始有6%→12%機率(受統帥影響)威懾敵軍全體』改用e.everyRound(新原語, 非heal效果的逐回合重擲通道)精確表達, 取代舊版prob-ev(command型戰法的非choices effects只在prep套用一次, 開場單次判定近似整場~1次期望)近似。rate改回原文滿級值0.12(12%), 每回合獨立擲骰。仍未解決: 『受統帥影響』無對應scale(command效果的機率縮放非val縮放, 現有原語無此機制)、『威懾次數』疊層計數(供coef段傷害公式依威懾次數放大)未建模, 維持既有近似。"
+    },
+    {
+     "k": "silence",
+     "who": "enemy",
+     "n": 1,
+     "dur": 1,
+     "rate": 0.12,
+     "when": {
+      "on": "damaged",
+      "who": "ally",
+      "dmgAbove": 600
+     },
+     "_note": "批A(11筆高嚴重重建): 本文第3句「我軍收到高於最大兵力6%的傷害時,有6%→12%概率(受統帥影響)威懾隨機敵軍」→ 落地新原語when.dmgAbove延伸到on:\"damaged\"事件(原僅dealtDamage支援, 見docs/engine.js/sgz.py onHitFor()/on_hit_for()新增dmgAboveOk/dmg_above_ok判斷式)+who:\"ally\"(廣播, 監聽我軍任一人受到任意傷害)。dmgAbove:600=START_TROOP(10000)×6%, 對應原文「最大兵力6%」(引擎START_TROOP恆為單一兵力池常數, 沿用批35 D機鑑先識BLOCK_CONSUME_THRESHOLD同款10000×6%換算慣例)。取滿級rate:0.12(12%機率), n:1(隨機單體敵軍, 對應「隨機敵軍」非全體)。同「受統帥影響」無對應scale的既有限制, 沿用不變。"
     }
    ],
-   "_evidence": "每回合結束時對敵軍(2～3人)造成謀略傷害(傷害率5%→10%+5%→10%*威懾次數,受統帥影響,無視防禦)",
-   "_note": "原資料rate:0.12把『每回合結束必定結算』的傷害誤鎖成12%發動機率(EV低估~10倍, 0.12原文是威懾機率非傷害機率)。重推: 頂層coef0.15(基礎10%+威懾層數期望~0.5×10%)×rate1每回合必發, n2~3(nMax=3沿用); 受統帥以kind=intel智力縮放近似、無視防禦未建模; 主將時前3回合我軍受謀略傷害35%機率減免clause無原語, _todo。批30 A: silence效果改用e.everyRound精確表達逐回合重擲(見效果_note), 取代開場單次判定近似。",
-   "_bucket": "batch30_everyround_migration"
+   "_evidence": "戰鬥中，每回合開始有6%→12%機率（受統帥影響）威懾敵軍全體（使目標一個戰法失效，除陣法外），持續一回合；每回合結束時對敵軍（2～3人）造成謀略傷害（傷害率5%→10%+5%→10%*威懾次數，受統帥影響，無視防禦）；我軍收到高於最大兵力6%的傷害時，有6%→12%概率（受統帥影響）威懾隨機敵軍；自身為主將時，戰鬥前三回合我軍受到謀略傷害有17.5%→35%機率可被統帥屬性降低。",
+   "_note": "原資料rate:0.12把『每回合結束必定結算』的傷害誤鎖成12%發動機率(EV低估~10倍, 0.12原文是威懾機率非傷害機率)。重推: 頂層coef0.15(基礎10%+威懾層數期望~0.5×10%)×rate1每回合必發, n2~3(nMax=3沿用); 受統帥以kind=intel智力縮放近似、無視防禦未建模。批30 A: 第1句silence效果改用e.everyRound精確表達逐回合重擲(見效果_note), 取代開場單次判定近似。批A: 補建第3句(見effects[1]_note, 新原語dmgAbove延伸到on:damaged); 第4句(主將條件+前3回合+謀略傷害機率性減免)經評估後確認無法建模, 見下方_todo。",
+   "_todo": "第4句「自身為主將時,戰鬥前三回合我軍受到謀略傷害有17.5%→35%機率可被統帥屬性降低」——語意是「攔截即將結算的謀略傷害本身, 在傷害真正扣除兵力之前依機率打折」, 但引擎的on:\"damaged\"/on:\"dealtDamage\"反應式事件都是在hit()函式內dst.troop -= dmg(傷害已扣除兵力)之後才觸發回呼(見engine.js hit()第683行dst.troop -= dmg與第698行onEvent(dst,...)的先後順序, sgz.py同構), 屬於「事後廣播」設計, 沒有「傷害結算前攔截並修改本次傷害量」的介入點——這與既有mitig(常駐buff, 開戰時計入日後所有傷害的固定百分比折扣)方向不同: mitig是「持續生效的減傷buff」, 而本句要求的是「機率性的、僅限特定回合窗口的、單次判定是否生效的傷害攔截」, 若用常駐mitig近似會變成「固定35%機率的效果」錯誤地表達成「固定生效的35%×某個折算值」, 失真方向與密計誅逆先前的heal瞎猜同類(產生看似有數值實則機制錯誤的假象)。需要「傷害結算前攔截修正」的新事件點(非結算後廣播, 而是hit()函式內dst.troop-=dmg那行之前, 由目標方的持有效果對dmg本身做機率性打折), 現有架構的hit()呼叫慣例(先扣兵力才广播事件)是更底層的設計決策, 非corrections層宣告式覆寫可解, 需engine.js/sgz.py的hit()函式本身改變傷害結算的時序才能建, 誠實維持未建模。",
+   "_bucket": "batchA_11severe"
   },
   "機鑑先識": {
    "effects": [
@@ -5632,13 +5785,15 @@
       "coef": 0.36,
       "kind": "phys",
       "n": 3,
-      "_note": "自身為主將時, 該次兵刃攻擊更強(54%→108%, 即在基礎72%上再加36%), n=3=AoE全體(同主段對象)"
+      "_note": "自身為主將時, 該次兵刃攻擊更強(54%→108%, 即在基礎72%上再加36%), n=3=AoE全體(同主段對象)。批B: 補ifLeader:true(批52新增的extraHits段級主將條件閘門, 見sgz.py/engine.js fireExtraHits對eh.ifLeader的判斷)——過去無條件觸發, 非主將持有時傷害被高估(72%→108%); 現精確表達「僅主將持有時才疊加此36%差額段」, 非主將持有時維持頂層72%不變。",
+      "ifLeader": true
      }
     ]
    },
    "_evidence": "普通攻擊之後，對敵軍全體發動一次兵刃攻擊（傷害率 36%→72%）；自身為主將時，該次兵刃攻擊更為強力（傷害率 54%→108%）",
    "_bucket": "batch13_multihit",
-   "_approx": "「自身為主將時」是caster是否為隊伍index0的條件判定, extraHits無「caster條件式加成」原語;改用extraHits無條件觸發(36%兵刃補刀AoE, phys, n=3對敵軍全體), 近似為「無論是否為主將都疊加此段」, 會使非主將持有時傷害被高估(72%→108%), 主將持有時則精確(72%+36%=108%)。"
+   "_approx": "【批B已修正, 原近似已解決】原「自身為主將時」caster條件判定曾因extraHits無「caster條件式加成」原語而只能無條件疊加此段(近似, 會使非主將持有時傷害被高估72%→108%)。批52新增extraHits.ifLeader(見sgz.py/engine.js fireExtraHits對eh.ifLeader的判斷)後, 已於本批(批B)真正補上eh.ifLeader:true, 精確表達僅主將持有時才觸發此36%差額段, 非主將持有時維持基礎72%不再被高估。",
+   "_note": "批B: 補extraHits[0].ifLeader:true(取代舊_approx近似), 精確表達「自身為主將時該次兵刃攻擊更強(72%→108%)」, 非主將時維持基礎72%。"
   },
   "奇計良謀": {
    "effects": [
@@ -5822,14 +5977,20 @@
     {
      "k": "heal",
      "who": "ally",
-     "coef": 4,
-     "dur": 1,
-     "_approx": "multi-heal-fold",
-     "_note": "『4次治療』×每次est治療率100%折算單次總量; 引擎active heal不讀dur,原coef1/dur4實際只治1次(4倍低估); 原文無治療率,維持_est"
+     "coef": 1.0,
+     "when": {
+      "on": "damaged",
+      "from": 2,
+      "until": 4
+     },
+     "rate": 0.45,
+     "_est": true,
+     "_approx": "single-hit-reactive-heal",
+     "_note": "批B(R17): 本文「第2-4回合獲得急救狀態，每次受到傷害時有一定機率恢復兵力」是反應式急救(受傷當下觸發)。舊版(批12前)coef=4.0/dur=1是「4次治療×每次est100%」的EV折算總量近似(無when.on, 每次發動100%治療且不折算觸發率), 已淘汰不用。改用批22已支援的效果級e.when.on(damaged)+回合視窗from:2/until:4(對應本文『第2-4回合』, 見round_ok對e.when.from/until的判斷)+e.rate=0.45(取戰法activationRate滿級值, 即為本文『有一定機率』的具體數值, 反應式擲骰慣例對稱草船借箭e.rate精確重建案例)。coef改為1.0(反應式路徑每次觸發只結算一次, 不再需要按次數折算); 原文無明確治療率百分比數字(只說『恢復兵力』), coef=1.0(=100%基礎屬性公式)維持_est(估計值)不變, 待未來有精確戰報樣本可反解精確係數。heal對象仍是engine既有『我方兵力最低者』近似(非嚴格限定特定目標)。"
     }
    ],
-   "_evidence": "對我軍損失兵力最多的單體進行 4 次治療。",
-   "_diff": "引擎不讀heal dur,原coef1/dur4只結算1次100%;折算為coef4.0單次",
+   "_evidence": "第2-4回合獲得急救狀態，每次受到傷害時有一定機率恢復兵力。",
+   "_diff": "移除舊的『4次治療×每次100%』EV折算常駐heal(coef=4.0/dur=1/無when), 改用反應式e.when.on:\"damaged\"+from:2/until:4回合視窗+e.rate=0.45(比照草船借箭慣例), coef回退為1.0(反應式每次觸發只結算一次, 不再乘4折算)",
    "_bucket": "rederive_b1"
   },
   "乘敵不虞": {
@@ -6065,13 +6226,6 @@
      "_note": "批28 B3: 同上, 敵軍同樣只受普攻傷害的35%減傷影響, 非全部傷害類型。"
     },
     {
-     "k": "counter",
-     "who": "ally",
-     "coef": 1.06,
-     "kind": "intel",
-     "prob": 0.5
-    },
-    {
      "k": "stat",
      "who": "enemy",
      "stat": "intel",
@@ -6084,7 +6238,7 @@
    "_evidence": "tactics.json原文:「受到普攻時降低傷害並謀略反擊」, 對應counter原語(受擊時反擊)語意吻合 | 批28 B3外部查證(agy, 2025-07-04): 「戰鬥中，降低我軍及敵軍全體普通攻擊傷害35%；自身受到傷害時，有50%概率(受智力影響)偷取傷害來源10點屬性...可疊加，持續5回合；我軍全體進行普通攻擊後，自身有50%概率(受智力影響)對敵軍單體造成一次謀略傷害(傷害率106%，受智力影響)」——確認root data「提升我軍群體普攻傷害」為誤植摘要, 應為「降低」。",
    "_diff": "移除誤用的amp(enemy,val:-1.06)(把'50%機率謀略反擊106%'錯誤編碼成amp, 導致敵方自身輸出被直接歸零/負值的錯誤方向效果, 與counter原語'受擊時反擊攻擊者'的正確語意完全不同); 改用counter(coef:1.06,kind:intel,prob:0.5)正確表達「受到普攻時...謀略反擊」",
    "_bucket": "rederive_b2",
-   "_note": "批28 B3: mitig(35%減傷)補normalOnly:true, 精確限定只對普攻傷害生效(對應原文「降低...普通攻擊傷害」的明確限定, 過去無範圍限定誤及戰法傷害)。root data摘要「提升我軍群體普攻傷害」經外部查證確認是誤植(實際是「降低」), 已在effects[0]/[1]._note記錄查證來源與結論。"
+   "_note": "批28 B3: mitig(35%減傷)補normalOnly:true, 精確限定只對普攻傷害生效(對應原文「降低...普通攻擊傷害」的明確限定, 過去無範圍限定誤及戰法傷害)。root data摘要「提升我軍群體普攻傷害」經外部查證確認是誤植(實際是「降低」), 已在effects[0]/[1]._note記錄查證來源與結論。 | 批B(R6): 移除方向錯誤的counter效果(coef:1.06,kind:intel,prob:0.5)——counter原語語意是「受擊時反擊攻擊者」(見sgz.py hit()內dst.counter判斷: dst受擊才觸發, 反擊src),與本文「我軍全體進行普通攻擊後,自身有50%概率...對敵軍單體造成一次謀略傷害」(觸發條件是『我方主動攻擊之後』, 非『我方受到攻擊』)方向相反, 且與頂層coef=1.06(command型戰法每回合固定機率觸發的常駐傷害段)同時存在時屬雙重結算風險, 需人工確認(R6)——核對本文後確認counter是誤用的錯誤原語(非重複計算同一次傷害的問題, 是根本方向錯誤), 已移除。正確原語應為when.on:\"dealtDamage\"+normalOnly:true(對稱奮突precedent, 見批37 B/engine_limitations.md第35節)反應式觸發coef=1.06謀略傷害, 但此戰法effects同時含mitig x2(全程常駐, 無when)與stat偷屬性(另一個獨立反應式), 若在戰法頂層t.when宣告dealtDamage, apply_passives()會整段跳過該戰法prep階段的所有effects套用(見sgz.pyapply_passives對t.get(\"when\")的判斷: 整個戰法有when即跳過, 非效果級篩選), 導致mitig常駐減傷失效; 而effects層級的dealtDamage反應式路徑(on_deal_effect_tacs)目前只支援heal/disarm/silence/stack等狀態類效果套用apply_effects()的合成單效果呼叫,未支援直接呼叫hit()造成瞬間傷害。此為真實引擎缺口(單一tactic物件無法表達「部分效果常駐+另一部分效果reactive-damage」的複合結構), 非本批(批B)R9清單授權範圍內的新原語工作, 停損保留誠實揭露: 「我軍全體進行普通攻擊後,自身50%機率對敵軍單體造成106%謀略傷害」此反應式追加傷害段目前未建模(移除前的counter是錯誤方向的近似, 不如誠實留白),待未來擴充effects級dealtDamage支援直接傷害結算後再補上。"
   },
   "血刃爭鋒": {
    "set": {},
@@ -6104,18 +6258,86 @@
    "_bucket": "rederive_b2"
   },
   "坐斷東南": {
-   "set": {},
+   "set": {
+    "when": {
+     "on": "dealtDamage",
+     "who": "ally"
+    },
+    "rate": 0.75
+   },
    "effects": [
     {
      "k": "insight",
      "who": "self",
-     "dur": 2
+     "dur": 1,
+     "ifLeader": true,
+     "when": {
+      "rounds": [
+       1
+      ]
+     },
+     "rate": 0.75,
+     "_note": "批A(批53): 主將首回合行動前三選一(連擊/洞察/必中)近似為單一insight代表buff, 精確承接批52b既有落地。"
     }
    ],
-   "_evidence": "自身/友軍普攻後37.5→75%機率隨機獲得連擊/洞察/先攻/必中/破陣其中一種(持續2回合); 主將首回合行動前37.5→75%機率獲得連擊/洞察/必中其中一種(持續1回合)",
-   "_diff": "移除原有stat(self,speed,mult:1,dur:2)——mult=1是無實際效果的死代碼bug(×1即維持原值不變, 對戰鬥毫無影響); 5選1隨機buff無法完整表達, 保留insight作單一代表buff近似(免疫控制與'洞察'意涵最接近), 其餘4種可能結果(連擊/先攻/必中/破陣)及75%機率折算均未表達, 已知限制",
-   "_bucket": "rederive_b2",
-   "_todo": "批26 B1全庫掃描: 「自身為主將時，首回合行動前自身有37.5%→75%機率隨機獲得連擊/洞察/必中的一種，持續1回合」——這是主將限定的獨立第二次觸發(不同時機/不同機率/不同狀態候選池, 首回合行動前而非普攻後), 現有ifLeader(批26新增)只能閘控effects[]常駐效果段本身是否生效, 無法表達「主將時多一次獨立時機/獨立機率的觸發判定」這種複合語意(需要額外的when+ifLeader組合再疊加一次獨立rate判定, 現有單一insight效果段無法承載兩種不同時機/機率的觸發規則於同一效果物件)。且本戰法核心的「5選1隨機狀態」機制本身已是既有已知限制(見_diff), 主將加成分支疊加在這個本就未完整建模的機制之上, 維持未建模, 誠實揭露。"
+   "choices": [
+    {
+     "weight": 1,
+     "effects": [
+      {
+       "k": "extra",
+       "who": "self",
+       "val": 1,
+       "dur": 2
+      }
+     ]
+    },
+    {
+     "weight": 1,
+     "effects": [
+      {
+       "k": "insight",
+       "who": "self",
+       "dur": 2
+      }
+     ]
+    },
+    {
+     "weight": 1,
+     "effects": [
+      {
+       "k": "first",
+       "who": "self",
+       "dur": 2
+      }
+     ]
+    },
+    {
+     "weight": 1,
+     "effects": [
+      {
+       "k": "surehit",
+       "who": "self",
+       "dur": 2
+      }
+     ]
+    },
+    {
+     "weight": 1,
+     "effects": [
+      {
+       "k": "pierce",
+       "who": "self",
+       "val": 0.5,
+       "dur": 2
+      }
+     ]
+    }
+   ],
+   "_evidence": "戰鬥中，自身及友軍單體成功發動普通攻擊後，自身有 37.5%→75% 機率隨機獲得連擊、洞察、先攻、必中、破陣狀態的 1 種，優先獲得不同的狀態，持續 2 回合，自身為主將時，首回合行動前自身有 37.5%→75% 機率隨機獲得連擊、洞察、必中狀態的一種，持續 1 回合",
+   "_note": "批A(11筆高嚴重重建): 本文「自身及友軍單體成功發動普通攻擊後,75%機率隨機獲得連擊/洞察/先攻/必中/破陣其中一種,持續2回合」→ when:{on:\"dealtDamage\",who:\"ally\"}(監聽自身+友軍任一人造成傷害)觸發5-way choices[](extra=連擊近似/insight=洞察/first=先攻/surehit=必中/pierce=破陣近似, 各weight均等對應「隨機」語意), rate由t.rate(0.75滿級值)控制choices整體是否發動。本文「自身為主將時,首回合行動前75%機率隨機獲得連擊/洞察/必中其中一種,持續1回合」→ effects[0]的ifLeader+when.rounds:[1]+rate:0.75單獨insight近似(3選1只取代表值)。近似差異: (1)5選1與3選1皆為均勻隨機choices/單一代表值,「優先獲得不同的狀態」(去重機制,避免重複拿到同一種)未建模, 現行為每次獨立重擲可能連續拿到同一種; (2)主將分支3選1(連擊/洞察/必中)簡化為單一insight代表值,而非真choices(因該分支只有1次判定機會,建choices意義有限,維持既有近似); (3)pierce(0.5)代表「破陣」語意為近似(pierce=無視部分減傷, 與破陣的「無視統率智力」定位相近但非完全等價)。此correction修復reparse_effects.py的冪等bug: 過去此結構只存在於docs/data/tactics_parsed.json的手工patch(scratchpad/_patch_batch52b.py), 未寫回corrections.json, 導致重跑reparse會退回到舊的insight-only粗糙近似(見下方_bucket歷史記錄), 現已搬入corrections.json成為reparse的真實冪等輸出。",
+   "_bucket": "batchA_11severe",
+   "_history": "批26 B1(rederive_b2桶)曾是: effects=[{k:insight,who:self,dur:2}]單一近似(_diff: 移除原有stat(self,speed,mult:1,dur:2)死代碼; 5選1無法完整表達, 保留insight作代表)。批52b另行手工patch了完整choices結構到tactics_parsed.json但未回寫本檔, 本批(batchA)才把兩者合併成單一冪等真相來源。"
   },
   "形一陣": {
    "set": {},
@@ -6385,10 +6607,10 @@
   },
   "奉令平虜": {
    "effects": [],
-   "_evidence": "此效果每觸發3次，治療友軍單體(治療率20%→40%，受已損兵力影響)且若友軍智力高於武力則獲得5%→10%攻心，否則獲得5%→10%倒戈，持續1回合",
-   "_note": "批23: 移除批10版本的heal(coef=0.07)——該值是「增益延長效果每觸發3次才治療」這個跨回合計數條件的EV瞎猜(觸發頻率完全靠猜測的'~0.5次/回合'估算, 無可信折算依據, 且heal本身的觸發條件与數值都與原文機制不符, 引擎既有heal_only常駐通道也無法表達'每N次觸發才治療一次'的計數語意)。改為effects=[](誠實揭露完全未建模, 不製造看似有數值但實為虛構的近似)。",
+   "_evidence": "戰鬥中，友軍獲得功能性增益時有17.5%→35%機率(受統率影響，自身為主將時基礎值提升至20%→40%)延長1回合:此效果每觸發3次，治療友軍單體(治療率20%→40%，受已損兵力影響)且若友軍智力高於武力則獲得5% →10%攻心，否則獲得5%→10%倒戈，持續1回合",
+   "_note": "批23: 移除批10版本的heal(coef=0.07)——該值是「增益延長效果每觸發3次才治療」這個跨回合計數條件的EV瞎猜(觸發頻率完全靠猜測的'~0.5次/回合'估算, 無可信折算依據, 且heal本身的觸發條件与數值都與原文機制不符, 引擎既有heal_only常駐通道也無法表達'每N次觸發才治療一次'的計數語意)。改為effects=[](誠實揭露完全未建模, 不製造看似有數值但實為虛構的近似)。批A(11筆高嚴重重建)複核: 逐句核對本文四個分句後確認四個獨立缺口環環相扣, 且觸發判定本身(「友軍獲得功能性增益時」)與其動作(「延長1回合」)無法分離——沒有半成品可取(比對死戰不退等其他9筆, 那些是「加一個觸發時機/一個條件閘門就能解」的漸進式缺口, 這裡是需要四項全新地基的複合機制), 評估後判定超出本批「最小實作」範圍, 維持effects=[]完全空白, 已依§35規約補強_todo精確點名四個具體缺失原語(見下方), 供未來批次評估。",
    "_bucket": "rederive_b3",
-   "_todo": "主效果『友軍功能性增益延長1回合(35%機率,受統率,自身為主將時基礎值提升至20%→40%)』與條件式『若友軍智力高於武力則5%→10%攻心否則5%→10%倒戈(1回合)』皆無對應原語(增益延長需要跨戰法追蹤「友軍此刻是否正持有某個增益」並延長其dur, 引擎adds/mods的dur只有施加時單次寫入, 無「延長既有buff剩餘時間」的操作原語; 攻心/倒戈的智力vs武力條件分支也無對應判斷點), 完全誠實揭露為_todo, 不強行近似(避免像上一版本heal瞎猜造成的失真); 主將時機率加成(20%→40%)同屬此完全未建模範圍, 一併揭露(批41 B R27初掃), 無需額外ifLeader欄位(因effects=[]本就無任何段落可掛)。"
+   "_todo": "本文可拆四個獨立分句, 逐句核對現有引擎能力後判定所需的四個新原語(缺一不可, 環環相扣): (1)「友軍獲得功能性增益時」——需要receiver-framed事件廣播on:\"buffed\"(對稱既有on:\"healed\", 但healed只需要一個治療量數字, buffed需要能讀取「觸發事件當下具體是哪個buff類型/數值」才能供(4)複製使用, 判定「功能性增益」範圍=正向amp/mitig/stat/rateup/chargeup/first/surehit/insight/dodge/shield/block等, 排除純heal(heal已有獨立on:\"healed\"事件不重複)); (2)「延長1回合」——需要extendDur操作(修改剛觸發的那個buff效果物件的剩餘dur+1), 現有pushAdd/pushMod皆是「新增/刷新覆蓋」語意, 無「延長現有效果剩餘時長」的操作; (3)「此效果每觸發3次」——需要selfTriggerCount(戰法自身的獨立觸發次數計數器, 每滿3次才額外觸發治療/攻心/倒戈那一段, 與per-target的stackKey計數方向不同, 這裡是「持有者自己這個buff-extend機制被啟動的次數」); (4)「若友軍智力高於武力則X否則Y」——需要ifStatCompare(比較某單位自身兩項屬性大小決定分支, 全庫目前無任何戰法有此類「單位自身屬性互比」判斷原語, 僅有ifTargetHas這類狀態存在性判斷)。主將時機率加成(20%→40%)同屬完全未建模範圍(批41 B R27初掃), 一併揭露, 無需額外ifLeader欄位(因effects=[]本就無任何段落可掛)。"
   },
   "虎踞鷹揚": {
    "effects": [
@@ -6467,37 +6689,35 @@
   "將行其疾": {
    "_note": "source: silence only applies 「若命中敵軍主將」(conditional on hit landing on enemy leader). Current applies silence unconditionally to whichever random enemy the charge-hit lands on (charge target is not guaranteed to be leader). DSL has no \"only if target==leader\" gate for charge-type coef hits. Overshoot flagged, not fixed (no safe expression available).",
    "_todo": "source: silence only applies 「若命中敵軍主將」(conditional on hit landing on enemy leader). Current applies silence unconditionally to whichever random enemy the charge-hit lands on (charge target is not guaranteed to be leader). DSL has no \"only if target==leader\" gate for charge-type coef hits. Overshoot flagged, not fixed (no safe expression available).",
-   "_bucket": "rederive_b5"
+   "_bucket": "rederive_b5",
+   "effects": [
+    {
+     "k": "silence",
+     "who": "enemy",
+     "dur": 2,
+     "_note": "批B(R9): 移除幽靈欄位ifSameTargetIsLeader——此欄位的讀取邏輯只實作在fire_extra_hits()/fireExtraHits()(extraHits段專屬, 見sgz.py 1394行eh.get(\"ifSameTargetIsLeader\")), 從未接上apply_effects()/applyEffects()的一般effects[]分派路徑; 本效果是直接掛在effects[](非extraHits[])上, 引擎完全不讀此欄位, 是真正的幽靈欄位(disposition c: 無法/不值得為單一效果建專屬條件判斷, 上方戰法頂層_todo已誠實記錄「DSL has no only-if-target==leader gate for charge-type coef hits」此缺口, 移除幽靈欄位不影響既有揭露內容)。"
+    }
+   ]
   },
   "將門虎女": {
    "effects": [
     {
-     "k": "dot",
+     "k": "huchen",
      "who": "enemy",
-     "coef": 0.2,
+     "n": 2,
+     "base": 0.2,
+     "per": 0.3,
+     "maxHits": 3,
      "dur": 1,
      "kind": "phys",
-     "_note": "批23: 補「虎嗔」本體(下一回合對目標造成額外兵刃傷害, 初始20%)——過去完全未建模(0分主因之一, 只有stun+amp, 缺主要DoT機制)。取初始值20%(dur=1, 只在下回合結算一次), 「每次受傷+30%, 最多3層=110%」的疊層需要跨回合統計「目標在虎嗔期間受擊次數」, 引擎現有dot/stack皆是固定值機制(dot每回合定額, stack僅施放者自身遞增), 無法表達「依目標受擊次數動態疊加」, 誠實維持初始值近似(低估, 未反映可能疊加到110%的情形)。"
-    },
-    {
-     "k": "stun",
-     "who": "enemy",
-     "dur": 1,
-     "_note": "stun原文為條件觸發(目標於虎嗔期間受3次傷害才結算震懾),現引擎版本無條件套用,顯著高估(既有揭露維持)"
-    },
-    {
-     "k": "amp",
-     "who": "self",
-     "val": 0.08,
-     "dur": 99,
-     "dmgType": "phys",
-     "_note": "批25 R19: 原文「使自己造成的兵刃傷害提升8%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。"
+     "ampOnSettle": 0.08,
+     "_note": "批B(崩潰修復): 改用批52d新增的k=\"huchen\"原語(虎嗔, 專為本戰法建置, 見sgz.py/engine.js對k==\"huchen\"的判斷式與settleHuchen()/結算函式), 取代舊版dot(coef:0.2,dur:1初始值近似)+stun(無條件套用,顯著高估)+amp(self,8%)三效果拆分——huchen單一原語精確表達「虎嗔DoT期間, 目標每受一次傷害+30%(初始20%,最多3層=110%), 滿3次立即提前結算震懾(取代dur到期才結算)+施放者兵刃傷害+8%」完整鏈式機制(hits疊層/maxHits提前結算/settle時機/ampOnSettle皆由huchen狀態本身追蹤, 見push_add/hit()對dst.huchen的疊層與settleHuchen()呼叫點), 不再是「無條件套用stun, 顯著高估」的近似。n:2對應本文effectTarget「敵軍群體2人」(戰法本身coef段n=2的同一批目標)。"
     }
    ],
    "_evidence": "source's stun is conditional: only fires if target takes 3 hits during the 虎嗔 DoT buildup window (rare, multi-step chain). Current data grants a guaranteed full stun on every single activation of the tactic (rate 0.6 gates the whole tactic, but stun itself has no further gating) - a clear power overshoot vs a source that requires a rare conditional chain. No existing _note discloses this specific overshoot (existing _real focuses on the DoT/amp approximation only).",
-   "_diff": "keep as-is, add _note disclosing overshoot(no safe fix without hit-count-tracking primitive)",
+   "_diff": "將dot/stun/amp三效果拆分替換為單一k=\"huchen\"效果(批52d新原語, 見effects[0]._note)",
    "_bucket": "rederive_b5",
-   "_note": "批23: 補虎嗔dot本體(初始值20%近似, 見effects[0]._note); stun門檻(3次受傷才觸發)維持既有_note揭露(顯著高估, 無條件套用)不變; amp(自身兵刃增傷8%可疊)維持不變。"
+   "_note": "批B(崩潰修復, sgz.py demo()斷言149期望): 遷移至k=\"huchen\"(批52d新增, 專為本戰法建置的虎嗔原語), 取代舊版dot+stun+amp三效果近似拆分, 精確表達「虎嗔DoT期間受3次傷害才提前結算震懾」的條件鏈, 不再是舊版「stun無條件套用, 顯著高估」的已知overshoot。"
   },
   "符命自立": {
    "effects": [
@@ -7045,7 +7265,9 @@
      "val": 0.06,
      "dur": 2,
      "everyRound": true,
-     "rate": 0.5
+     "rate": 0.5,
+     "n": 1,
+     "_note": "使其(同兵刃傷害段命中的敵軍單體)受到傷害提高3%→6%(可疊加2次), 單體, 補e.n=1(批B, R13)"
     },
     {
      "k": "disarm",
@@ -7056,7 +7278,7 @@
     }
    ],
    "_evidence": "填裝10次; 主將時每回合填裝1次",
-   "_note": "批52g user確認: 只有主將標籤才補箭矢(ammoReloadLeader)",
+   "_note": "批52g user確認: 只有主將標籤才補箭矢(ammoReloadLeader) | 批B(R13): amp效果(受傷提高3%→6%)補e.n=1——本文「對敵軍單體造成兵刃傷害...並有50%機率使其受到傷害提高3%→6%」的「其」字回指同一句剛命中的敵軍單體, 過去缺e.n時套用到全體(系統性高估覆蓋人數, 見批23 A1), 現精確限定單體。 | 批B(R3): 「有50%機率(受武力影響)額外發射1次」已用頂層n=2/nMax=3表達(cnt = n +randint(0, nMax-n) = 2+randint(0,1), 均勻50/50對應本文2或3次發射), 但nMax的randint是均勻擲骰, 無scale掛勾, 未做本文「受武力影響」的精確縮放(現以固定50%近似, 非0%或武力越高機率越高的曲線), 已誠實揭露此近似缺口(rate=1本身代表戰法戰鬥開始後每回合固定嘗試發射, 與此50%額外發射機率是兩個不同層級, 非完全未建)。",
    "_todo": "「填裝10次(耗盡後失效)」的彈藥計數器機制、「自身為主將時每回合額外填裝1次」、「受傷+6%可疊加2次」的疊層機制均無對應原語, 未編碼(較原文寬鬆/高估, 因為引擎版本沒有彈藥耗盡就失效的限制, 也沒有疊層上限)。",
    "_bucket": "batch52g",
    "effectText": "填裝10次; 主將時每回合填裝1次"

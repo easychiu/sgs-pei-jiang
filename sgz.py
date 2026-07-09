@@ -524,6 +524,11 @@ class Unit:
         self.decay = None                             # 衰減增益: {v0, left, total}
         self.swap = 0                                 # 武智互換 剩餘回合
         self.counter = None                           # 反擊: {coef, kind, prob}
+        # 批A(11筆高嚴重重建): charge —— 「可消耗資源池」(死戰不退「蓄威」), 與既有stack(傷害
+        # 增益倍率)語意不同: charge["n"]是「剩餘可消耗次數」, 消耗後n遞減, 不直接影響任何傷害
+        # 倍率(是否觸發下一次攻擊的資源, 而非攻擊力大小本身)。{n, max} | None(惰性建立)。
+        self.charge = None
+        self.charge_consumed_this_round = 0           # 每回合觸發次數計數(對應「每回合最多觸發5次」), 每回合開始重置為0
         # 批28 B1: 守護式反擊(counter.guardFor) —— 「A受擊時, B代為反擊」的方向(如虎衛軍
         # 「我軍主將即將受到普攻時, 副將反擊」), 與既有 self.counter(持有者自己受擊自己反擊)
         # 語意相反, 不能直接掛在持有者(副將)身上。改掛在「被保護者」(如主將)身上一份清單,
@@ -554,6 +559,12 @@ class Unit:
         # 批42: exploit_global —— 持有者(caster)視角跨目標累計觸發次數, dict[id(效果物件) ->
         # {"n":int,"fired":bool}], 掛在持有者身上(對稱 engine.js exploitGlobal)。
         self.exploit_global = None
+        # 批A(11筆高嚴重重建): amp_layers —— dict[id(效果物件) -> 已疊層數], k=="amp"+
+        # e["stackKey"]的per-target疊層計數(對稱exploit_layers, 但獨立欄位避免不同k共用同一份
+        # 計數器混淆語意)。密計誅逆「使敵軍單體(隨機)造成的最終傷害降低15%,最多疊加3次」首次
+        # 落地使用。刻意不做onMaxStacks/globalMax/e["add"]三個延伸(見sgz.py apply_effects
+        # k=="amp"分支註解, 密計誅逆無此語意需求, 精簡版足夠)。
+        self.amp_layers = None
         # 批52g: ammo —— 彈藥計數(高櫓連營), dict[戰法名 -> 剩餘次數]
         self.ammo = {}
         self.heal_rounds_fired = {}                     # 批15: heal 效果 e["when"]["rounds"](明確列出的特定回合)的「每回合各觸發一次」去重, dict[id(效果物件) -> set(已觸發回合數)], 見 apply_effects 的 heal 分支
@@ -1329,9 +1340,32 @@ def fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit, on_deal=None):
         n = eh.get("n") or 1
         cnt = n + random.randint(0, eh["nMax"] - n) if eh.get("nMax") else n
         who = eh.get("who")
+        # 批A(11筆高嚴重重建): who=="mainTargetAlly" —— 「(主coef段已選定的目標)轉而對其友軍
+        # 單體發動攻擊」(偽書相間「若目標處於混亂狀態則使目標對其友軍單體發動攻擊」)。方向
+        # 反轉: atk 不是持有者 u 自己, 而是 tgt(main段命中的敵方目標)本身被強制出手; dests
+        # 則是 tgt 自己那一側的隊友(從 u 的視角看, tgt 那一側正是 foes_of(u), 即 u 的敵方隊伍
+        # ——tgt 的隊友 = u 的其他敵人, 排除 tgt 自己)。對稱 engine.js 同名分支, 見其詳細註解。
+        main_target_ally_atk = None
+        if who == "mainTargetAlly":
+            # ifTargetHas/ifTargetHasNot(若有指定)在此特殊路徑要檢查的是 tgt 本身(main段已選定
+            # 的目標, 即將被強制出手的那一位)是否具備該狀態, 而非檢查 dests(tgt的隊友, 承受
+            # 傷害的那一方)——與下方共用的「dests 事後過濾」慣例方向不同, 故這裡提前判斷, 並
+            # 略過下面共用過濾段(避免對dests=tgt的隊友誤重複套用同一個條件)。
+            tgt_gate_ok = (tgt and tgt.alive
+                           and (not eh.get("ifTargetHas") or target_has(tgt, eh["ifTargetHas"]))
+                           and (not eh.get("ifTargetHasNot") or not target_has(tgt, eh["ifTargetHasNot"])))
+            if tgt_gate_ok:
+                tgt_side = [v for v in foes_of(u) if v.alive and v is not tgt]
+                if tgt_side:
+                    main_target_ally_atk = tgt
+                    dests = [random.choice(tgt_side)]
+                else:
+                    dests = []
+            else:
+                dests = []
         # 批18: targetSel(指定選標準則) —— 段級欄位, 優先於 who 的其餘規則(sameTarget/enemyLeader/
         # 隨機)。如 上兵伐謀「分別對兵力最低、武力最高、智力最低的敵將」三段各自不同準則。
-        if eh.get("targetSel"):
+        elif eh.get("targetSel"):
             picked = pick_by_criterion(foes_of(u), eh["targetSel"])
             dests = [picked] if picked else []
         elif who == "sameTarget":
@@ -1343,7 +1377,11 @@ def fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit, on_deal=None):
             dests = [tgt]                                    # 未指定who且單體: 沿用主段目標(向後相容預設行為)
         else:
             dests = pick_targets(foes_of(u), cnt)
-        if eh.get("ifTargetHas"):                         # 批16: ifTargetHas —— extraHits 段結算前檢查, 只對「已有該狀態」的目標結算此段傷害
+        if main_target_ally_atk is not None:
+            atk = main_target_ally_atk                       # 覆寫本段攻擊者為 tgt 本身
+        # 批16: ifTargetHas —— extraHits 段結算前檢查, 只對「已有該狀態」的目標結算此段傷害。
+        # 批A: who=="mainTargetAlly" 時已在上方針對tgt本身提前判斷過(見該分支註解), 這裡跳過。
+        if eh.get("ifTargetHas") and who != "mainTargetAlly":
             dests = [v for v in dests if target_has(v, eh["ifTargetHas"])]
         # 批31 B: ifSameTargetIsLeader —— extraHits 段結算前檢查, 只對「(主coef段隨機選定的)
         # 目標剛好就是敵方隊伍固定位置的主將(foes[0])」時才結算此段傷害, 精確表達原文「若目標
@@ -1357,8 +1395,16 @@ def fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit, on_deal=None):
             foes = foes_of(u)
             leader = foes[0] if (foes and foes[0].alive) else None
             dests = [v for v in dests if v is leader]
+        # 批A: eh["kindByStat"]=="maxForceIntel" —— 傷害類型不是固定寫死的 phys/intel, 而是
+        # 依「攻擊者(atk)本身武力/智力較高的一項」動態決定(偽書相間「類型取決於目標武力、智力
+        # 較高的一項」——這裡的「目標」在mainTargetAlly反轉語意下就是atk=tgt本身), 對稱
+        # engine.js 同名分支(見其詳細註解)。
+        if eh.get("kindByStat") == "maxForceIntel":
+            eh_kind = "phys" if atk.eff("force") >= atk.eff("intel") else "intel"
+        else:
+            eh_kind = eh.get("kind", "phys")
         for v in dests:
-            hit(atk, v, coef, eh.get("kind", "phys"), False, on_hit, on_deal)
+            hit(atk, v, coef, eh_kind, False, on_hit, on_deal)
 
 
 def healed_for(hurt, caster, actual, allies, enemies):
@@ -1632,6 +1678,14 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             if hw:
                 if not round_ok({"when": hw}, CUR_ROUND):
                     continue
+                # 批A(11筆高嚴重重建): e["when"]["hpBelow"]/["hpAbove"](效果級) —— 對稱
+                # engine.js同名擴充(見其詳細註解): 過去hpBelow/hpAbove只在戰法級(t["when"])
+                # 受理, everyRound通道的hw從不檢查hp。奇兵間道「第5回合時,若自身兵力低於
+                # 50%...否則...」這類「同戰法內部分effects段各自獨立hp條件」的複合語意,
+                # 現在hpBelow/hpAbove也認e["when"](效果自身), 不強制整條戰法共用同一個when。
+                if hw.get("hpBelow") is not None or hw.get("hpAbove") is not None:
+                    if not hp_ok({"when": hw}, caster):
+                        continue
                 if hw.get("rounds"):
                     seen = caster.heal_rounds_fired.setdefault(id(e), set())
                     if CUR_ROUND in seen:
@@ -1754,8 +1808,15 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 scale_of(caster, e["scale"]) if (e.get("scale") and e.get("ofDamage") is None and _scale_ok) else 1.0
             )
             heal_troop_base = caster.troop * HEAL_TROOP_C if t.get("type") == "active" else caster.heal_base
-            if e.get("ofDamage") is not None and dmg is not None:
-                pool_want = e["ofDamage"] * of_damage_scale_mult * dmg
+            # 批A(11筆高嚴重重建): e["ofDamage"] 原本只讀 dmg(傷害比例治療, 批33), on:"healed"
+            # 反應式(批43 C)呼叫端傳的是 heal_amt(本次觸發事件的實際治療量), 從未被此處讀取——
+            # ofDamage 的欄位語意其實已是「本次觸發事件的量」的通用比例治療, 這裡補上 heal_amt
+            # 分支(結盟「目標受到治療效果時,自身有機率獲得相同(治療)效果(治療效果為50%)」的鏡像
+            # 治療, 見結盟落地)。dmg 優先於 heal_amt(兩者不會同時非None, dealtDamage/on_hit 與
+            # healed 是互斥事件)。
+            of_event_amt = dmg if dmg is not None else heal_amt
+            if e.get("ofDamage") is not None and of_event_amt is not None:
+                pool_want = e["ofDamage"] * of_damage_scale_mult * of_event_amt
             else:
                 pool_want = hcoef * heal_troop_base
             shared = bool(e.get("sharedPool"))
@@ -1823,6 +1884,38 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                         # 獨立狀態: 無視洞察; 不可淨化(dispel 不碰 captured)
                         u.captured = max(u.captured, dur + 1)
                         u.healblock = max(u.healblock, dur + 1)
+            continue
+        # 批A(11筆高嚴重重建): chargeConsume —— 「可消耗資源池」的消耗端(死戰不退「普攻後,有50%
+        # 機率(受武力影響)消耗一層蓄威造成一次兵刃傷害,觸發後可繼續判定,每次觸發後機率降低8%,
+        # 每回合最多觸發5次」)。掛在when={"on":"dealtDamage","normalOnly":True}反應式, caster
+        # 即普攻的發動者本身。遞迴鏈式判定, 對稱engine.js同名分支, 見其詳細註解。
+        if k == "chargeConsume":
+            if not caster.charge or caster.charge["n"] <= 0:
+                continue
+            cur_rate = e.get("rate", 0.5)
+            if e.get("scale"):
+                cur_rate *= rate_scale_of(caster, e["scale"], e.get("scaleDiv"))
+            decay_per = e.get("decayPer", 0.08)
+            max_chain = e.get("maxChain", 5)
+            chained = 0
+            # rate_checked: 外層dealt_damage_for的效果級派發已經用e["rate"]擲過一次骰才呼叫到
+            # 這裡(對稱capture的rate_checked慣例)——若已檢查過, 第一層視為「首次判定已經命中」
+            # 直接consume, 不再重擲一次(避免雙重擲骰造成機率減半)。
+            first_iteration = True
+            while caster.charge["n"] > 0 and caster.charge_consumed_this_round < max_chain:
+                hit_this = True if (first_iteration and rate_checked) else (random.random() < max(0.0, cur_rate))
+                first_iteration = False
+                if not hit_this:
+                    break
+                caster.charge["n"] -= 1
+                caster.charge_consumed_this_round += 1
+                chained += 1
+                pool = [x for x in enemies if x.alive]
+                v = random.choice(pool) if pool else None
+                if v:
+                    hit(caster, v, e.get("coef", 1), e.get("kind") or t.get("kind", "phys"), False,
+                        _FIGHT_CTX.get("on_hit"), _FIGHT_CTX.get("on_deal"), is_active=True)
+                cur_rate -= decay_per
             continue
         # 批52i: proxyNormal/proxyHit 不走 dests 迴圈(一次性條件代打/直傷)
         if k == "proxyNormal":
@@ -1943,6 +2036,11 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # 批16: ifTargetHas —— 效果段條件, 只對「已有該狀態」的目標生效; 選目標後過濾(不影響選目標邏輯本身)
         if e.get("ifTargetHas"):
             dests = [u for u in dests if target_has(u, e["ifTargetHas"])]
+        # 批A(11筆高嚴重重建): ifTargetHasNot —— ifTargetHas的反向(只對「尚未有該狀態」的目標
+        # 生效), 對稱既有正向版本。偽書相間「若目標已混亂則...(否則)施加混亂」的否則分支——用
+        # ifTargetHasNot="chaos"精確表達「僅未混亂的目標才施加混亂」, 對稱engine.js同名欄位。
+        if e.get("ifTargetHasNot"):
+            dests = [u for u in dests if not target_has(u, e["ifTargetHasNot"])]
         # 批52j: 友軍側效果不套用到被捕獲者(無法被友方選中)
         if who not in ("enemy", "enemyLeader", "eventTarget") and who != "enemy":
             dests = [u for u in dests if not getattr(u, "captured", 0)]
@@ -2034,7 +2132,26 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         if if_leader_is_topup and src:
             dt_src = (dt_src or src) + ":ifLeaderIs"
         for u in dests:
-            if k == "amp":
+            # 批A(11筆高嚴重重建): k=="amp"+e["stackKey"] —— 對稱既有k=="stat"+e["stackKey"]
+            # (批42/43, exploit_layers per-target疊層), amp的per-target疊層變體, 見engine.js
+            # 同名分支詳細註解。密計誅逆「使敵軍單體(隨機)造成的最終傷害降低15%,最多疊加3次」
+            # ——疊層對象是「被隨機選中的那個敵方單位」, 每次選中就疊1層, 封頂maxStacks。刻意
+            # 只做核心per-target層數計數+累計總值重算push_add刷新覆蓋, 不搬onMaxStacks/
+            # globalMax/e["add"]三個延伸(密計誅逆無此語意需求, 見Unit.__init__ amp_layers註解)。
+            if k == "amp" and e.get("stackKey"):
+                if u.amp_layers is None:
+                    u.amp_layers = {}
+                ekey = id(e)
+                already = u.amp_layers.get(ekey, 0)
+                max_stacks = e.get("maxStacks")
+                if max_stacks is None or already < max_stacks:
+                    layers = already + 1
+                    u.amp_layers[ekey] = layers
+                    per_stack = e.get("perStack", sv_val(e["val"]))
+                    total_val = per_stack * layers
+                    u.push_add("amp", total_val, e["dur"], dt_src, ud_flags)
+                # 已達max_stacks: 這個目標已無法再疊, 不做任何push_add(累計值維持不變)。
+            elif k == "amp":
                 v = sv_val(e["val"])
                 ms = e.get("maxStack")
                 if who == "enemy" and v > 0:          # 修正: 敵方正amp(誤幫敵增傷)→ 視為敵方易傷
@@ -2188,6 +2305,15 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 u.swap = max(u.swap, e.get("dur", 1) + 1)
             elif k == "pierce":                       # 看破: 無視目標 val 比例的減傷
                 u.push_add("pierce", e["val"], e["dur"], src)
+            # 批A(11筆高嚴重重建): chargeAdd —— 「可消耗資源池」的獲得端(死戰不退「自身受到傷害
+            # 時, 有80%機率獲得一層蓄威效果, 可累積20層」), 對稱既有stack但語意不同(見Unit
+            # 建構式self.charge註解)。掛在on:"damaged"反應式, e["rate"]已在外層(反應式擲骰通道)
+            # 判定過, 這裡只需純粹+1層封頂(不重複擲骰)。
+            elif k == "chargeAdd":
+                if u.charge is None:
+                    u.charge = {"n": 0, "max": e.get("max", 20)}
+                u.charge["max"] = e.get("max", u.charge["max"])
+                u.charge["n"] = min(u.charge["max"], u.charge["n"] + 1)
             elif k == "counter":                      # 反擊: 受擊時還擊
                 # 批28 B1: guardFor(守護式反擊) —— 「A受擊時, B代為反擊」的方向(如虎衛軍
                 # 「我軍主將即將受到普攻時, 副將反擊」)與一般counter(持有者自己受擊自己反擊)
@@ -2371,6 +2497,11 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             def who_ok(w):
                 return (w or {}).get("who") == want_who if want_who else not (w or {}).get("who")
             other_ally_ok = lambda: holder is not dst   # who=="otherAlly" 額外要求: 持有者不是本次事件單位自己
+            # 批A(11筆高嚴重重建): dmg_above(可選數值) —— 對稱dealt_damage同名旗標, 「受到傷害
+            # 超過X」句型(承天靖世「我軍收到高於最大兵力6%的傷害時」)的傷害量閾值閘門。
+            def dmg_above_ok(w):
+                threshold = (w or {}).get("dmgAbove")
+                return threshold is None or (dmg is not None and dmg > threshold)
             for t0 in holder.on_hit_tacs:
                 if not who_ok(t0.get("when")):
                     continue
@@ -2379,6 +2510,8 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 if t0["when"]["on"] == "attacked" and not is_normal:  # attacked: 限普通攻擊觸發; damaged: 任意傷害都觸發
                     continue
                 if not dmg_type_ok(t0["when"].get("dmgType")):  # 批39 C: 戰法級when.dmgType過濾(如剛勇無前/剛烈不屈「受到兵刃傷害時」限定)
+                    continue
+                if not dmg_above_ok(t0.get("when")):
                     continue
                 # 批22: when.on 反應式戰法過去完全不檢查 rounds/from/until/parity/every(只認 on 事件
                 # 本身), 導致「戰鬥首回合獲得急救(受傷時回血)」這類「反應式觸發+回合窗口限定」的
@@ -2432,6 +2565,8 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     if ew["on"] == "attacked" and not is_normal:
                         continue
                     if not dmg_type_ok(ew.get("dmgType")):  # 批39 C: 效果級when.dmgType過濾
+                        continue
+                    if not dmg_above_ok(ew):
                         continue
                     if not round_ok({"when": ew}, CUR_ROUND):
                         continue
@@ -2516,10 +2651,28 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 return (w or {}).get("who") == want_who if want_who else not (w or {}).get("who")
             def _dmg_type_ok(dmg_type):                 # dmgType 過濾: 未指定視為兵刃/謀略皆可觸發(向後相容)
                 return not dmg_type or dmg_type == kind
+            # 批A(11筆高嚴重重建): dmg_above(可選數值) —— 「造成大於X的傷害時」句型(密計誅逆
+            # 「當我軍主將造成大於300的傷害時」)的傷害量閾值閘門, 對稱既有dmgType。dmg為None時
+            # (理論上dealt_damage事件必傳, 保守防呆)視為不通過。戰法級/效果級皆支援。
+            def _dmg_above_ok(w):
+                threshold = (w or {}).get("dmgAbove")
+                return threshold is None or (dmg is not None and dmg > threshold)
+            # caster_is_leader(見active_fired_for同名旗標註解) —— dealt_damage事件的「觸發者」
+            # 是src(造成本次傷害的那個單位), 與holder(廣播後的持有者, 可能是隊友)分開; 密計誅逆
+            # 「我軍主將造成傷害」要求src本身是其隊伍主將, 而非holder是主將。
+            def _caster_is_leader_ok(w):
+                if not (w or {}).get("casterIsLeader"):
+                    return True
+                al = allies_of(src)
+                return bool(al and al[0] is src)
             for t in holder.on_deal_tacs:                # 戰法級: 整個戰法都是「造成傷害時」反應式(如白衣渡江拆成兩個獨立戰法段時可用此形式)
                 if not who_ok(t.get("when")):
                     continue
                 if not _dmg_type_ok((t.get("when") or {}).get("dmgType")):
+                    continue
+                if not _dmg_above_ok(t.get("when")):
+                    continue
+                if not _caster_is_leader_ok(t.get("when")):
                     continue
                 if (t.get("when") or {}).get("normalOnly") and not is_normal:
                     continue                            # 批37 B: when.normalOnly —— 限「普通攻擊」造成的傷害才觸發(如奮突「普通攻擊之後」; dmgType:"phys" 無法區分普攻與兵刃戰法傷害, 需獨立旗標)
@@ -2563,6 +2716,10 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                         continue
                     if not _dmg_type_ok(ew.get("dmgType")):
                         continue
+                    if not _dmg_above_ok(ew):
+                        continue
+                    if not _caster_is_leader_ok(ew):
+                        continue
                     if ew.get("normalOnly") and not is_normal:
                         continue                        # 批37 B: when.normalOnly(效果級) —— 同上, 限普攻傷害觸發
                     if not round_ok({"when": ew}, CUR_ROUND):
@@ -2602,8 +2759,21 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 return
             def who_ok(w):
                 return (w or {}).get("who") == want_who if want_who else not (w or {}).get("who")
+            # 批A(11筆高嚴重重建): caster_is_leader —— 「(我軍)主將發動主動/突擊戰法時」這類措辭
+            # (十勝十敗)要求觸發事件的u(實際發動者)本身必須是其隊伍主將(index 0), 而非「持有者
+            # holder是主將」(who=="ally"廣播的holder未必等於u——十勝十敗常由非主將的副將攜帶,
+            # 持有者篩選現有ifLeader/ifLeaderIs管的是holder自身的身份, 不是「這次事件是誰觸發的」)。
+            # 用u所在隊伍(allies_of(u))的index0比對u本身, 與holder是否為主將無關。
+            def caster_is_leader_ok(w):
+                w = w or {}
+                if not w.get("casterIsLeader"):
+                    return True
+                al = allies_of(u)
+                return bool(al and al[0] is u)
             for t in holder.active_fired_tacs:            # 戰法級: 整個戰法都是「(自身/我軍/敵軍)成功發動主動戰法時」反應式(如士爭先赴/十二奇策/神機妙算)
                 if not who_ok(t.get("when")):
+                    continue
+                if not caster_is_leader_ok(t.get("when")):
                     continue
                 if not round_ok(t, CUR_ROUND):
                     continue
@@ -2633,6 +2803,8 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     if ew.get("on") != "activeFired":
                         continue
                     if not who_ok(ew):
+                        continue
+                    if not caster_is_leader_ok(ew):
                         continue
                     if not round_ok({"when": ew}, CUR_ROUND):
                         continue
@@ -2670,6 +2842,11 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
         for u in A + B:                               # 疊加增益: 每回合 +1 層(僅 stackPer=="round", 預設值, 向後相容)
             if u.alive and u.stack and u.stack.get("stackPer", "round") == "round":
                 u.stack["n"] = min(u.stack["max"], u.stack["n"] + 1)
+        # 批A(11筆高嚴重重建): charge_consumed_this_round 逐回合歸零(對應死戰不退「每回合最多
+        # 觸發5次」的回合窗口計數, 與蓄威層數charge["n"]本身跨回合累積不同)。
+        for u in A + B:
+            if u.alive:
+                u.charge_consumed_this_round = 0
         apply_passives(heal_only=True)                # 逐回合治療(含兵書/裝備/緣分)
 
         for u in A + B:                               # 條件觸發(when.rounds/from/until): 窗口首次開啟時套用一次非傷害效果(dot/amp/…); when.on 為反應式, 不走此處
@@ -6289,6 +6466,168 @@ def demo():
     assert victim2.captured == 0, "已有捕獲時不應再捕新人"
     assert victim.troop < t0, "已有捕獲時應對原捕獲目標造成 altCoef 傷害"
     print("    [批52j] 暗箭難防: capture不可淨化/禁傷/已捕轉530%(164-165) 驗證通過")
+
+    # --- 批A(11筆高嚴重重建): 8個新原語逐一驗證 -------------------------------------
+    # 166) e.ofDamage 讀 heal_amt(結盟鏡像治療) —— 對稱既有dmg分支, 驗證heal_amt路徑正確接上
+    random.seed(600)
+    jm_caster = Unit(POOL["呂布"], "槍")
+    jm_ally = Unit(POOL["張飛"], "槍")
+    jm_caster.troop = 5000.0
+    jm_caster.wounded = 5000.0
+    jm_ally.troop = 8000.0
+    jm_ally.wounded = 2000.0
+    jm_before = jm_caster.troop
+    apply_effects(jm_caster, jm_ally, {"effects": [{"k": "heal", "who": "self", "ofDamage": 0.5, "dur": 99}],
+                                        "nameZh": "測試結盟166", "kind": "phys"},
+                  [jm_caster, jm_ally], [], rate_checked=True, reactive=True, heal_amt=200)
+    assert abs((jm_caster.troop - jm_before) - 100) < 1e-6, \
+        f"166: 結盟ofDamage讀heal_amt=200應精確產生100治療(0.5×200), 實際{jm_caster.troop - jm_before}"
+    print("    [批A 166] 結盟: e.ofDamage讀heal_amt(非dmg)鏡像治療 驗證通過")
+
+    # 167) k=="amp"+e.stackKey(密計誅逆) —— per-target疊層封頂
+    random.seed(601)
+    mjzn_holder = Unit(POOL["呂布"], "槍")
+    mjzn_foe = Unit(POOL["張飛"], "槍")
+    mjzn_eff = {"k": "amp", "who": "enemy", "val": -0.15, "perStack": -0.15,
+                "stackKey": True, "maxStacks": 3, "dur": 99, "n": 1}
+    for _ in range(3):
+        apply_effects(mjzn_holder, None, {"effects": [mjzn_eff], "nameZh": "測試密計誅逆167", "kind": "phys"},
+                      [mjzn_holder], [mjzn_foe])
+    assert abs(mjzn_foe.addbonus("amp") - (-0.45)) < 1e-6, \
+        f"167: 密計誅逆stackKey連續3次觸發應累計-45%(3層×-15%), 實際{mjzn_foe.addbonus('amp')}"
+    apply_effects(mjzn_holder, None, {"effects": [mjzn_eff], "nameZh": "測試密計誅逆167", "kind": "phys"},
+                  [mjzn_holder], [mjzn_foe])
+    assert abs(mjzn_foe.addbonus("amp") - (-0.45)) < 1e-6, "167: 第4次觸發應被maxStacks:3封頂, 維持-45%不再疊加"
+    print("    [批A 167] 密計誅逆: k==\"amp\"+e.stackKey per-target疊層封頂 驗證通過")
+
+    # 168) when.dmgAbove(密計誅逆/承天靖世方向) —— 傷害量閾值閘門邊界值判斷(純函數驗證)
+    def _dmg_above_ok_test(threshold, dmg):
+        return threshold is None or (dmg is not None and dmg > threshold)
+    assert _dmg_above_ok_test(300, 301) is True, "168: dmgAbove語意 301>300應通過"
+    assert _dmg_above_ok_test(300, 300) is False, "168: dmgAbove語意 300(等於閾值)不應通過(嚴格大於)"
+    assert _dmg_above_ok_test(300, None) is False, "168: dmgAbove語意 dmg=None應保守不通過"
+    print("    [批A 168] when.dmgAbove: 傷害量閾值閘門邊界判斷 驗證通過")
+
+    # 169) when.casterIsLeader(十勝十敗) —— 端到端: 手工重演activeFired廣播+casterIsLeader閘門
+    #      (對稱既有105/106號測試手法, 見上方active_fired105/106範例)
+    random.seed(602)
+    ssb_leader = Unit(POOL["呂布"], "槍")
+    ssb_sub = Unit(POOL["張飛"], "槍")
+    ssb_active_tac = {"nameZh": "測試169主動必發", "type": "active", "kind": "phys",
+                      "coef": 0, "rate": 1, "n": 0, "prep": 0,
+                      "effects": [{"k": "stat", "who": "self", "stat": "speed", "add": 0, "dur": 1}]}
+    ssb_heal_tac = {"nameZh": "測試169十勝十敗監聽", "type": "command", "kind": "intel",
+                    "coef": 0, "rate": 1, "n": 1, "prep": 0,
+                    "effects": [{"k": "heal", "who": "ally", "coef": 0.5,
+                                 "when": {"on": "activeFired", "who": "ally", "casterIsLeader": True},
+                                 "rate": 1.0}]}
+    TACTICS[ssb_active_tac["nameZh"]] = ssb_active_tac
+    TACTICS[ssb_heal_tac["nameZh"]] = ssb_heal_tac
+    try:
+        u169_leader = Unit(POOL["呂布"], "騎", None, None, None, [ssb_active_tac["nameZh"]])
+        u169_sub = Unit(POOL["張飛"], "騎", None, None, None, [ssb_heal_tac["nameZh"]])
+        set169 = {id(u169_leader), id(u169_sub)}
+        allies_of169 = lambda u: [u169_leader, u169_sub] if id(u) in set169 else []
+        u169_leader.troop = 5000.0
+        u169_leader.wounded = 5000.0
+
+        def active_fired_for169(u, holder, want_who):
+            if not holder.alive or not holder.active_fired_effect_tacs:
+                return
+            def who_ok169(w):
+                return (w or {}).get("who") == want_who if want_who else not (w or {}).get("who")
+            def caster_is_leader_ok169(w):
+                if not (w or {}).get("casterIsLeader"):
+                    return True
+                al = allies_of169(u)
+                return bool(al and al[0] is u)
+            for t169 in holder.active_fired_effect_tacs:
+                for e169 in t169["effects"]:
+                    ew169 = e169.get("when") or {}
+                    if ew169.get("on") != "activeFired" or not who_ok169(ew169) or not caster_is_leader_ok169(ew169):
+                        continue
+                    apply_effects(holder, None, {"effects": [e169], "kind": t169.get("kind", "phys"), "nameZh": t169["nameZh"]},
+                                  allies_of169(holder), [], rate_checked=True, reactive=True)
+
+        # 場景A: 主將(u169_leader)發動 → 副將(u169_sub)監聽casterIsLeader應觸發治療
+        troop_before_a = u169_leader.troop
+        active_fired_for169(u169_leader, u169_leader, None)
+        for holder in allies_of169(u169_leader):
+            active_fired_for169(u169_leader, holder, "ally")
+        assert u169_leader.troop > troop_before_a, "169場景A: 主將發動主動戰法, casterIsLeader應放行, 主將應被治療"
+
+        # 場景B: 非主將(u169_sub)發動 → casterIsLeader應阻擋(u169_sub不是allies_of169(u169_sub)[0])
+        u169_leader.troop = 5000.0
+        u169_leader.wounded = 5000.0
+        troop_before_b = u169_leader.troop
+        active_fired_for169(u169_sub, u169_sub, None)
+        for holder in allies_of169(u169_sub):
+            active_fired_for169(u169_sub, holder, "ally")
+        assert u169_leader.troop == troop_before_b, "169場景B: 非主將(副將)發動主動戰法, casterIsLeader應阻擋, 主將不應被治療"
+    finally:
+        del TACTICS[ssb_active_tac["nameZh"]]
+        del TACTICS[ssb_heal_tac["nameZh"]]
+    print("    [批A 169] 十勝十敗: when.casterIsLeader(activeFired反應式) 正反兩場景 驗證通過")
+
+    # 170) extraHits.who=="mainTargetAlly"+eh.kindByStat+e.ifTargetHasNot(偽書相間)
+    random.seed(603)
+    wsxj_caster = Unit(POOL["呂布"], "槍")
+    wsxj_tgt_chaos = Unit(POOL["張飛"], "槍")
+    wsxj_tgt_chaos.chaos = 2  # 模擬「目標已混亂」的前置狀態
+    wsxj_tgt_ally = Unit(POOL["關羽"], "槍")
+    wsxj_troop_before = wsxj_tgt_ally.troop
+    wsxj_eh = [{"who": "mainTargetAlly", "coef": 1.86, "kindByStat": "maxForceIntel", "ifTargetHas": "chaos"}]
+    fire_extra_hits(wsxj_caster, {"extraHits": wsxj_eh, "nameZh": "測試偽書相間170"}, wsxj_tgt_chaos,
+                    lambda u: [wsxj_caster], lambda u: [wsxj_tgt_chaos, wsxj_tgt_ally], None)
+    assert wsxj_tgt_ally.troop < wsxj_troop_before, \
+        "170: mainTargetAlly段應在目標已混亂時觸發, 對目標的隊友造成傷害(而非目標自己或caster的隊友)"
+    # ifTargetHasNot: 未混亂目標才應施加chaos
+    wsxj_fresh = Unit(POOL["曹操"], "槍")
+    apply_effects(wsxj_caster, wsxj_fresh, {"effects": [{"k": "chaos", "who": "enemy", "dur": 1, "ifTargetHasNot": "chaos"}],
+                                             "nameZh": "測試偽書相間170b", "kind": "intel"},
+                  [wsxj_caster], [wsxj_fresh])
+    assert wsxj_fresh.chaos > 0, "170b: ifTargetHasNot=\"chaos\" 應對未混亂目標正常施加chaos"
+    print("    [批A 170] 偽書相間: mainTargetAlly+kindByStat+ifTargetHasNot 驗證通過")
+
+    # 171) e.when.hpBelow/hpAbove(效果級, 奇兵間道) —— hp_ok對合成{"when":hw}的動態邊界判斷
+    random.seed(604)
+    qbjd_u = Unit(POOL["呂布"], "槍")
+    qbjd_u.troop = 4000.0  # 40%
+    assert hp_ok({"when": {"hpBelow": 0.5}}, qbjd_u) is True, "171: 兵力40%時hpBelow:0.5應通過"
+    assert hp_ok({"when": {"hpAbove": 0.5}}, qbjd_u) is False, "171: 兵力40%時hpAbove:0.5不應通過"
+    qbjd_u.troop = 8000.0  # 動態改變後即時重算(80%)
+    assert hp_ok({"when": {"hpAbove": 0.5}}, qbjd_u) is True, "171: 兵力回升到80%後hpAbove:0.5應即時通過(非開戰快照)"
+    print("    [批A 171] 奇兵間道: e.when.hpBelow/hpAbove(效果級)動態即時判斷 驗證通過")
+
+    # 172) k=="chargeAdd"+k=="chargeConsume"(死戰不退) —— 資源池累加封頂+鏈式消耗+回合上限
+    random.seed(605)
+    szbt_u = Unit(POOL["呂布"], "槍")
+    assert szbt_u.charge is None, "172前置: 全新Unit的charge應為None(惰性建立)"
+    for _ in range(25):
+        apply_effects(szbt_u, None, {"effects": [{"k": "chargeAdd", "who": "self", "max": 20}],
+                                      "nameZh": "測試死戰不退172", "kind": "phys"}, [szbt_u], [])
+    assert szbt_u.charge is not None and szbt_u.charge["n"] == 20, \
+        f"172: chargeAdd連續25次觸發應封頂在max:20, 實際{szbt_u.charge}"
+    szbt_foe = Unit(POOL["張飛"], "槍")
+    szbt_troop_before = szbt_foe.troop
+    apply_effects(szbt_u, None, {"effects": [{"k": "chargeConsume", "coef": 1.3, "kind": "phys",
+                                               "rate": 0.5, "decayPer": 0.08, "maxChain": 5}],
+                                  "nameZh": "測試死戰不退172b", "kind": "phys"},
+                  [szbt_u], [szbt_foe], rate_checked=True)
+    assert szbt_u.charge["n"] < 20, f"172b: rate_checked=True時應至少消耗1層蓄威, 實際剩餘{szbt_u.charge['n']}"
+    assert szbt_foe.troop < szbt_troop_before, "172b: 消耗蓄威應對敵方造成傷害"
+    assert 1 <= szbt_u.charge_consumed_this_round <= 5, \
+        f"172b: 本回合觸發次數應在1~5之間, 實際{szbt_u.charge_consumed_this_round}"
+    # 每回合上限: 已達maxChain時即使機率100%也不應再消耗
+    szbt_u2 = Unit(POOL["曹操"], "槍")
+    szbt_u2.charge = {"n": 20, "max": 20}
+    szbt_u2.charge_consumed_this_round = 5
+    charge_before = szbt_u2.charge["n"]
+    apply_effects(szbt_u2, None, {"effects": [{"k": "chargeConsume", "coef": 1.3, "kind": "phys", "rate": 1.0}],
+                                   "nameZh": "測試死戰不退172c", "kind": "phys"},
+                  [szbt_u2], [szbt_foe], rate_checked=True)
+    assert szbt_u2.charge["n"] == charge_before, "172c: 本回合已達maxChain上限時不應再消耗蓄威(即使rate:1.0)"
+    print("    [批A 172] 死戰不退: k==\"chargeAdd\"+k==\"chargeConsume\" 資源池+鏈式消耗+回合上限 驗證通過")
 
     print("self-check OK")
 

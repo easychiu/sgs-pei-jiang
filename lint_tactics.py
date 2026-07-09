@@ -241,7 +241,18 @@ def check_r2(p, txt):
     # (如「我軍群體(2人)」增益受眾)的人數片語(偃旗息鼓類假陽性)。
     starts = [block.rfind(ch, 0, dm.start()) for ch in "。；;，,"]
     window_start = max(starts) + 1
-    window = block[window_start:dm.start() + 40]
+    # 批B(R2窗口溢出bug修復): 向前延伸(+40字, 涵蓋「傷害率X%）每次目標獨立選擇...」這類
+    # 傷害率之後仍屬同一子句的尾隨修飾語)須以「下一個句界(。；;)」為硬上限, 不能無條件延伸
+    # 滿40字——若命中的傷害率離句尾(；/。)很近(如暗箭難防「...傷害率260%）；並有60%概率
+    # ...捕獲敵軍單體武將...」, 傷害率260%後僅8字就遇到句界；), +40字會直接跨越句界溢入
+    # 下一個無關子句(「捕獲敵軍單體武將」), 導致window_end用該不相干子句裡的「敵軍單體」
+    # 誤判目標數(見批B任務背景實測案例)。改用「+40字」與「下一個硬句界位置」取更近者
+    # (min), 逗號(，,)不算硬句界(維持既有「傷害率後接，可能仍是同子句尾隨修飾」的行為
+    # 不變, 只防止跨越；/。這種真正的子句邊界)。
+    hard_ends = [block.find(ch, dm.start()) for ch in "。；;"]
+    hard_ends = [e for e in hard_ends if e != -1]
+    window_end = min(dm.start() + 40, min(hard_ends) if hard_ends else len(block))
+    window = block[window_start:window_end]
     # 目標描述須是「敵軍」的目標(非「我軍」受眾描述的群體/單體), 用最近的「敵」字錨定範圍起點。
     enemy_pos = window.rfind("敵")
     if enemy_pos == -1:
@@ -553,9 +564,46 @@ KNOWN_EFFECT_FIELDS = {
     "sameTargets",  # 批45 A: 沿用同一次apply_effects呼叫內先前已命中的群體目標(main_hit_tgts),
     # 取代「coef段與效果段各自獨立pick_targets」的舊近似, 跨所有k種類通用(見 apply_effects
     # 對 e.sameTargets 的判斷式, engine_limitations.md 第45節)。
+    "ifTargetHasNot",  # 批A(11筆高嚴重重建): ifTargetHas的反向(只對「尚未有該狀態」的目標生效),
+    # 跨所有k種類通用(對稱ifTargetHas本身即是全域欄位), 見engine.js/sgz.py applyEffects()/
+    # apply_effects()對e.ifTargetHasNot的過濾判斷, 偽書相間首次落地, engine_limitations.md第46節。
+    "kindByStat",  # 批A: extraHits段欄位(非effects段, 但PER_KIND_FIELDS掃描邏輯共用同一份白名單
+    # 結構), 動態比較atk本身force/intel兩項屬性決定傷害類型, 見fireExtraHits()/fire_extra_hits(),
+    # 偽書相間首次落地。
+    "ratePerTarget", "rateStatusBonus",  # 批52g: 逐目標擲骰(取代單次全域e.rate擲骰), 跨所有k
+    # 種類通用的機率結算模式旗標(見 apply_effects 對 e.rate 判定式前的 _per_tgt_rate/perTgtRate
+    # 分流, 非任何k專屬), 目前全庫僅五雷轟頂(k=="stun")使用, 但欄位語意不限定k。rateStatusBonus
+    # 為dict(statuses/per/maxBonus/ifLeader), 依目標身上具名狀態(水攻/沙暴)數量疊加機率, 內含
+    # 巢狀ifLeader(主將時才套用此加成, 見 apply_effects 對 b.get("ifLeader") 的判斷)——與頂層
+    # e.ifLeader(整段效果的主將閘門)是不同層級的概念, 此為「加成部分」限定主將, 基礎機率則不
+    # 分主將/副將皆生效, 精確對應「基礎機率X%(全員)+主將時每種狀態額外+Y%」的複合語意。
+    "ifCasterNames", "whoNames",  # 批52g: 施放者/目標武將名單過濾(太平道法「自身為黃巾軍主將時,
+    # 黃巾副將同樣獲得...」), 跨所有k種類通用(見 apply_effects 對 e.ifCasterNames/e.whoNames 的
+    # 判斷式, 位於 k 分派之前的共用前置檢查段), 目前全庫僅太平道法(k=="rateup")使用, 但欄位
+    # 語意不限定k。ifCasterNames: 施放者武將名須在名單內; whoNames: 只對武將名在名單內的目標
+    # (dests過濾)生效, 兩者常搭配使用(施放者身份判定+目標身份判定)。
+    "onlySlower",  # 批52h: fire_controlled()/fireControlled() 專用的「僅速度慢於持有者的友軍
+    # 才觸發反彈」條件(機鑑先識「速度比持有者慢的友軍」), 綁定 when.on:"controlled" 反應式事件
+    # (非 apply_effects 的一般 k 分派路徑), 掛在哪個 k 值上純屬資料撰寫慣例(現用k=="amp"當
+    # 占位容器, 見機鑑先識該效果_note「k:stat add:0為占位」同款慣例), 欄位語意不限定k, 故列
+    # 為全域欄位而非PER_KIND_FIELDS["amp"]專屬。
+    # 批B: ifSameTargetIsLeader 刻意不登記為全域已知欄位——批31 B新增此欄位時, 讀取邏輯只寫在
+    # fire_extra_hits()/fireExtraHits()(extraHits段專屬), 從未接上 apply_effects()/applyEffects()
+    # 的一般 effects[] 分派路徑(見sgz.py 1394行 eh.get("ifSameTargetIsLeader"), eh=extraHits
+    # entry, 非effects entry)。若某戰法把此欄位直接掛在 effects[].k(如將行其疾的silence效果,
+    # 非extraHits[]內), 該欄位會被引擎完全忽略, 是真正的幽靈欄位(對比kindByStat/ifTargetHasNot
+    # 兩者在extraHits與effects兩種context下皆有對應讀取邏輯, 語意一致故可全域登記; 此欄位只有
+    # extraHits一種context被實作, 不可比照全域登記, 否則會讓「掛在effects[]上不生效」的真缺口
+    # 被白名單靜默放行)。將行其疾的用法屬於後者(effects[]直接掛, 非extraHits[]), 已移除該欄位
+    # 並保留其誠實揭露(_todo已載明此為未解決的overshoot), 見tactic_corrections.json。
 }
 PER_KIND_FIELDS = {
-    "amp": {"val", "dmgType", "normalOnly", "activeOnly"}, "mitig": {"val", "dmgType", "normalOnly"}, "stun": set(), "silence": set(), "disarm": set(),  # dmgType: 批24 D2, 兵刃/謀略傷害類型過濾; normalOnly: 批28 B3, 僅普攻傷害生效/受影響; activeOnly: 批31 A, 僅主動/突擊戰法傷害生效(amp限定)
+    "amp": {"val", "dmgType", "normalOnly", "activeOnly", "chargeOnly",
+             "stackKey", "perStack", "maxStacks"},
+    # 批A: k=="amp"+e.stackKey(per-target疊層變體, 對稱既有k=="stat"+stackKey, 但不支援
+    # onMaxStacks/globalMax/e.add三個延伸, 見engine.js/sgz.py k==="amp"分支的ampLayers/
+    # amp_layers計數器, 密計誅逆首次落地, engine_limitations.md第46節)。
+    "mitig": {"val", "dmgType", "normalOnly"}, "stun": set(), "silence": set(), "disarm": set(),  # dmgType: 批24 D2, 兵刃/謀略傷害類型過濾; normalOnly: 批28 B3, 僅普攻傷害生效/受影響; activeOnly: 批31 A, 僅主動/突擊戰法傷害生效(amp限定)
     "chaos": set(), "ambush": set(), "insight": set(), "immune": {"types"}, "first": set(),
     "stat": {"stat", "add", "mult",
               "stackKey", "perStack", "maxStacks", "onMaxStacks", "globalMax", "globalEffects"},
@@ -578,6 +626,37 @@ PER_KIND_FIELDS = {
     # 實際傷害量(dmg 由反應式呼叫端傳入), 與 coef/scale 屬性公式互斥擇一, 見草船借箭。
     "redirect": {"guard", "share", "normalOnly"}, "settle": {"init", "max", "base", "per"},
     "block": {"val", "times"},  # 批22: 次數型格擋(抵禦/警戒同族) —— val:1.0全擋/0.x部分減傷, times:剩餘次數
+    "chargeAdd": {"max"},  # 批A(11筆高嚴重重建): 「可消耗資源池」獲得端(死戰不退「蓄威」),
+    # max=封頂層數(預設20); 觸發機率靠effects級通用的e.rate(見KNOWN_EFFECT_FIELDS)+
+    # when.on:"damaged"反應式擲骰通道, 非chargeAdd自身欄位。見engine.js/sgz.py Unit.charge/
+    # self.charge欄位, engine_limitations.md第46節。
+    "chargeConsume": {"coef", "kind", "decayPer", "maxChain"},  # 批A: 「可消耗資源池」消耗端,
+    # coef=每次消耗造成的傷害率, kind=傷害類型, decayPer=每次觸發後機率遞減量(預設0.08),
+    # maxChain=每回合最多觸發次數(預設5, 見chargeConsumedThisRound/charge_consumed_this_round
+    # 逐回合歸零計數器)。基礎機率靠effects級通用的e.rate/e.scale(見KNOWN_EFFECT_FIELDS)。
+    "capture": {"altCoef"},  # 批52j: 捕獲(暗箭難防獨立狀態) —— altCoef(選填, 預設5.3): 已有
+    # 敵軍武將被捕獲時, 本次改對該已捕獲者造成altCoef傷害率直傷(取代再次擲rate捕獲判定), 見
+    # engine.js/sgz.py k=="capture"分支對e.altCoef的讀取。n/dur/rate/scale/scaleDiv 皆屬
+    # KNOWN_EFFECT_FIELDS全域欄位(捕獲判定的目標數/持續回合/發動率/受速度等屬性縮放), 不重複
+    # 於此列出。
+    "proxyNormal": {"srcSel", "ifNoExtra", "ifHasExtra"},  # 批52i: 代理完整普通攻擊(垂心萬物
+    # 「若其不處於連擊狀態則使...對敵軍單體發動一次普通攻擊」) —— srcSel(依準則挑選出手的
+    # 我軍武將, 如maxForce=武力最高)、ifNoExtra/ifHasExtra(選填, 依代理出手者當下是否處於
+    # 連擊狀態決定本效果是否觸發, 與proxyHit互斥搭配表達「非連擊才代打完整普攻, 連擊時改另一
+    # 效果」的分支對), 見engine.js/sgz.py k=="proxyNormal"分支(doNormalAttack/do_normal_attack
+    # 完整管線代打, 含突擊/everyN/連擊)。
+    "proxyHit": {"srcSel", "checkSrcSel", "ifNoExtra", "ifHasExtra", "coef", "kind"},  # 批52i:
+    # 代理單次直傷(垂心萬物「連擊時改謀略90%」分支) —— checkSrcSel(依準則挑選「檢查連擊狀態」
+    # 的對象, 可與srcSel出手者不同人)、srcSel(依準則挑選實際出手的我軍武將)、ifNoExtra/
+    # ifHasExtra(同proxyNormal, 依checkSrcSel挑出的人當下是否連擊決定觸發)、coef/kind(本次
+    # 直傷的傷害率與類型, 對稱一般hit()呼叫), 見engine.js/sgz.py k=="proxyHit"分支。
+    "huchen": {"base", "per", "maxHits", "kind", "ampOnSettle", "ampMaxStack"},  # 批52d: 虎嗔
+    # (將門虎女負面狀態, 專為本戰法建置的原語) —— base(初始結算傷害率, 預設0.20)、per(每次
+    # 受傷疊加量, 預設0.30)、maxHits(滿幾次疊層立即提前結算, 預設3)、kind(結算時的傷害類型,
+    # 預設沿用t.kind或"phys")、ampOnSettle(結算時施放者獲得的兵刃傷害amp加成, 預設0.08)、
+    # ampMaxStack(該amp加成的疊加上限, 預設99=近似無上限), 見engine.js/sgz.py k=="huchen"
+    # 分支對u.huchen狀態的建立, 以及settleHuchen()/結算函式對滿maxHits或到期時的提前/自然
+    # 結算判斷。dur(維持回合數)/who/n(目標數)皆屬KNOWN_EFFECT_FIELDS全域欄位, 不重複列出。
 }
 # 資料撰寫慣例裡與戰鬥語意無關的雜項欄位(揭露/註解/來源標記), 任何 k 都可能帶, 不算幽靈:
 MISC_DISCLOSURE_FIELDS = {"note", "name"}
@@ -1755,6 +1834,55 @@ ENGINE_CAPABILITY_ALIASES = {
                 "首個命中群體的sibling效果就地提供), 取代「coef段與效果段各自獨立pick_targets,"
                 "3人隊僅1/3機率同組」的舊近似, 見engine_limitations.md第45節)",
     "各自獨立pick_targets": "sameTargets(同上)",
+    # 批A(11筆高嚴重重建): 8個新原語, 見engine_limitations.md第46節。
+    "目標對其友軍單體": "extraHits.who:\"mainTargetAlly\"(批A新增, 對稱既有sameTarget/enemyLeader,"
+                "方向反轉——攻擊者不是持有者u自己, 而是main段命中的目標tgt本身被強制對其own"
+                "隊友出手, 見engine.js/sgz.py fireExtraHits()/fire_extra_hits()的"
+                "mainTargetAllyAtk/main_target_ally_atk分支, 偽書相間首次落地)",
+    "強制攻擊己方": "extraHits.who:\"mainTargetAlly\"(同上)",
+    "類型取決於": "eh.kindByStat:\"maxForceIntel\"(批A新增, 動態比較atk本身force/intel"
+                "兩項屬性取較高者決定傷害類型, 對比批34胡笳餘音「取較高者」措辭遇到同類需求時"
+                "只能靜態近似取intel的舊慣例, 這裡是真正runtime動態比較, 見fireExtraHits()/"
+                "fire_extra_hits()尾端的ehKind/eh_kind計算式, 偽書相間首次落地)",
+    "武力、智力較高的一項": "eh.kindByStat:\"maxForceIntel\"(同上)",
+    "否則施加": "e.ifTargetHasNot(批A新增, ifTargetHas的反向, 只對「尚未有該狀態」的目標生效,"
+                "見engine.js/sgz.py applyEffects()/apply_effects()對e.ifTargetHasNot的過濾判斷,"
+                "偽書相間「否則施加混亂」首次落地)",
+    "主將發動主動": "when.casterIsLeader(批A新增, activeFired反應式的效果級/戰法級旗標, 限定觸發"
+                "事件的發動者u本身須為其隊伍主將allies[0], 而非要求持有者holder是主將——與"
+                "who:\"ally\"廣播疊加使用(who負責「誰能聽到」, casterIsLeader負責「發動者是不是"
+                "主將」), 見engine.js/sgz.py activeFiredFor()/active_fired_for()的"
+                "casterIsLeaderOk/caster_is_leader_ok判斷式, 十勝十敗首次落地; 密計誅逆同批"
+                "復用於dealtDamage事件)",
+    "我軍主將發動": "when.casterIsLeader(同上)",
+    "造成大於300的傷害": "when.dmgAbove(批A新增, dealtDamage/damaged反應式的傷害量閾值閘門,"
+                "戰法級/效果級皆支援, 見engine.js/sgz.py dealtDamageFor()/dealt_damage_for()與"
+                "onHitFor()/on_hit_for()新增的dmgAboveOk/dmg_above_ok判斷式, 密計誅逆(dealtDamage"
+                "方向)/承天靖世(damaged方向, 延伸到on:\"damaged\")首次落地)",
+    "收到高於最大兵力": "when.dmgAbove(同上, damaged方向)",
+    "傷害量閾值閘門": "when.dmgAbove(批A新增, 同上; 「無傷害量條件欄位」這類措辭若指此需求,"
+                "落地後應改寫並補上when.dmgAbove)",
+    "最終傷害降低15%": "k:\"amp\"+e.stackKey(批A新增, amp效果的per-target疊層變體, 對稱既有"
+                "k:\"stat\"+stackKey, 見engine.js/sgz.py k===\"amp\"分支的ampLayers/amp_layers"
+                "計數器, 密計誅逆「敵軍單體造成的最終傷害降低15%...最多疊加3次」首次落地;"
+                "若戰法描述的疊層形態是k:\"stat\"(屬性)而非k:\"amp\"(傷害加成), 仍應用既有"
+                "stackKey機制, 非本條新增範圍)",
+    "動態遞減機率的多次觸發消耗品層數": "k:\"chargeAdd\"+k:\"chargeConsume\"(批A新增, 「可消耗"
+                "資源池」機制, 對稱既有k:\"stack\"但語意為「剩餘可消耗次數」而非「傷害增益倍率」,"
+                "見engine.js/sgz.py Unit.charge/self.charge欄位+applyEffects/apply_effects的"
+                "chargeAdd/chargeConsume分支, 死戰不退「蓄威層+消耗連鎖」首次落地; chargeAdd負責"
+                "受擊觸發疊層(掛on:\"damaged\"), chargeConsume負責普攻後鏈式消耗造成傷害"
+                "(掛on:\"dealtDamage\"+normalOnly, e.decayPer每次觸發後機率遞減量+e.maxChain每回合"
+                "最多觸發次數上限, 見chargeConsumedThisRound/charge_consumed_this_round逐回合"
+                "歸零計數器)",
+    "受傷觸發概率疊層": "k:\"chargeAdd\"(同上)",
+    "消耗時遞減觸發率": "k:\"chargeConsume\"(同上)",
+    "效果級起始回合無法單獨表達": "e.when.hpBelow/hpAbove(批A新增, 效果級, 對稱既有戰法級"
+                "t.when.hpBelow/hpAbove, 見engine.js/sgz.py everyRound分支新增的hpOk/hp_ok判斷式,"
+                "奇兵間道「第5回合起若兵力低於50%...否則...」首次落地——過去戰法級t.when會連帶"
+                "鎖住同戰法內其餘不需要hp條件的effects段, 現在同一戰法內部分effects段可各自"
+                "獨立掛hp條件, 不強制共用同一個when)",
+    "戰法級when會連帶鎖住前4回合": "e.when.hpBelow/hpAbove(同上)",
 }
 
 # =============================================================================
@@ -1793,6 +1921,50 @@ CAPABILITY_INVENTORY_IGNORE = {
     # 從truthy檢查收斂為明確白名單後, "damaged"字面值首次出現在原始碼裡被R20掃描器盤點到,
     # 非新原語, 補進忽略清單避免誤報)
     "attack", "attacked", "damaged",
+    # 批B: 內部實作細節/純資料撰寫慣例欄位, 非「戰法撰寫者可能誤稱不支援」的通用能力語意
+    # ——這些token不適合登記進ENGINE_CAPABILITY_ALIASES(該表要求別名描述能對應「原文常見
+    # 措辭」, 但下列token要嘛是內部bookkeeping、要嘛是單一戰法專屬且窄用的機制名稱, 沒有
+    # 「戰法撰寫者會誤以為引擎不支援」的自然語言對應描述):
+    "_id",  # ctrlReflect去重旗標鍵組成用的內部id, 非資料欄位(engine.js第1163行e._id僅作為
+    # flag key的組成部分, 非戰法JSON會設定的欄位), 誤觸_scan_engine_js_tokens的\be\.正則。
+    # 批52j: 捕獲(暗箭難防獨立狀態) k=="capture"專屬, 見PER_KIND_FIELDS["capture"]已登記。
+    # 單一戰法專屬窄機制, 無自然語言對照措辭會被誤稱「引擎不支援」。
+    "capture", "altCoef",
+    # 批52i: 代理普攻/代理直傷(垂心萬物專屬), 見PER_KIND_FIELDS["proxyNormal"/"proxyHit"]
+    # 已登記。單一戰法專屬窄機制。
+    "proxyNormal", "proxyHit", "srcSel", "checkSrcSel", "ifNoExtra", "ifHasExtra",
+    # 批52d: 虎嗔(將門虎女專屬), 見PER_KIND_FIELDS["huchen"]已登記。單一戰法專屬窄機制。
+    "huchen", "maxHits", "ampOnSettle", "ampMaxStack",
+    # 批52g: 逐目標機率/具名狀態機率加成(五雷轟頂專屬)+施放者/目標武將名單過濾(太平道法
+    # 專屬), 見KNOWN_EFFECT_FIELDS已登記。皆為單一戰法專屬窄機制。
+    "ratePerTarget", "rateStatusBonus", "ifCasterNames", "whoNames",
+    # 批52h: fireControlled()/fire_controlled()專屬的「速度慢於持有者才觸發」條件(機鑑先識
+    # 專屬), 見KNOWN_EFFECT_FIELDS已登記。單一戰法專屬窄機制。
+    "onlySlower",
+    # 批52h: on:"controlled"(狀態施加反應式事件) —— 刻意不加入ENGINE_CAPABILITY_ALIASES:
+    # 目前只支援「機鑑先識」這種窄用場景(持有者反彈同一種控制狀態給隨機敵軍), 並非engine_
+    # limitations.md第25節第1類「狀態鏡射/廣播事件」描述的通用「任一單位監聽任一控制狀態
+    # 施加」廣播基礎設施(該節仍誠實記錄此為未解決缺口, 見該節「需要新增第四種事件」段落)。
+    # 若在此加上泛用別名(如「狀態鏡射」→controlled), 會讓R20誤判engine_limitations.md自身
+    # 誠實記錄的「仍未解決」措辭為stale, 造成規則自相矛盾, 故僅登記進忽略清單(維持window
+    # 已支援/尚未泛化的現況陳述, 不誤導成「已完全解決」)。
+    "controlled",
+    # 批52續系列: 主將/副將條件式數值覆寫+屬性縮放閘門, 皆為窄用的效果級旗標, 目前全庫
+    # 使用案例稀少(各自1~3筆), 且與已登記的"主將時"(ifLeader布林閘門)概念相近但非同一
+    # 欄位, 若強行registered成別名易與ifLeader的別名描述混淆(兩者都會命中"主將"字樣但
+    # 修正方式不同: ifLeader是「是否套用」的二元閘門, 這些是「套用哪個數值/是否縮放」的
+    # 覆寫式旗標), 暫列入忽略清單, 待未來若有戰法明確用這些欄位家族且需要R20保護時再評估
+    # 個別登記別名。
+    "coefLeader", "rateLeader", "rateSub", "ifGender", "ifSub",
+    "scaleIfLeader", "scaleIfSub", "requireDmg",
+    # 批52e: 效果級「同回合可多次觸發」旗標(文武雙全專屬場景), 窄用。
+    "everyHit",
+    # 批52g: dot具名狀態(供ifTargetHas按名稱匹配), 窄用欄位, 非「新能力」語意(dot本身早已
+    # 在忽略清單, 具名只是既有dot機制的識別標籤延伸)。
+    "dotName",
+    # 批52: heal選標「優先兵力最低者」/「共用同一份治療池」, 見既有heal相關_note; 窄用欄位,
+    # heal本身已在忽略清單, 這兩者是既有heal選標邏輯的延伸旗標, 非獨立新能力。
+    "preferLowest", "sharedPool",
 }
 
 
