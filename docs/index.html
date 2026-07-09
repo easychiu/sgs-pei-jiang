@@ -13,6 +13,7 @@
   <nav>
     <button class="tab active" data-tab="sim">配將模擬</button>
     <button class="tab" data-tab="rec">自動推薦</button>
+    <button class="tab" data-tab="ai">AI配將</button>
     <button class="tab" data-tab="dex">武將圖鑑</button>
   </nav>
 </header>
@@ -58,6 +59,20 @@
     <ol id="recList" class="rec-list"></ol>
   </section>
 
+  <!-- AI配將: 只選一張武將卡, 自動推薦最強隊伍(兩名隊友+戰法配置) -->
+  <section id="ai" class="panel">
+    <div class="ai-controls">
+      武將：<input id="aiAnchorSearch" placeholder="輸入武將名…" autocomplete="off" list="aiAnchorList">
+      <datalist id="aiAnchorList"></datalist>
+      <button id="runAi" class="primary">🤖 開始配將</button>
+    </div>
+    <div id="aiProgress" class="ai-progress hidden">
+      <div class="ai-bar"><div id="aiBarFill" class="ai-bar-fill" style="width:0%"></div></div>
+      <div id="aiStageTxt" class="ai-stage-txt"></div>
+    </div>
+    <div id="aiResult" class="ai-result"></div>
+  </section>
+
   <!-- 武將圖鑑 -->
   <section id="dex" class="panel">
     <input id="dexSearch" placeholder="搜尋武將…" autocomplete="off">
@@ -71,6 +86,7 @@
 <footer>非官方社群工具 · 資料為遊戲事實，引擎為趨勢近似模擬，非逐幀還原 · <span id="stat"></span></footer>
 
 <script src="engine.js"></script>
+<script src="matchmaker.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

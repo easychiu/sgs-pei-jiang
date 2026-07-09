@@ -127,6 +127,28 @@ select{background:#2a2018;color:var(--ink);border:1px solid var(--line);
 .rec-list li:hover{border-color:var(--gold)}
 .rec-list .sc{color:var(--gold);font-weight:bold;font-size:18px}
 
+/* AI配將 */
+.ai-controls{text-align:center;margin-bottom:18px}
+.ai-controls input{background:#2a2018;color:var(--ink);border:1px solid var(--line);
+  padding:9px 12px;border-radius:6px;font-size:15px;font-family:inherit;margin-right:8px;width:200px}
+.ai-progress{max-width:680px;margin:0 auto 18px}
+.ai-bar{height:16px;border-radius:8px;overflow:hidden;background:#1b140e;border:1px solid var(--line)}
+.ai-bar-fill{height:100%;background:linear-gradient(90deg,#8c6a1f,var(--gold));transition:width .2s}
+.ai-stage-txt{text-align:center;color:#b8a987;font-size:13px;margin-top:6px}
+.ai-result{max-width:820px;margin:0 auto}
+.ai-card{display:flex;align-items:center;gap:12px;background:var(--bg2);border:1px solid var(--line);
+  border-radius:10px;padding:12px;margin-bottom:10px}
+.ai-card:first-child{border-color:var(--gold)}
+.ai-rank{font-size:20px;font-weight:bold;color:var(--gold);min-width:34px;text-align:center}
+.ai-heads{display:flex;gap:4px}
+.ai-head{width:44px;height:64px;border-radius:5px;background-size:cover;background-position:top center;
+  background-color:#0d0a07;border:1px solid var(--line)}
+.ai-info{flex:1;min-width:0}
+.ai-team{font-size:15px;color:var(--ink)}
+.ai-win{font-size:13px;color:#b8a987;margin-top:2px}
+.ai-apply{white-space:nowrap;font-size:14px;padding:9px 16px}
+@media(max-width:620px){.ai-card{flex-wrap:wrap}.ai-apply{margin-left:auto}}
+
 /* 圖鑑 */
 #dexSearch{width:100%;max-width:340px;display:block;margin:0 auto 18px;padding:11px;
   background:#2a2018;color:var(--ink);border:1px solid var(--line);border-radius:8px;

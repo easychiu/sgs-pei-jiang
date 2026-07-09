@@ -255,6 +255,8 @@ async function load() {
   $("#optimize").onclick = optimizeTeam;
   $("#clearSim").onclick = () => { for (const s of ["A", "B"]) { teams[s] = [null, null, null]; bsel[s] = [null, null, null]; eqsel[s] = [{}, {}, {}]; builds[s] = [null, null, null]; inhsel[s] = [[], [], []]; } renderSlots("A"); renderSlots("B"); $("#simResult").classList.add("hidden"); };
   $("#runRec").onclick = runRec;
+  $("#aiAnchorList").innerHTML = Object.keys(POOL).sort((a, b) => (RAW[b].stars || 0) - (RAW[a].stars || 0)).map(n => `<option value="${n}">`).join("");
+  $("#runAi").onclick = runAiMatch;
   $("#dexSearch").oninput = renderDex;
   $("#modal").onclick = e => { if (e.target.id === "modal") closeModal(); };
   renderDex();
@@ -369,6 +371,79 @@ function runRec() {
   document.querySelectorAll("#recList li").forEach(li => li.onclick = () => {
     teams.A = [...JSON.parse(li.dataset.team)]; troops.A = li.dataset.troop; bsel.A = [null, null, null]; eqsel.A = [{}, {}, {}]; builds.A = [null, null, null]; inhsel.A = [[], [], []];
     document.querySelector(`.troop[data-side="A"]`).value = li.dataset.troop;
+    renderSlots("A");
+    document.querySelector('.tab[data-tab="sim"]').click();
+  });
+}
+
+const STAGE_LABEL = { stage1: "① 粗篩（緣分／陣營／兵種適性／角色互補）", stage2: "② 海選（vs 天梯陣容 快速模擬）", stage3: "③ 決選（傳承戰法＋精算模擬）" };
+async function runAiMatch() {
+  const anchor = $("#aiAnchorSearch").value.trim();
+  if (!anchor || !POOL[anchor]) { alert("請輸入正確的武將名（可從下拉建議選）"); return; }
+  const btn = $("#runAi"); btn.disabled = true;
+  const prog = $("#aiProgress"); prog.classList.remove("hidden");
+  const fill = $("#aiBarFill"), stxt = $("#aiStageTxt");
+  $("#aiResult").innerHTML = "";
+  fill.style.width = "0%"; stxt.textContent = "準備中…";
+  const STAGE_W = { stage1: 0.05, stage2: 0.45, stage3: 0.50 };   // 各階段佔進度條權重(海選最耗時佔比高)
+  const STAGE_BASE = { stage1: 0, stage2: 5, stage3: 50 };
+  const onProgress = (stage, pct) => {
+    const base = STAGE_BASE[stage] || 0, w = (STAGE_W[stage] || 0) * 100;
+    fill.style.width = Math.min(100, base + w * (pct / 100)) + "%";
+    stxt.textContent = `${STAGE_LABEL[stage] || stage}　${pct}%`;
+  };
+  const t0 = performance.now();
+  try {
+    const res = await Matchmaker.run(
+      { POOL, BONDS: SGZ.bonds(), TAC_DATA, TAC_TIER, NONEQUIP, scenario: CURRENT_SEASON },
+      anchor,
+      { stage1Limit: 150, stage2Keep: 20, stage2N: 60, stage3N: 500, topOut: 5, onProgress }
+    );
+    const ms = Math.round(performance.now() - t0);
+    stxt.textContent = `完成　耗時 ${(ms / 1000).toFixed(1)} 秒`;
+    fill.style.width = "100%";
+    renderAiResults(anchor, res.top, res.gauntlet);
+  } catch (e) {
+    console.error(e);
+    stxt.textContent = "發生錯誤：" + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+function renderAiResults(anchor, top, gauntlet) {
+  const box = $("#aiResult");
+  if (!top.length) { box.innerHTML = `<div class="sub">找不到合適隊伍</div>`; return; }
+  const gLabel = gauntlet.map(g => g.label).join("・");
+  box.innerHTML = `<div class="sub" style="margin:8px 0">天梯陣容基準（GAUNTLET）：${gLabel}</div>` +
+    top.map((r, i) => {
+      const heads = r.team.map(n => `<div class="ai-head" style="background-image:url('${cardSrc(n)}')" title="${n}"></div>`).join("");
+      const inhTxt = r.team.map((n, k) => (r.inh[k] || []).length ? `${n}：${r.inh[k].join("＋")}` : "").filter(Boolean).join("　");
+      const bsTxt = r.team.map((n, k) => (r.bs[k] || []).length ? `${n}：${(r.bs[k] || []).map(bsLabel).join("＋")}` : "").filter(Boolean).join("　");
+      return `<div class="ai-card">
+        <div class="ai-rank">#${i + 1}</div>
+        <div class="ai-heads">${heads}</div>
+        <div class="ai-info">
+          <div class="ai-team">${r.team.join("　／　")}　<span class="gold">[${r.troop}兵]</span></div>
+          <div class="ai-win">勝率 <b class="gold">${pct(r.win)}%</b>　平均 ${r.rounds.toFixed(1)} 回合　<span style="color:#9a8b6a">(vs 天梯陣容平均)</span></div>
+          ${inhTxt ? `<div class="sub">傳承戰法：${inhTxt}</div>` : ""}
+          ${bsTxt ? `<div class="sub">兵書：${bsTxt}</div>` : ""}
+        </div>
+        <button class="primary ai-apply" data-i="${i}">帶入模擬</button>
+      </div>`;
+    }).join("");
+  box.querySelectorAll(".ai-apply").forEach(b => b.onclick = () => {
+    const r = top[+b.dataset.i];
+    teams.A = [...r.team]; troops.A = r.troop;
+    bsel.A = r.team.map((n, k) => {
+      const names = r.bs[k] || [];
+      if (!names.length) return { on: false, category: null, main: null, subs: [] };
+      const cat = (names[0].split("·")[0]) || null;
+      return { on: true, category: cat, main: names[0] || null, subs: names.slice(1) };
+    });
+    eqsel.A = [{}, {}, {}];
+    builds.A = r.team.map((n) => { const g = POOL[n]; const a = r.ad[r.team.indexOf(n)] || {}; const alloc = {}; STAT4.forEach(s => { if (a[s]) alloc[s] = a[s]; }); return { advance: maxAdv(g), collection: false, alloc }; });
+    inhsel.A = r.team.map((n, k) => { const a = (r.inh[k] || []).slice(); while (a.length < 2) a.push(null); return a; });
+    document.querySelector(`.troop[data-side="A"]`).value = r.troop;
     renderSlots("A");
     document.querySelector('.tab[data-tab="sim"]').click();
   });
