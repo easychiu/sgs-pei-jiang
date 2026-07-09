@@ -380,8 +380,8 @@ async function main() {
 
   const out = {
     metadata: {
-      batch: "批52",
-      generation: 2,                                  // 批51=1(anchor-primary), 批52=2(客串修正)
+      batch: "批E",
+      generation: 3,                                  // 批51=1(anchor-primary), 批52=2(客串修正), 批E=3(戰法定稿對齊後重跑)
       seed: SEED,
       date: "2026-07-09",                              // 固定字串(非硬編當前系統時間, user規格)
       poolSize: teamMap.size,                          // 隊池規模(含A建隊池+A2客串隊)
@@ -412,7 +412,12 @@ async function main() {
         "以他最擅長的方式加入隊伍, 真實整體勝率是多少」——輸出核通常自己當隊長最強(anchor胜出), 輔助/治療/謀士" +
         "核往往要進別人的強隊才發揮得出來(guest胜出), 取max讓兩類角色都用各自的最佳代表隊評分, 不被另一半的" +
         "結構性短板拖累; 純內政/無戰法建模的白板卡兩邊皆弱, 仍會落在低分區, 不受此修正影響。",
-      note: "批52修正批51的anchor-primary系統性低估輔助/治療核問題(見檔頭批52說明), generation:2。",
+      note: "批E: 戰法定稿對齊(批A-D, 全面改實作貼合data/tactics.json本文)+troopLimit接線" +
+        "(matchmaker.js pickInheritTactics/troopMismatch改讀本文權威troopLimit, 取代批49" +
+        "22條手工兵種對照表, 35筆有實質限制的戰法現正確過濾非法傳承指派)後重跑, generation:3。" +
+        "沿用批52聯賽參數(topPerGeneral/K/n/seed皆同, 見params/seed)不變, 評分公式" +
+        "(scoringMethod)本身未改動——本次評分差異全部來自「戰法定稿對齊」與「傳承合法性過濾」" +
+        "兩項底層資料/邏輯變動, 而非評分方法論本身的調整。",
     },
     generals: ratings,
   };

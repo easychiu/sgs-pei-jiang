@@ -121,23 +121,24 @@
     return "";
   }
 
-  // ---- 批49 C: 戰法/兵書指派語意過濾輔助 ----
-  // TROOP 類(cat==="TROOP")戰法多為「XX兵專屬」, 僅特定兵種可用。troopLimit 這個 metadata
-  // 只存在於 data/tactics.json(未隨 tactics_parsed.json 流入瀏覽器, 見 docs/data/
-  // engine_limitations.md 對應段落: 全庫從未真正接上引擎戰鬥邏輯, 純資料庫欄位), 故在此以
-  // 少量、對照 data/tactics.json troopLimit 欄位人工校對過的具名對照表補上, 供貪心指派時
-  // 排除「隊伍選定兵種與戰法專屬兵種不符」的指派(如丹陽兵=盾兵專屬, 配給槍隊即整戰法浪費)。
-  const TROOP_ONLY = {
-    "丹陽兵": "盾", "先登死士": "弓", "大戟士": "槍", "引弦力戰": "弓", "擊其惰歸": "盾",
-    "無當飛軍": "弓", "白毦兵": "槍", "白馬義從": "弓", "百騎劫營": "騎", "萬箭齊發": "弓",
-    "藤甲兵": "盾", "虎衛軍": "盾", "虎豹騎": "騎", "西涼鐵騎": "騎", "解煩衛": "槍",
-    "象兵": "騎", "錦帆軍": "弓", "鐵騎驅馳": "騎", "陷陣營": "盾", "青州兵": "槍",
-    "飛熊軍": "騎", "左右開弓": "弓",
-  };
+  // ---- 批49→批E 沿革: 戰法/兵書指派語意過濾輔助 ----
+  // 批49曾用「僅 cat==="TROOP" + 22條人工校對具名表」近似 troopLimit(當時 troopLimit 欄位
+  // 未隨 tactics_parsed.json 流入瀏覽器, 見 docs/data/engine_limitations.md 對應段落)。
+  // 批E: reparse_effects.py 已把 troopLimit 原樣從 data/tactics.json 帶入
+  // tactics_parsed.json(見該檔「1b」步驟), 現全面改讀本文權威欄位取代該具名表——稽核發現
+  // 全庫373筆戰法中實際有35筆帶真正限制(不限於TROOP類, COMMAND/ACTIVE/PASSIVE/FORMATION/
+  // BURST皆有, 如鋒矢陣/魚鱗陣/雁行陣等陣法、上兵伐謀/深謀遠慮/藏器待時等指揮被動), 舊表的
+  // 22條(全部TROOP類)驗證後與本文完全一致(無回歸), 淨新增13筆先前完全無限制覆蓋的戰法。
+  // troopLimit 值域為 CAVALRY/SHIELD/BOW/SPEAR/SIEGE(英文enum, 見 data/tactics.json),
+  // 對映引擎慣用的中文單字兵種名(SGZ.TROOPS = ["騎","盾","弓","槍","器"], 見 engine.js)。
+  const TROOP_ENUM_TO_ZH = { CAVALRY: "騎", SHIELD: "盾", BOW: "弓", SPEAR: "槍", SIEGE: "器" };
+  // 語意(對齊 data/tactics.json 原始欄位, 非本檔推導): troopLimit 缺欄位/null/空陣列 = 資料
+  // 未標註限制(373筆中66筆為此狀態, 幾乎全是 source:"INHERITANCE" 的一般傳承戰法如白眉——
+  // 資料缺口, 不是「限制成0種兵種可用」, 若誤判成後者會讓66筆正常戰法變成永遠配不出去的
+  // 死欄位), 一律視為「不限制」(可裝載於任何兵種)。非空陣列且不含目標兵種才是真正限制。
   function troopMismatch(t, troop) {                  // true=戰法要求的兵種與隊伍選定兵種不符, 應整條排除
-    if (!t || t.cat !== "TROOP") return false;
-    const need = TROOP_ONLY[t.nameZh];
-    return !!need && need !== troop;
+    if (!t || !Array.isArray(t.troopLimit) || !t.troopLimit.length) return false;
+    return !t.troopLimit.some(en => TROOP_ENUM_TO_ZH[en] === troop);
   }
   // 「主動觸發依賴」戰法/兵書 —— 效果掛 activeOnly(僅主動戰法造成的傷害才吃, 如鬼謀/士爭
   // 先赴)或戰法級 when.on==="activeFired" 且未指定 who(隱含=自身, 綁定「自己」的主動戰法
@@ -472,9 +473,10 @@
   }
 
   // ---- 決選: 貪心配傳承戰法 —— 按 quality S>A>B 優先 + type 與隊伍現有戰法互補(避免同隊重複 command/charge 過量) + 不與自帶衝突(同名) ----
-  // 批49 C: team 現為「主將排列後」的陣列(team[0]=主將), troop 為本輪決選採用的兵種(供 TROOP
-  // 類戰法兵種匹配過濾)。新增語意過濾: (1) teamGate 不滿足的陣法整條排除(如潛龍陣三陣營異等
-  // 但隊伍不符); (2) TROOP 類戰法要求的兵種與 troop 不符者整條排除(非降檔, 直接不指派);
+  // 批49 C: team 現為「主將排列後」的陣列(team[0]=主將), troop 為本輪決選採用的兵種(供
+  // troopLimit 兵種合法性過濾)。新增語意過濾: (1) teamGate 不滿足的陣法整條排除(如潛龍陣三
+  // 陣營異等但隊伍不符); (2) 批E: troopLimit(見上方 troopMismatch)與 troop 不符者整條排除
+  // (非降檔, 直接不指派——傳承戰法只應指派給隊伍實際能裝載的兵種, 否則是非法配置);
   // (3) activeOnly/activeFired 依賴「持有者自身有主動戰法」的戰法, 持有者(含此次已指派的
   // 傳承)沒有 type:"active" 戰法時排除; (4) ifLeaderIs 指名武將不在隊上時降檔(排到候選池
   // 最後, 除非其 base 段本身仍勝過其他選項才會被選中——用「附加惰性排序鍵」而非直接排除,
@@ -486,7 +488,7 @@
     const pool = names.map(nm => ({ nm, t: TAC_DATA[nm], tier: TAC_TIER[nm] || "C" }))
       .filter(x => x.t && x.t.type !== "none")
       .filter(x => !(x.t.teamGate && !teamGateOkLocal(x.t.teamGate, factions)))     // (1) teamGate 不滿足整條排除
-      .filter(x => !troopMismatch(x.t, troop))                                     // (2) TROOP 兵種不符整條排除
+      .filter(x => !troopMismatch(x.t, troop))                                     // (2) troopLimit 兵種不符整條排除(批E)
       .sort((a, b) => {
         const dl = (leaderIsUndeployed(a.t, team) ? 1 : 0) - (leaderIsUndeployed(b.t, team) ? 1 : 0);   // (4) ifLeaderIs指名不在隊降檔
         if (dl) return dl;

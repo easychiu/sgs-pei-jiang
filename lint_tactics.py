@@ -2900,6 +2900,13 @@ def _r32_dispatch_shape(p):
 R32_UNIVERSAL_TOP_FIELDS = {
     "nameZh", "type", "kind", "coef", "rate", "n", "nMax", "prep", "effects",
     "quality", "cat", "src", "note", "name",
+    # troopLimit(批E新增, reparse_effects.py 從 data/tactics.json 原樣複製): 團隊構築約束
+    # (該戰法可被哪些兵種傳承/裝載), 非戰鬥結算約束——已裝載戰法的戰鬥數學不受兵種影響,
+    # 由 docs/matchmaker.js 的 pickInheritTactics()/troopMismatch() 在「指派傳承戰法給隊伍」
+    # 這一步驟讀取並過濾非法配置, 依設計不應也不需要被 sgz.py/engine.js 任何 dispatch shape
+    # 讀取(同 quality/cat 一樣是「戰鬥外」的metadata, 供上層UI/配將器使用), 故與它們同列
+    # universal 安全清單, 不算孤兒欄位。
+    "troopLimit",
     "extraHits",  # fight()主迴圈(active/command/passive)/do_normal_attack()(charge)/
     # on_hit_for()/dealt_damage_for()/active_fired_for() 皆讀取 t.get("extraHits") 呼叫
     # fire_extra_hits(), 六個分派路徑一致支援, 全域安全。

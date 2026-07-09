@@ -928,6 +928,7 @@ def main():
     batch9_tagged_names = []
     n_rate_scale_backfilled = 0
     rate_scale_backfilled_names = []
+    n_trooplimit_filled = 0                               # 批E: troopLimit 原樣複製筆數
 
     for p in parsed:
         if p.get("type") == "none":
@@ -951,6 +952,26 @@ def main():
                 p["coef"] = new_coef
                 n_coef_filled += 1
             touched_meaningful = True
+
+        # --- 1b) 批E: troopLimit(可裝載兵種陣列) 原樣複製 raw -> parsed --------------
+        # 本文權威欄位(值域: CAVALRY/SHIELD/BOW/SPEAR/SIEGE), 373筆定稿本文307筆非空
+        # (其中272筆為「全5兵種」=無實質限制的預設值, 35筆是真正限制某些兵種的專屬戰法)。
+        # 純資料透傳(不解析/不推導), 供 matchmaker.js 傳承指派時做合法性過濾(見該檔
+        # pickInheritTactics/troopMismatch 說明)。66筆 raw 無此欄位(如自帶類/內政類戰法未
+        # 標註)時, parsed 亦不寫入該鍵(維持「無此欄位=不限制」的預設語意, 與既有
+        # coef/rate 等欄位 None 時不強寫的慣例一致)。不計入 touched_meaningful(與 rate
+        # 同理: 幾乎每筆都可核對是否有 troopLimit, 但「有」不代表該戰法效果資料已完整解析)。
+        if "troopLimit" in r:
+            want_tl = r.get("troopLimit")
+            if p.get("troopLimit") != want_tl:
+                if want_tl is None:
+                    p.pop("troopLimit", None)
+                else:
+                    p["troopLimit"] = list(want_tl)
+                n_trooplimit_filled += 1
+        elif "troopLimit" in p:
+            del p["troopLimit"]                           # raw 已移除該欄位, parsed 同步清除(冪等/一致性)
+            n_trooplimit_filled += 1
 
         # --- 2) 發動率 -> rate ---------------------------------------------------
         # 先決定「目標 rate 值」再一次寫入, 避免 2a(寫 activationRate)接著被
@@ -1318,6 +1339,7 @@ def main():
 
     print("=== effectText 回填報告 ===")
     print(f"coef 回填: {n_coef_filled}")
+    print(f"troopLimit(可裝載兵種) 原樣複製/更新: {n_trooplimit_filled}（批E, 見 data/tactics.json 本文權威值）")
     print(f"rate 回填: {n_rate_filled}")
     print(f"n(目標數) 回填: {n_n_filled}")
     print(f"dur(持續回合) 回填: {n_dur_filled}")
