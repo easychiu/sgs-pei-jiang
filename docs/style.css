@@ -51,6 +51,22 @@ button{cursor:pointer;font-family:inherit}
 .tier{display:inline-block;min-width:15px;text-align:center;font-size:10px;font-weight:700;
   border-radius:3px;padding:0 3px;margin-right:5px;color:#1b140e}
 .tier.tS{background:#e8c061}.tier.tA{background:#c8a2d8}.tier.tB{background:#8fb6d8}
+
+/* 批51: 武將聯賽階徽章(ltier) —— 刻意與戰法品質階(.tier, 方形色塊)區分視覺樣式, 用圓角
+   徽標+左側▲圖示避免user混淆「戰法多強」與「武將聯賽勝率多高」兩種不同意義的S/A/B/C。 */
+.ltier{display:inline-flex;align-items:center;gap:2px;font-size:10px;font-weight:700;
+  border-radius:10px;padding:1px 7px 1px 5px;color:#1b140e;white-space:nowrap}
+.ltier::before{content:"▲";font-size:8px}
+.ltier.lS{background:linear-gradient(135deg,#f0d98a,#d4af37)}
+.ltier.lA{background:linear-gradient(135deg,#e0b8ea,#c8a2d8)}
+.ltier.lB{background:linear-gradient(135deg,#b0d0ea,#8fb6d8)}
+.ltier.lC{background:linear-gradient(135deg,#cbb99a,#a8916f)}
+/* 統籌補充: 戰法未建模武將(dataComplete:false)的評分是資料缺失壓低的地板分——
+   徽章灰化半透明+虛線框降級樣式, tooltip 提示「評分僅供參考」, 避免誤導使用者。 */
+.ltier.lIncomplete{background:#4a4238;color:#9a8b6a;opacity:.65;border:1px dashed #6b5a3e}
+.gcard .ltier{position:absolute;top:6px;right:6px;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.gcard{position:relative}
+.gcard .winrate{font-size:10px;color:#9a8b6a;margin-top:1px}
 #trTabs .catchip{color:var(--gold2);font-size:12px;padding:3px 9px}
 #trTabs .catchip.on{background:#2a2212;border-color:var(--gold);color:var(--gold)}
 .tracelog{max-height:55vh;overflow:auto;font-size:12px;line-height:1.7;background:#1b140e;
