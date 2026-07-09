@@ -23,7 +23,9 @@
     "k": "extra",
     "who": "self",
     "val": 0.2,
-    "dur": 99
+    "dur": 99,
+    "scale": "intel",
+    "_note2": "批50 C: 原文『每回合有一定機率獲得連擊狀態（受智力屬性影響）』明確標註『受智力屬性影響』, 過去遺漏scale欄位, 連擊機率完全不受智力縮放。補scale:\"intel\"對稱三軍之眾(批33同類修正, 見同檔heal效果_note)。曲線族未定: engine.js/sgz.py 目前 k===\"extra\" 的結算(pushAdd(\"extra\", e.val, ...))直接使用e.val, 尚未接上scaleOf()縮放通道(對照k===\"rateup\"/\"chargeup\"已有e.scale消費邏輯, extra這條尚缺), 此筆先補資料層scale標記供未來查找, 除數350/384.6(對稱rateup)待實測樣本才裁決, 且需先確認engine.js的extra結算要不要新增scale消費(此為讀取引擎範圍, 本批不動engine.js數學)。"
    }
   ]
  },

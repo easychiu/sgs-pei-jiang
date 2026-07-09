@@ -155,35 +155,66 @@
   }
 
   // ---- 粗篩: 啟發式評分(毫秒級), 全池配對取前 N ----
-  // 評分項: 緣分命中 + 同陣營加成 + 兵種適性重疊(隊伍兵種一致性) + 角色互補 + 主將位安排(統率高者優先居首)
+  // 評分項: 緣分命中 + 同陣營加成 + 兵種適性重疊(隊伍兵種一致性) + 角色互補
+  // 批50: 權重依據化改造。原權重(緣分+60/陣營+25/適性×18/角色+14/主將位±8~10)為批48拍腦袋
+  // 訂定, 從未驗證過與實際模擬勝率的關係。實驗方法: 對呂布(輸出)/華佗(輔助)/張角(控制)三個
+  // 代表anchor各自全池配對(~18314組)算粗篩分, 從排名151-500與500名以後分層抽樣共400組,
+  // 用 vsGauntletWinRate(n=100, 與現行stage2同函式同口徑)取得「真實模擬勝率」金標準, 量測
+  // 粗篩分數與勝率的Spearman相關、各子項單項相關、並用該樣本做子項對勝率的最小二乘回歸。
+  // 見 scratchpad/funnel_validation.json(原始量測資料)。核心發現(2026-07-09驗證):
+  //  1) 舊權重的「漏網率」達100%——三個anchor中, 抽樣池(排名151名以後)裡真實勝率最高的
+  //     5組, 沒有一組的粗篩分數搆得上進舊top-5的門檻(舊top5分數普遍135~178, 但抽樣池裡
+  //     真實勝率最高的組合分數常只有110~140)。舊top-5平均勝率(0.34~0.61)雖仍優於中後段
+  //     平均(高於中後段均值的比例僅約14%), 代表粗篩不是純噪音, 但個別「漏網好組合」大量
+  //     存在, 值得改造。
+  //  2) 粗篩分數 vs 勝率 Spearman: 呂布0.37 / 華佗0.42 / 張角0.13(三anchor不穩定, 對控制型
+  //     anchor幾乎失效)。
+  //  3) 子項單項相關(pooled回歸, win ~ 子項, 見scratchpad/regression_beta.json): 兵種適性
+  //     (troopScore)迴歸係數換算「全值域勝率擺幅」約+1.60(全樣本最強訊號, 遠超其餘四項總和),
+  //     角色互補(roleScore)約+0.40居次, 緣分(bondScore)約+0.20(樣本中緣分命中僅3/1200組,
+  //     訊號方向為正但因稀疏, 信賴區間寬, 不宜就此斷定緣分無用——緣分效果本身在引擎內是
+  //     真實加成, 只是「抽樣中太少見, 統計檢定力不足」, 保守做法是保留但不特意放大), 陣營
+  //     (facScore)約-0.04(接近零甚至微負, 三人同陣營在粗篩層級幾乎不預測勝率——注意這不等於
+  //     「陣營戰法/兵書的隊內加成無效」, 只是「粗篩用陣營人數當代理變數」這個做法本身在這批
+  //     樣本裡沒有鑑別力), 主將位啟發式(leaderScore)約+0.001(幾乎零, 三anchor的leaderScore
+  //     符號甚至偏負相關——判斷合理: 決選階段批49已有精確的leaderPermutations語意排列比較,
+  //     粗篩層級這個「統率最高者當主將」的近似規則對勝率没有預測力, 是純噪音項)。
+  //  4) 改造方案: 用同一份400×3樣本重新配權重(保留原公式結構, 只調係數, 維持程式碼可讀性
+  //     與既有呼叫介面), 在獨立(不同亂數種子)holdout樣本驗證: 新權重在中後段樣本池選出的
+  //     top5, 平均模擬勝率呂布0.518→0.612 / 華佗0.185→0.370 / 張角0.620→0.749, 三anchor
+  //     全面優於舊權重, 未劣化。主將位啟發式(舊±8/-10)因對勝率無預測力, 予以移除(決選階段
+  //     leaderPermutations已涵蓋語意層面的主將排列判斷, 粗篩不需要這個近似)。
   function heuristicScore(POOL, BONDS, anchor, mate1, mate2) {
     const names = [anchor.name, mate1.name, mate2.name];
     const team = [anchor, mate1, mate2];
     let score = 0;
-    // 緣分: 命中的緣分效果數量加權(以 effects 條數約略估權重, 每條+18, 封頂避免單一緣分獨佔)
+    // 緣分: 命中的緣分效果數量加權(每條+18, 封頂60)。批50驗證: 樣本中緣分命中太稀疏
+    // (1200組中僅3組), 迴歸信賴區間寬但方向為正, 維持原權重不變(保留而非放大或砍除)。
     const bonds = (BONDS || []).filter(b => (b.generals || []).filter(n => names.includes(n)).length >= (b.triggerCount || 99));
     score += Math.min(60, bonds.reduce((s, b) => s + (b.effects || []).length * 18, 0));
-    // 同陣營: 三人同陣營 +25, 兩人同陣營 +10(給 FACTION 陣營乘算加成留餘地)
+    // 同陣營: 批50驗證迴歸係數接近零(全值域擺幅約-0.04, 三人同陣營對勝率幾乎無鑑別力),
+    // 原+25/+10大幅下修為+4/+1.6(降至約1/6, 保留小幅存在感而非完全歸零——理論上陣營戰法/
+    // 兵書仍可能有隊內協同, 只是這個「數人頭」代理變數量不到, 不宜武斷歸零外推)。
     const facCount = {};
     team.forEach(g => facCount[g.faction] = (facCount[g.faction] || 0) + 1);
     const maxFac = Math.max(...Object.values(facCount));
-    score += maxFac === 3 ? 25 : (maxFac === 2 ? 10 : 0);
-    // 兵種適性重疊: 找三人總適性最高的兵種, 分數即三人在該兵種的適性百分比總和(換算)
+    score += maxFac === 3 ? 4 : (maxFac === 2 ? 1.6 : 0);
+    // 兵種適性重疊: 批50驗證全樣本最強訊號(全值域擺幅約+1.60, 遠超其餘四項總和), 原×18
+    // 倍率上修為×36(約2倍), 讓粗篩排序更貼近「兵種適性是勝率的主要驅動」這個實測結論。
     let bestTroopSum = 0;
     for (const tp of SGZ.TROOPS) {
       const s = team.reduce((a, g) => a + SGZ.aptPct(g, tp), 0);
       if (s > bestTroopSum) bestTroopSum = s;
     }
-    score += bestTroopSum * 18;                       // 3人全S(1.2×3=3.6)上限約65
-    // 角色互補: 三人自帶戰法角色集合聯集越大越好(輸出/控制/治療/輔助 四種盡量都覆蓋)
+    score += bestTroopSum * 36;                       // 3人全S(1.2×3=3.6)上限約130
+    // 角色互補: 批50驗證訊號居次(全值域擺幅約+0.40), 原×14小幅上修為×16。
     const roleUnion = new Set();
     team.forEach(g => generalRoles(g).forEach(r => roleUnion.add(r)));
-    score += roleUnion.size * 14;                     // 最多4種 -> +56
-    // 主將位安排: 錨點固定為主將(隊伍index0), 若錨點統率不是三人最高則扣分(戰法ifLeader/主將位需求粗略近似)
-    const cmds = team.map(g => g.base.command);
-    if (anchor.base.command < Math.max(...cmds) - 5) score -= 10;
-    // 主將自帶 active/command 型戰法通常適合站主將位(輸出/指揮核心), 給小加成
-    if (anchor.tactic && (anchor.tactic.type === "command" || anchor.tactic.type === "active")) score += 8;
+    score += roleUnion.size * 16;                      // 最多4種 -> +64(16/角色, 與原14相近但驗證後小幅上修)
+    // 批50: 移除原「主將位安排」項(錨點統率高低±8/-10) —— 迴歸係數約+0.001(全值域擺幅
+    // 接近零, 三anchor符號甚至偏負), 對勝率無預測力, 純噪音。主將排列的語意判斷已由決選
+    // 階段 leaderPermutations(批49)精確處理(guardFor/ifLeaderIs等結構化訊號), 粗篩層級這個
+    // 「統率最高者當主將」的粗略近似不需要保留。
     return Math.round(score);
   }
 
@@ -452,6 +483,8 @@
     // 批49: 供 E2E 測試腳本直接驗證語意約束
     isGuardLeaderTactic, leaderFitness, leaderPermutations, leaderSeekingInfo, namedLeaderInTeam,
     troopMismatch, requiresOwnActive, holderHasActiveTactic, weightedTroopRanking, top2Troops, buildReason,
+    // 批50: 供漏斗驗證實驗腳本(scratchpad/funnel_validate.js)直接呼叫, 與 stage2 用同一支勝率函式(口徑一致)
+    vsGauntletWinRate,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = root.Matchmaker;
 })(typeof window !== "undefined" ? window : globalThis);
