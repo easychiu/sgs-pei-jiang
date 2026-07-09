@@ -930,7 +930,24 @@
       for (const t of u.tactics) {
         const up = t.proc ? 0 : u.addbonusFor("chargeup", t);
         if (t.type === "charge" && rnd() < t.rate + up) {
-          if (t.coef) hit(u, tgt, t.coef, t.kind, false, onHit, onDeal, undefined, true);
+          if (t.coef) {
+            // 批D(R32): 對稱 sgz.py 同名分支(見其詳細註解) —— 突擊分派過去無條件只對已選定
+            // 的單一 tgt 打一次, 不讀頂層 n/nMax/hitsRepeat, 「對敵軍全體」(一騎當千)AoE與
+            // 「發動三次隨機打擊」(摧鋒斷刃 hitsRepeat)皆被靜默塌縮成單體單次。cnt<=1 維持
+            // 原行為零回歸。
+            let cnt = t.n || 1;
+            if (t.nMax) cnt = cnt + Math.floor(rnd() * (t.nMax - cnt + 1));
+            if (cnt <= 1) {
+              hit(u, tgt, t.coef, t.kind, false, onHit, onDeal, undefined, true);
+            } else if (t.hitsRepeat) {
+              for (let i = 0; i < cnt; i++) {
+                const v = pickTarget(fo);
+                if (v) hit(u, v, t.coef, t.kind, false, onHit, onDeal, undefined, true);
+              }
+            } else {
+              for (const v of pickTargets(fo, cnt)) hit(u, v, t.coef, t.kind, false, onHit, onDeal, undefined, true);
+            }
+          }
           if (t.extraHits) fireExtraHits(u, t, tgt, alliesOf, foesOf, onHit, onDeal);
           applyEffects(u, tgt, t, al, fo);
           if (activeFiredFn) activeFiredFn(u);

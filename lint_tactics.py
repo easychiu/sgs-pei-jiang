@@ -2852,6 +2852,138 @@ def check_r31(p, txt):
     return violations
 
 
+# ---------------------------------------------------------------------------
+# R32(批D): 頂層戰法欄位孤兒偵測 —— 對稱 R9(效果級, 依 e["k"] 分類白名單), 但檢查戰法
+# 「頂層」欄位(effects[]陣列以外的鍵, 如 lockTarget/targetSel/cd/rateLeader/rateScale/
+# hitsRepeat/ammo等)。這類欄位過去完全無規則巡檢——R9 只逐一走訪 p.get("effects", [])
+# 內的物件, 從不檢查 p 自身的頂層鍵。
+#
+# 病根: 引擎依「type + 頂層 when.on」把戰法分派到不同函式各自處理(fight()主迴圈的
+# active/command/passive一般路徑 / do_normal_attack()的charge突擊分支 / on_hit_for()、
+# dealt_damage_for()、healed_for()、active_fired_for()、fire_controlled() 等反應式事件
+# 函式), 每個函式各自只讀取自己認得的頂層欄位子集。某戰法宣告的頂層欄位若剛好落在「引擎
+# 實際會分派到的那個函式不讀取」的名單外, 就是100%讀不到的孤兒(批D實測案例: 虎痴
+# type==passive+coef==0 連fire擲骰條件都不成立, 其 lockTarget:true 從未被讀取; 陷陣突襲
+# when.on=="activeFired" 走 active_fired_for(), 該函式的coef傷害段固定 pick_targets(),
+# 完全不讀 lockTarget; 修復前的摧鋒斷刃 type==charge, do_normal_attack()的charge分支過去
+# 只对已選定的單一目標打一次, 完全不讀 n/nMax/hitsRepeat, 「發動三次隨機打擊」被靜默塌縮
+# 成一次——本批已修復引擎本身補上讀取, 見 sgz.py/engine.js do_normal_attack()/
+# doNormalAttack() 同批註解)。詳見 engine_limitations.md 對應節。
+#
+# 下列白名單逐一核對 sgz.py/engine.js 原始碼行為得出(非猜測/非直接沿用資料本身現狀),
+# 核對方法見批D任務: 讀 apply_effects()/applyEffects() 完整分派段 + fight() 主迴圈 +
+# do_normal_attack()/doNormalAttack() + on_hit_for()/dealt_damage_for()/healed_for()/
+# active_fired_for()/fire_controlled() 六個涉及頂層欄位讀取的函式全文, 逐一確認每個頂層
+# 欄位的讀取條件式。
+# ---------------------------------------------------------------------------
+
+def _r32_dispatch_shape(p):
+    """回傳本戰法的「頂層欄位讀取路徑」形狀字串, 供比對 PER_SHAPE_TOP_FIELDS。
+    reactive(頂層 when.on 存在): fight()主迴圈與do_normal_attack()明確排除這類戰法
+    (見 _when_ok()/_whenOk() 對 when.on 的排除式, 以及 command/passive 分支條件式的
+    同款排除, sgz.py fight() 對應段), 改由 on 值對應的事件函式讀取, 形狀 = "reactive:<on>"。
+    charge/active/command/passive: 直接對應 type 值。
+    其餘(如 type=="none", 內政/幽靈條目不參與戰鬥): 回傳 None, 呼叫端整戰法跳過
+    (比照既有 R1-R31 對 type=="none" 的一致處理)。"""
+    when = p.get("when") or {}
+    if when.get("on"):
+        return f"reactive:{when['on']}"
+    t = p.get("type")
+    if t in ("active", "command", "passive", "charge"):
+        return t
+    return None
+
+
+# 全域安全欄位: 與 dispatch shape 完全無關, 任何 type/when.on 組合皆讀得到。
+# "_"開頭的揭露欄位(_todo/_note/_est/_evidence/_bucket/_history/_diff等任意寫法)在
+# check_r32() 內用 field.startswith("_") 統一放行, 不需要在此逐一列舉。
+R32_UNIVERSAL_TOP_FIELDS = {
+    "nameZh", "type", "kind", "coef", "rate", "n", "nMax", "prep", "effects",
+    "quality", "cat", "src", "note", "name",
+    "extraHits",  # fight()主迴圈(active/command/passive)/do_normal_attack()(charge)/
+    # on_hit_for()/dealt_damage_for()/active_fired_for() 皆讀取 t.get("extraHits") 呼叫
+    # fire_extra_hits(), 六個分派路徑一致支援, 全域安全。
+    "choices",    # 同上, 六個分派路徑皆用 dict(t0, **pick_choice(t0["choices"])) 合成視圖
+    # 的一致慣例(fight()主迴圈/on_hit_for()/dealt_damage_for()皆有此段), 全域安全。
+    "when",       # 本身就是決定 shape 的欄位; reactive shape 下 when 顯然被讀取(否則無從
+    # 判斷shape); 非reactive shape 下 when.rounds/from/until/parity 由 round_ok()/roundOk()
+    # 統一支援(fight()主迴圈active/command/passive分支皆呼叫 _when_ok()/_whenOk()), 安全。
+    # teamGate: Unit.__init__ 建構時期一次性過濾(team_gate_ok()/teamGateOk()), 早於任何
+    # dispatch shape 判斷發生, 全域安全。
+    "teamGate",
+    # everyN: do_normal_attack() 對 u.tactics 做「無條件全體掃描」(tick_every_n()/
+    # tickEveryN()), 與「本戰法自己的 type/when.on 是否真的 fire」完全無關(即使該戰法
+    # 本身從未透過 active/command/passive/charge 任何一種方式成功 fire 過, everyN 仍會被
+    # 這個獨立的、每回合對 u.tactics 全體掃描的迴圈掃到), 全域安全。
+    "everyN",
+}
+
+# 依 dispatch shape 分類的白名單(對稱 R9 的 PER_KIND_FIELDS, 但 key 換成 shape 字串而非 k)。
+# active/command/passive 三者在 fight() 主迴圈共用同一段「if fire:」之後的程式碼(ammo/cd/
+# rateLeader/rateScale等頂層欄位讀取邏輯完全共用, 見 sgz.py fight() 對應段), 故共用同一組
+# _ACPA_SHARED。但 lockTarget/targetSel(頂層)/hitsRepeat/effectsPerHit 這4個只在
+# t["coef"] 為真值時才會進入讀取它們的「if t['coef']:」程式碼區塊——coef==0 的戰法(如
+# 虎痴)連這個區塊都進不去, 故額外用 _ACPA_COEF_GATED 分離出來, 由 check_r32() 依
+# p.get("coef") 決定是否納入允許集合。
+_ACPA_SHARED = {
+    "cd", "rateLeader", "rateScale", "rateScaleDiv", "scaleDiv", "whenLeader",
+    "ammo", "ammoReloadLeader", "sameSrcCoef", "rateScaleIfGender",
+}
+_ACPA_COEF_GATED = {"lockTarget", "targetSel", "hitsRepeat", "effectsPerHit"}
+PER_SHAPE_TOP_FIELDS = {
+    "active": _ACPA_SHARED | _ACPA_COEF_GATED,
+    "command": _ACPA_SHARED | _ACPA_COEF_GATED,
+    "passive": _ACPA_SHARED | _ACPA_COEF_GATED,
+    # 批D(R32): do_normal_attack()/doNormalAttack() 的 charge 分支新增 n/nMax/hitsRepeat
+    # 支援(cnt<=1 沿用原行為單體單次, 零回歸; hitsRepeat 時N次獨立選標可重複命中同一目標;
+    # 否則 pick_targets 不重複群體/AoE), 見同批引擎註解。lockTarget/targetSel(頂層)/
+    # effectsPerHit 對 charge 型目前仍不支援(do_normal_attack() 未實作, 全庫核對目前無
+    # 戰法需要, 未來若有新戰法需求須另外擴充引擎+於此登記, 否則就是下一個孤兒)。
+    "charge": {"hitsRepeat"},
+    # 反應式各 on 值分派到不同事件函式, 各自實作進度不同(逐一讀原始碼核對, 非通用假設):
+    # on_hit_for(): 讀 rateLeader(批C新增, 對稱active型既有頂層rateLeader分派)/
+    # rateScale+rateScaleIfGender(批52既有, 魅惑)。
+    "reactive:attacked": {"rateLeader", "rateScale", "rateScaleIfGender", "rateScaleDiv"},
+    "reactive:damaged": {"rateLeader", "rateScale", "rateScaleIfGender", "rateScaleDiv"},
+    # dealt_damage_for(): 讀 targetSel(批32 B新增, 監統震軍「對負傷最高之敵造成謀略傷害」)。
+    # 未讀 rateLeader/rateScale(全庫核對目前無 on:"dealtDamage" 戰法需要, 若未來新增必須
+    # 同步在此登記+補 dealt_damage_for()/dealtDamageFor() 讀取, 否則會是下一個孤兒)。
+    "reactive:dealtDamage": {"targetSel"},
+    # active_fired_for()/healed_for()/fire_controlled(): 逐一讀原始碼確認皆不讀本規則
+    # 列管的任何頂層稀有欄位(active_fired_for()的coef傷害段固定用pick_targets(), 無
+    # lockTarget/targetSel/rateLeader任何分支) —— 陷陣突襲的lockTarget死欄位即屬此類。
+    # healed_for() 本身甚至只支援效果級 on_heal_effect_tacs, 不支援戰法級 on_heal_tacs
+    # (已建但未讀, 見Unit.__init__/healed_for()註解), 若未來有戰法宣告頂層
+    # when:{"on":"healed"} 會是比單一欄位孤兒更嚴重的「整戰法死亡」, 全庫核對目前無此案例
+    # (見lint_tactics.py R32 selftest對此的陰性樣例覆蓋)。
+    "reactive:activeFired": set(),
+    "reactive:healed": set(),
+    "reactive:controlled": set(),
+}
+
+
+def check_r32(p, txt):
+    violations = []
+    shape = _r32_dispatch_shape(p)
+    if shape is None:                          # type=="none"等非戰鬥形狀, 不參與戰鬥, 跳過(同既有R1-R31慣例)
+        return violations
+    allowed = R32_UNIVERSAL_TOP_FIELDS | PER_SHAPE_TOP_FIELDS.get(shape, set())
+    coef_note = ""
+    if shape in ("active", "command", "passive") and not p.get("coef"):
+        allowed = allowed - _ACPA_COEF_GATED    # coef==0 時 coef段專屬的4個欄位讀不到(見上方PER_SHAPE_TOP_FIELDS說明)
+        coef_note = ", coef=0(該shape的coef段專屬欄位讀不到)"
+    for field, val in p.items():
+        if field.startswith("_") or field in allowed:
+            continue
+        violations.append({
+            "name": p["nameZh"], "rule": "R32",
+            "message": f"頂層欄位 {field!r}={val!r} 在本戰法的 dispatch shape={shape}{coef_note} "
+                       "下無任何引擎程式碼讀取(孤兒欄位), 見engine_limitations.md R32節",
+            "evidence": f"type={p.get('type')} when={json.dumps(p.get('when'), ensure_ascii=False)} coef={p.get('coef')}",
+        })
+    return violations
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
@@ -2861,7 +2993,7 @@ RULES = [
     ("R20", check_r20), ("R21", check_r21), ("R22", check_r22),
     ("R23", check_r23), ("R24", check_r24), ("R25", check_r25), ("R26", check_r26),
     ("R27", check_r27), ("R28", check_r28), ("R29", check_r29), ("R30", check_r30),
-    ("R31", check_r31),
+    ("R31", check_r31), ("R32", check_r32),
 ]
 
 
@@ -3336,6 +3468,33 @@ SELFTEST_CASES = {
                                         "targetSel": "maxTroop",
                                         "_note": "targetSel:\"maxTroop\"精確選中兵力最高目標"}]),
          "使敵軍兵力最高的武將嘲諷我軍全體，並使其受到的傷害提高10%→20%", False),
+    ],
+    "R32": [
+        ("虎痴式回歸(coef=0的passive型lockTarget讀不到, 應抓到)",
+         _base_tactic(type="passive", coef=0, lockTarget=True),
+         "戰鬥中，每回合選擇一名敵軍單體…", True),
+        ("同一lockTarget欄位, coef>0的active型讀得到, 不應誤報",
+         _base_tactic(type="active", coef=1.5, n=1, lockTarget=True),
+         "戰鬥中，每回合選擇一名敵軍單體…", False),
+        ("陷陣突襲式回歸(when.on==activeFired反應式不支援lockTarget, 應抓到)",
+         _base_tactic(type="passive", coef=0.95, when={"on": "activeFired"}, lockTarget=True),
+         "自身成功發動突擊戰法後，對目標發動1次兵刃攻擊", True),
+        ("摧鋒斷刃式回歸(charge型+hitsRepeat, 批D修復後應讀得到, 不應誤報)",
+         _base_tactic(type="charge", coef=0.5, n=3, hitsRepeat=True),
+         "普攻後發動三次隨機打擊", False),
+        ("rateLeader用在reactive:dealtDamage(該shape未支援rateLeader讀取, 應抓到)",
+         _base_tactic(type="passive", coef=1.0, when={"on": "dealtDamage"}, rateLeader=0.6),
+         "自身造成傷害時…自身為主將時機率提升", True),
+        ("同一rateLeader用在reactive:attacked(淵然難測式, on_hit_for()已支援, 不應誤報)",
+         _base_tactic(type="passive", coef=0, when={"on": "attacked"}, rateLeader=0.6,
+                      effects=[{"k": "amp", "who": "self", "val": 0.03, "dur": 1}]),
+         "自身受到攻擊時…自身為主將時機率提升", False),
+        ("完全未知的頂層欄位名稱(疑似手誤/新原語忘記登記, 應抓到)",
+         _base_tactic(type="active", coef=1.0, n=1, totallyUnknownField=True),
+         "對敵軍單體造成兵刃攻擊", True),
+        ("type==none的內政戰法整戰法跳過, 不應誤報(即使帶著奇怪欄位)",
+         _base_tactic(type="none", coef=0, totallyUnknownField=True),
+         "內政類戰法，不參與戰鬥", False),
     ],
 }
 

@@ -2938,3 +2938,156 @@ A0.0/Node A0.008)、關興/張苞/黃月英 vs 孫尚香/SP皇甫嵩/諸葛恪(P
 A0.338)、SP典韋/SP馬超/SP呂蒙 vs SP周瑜/SP曹真/SP關羽(Python A0.0/Node A0.0)、魯肅/
 SP朱儁/陸遜 vs 凌統/張姬/法正(Python A1.0/Node A1.0)。另以鏡像對局(同隊打自己)排除
 Match 1的極端0/1勝率為系統性bug而非戰力失衡(結果56/44, 屬正常先手優勢範圍)。
+
+## 49. 批D: R32頂層戰法欄位孤兒偵測(治本) —— 建規則+全庫掃描+5筆確認個案+charge型
+新primitive(n/nMax/hitsRepeat AoE支援)
+
+**背景**: 承批C「另22處孤兒欄位散在其餘300+筆(spawn_task追蹤, task_07a34659)」的制度性
+發現。**鐵律0: 本批禁止spawn子代理**, 全程單一agent完成。批C點名的3個範例
+(`剛勇無前.when`/`據水斷橋.cd`/`魅惑.rateScale`)逐一以「讀原始碼確認實際讀取路徑」的
+方式重新核實, 結果**三者皆為false alarm**——`剛勇無前.when.dmgType`已由批39 C的
+`on_hit_for()`/`onHitFor()`正確讀取(dmg_type_ok判斷式明確點名本戰法)、`據水斷橋.cd`已由
+批52的真冷卻機制(`t.cd`+`u.tac_cd`/`tacCd`)正確讀取、`魅惑.rateScale`+`rateScaleIfGender`
+已由批52的`on_hit_for()`女性觸發率縮放分支正確讀取。這說明batch C當初的22筆清單很可能是
+「粗篩候選」而非逐一驗證過的確診名單, 本批的價值正是把「候選」轉成「有證據的確診」。
+
+### A. R9 vs R32 的範圍界定
+
+`lint_tactics.py`既有的**R9**(`KNOWN_EFFECT_FIELDS`/`PER_KIND_FIELDS`)已完整覆蓋
+**效果級**(`effects[i]`陣列內, 依`e["k"]`分類)的欄位孤兒偵測, 且經核對維護得相當精確,
+本批未發現其白名單有誤。真正的空白地帶是**戰法頂層欄位**(`effects`陣列以外的鍵, 如
+`lockTarget`/`targetSel`/`cd`/`rateLeader`/`rateScale`/`hitsRepeat`/`ammo`等)——R9從不
+檢查`p`自身的頂層鍵, 而這正是batch C實際抓到的3個bug(`rateLeader`/`cd`/**均為頂層**,
+非`effects[]`內)所在的namespace。
+
+### B. 病根與R32設計
+
+引擎依「`type` + 頂層`when.on`」把戰法分派到不同函式各自處理, 每個函式各自只讀取自己
+認得的頂層欄位子集:
+- `fight()`主迴圈: `type in (active, command, passive)`的一般路徑(共用同一段「`if fire:`」
+  之後的程式碼, 含`ammo`/`cd`/`rateLeader`/`rateScale`/`whenLeader`讀取; 但`lockTarget`/
+  `targetSel`(頂層)/`hitsRepeat`/`effectsPerHit`只在`t["coef"]`為真值的「`if t['coef']:`」
+  區塊內才讀取)。
+- `do_normal_attack()`/`doNormalAttack()`: `type=="charge"`的突擊分支。
+- `on_hit_for()`(`when.on in ("attacked","damaged")`)/`dealt_damage_for()`
+  (`when.on=="dealtDamage"`)/`active_fired_for()`(`when.on=="activeFired"`)/
+  `healed_for()`(僅支援效果級`on_heal_effect_tacs`, 不支援戰法級)/`fire_controlled()`
+  (`when.on=="controlled"`, 目前全庫無戰法使用): 五個反應式事件函式, 各自實作進度不同,
+  **不是每個都對稱支援同一組頂層欄位**。
+
+某戰法宣告的頂層欄位若剛好落在「引擎實際會分派到的那個函式不讀取」的名單外, 就是100%
+讀不到的孤兒。`lint_tactics.py`新增**R32**規則(`_r32_dispatch_shape()`依`type`+
+`when.on`判定戰法的「dispatch shape」, `PER_SHAPE_TOP_FIELDS`依shape列出白名單, 對
+`active`/`command`/`passive`三個shape額外處理coef==0時`lockTarget`/`targetSel`/
+`hitsRepeat`/`effectsPerHit`讀不到的特例), 逐一核對`sgz.py`/`engine.js`六個相關函式全文
+得出白名單(非猜測), 8組selftest陽性/陰性樣例覆蓋(虎痴式coef=0/摧鋒斷刃式charge型修復後/
+反應式shape間的欄位差異/完全未知欄位名稱四類情境)。
+
+### C. 全庫掃描結果: 5筆確認個案(4筆手動追蹤+1筆規則自動找到)
+
+**虎痴.lockTarget** / **陷陣突襲.lockTarget** / **萬軍取將.lockTarget**(第3筆是R32規則
+上線後自動掃出, 手動追蹤時漏看coef==0這個次要條件): 三者皆為`lockTarget:true`孤兒——
+虎痴`type==passive`+`coef==0`(連本戰法自身的`fire`擲骰條件都無法滿足, 根本不會進入唯一
+讀取`lockTarget`的`type=="active"`路徑); 陷陣突襲`when.on=="activeFired"`走
+`active_fired_for()`反應式派發, 該函式的coef傷害段固定`pick_targets()`, 完全不讀
+`lockTarget`; 萬軍取將`type==active`但`coef==0`且`effects[]`兩段皆`who:"self"`(純自身
+buff, 不涉及任何「對敵方目標」的coef傷害或effect, 連消費`lockTarget`的意圖對象都不存在)。
+三者的`_note`/`_todo`原本或多或少已提及此缺口("lockTarget欄位僅作用於有coef的單體傷害段,
+本戰法為純被動無coef不適用"/"現有lockTarget/targetSel皆只作用於戰法本身的coef/effects/
+extraHits段,不影響普通攻擊本身的目標選擇邏輯"), 但欄位本身從未真正移除——本批正式清除
+(誠實揭露原則(c): 不值得建的機制→移除欄位+保留/強化既有揭露文字, 見
+`docs/data/tactic_corrections.json`對應3筆的`set.lockTarget:null`)。
+
+**摧鋒斷刃.hitsRepeat + n:3**(**未揭露**, 本批發現的最嚴重個案): `type=="charge"`,
+`do_normal_attack()`/`doNormalAttack()`過去的charge分支只對已選定的單一目標打一次,
+完全不讀`n`/`nMax`/`hitsRepeat`——「普攻後發動三次隨機打擊」的原文語意被靜默塌縮成一次,
+**整體傷害輸出被低估至1/3**, 且與lockTarget三筆不同, 這個缺口先前完全沒有任何`_note`/
+`_todo`提及(資料作者本身也不知情)。本批屬誠實揭露原則(b): 真機制值得建→引擎接線——
+`sgz.py`/`engine.js`的`do_normal_attack()`/`doNormalAttack()`charge分支新增`cnt=n`
+(+`nMax`浮動)判定: `cnt<=1`(絕大多數既有charge戰法未設`n`或`n=1`)維持原行為對`tgt`
+單體打一次, **零回歸**; `hitsRepeat`時N次獨立選標(`pick_target`, 可重複命中同一目標,
+對稱既有active型`hitsRepeat`慣例); 否則(純`n>1`無`hitsRepeat`)`pick_targets`不重複
+群體(AoE, 對稱既有active型`n>1`無`hitsRepeat`的慣例)。
+
+**連帶發現(修復摧鋒斷刃的副作用檢查)**: 全庫掃描charge型戰法發現另外2筆`n>1`——
+**一騎當千**(`n:3`, `_note`明載「n=3=AoE全體」, 原文「對敵軍全體發動一次兵刃攻擊」):
+**修復前**同樣被靜默塌縮成單體單次(`do_normal_attack()`只打`tgt`一個目標), 修復後
+`n:3`無`hitsRepeat`, 正確走`pick_targets(fo,3)`群體路徑, 首次真正對敵軍全體生效
+(先前一直低估對2-3人隊伍的傷害輸出, 資料本身無需修改, 純引擎接線受益)。**白毦兵**
+(`n:3`, 但`_note`明載這是「我軍3人全體各自可能觸發」的**純解釋性EV代理值**, 從未意圖
+被引擎讀取當成AoE目標數): 修復前引擎不讀`n`故無害, 但**若不同步清除, 摧鋒斷刃的修復會
+連帶把白毦兵的單體謀略追擊變成AoE群體3人攻擊, 傷害輸出憑空放大3倍**——這是本批最容易
+漏掉的一步(修好A卻做壞B), 已同步移除白毦兵頂層`n`(`set.n:null`)化解, 修復摧鋒斷刃前後
+分別驗證：確認二者reparse後行為symmetric(摧鋒斷刃`n:3`維持/白毦兵`n`消失)。
+
+### D. 驗收
+
+`python sgz.py test`(exit 0, 無新崩潰) / `node --check docs/engine.js` / `python
+-m py_compile sgz.py reparse_effects.py lint_tactics.py` / `python reparse_effects.py`
+連跑三次byte-diff皆空(冪等) / `python lint_tactics.py --selftest`(104項通過, 0失敗,
+含本批新增8項R32陽性/陰性樣例) / `python lint_tactics.py`(**R1-R32全庫零違規**,
+含R32上線當下自動抓到的萬軍取將第5筆, 修復後歸零)。
+
+## 50. 批D Part B: 定稿對齊48筆(實際47筆)逐句核對 —— 4筆具體修正+43筆確認既有已最佳
+
+**背景**: 承批C的第4輪指定清單(user稱48筆, 逐一核對後確認raw名單僅47個相異名稱, 已於此
+記錄此計數差異, 不影響逐筆核對完整性)。**鐵律0: 本批禁止spawn子代理**, 全程單一agent
+逐筆核對47筆定稿effectText(`data/tactics.json`, 唯讀)與現行`tactics_parsed.json`/
+`tactic_corrections.json`的落差。核對後確認**43筆既有近似/揭露已是本批可達最佳表達**
+(多數已歷經批12-45多輪核對, 每筆皆有詳盡_note/_todo/_approx記錄取捨理由), 找到4筆具體
+修正:
+
+**1. 燕人咆哮**(數值bug): 頂層`whenLeader:{rounds:[6]}`原意近似「主將時第6回合額外攻擊」,
+但頂層`coef`是單一值(1.04=104%, 對應第2/4回合基礎值), 沒有辦法在whenLeader延伸開啟的
+第6回合改用原文較低的88%——結果主將在第6回合會實際打出**錯誤的104%攻擊**(而非正確的88%,
+或`_todo`聲稱的完全不觸發), 是「資料寫了欄位, 引擎也真的讀取並生效, 但生效的數值是錯的」,
+比原`_todo`自陳的「完全未建模」更嚴重的靜默錯誤。移除`whenLeader`使第6回合恢復成誠實的
+「完全不觸發」狀態(見`docs/data/tactic_corrections.json`, `set.whenLeader:null`), 並在
+`_todo`中詳述為何「頂層coef+主將限定extraHits+分離主段觸發窗口」這個組合原語全庫僅此一例、
+評估後不新增。
+
+**2. 金城湯池**(既有原語補建): 原文「無法發動普通攻擊（**無法被淨化**）」——`disarm`本體
+已建(批12), 但漏了對應「無法被淨化」修飾語的`undispellable:true`旗標(全域已知欄位,
+`dispel_unit()`結算時會略過帶此旗標的條目)。過去驅散類戰法能誤將此常駐代價淨化掉, 較原文
+更容易被解除, 高估持有者郝昭的靈活性。純既有原語補建, 非新機制。
+
+**3. 一舉殲滅**(次效果補建): 原文「若目標處於沙暴狀態，則額外使目標進入混亂...持續2回合」
+過去`effects`完全空白。核對確認`ifTargetHas`(批16)+具名dot狀態比對(批52g, `"沙暴"`已由
+`DOT_NAME_BY_TACTIC`登記)+`chaos`(批12 ModeF)三者組合即可精確表達, 無需新原語, 純粹是先前
+核對時漏建的既有原語組合缺口。
+
+**4. 臻於至善**(誠實揭露, 刻意不建): 原文除已建的四維提升外, 還有「提升魅力」(第5維)+
+「並有機率在特定回合使提升效果翻倍」兩句完全未disclosure的內容。核對engine發現
+`self.charm`(魅力)在`Unit.__init__`明確標註「只供`scale="charm"`查表, 不進戰鬥四維
+`eff()`」, `scale_of()`對`scale=="charm"`直接讀`caster.charm`裸值繞過`eff()`/`mods`,
+與其餘四維經`caster.eff(scale)`(吃`mods`/`statAdds`疊加)完全不同路徑——若對`stat:"charm"`
+套用`k=="stat"`效果(`push_mod`寫入`self.mods`), 該筆mod**不會被任何讀取路徑消費**,
+是100%的新孤兒欄位。本批核對後**刻意不新增此效果**(避免重蹈R32治本的覆轍, 犯下自己剛
+清剿的同款錯誤)。「特定回合機率翻倍」原文未給任何具體回合數字或機率數字, 且「翻倍」本身
+(對已生效的stat.mult做條件式二次縮放)現有`push_mod`「同kind+同src刷新覆蓋」慣例無法
+表達, 需要引擎新增「條件式二次縮放已有buff」的原語, 全庫僅此一例且無佐證數值可校準,
+兩者皆誠實記錄於`_todo`, 不新增數值/不新增死欄位。
+
+**方法論反思**: 43/47(91%)已是最佳近似的比例, 印證批12-45多輪校準的既有成果扎實;
+剩餘4筆中, 2筆是「資料寫了欄位但實際上引擎讀取後數值/消費路徑不對」的靜默錯誤(燕人咆哮
+whenLeader/金城湯池undispellable), 1筆是純粹的次效果遺漏(一舉殲滅), 1筆是差點自己造出
+新孤兒欄位、及時用同一套R32驗證紀律擋下的案例(臻於至善charm)——後者具體印證本批Part A
+建立的「先查engine實際讀取路徑, 再決定是否新增欄位」紀律不只用於治舊, 也直接防止了本批
+自己在Part B寫新資料時犯下同款錯誤。
+
+### 驗收
+
+`python sgz.py test`(exit 0) / `node --check docs/engine.js` / `python -m py_compile
+sgz.py reparse_effects.py lint_tactics.py` / `python reparse_effects.py`連跑三次byte-diff
+皆空(冪等) / `python lint_tactics.py --selftest`(104/104) / `python lint_tactics.py`
+(R1-R32全庫零違規) / 3組`simulate()`對局(Python與Node.js雙引擎各自跑500場/組, 涵蓋
+charge型引擎修復持有者(夏侯淵/孫尚香/顏良/馬超/張姬)+R32 lockTarget修復持有者(許褚/虎痴,
+張遼/陷陣突襲)+Part B修正持有者(張飛/燕人咆哮, 郝昭/金城湯池), 無崩潰, 雙引擎勝率分佈
+高度一致): 夏侯淵/孫尚香/許褚 vs 張遼/張飛/郝昭(Python A1.0/Node A1.0)、顏良/馬超/張姬
+vs 張遼/張飛/郝昭(Python A0.998/Node A0.998)、張姬/許褚/郝昭 vs 夏侯淵/顏良/張遼(Python
+A0.124/Node A0.14, 差異屬500場獨立抽樣的正常統計雜訊)。另以鏡像對局(張遼/張飛/郝昭同隊
+打自己, 涵蓋全部3筆Part B修正持有者)排除系統性方向偏誤(結果50.2/49.8, 屬正常先手優勢
+範圍)。charge型n/nMax/hitsRepeat修復另有雙引擎直接單元驗證(Python `do_normal_attack()`+
+Node `smoke_batchD.js`概念對稱, 見批D scratchpad): hitsRepeat造成非零多次獨立命中/
+n=3無hitsRepeat正確AoE命中全部3個敵人/n<=1(絕大多數既有charge戰法)維持單體單次零回歸,
+三案例皆通過。

@@ -1491,7 +1491,27 @@ def do_normal_attack(u, allies, enemies, on_hit=None, on_deal=None, active_fired
             up = 0 if t.get("proc") else u.addbonus_for("chargeup", t)
             if t["type"] == "charge" and random.random() < t["rate"] + up:
                 if t["coef"]:
-                    hit(u, tgt, t["coef"], t["kind"], False, on_hit, on_deal, is_charge=True)
+                    # 批D(R32): 突擊(charge)分派過去無條件只對 do_normal_attack 已選定的單一
+                    # tgt 打一次, 完全不讀頂層 n/nMax/hitsRepeat —— 「對敵軍全體發動一次兵刃
+                    # 攻擊」(一騎當千 n:3 意圖AoE全體)與「發動三次隨機打擊」(摧鋒斷刃
+                    # hitsRepeat:true) 兩者的原文語意皆被靜默塌縮成單體單次, 全庫掃描(R32
+                    # 頂層欄位孤兒偵測)發現此缺口從未被揭露(engine_limitations.md 新節)。
+                    # cnt<=1(絕大多數既有charge戰法, 未設n或n=1)維持原行為(對tgt單體打一次),
+                    # 向後相容零回歸。hitsRepeat: N次獨立選標(可重複命中同一目標, 同active型
+                    # 既有慣例); 否則(純n>1無hitsRepeat): pick_targets 不重複群體(AoE)。
+                    cnt = t.get("n") or 1
+                    if t.get("nMax"):
+                        cnt = cnt + random.randint(0, t["nMax"] - cnt)
+                    if cnt <= 1:
+                        hit(u, tgt, t["coef"], t["kind"], False, on_hit, on_deal, is_charge=True)
+                    elif t.get("hitsRepeat"):
+                        for _ in range(cnt):
+                            v = pick_target(fo)
+                            if v:
+                                hit(u, v, t["coef"], t["kind"], False, on_hit, on_deal, is_charge=True)
+                    else:
+                        for v in pick_targets(fo, cnt):
+                            hit(u, v, t["coef"], t["kind"], False, on_hit, on_deal, is_charge=True)
                 if t.get("extraHits"):
                     fire_extra_hits(u, t, tgt, allies_of if callable(allies_of) else (lambda x: al),
                                     foes_of if callable(foes_of) else (lambda x: fo), on_hit, on_deal)

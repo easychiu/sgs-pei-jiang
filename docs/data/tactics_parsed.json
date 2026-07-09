@@ -3408,7 +3408,7 @@
   "cat": "BURST",
   "src": "EVENT",
   "hitsRepeat": true,
-  "_note": "批12 ModeB: 原coef=0導致3次隨機打擊完全不造成傷害(明顯缺陷), 原文無明確傷害率數字, 取同類charge戰法中位數保守值coef=0.5/次(_est, 待未來更精確數值校準)+hitsRepeat:true(3次獨立抽樣可重複命中同一目標, 而非3人不重複群攻)",
+  "_note": "批12 ModeB: 原coef=0導致3次隨機打擊完全不造成傷害(明顯缺陷), 原文無明確傷害率數字, 取同類charge戰法中位數保守值coef=0.5/次(_est, 待未來更精確數值校準)+hitsRepeat:true(3次獨立抽樣可重複命中同一目標, 而非3人不重複群攻)。批D(R32): 全庫頂層欄位孤兒掃描發現hitsRepeat:true+n:3過去對type==\"charge\"完全是死欄位——do_normal_attack()/doNormalAttack()的charge分派(唯一負責觸發本戰法的程式碼路徑)過去只對do_normal_attack已選定的單一目標打一次, 從未讀取n/nMax/hitsRepeat(這3個欄位只在fight()主迴圈的type==\"active\"一般路徑才有讀取邏輯), 導致「發動三次隨機打擊」被靜默塌縮成一次, 整體傷害輸出被低估至1/3, 且此缺口先前從未被揭露(不同於虎痴/陷陣突襲的lockTarget兩筆, 那兩筆的_note/_todo早已自陳「不適用」)。本批已修復引擎本身(見engine_limitations.md新節): do_normal_attack()/doNormalAttack()的charge分支新增cnt=n(+nMax浮動)判定, cnt<=1維持原行為(零回歸), hitsRepeat:true時N次獨立選標(可重複命中同一目標), 否則走pick_targets群體(AoE)。資料欄位(n:3/hitsRepeat:true)本身數值正確, 無需修改, 純引擎端接線。",
   "_todo": "批C: 「若自身武力較高」的條件比較完全未建模(見effects[0]._approx); 「顯著降低」的具體百分比本文從未給出, coef=0.5與amp val=-0.2皆為無文字錨點的估計值(本文本身描述過於模糊所致), 待本文若有更精確版本再校準。",
   "_est": true
  },
@@ -5152,13 +5152,9 @@
     4
    ]
   },
-  "_todo": "批26 B1全庫掃描: 「自身為主將時，第6回合對敵軍全體發動兵刃攻擊(傷害率44%→88%)」——這是主將限定的獨立第三次觸發時間點(第2/4回合已由頂層t.when:{rounds:[2,4]}+coef承載, 第6回合是額外加開的第三個時間窗, 且限主將), 現有ifLeader(批26新增)是effects[]層級的條件閘門, 無法讓「頂層coef段」本身依施放者是否為主將動態決定要不要在第6回合多開一個時間窗(頂層t.when.rounds是全域設定, 不支援按caster身份條件式擴充回合清單)。需要額外的extraHits段(帶ifLeader+獨立when.rounds:[6])才能表達, 屬於「頂層coef+主將限定extraHits」的組合擴充, 本批未實作(範圍界定: 本批ifLeader新增授權僅涵蓋effects[]層級效果段, 不含extraHits/頂層coef的條件式時間窗擴充), 維持未建模, 已於此誠實揭露具體阻塞點(過去僅籠統寫「次要條件省略」, 現補充說明ifLeader為何在此不適用)。",
+  "_todo": "批26 B1全庫掃描: 「自身為主將時，第6回合對敵軍全體發動兵刃攻擊(傷害率44%→88%)」——這是主將限定的獨立第三次觸發時間點且數值(88%)與第2/4回合的基礎值(104%)不同, 現有whenLeader原語只能讓「同一份頂層coef」延伸到額外回合觸發, 無法讓額外回合改用不同的coef數值(頂層coef是單一值, 全戰法共用)。需要額外的extraHits段(帶ifLeader+獨立when.rounds:[6]+獨立coef:0.88)才能表達「頂層coef段本身依施放者是否為主將動態決定要不要在第6回合多開一個時間窗且用不同數值」的組合語意, 但目前extraHits的觸發時機綁定在「母戰法本次fire之後才逐段判定」(見fire_extra_hits()呼叫端, 掛在`if fire:`區塊內), 若母戰法在第6回合本身就不fire(因為移除whenLeader後, `_when_ok`在第6回合對非主將/主將皆返回False), extraHits根本不會被評估到——換句話說, 要讓「第6回合、僅主將」的extraHits觸發, 母戰法的_when_ok仍必須在第6回合對主將返回True, 但這樣一來, 主coef段(1.04)又會跟著一起在第6回合觸發(見上方_note詳述的矛盾)。這是本戰法的核心結構性缺口: 需要「僅extraHits段可在額外回合觸發, 但頂層coef不要跟著觸發」的更精細掛鉤點, 目前無此原語, 誠實維持未建模(移除whenLeader避免現況的錯誤數值輸出, 見上方_note), 屬於「頂層coef+主將限定extraHits+分離主段觸發窗口」的組合擴充, 本批評估後判定新增此原語的複雜度/收益比不划算(全庫僅此一例), 暫不實作。",
   "extraHits": [],
-  "whenLeader": {
-   "rounds": [
-    6
-   ]
-  }
+  "_note": "批D: 全庫定稿對齊複核發現whenLeader:{rounds:[6]}雖然是為了近似「主將時第6回合額外攻擊」而設(見下方_todo歷史), 但頂層coef是單一數值(1.04=104%, 對應第2/4回合基礎值), 沒有辦法在whenLeader延伸開啟的第6回合改用原文的較低值(88%)——whenLeader只能讓_when_ok()整體放行'要不要fire', 無法讓fire之後的coef段改讀不同數值。結果是主將在第6回合會實際打出錯誤的104%攻擊(而非正確的88%, 或_todo聲稱的完全不觸發), 是「資料寫了欄位, 引擎也真的讀取並生效, 但生效的數值是錯的」——比「完全不建模」更嚴重的靜默錯誤。移除whenLeader使第6回合恢復成_todo自述的「完全不觸發」狀態, 数值上不再有錯誤輸出(雖然仍未涵蓋第6回合的88%攻擊, 但比「觸發且數值錯」更誠實安全)。"
  },
  {
   "nameZh": "獅子奮迅",
@@ -5323,7 +5319,6 @@
   "kind": "intel",
   "coef": 1.1,
   "rate": 0.45,
-  "n": 3,
   "prep": 0,
   "effects": [
    {
@@ -5336,14 +5331,14 @@
   "quality": "S",
   "cat": "TROOP",
   "src": "INHERITANCE",
-  "_note": "批12 ModeC: 原effects為空, 補12%攻心(lifesteal); 普攻後二次謀略攻擊機制已由頂層coef=1.1/rate=0.45代表(command型戰法本身即為該機率觸發的傷害), 不重複編碼避免雙重灌傷害。批44 A: 陳到統領條件式提升已用extraHits+ifLeaderIs精確落地(見extraHits[0]._note),原_todo移除。 | 批B(R14): 修正stale矛盾——上述_note聲稱rate=0.45, 但parsed.rate實際仍是舊值1(從未真正同步寫入, R14數字矛盾掃出)。核對engine: type=\"charge\"戰法的頂層rate即「普通攻擊後,此charge是否觸發」的機率(見sgz.py do_normal_attack() 1485行random.random()<t[\"rate\"]+up), 與本文「普通攻擊後有20%→45%機率」精確對應。已改set.rate=0.45(滿級值), 消除矛盾。",
+  "_note": "批12 ModeC: 原effects為空, 補12%攻心(lifesteal); 普攻後二次謀略攻擊機制已由頂層coef=1.1/rate=0.45代表(command型戰法本身即為該機率觸發的傷害), 不重複編碼避免雙重灌傷害。批44 A: 陳到統領條件式提升已用extraHits+ifLeaderIs精確落地(見extraHits[0]._note),原_todo移除。 | 批B(R14): 修正stale矛盾——上述_note聲稱rate=0.45, 但parsed.rate實際仍是舊值1(從未真正同步寫入, R14數字矛盾掃出)。核對engine: type=\"charge\"戰法的頂層rate即「普通攻擊後,此charge是否觸發」的機率(見sgz.py do_normal_attack() random.random()<t[\"rate\"]+up), 與本文「普通攻擊後有20%→45%機率」精確對應。已改set.rate=0.45(滿級值), 消除矛盾。| 批D(R32): 頂層n:3過去是純解釋性殘留值(單體語意「對攻擊目標再次發起攻擊」從未涉及群體人數), 修復前charge分派完全不讀n故無害; 但本批同步修復摧鋒斷刃的charge n/hitsRepeat支援後, 若不清除會被新邏輯誤判成AoE群體3人攻擊(嚴重高估3倍傷害), 已同步移除(見set.n:null), 避免修好摧鋒斷刃卻連帶做壞白毦兵。",
   "extraHits": [
    {
     "coef": 0.2,
     "kind": "intel",
     "rate": 0.45,
     "ifLeaderIs": "陳到",
-    "_note": "批44 A: 原文「若陳到統領，則謀略攻擊更為強力（傷害率65%→130%，受智力影響）」——較無條件版本(55%→110%, 即頂層coef=1.1)再高20個百分點。用批44新增的extraHits段級ifLeaderIs(見engine.js/sgz.py fireExtraHits)表達base(頂層coef=1.1無條件)+top-up(本段coef=0.2, 陳到統領時, rate=0.45對齊頂層同一次45%機率觸發事件, 非獨立第二次擲骰)拆法。刻意不填who:\"sameTarget\": 頂層n=3是「我軍3人全體各自可能觸發」的EV代理(見頂層_note), 每回合最多3個獨立群攻目標而非單一主目標, _mainHitTgt在群體(vs.length>1)情形下不會被設定(見fireExtraHits呼叫端), who:\"sameTarget\"會恆定resolve成空dests(topup段永遠不會生效的隱性bug)——改用預設隨機選標(fireExtraHits無who時走pickTargets(foes,cnt)既有慣例), 與主段「隨機挑目標」同性質近似。陳到統領時1.1(基礎, 45%機率)+0.2(topup, 同一次45%機率)=1.3對齊滿級值, 非陳到統領時僅頂層1.1(與原有行為一致)。"
+    "_note": "批44 A: 原文「若陳到統領，則謀略攻擊更為強力（傷害率65%→130%，受智力影響）」——較無條件版本(55%→110%, 即頂層coef=1.1)再高20個百分點。用批44新增的extraHits段級ifLeaderIs(見engine.js/sgz.py fireExtraHits)表達base(頂層coef=1.1無條件)+top-up(本段coef=0.2, 陳到統領時, rate=0.45對齊頂層同一次45%機率觸發事件, 非獨立第二次擲骰)拆法。刻意不填who:\"sameTarget\": fireExtraHits無who時走預設隨機選標(單體), 與主段「隨機挑目標」同性質近似。陳到統領時1.1(基礎, 45%機率)+0.2(topup, 同一次45%機率)=1.3對齊滿級值, 非陳到統領時僅頂層1.1(與原有行為一致)。批D(R32): 移除原_note內「頂層n=3是我軍3人全體各自可能觸發的EV代理」說明段落(該解釋已隨頂層n欄位一併移除, 不再適用; 本戰法的「普攻後對攻擊目標再次發起謀略攻擊」語意本就是單體, 由頂層coef=1.1(45%機率)代表, 不需要n輔助說明)。"
    }
   ]
  },
@@ -6741,7 +6736,8 @@
   ],
   "quality": "S",
   "cat": "PASSIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_todo": "批D: 全庫48筆定稿對齊複核發現原文另兩句完全未disclosure——(1)「提升魅力」(第5維, 魅力): 核對engine發現self.charm(魅力)在Unit建構式明確標註「只供scale=\"charm\"查表, 不進戰鬥四維eff()」, scale_of()對scale==\"charm\"直接讀caster.charm裸值繞過eff()/mods, 與其餘四維經caster.eff(scale)吃mods疊加完全不同路徑——若對stat:\"charm\"套用k==\"stat\"效果(push_mod寫入self.mods)不會被任何讀取路徑消費(100%孤兒欄位, 與本批R32治本精神相悖), 核對後刻意不新增此效果, 待未來若真要支援「魅力可被戰法修改」需先擴充scale_of()改讀eff(\"charm\")或另建魅力專屬mods通道(engine擴充範圍, 非本批data-only修正可解)。(2)「並有機率在特定回合使提升效果翻倍」: 原文未給任何具體回合數字或機率數字(純定性描述「有機率」「特定回合」), 且「翻倍」本身是對已生效的四維stat.mult效果做條件式二次縮放, 現有push_mod「同kind+同src刷新覆蓋」慣例無法表達「在原有16%基礎上再翻倍」(而非簡單疊加或取代), 需要引擎新增「條件式二次縮放已有buff」的原語, 全庫僅此一例且無佐證數值可校準(不知道翻倍生效的具體回合/機率), 誠實維持未建模。"
  },
  {
   "nameZh": "興雲佈雨",
@@ -6977,8 +6973,7 @@
   "quality": "S",
   "cat": "ACTIVE",
   "src": "EVENT",
-  "lockTarget": true,
-  "_todo": "原文「鎖定敵方最弱目標並使其陷入降傷狀態」完全缺乏數值(無倍率/機率/持續時間),且「降傷」語意不明(降低目標輸出傷害或提高目標受到傷害均可能),engine無「降低目標輸出傷害」原語,未表達;lockTarget用於近似「鎖定敵方最弱目標」語意(但實際鎖定邏輯為首次隨機選定後續沿用,非精確鎖定最弱目標)",
+  "_todo": "原文「鎖定敵方最弱目標並使其陷入降傷狀態」完全缺乏數值(無倍率/機率/持續時間),且「降傷」語意不明(降低目標輸出傷害或提高目標受到傷害均可能),engine無「降低目標輸出傷害」原語,未表達。批D(R32): lockTarget:true經lint R32自動掃描確認為孤兒欄位並移除——本戰法type==\"active\"+coef==0, 讀取lockTarget的唯一程式碼路徑(fight()主迴圈「if t['coef']:」區塊)因coef為假值根本不會進入(與虎痴同病); 且本戰法effects[]兩段(surehit/pierce)皆who:\"self\"(施放者自身增益), 從頭到尾不存在任何「對敵方目標」的coef傷害或effect會消費這個鎖定, 比虎痴更徹底——不僅讀不到, 連寫這個欄位的原始動機(近似「鎖定敵方最弱目標」)都沒有對應的消費端。移除後,「鎖定最弱目標並降傷」這句原文的兩個語意成分(鎖定/降傷)均維持誠實揭露為未實現(降傷早已如此, 鎖定現在也是), 不再用不會生效的欄位製造「已部分實現」的錯覺。",
   "_note": "(bucket6原標記tactic-level _est: 部分數值為估計,詳見_diff/effects內個別_est/_note)"
  },
  {
@@ -7244,8 +7239,7 @@
   "quality": "S",
   "cat": "PASSIVE",
   "src": "INNATE",
-  "_note": "原資料pierce val1自首回合常駐=無條件全程無視減傷(高估, 破陣是擊殺後才有的條件獎勵); lockTarget欄位僅作用於有coef的單體傷害段, 本戰法為純被動無coef不適用",
-  "lockTarget": true
+  "_note": "原資料pierce val1自首回合常駐=無條件全程無視減傷(高估, 破陣是擊殺後才有的條件獎勵)。批D(R32): lockTarget欄位經全庫頂層欄位孤兒掃描(R32)確認為100%死欄位——type==passive且coef==0, 連本戰法自身的fire擲骰條件都無法滿足(command/passive分支要求coef/choices/extraHits/proxy其一truthy), 根本不會進入唯一讀取lockTarget的「type==active」程式碼路徑, 故正式移除(見set.lockTarget:null), 取代先前僅留言未清除的舊_note(「lockTarget欄位僅作用於有coef的單體傷害段,本戰法為純被動無coef不適用」)。"
  },
  {
   "nameZh": "虎衛軍",
@@ -7880,7 +7874,8 @@
     "k": "disarm",
     "who": "self",
     "dur": 99,
-    "_note": "原文: 無法發動普通攻擊(無法被淨化)——常駐代價, 原資料漏建"
+    "undispellable": true,
+    "_note": "原文: 無法發動普通攻擊(無法被淨化)——常駐代價, 原資料漏建。批D: 補undispellable:true對應原文「(無法被淨化)」修飾語(全域已知欄位, dispel_unit()結算時會略過帶此旗標的條目, 見批16 immuneTo落地時同批建置), 過去只建了disarm本體, 漏了這個修飾旗標, 導致驅散類戰法能誤將此常駐代價淨化掉(較原文更容易被解除, 高估持有者的靈活性)。"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -7888,7 +7883,7 @@
   "cat": "COMMAND",
   "src": "INNATE",
   "nMax": 3,
-  "_note": "『每2回合輪流執行』以rate0.5+EV折算: 兵刃段102%×rate0.5(原每回合必發, 高估2倍); 漏建的自身禁普攻為實質常駐代價; nMax3補上2~3人",
+  "_note": "『每2回合輪流執行』以rate0.5+EV折算: 兵刃段102%×rate0.5(原每回合必發, 高估2倍); 漏建的自身禁普攻為實質常駐代價; nMax3補上2~3人。批D: disarm補undispellable:true(見effects[2]._note)。",
   "when": {
    "every": 2
   }
@@ -8260,7 +8255,6 @@
   "quality": "S",
   "cat": "PASSIVE",
   "src": "INNATE",
-  "lockTarget": true,
   "extraHits": [
    {
     "coef": 0.95,
@@ -8283,8 +8277,8 @@
   "when": {
    "on": "activeFired"
   },
-  "_note": "批A: 補建「額外攻擊1名敵軍」缺失段(見extraHits[1]_note), 取代批31 A的空白_todo(見下方_history)。本correction同時把過去只存在於docs/data/tactics_parsed.json手工patch(scratchpad/_patch_batch52b.py同類批次, 批52c)的lockTarget/when/extraHits[0]三個欄位正式搬入corrections.json, 使其成為reparse的真實冪等輸出(對稱坐斷東南的同款修復, 見該筆_note)——這些欄位過去雖已在HEAD生效, 但因未寫回本檔, 若未來有人改動corrections.json觸發reparse重跑, 會有被靜默清空的風險(陷陣突襲本身目前尚安全, 因reparse管線的既有steps皆不觸碰這些欄位名, 只是路徑上仍存在此隱患, 一併補齊消除)。coef/rate/type維持批31 A的既有決策不動(見下方_todo, 雙態機制缺口仍真實存在)。",
-  "_todo": "「自身成功發動突擊戰法後，對目標發動1次兵刃攻擊（傷害率95%）」本體傷害段的type:\"passive\"+coef+rate:1近似(取代理想的type:\"charge\"擲骰通道)仍維持批31 A的既有決策不動: 若改type:\"charge\"會讓chargeup/stack兩個常駐buff退化成「必須先成功發動過一次charge才會套用」, 比現有近似更嚴重, 需要類似裝備proc的「一份JSON戰法展開成主體(passive,常駐buff)+附掛偽charge子戰法(傷害段,走charge擲骰通道)」雙態機制, 目前無此通用原語, 誠實維持現況(仍是「每回合無條件95%傷害」的近似, 高估「須自身成功發動突擊戰法」這個條件)。「自身為主將時，普通攻擊有68%機率鎖定敵軍主將」的目標鎖定機制仍未建模(engine_limitations.md 13節「普通攻擊不讀targetSel/lockTarget」已知限制, 現有lockTarget/targetSel皆只作用於戰法本身的coef/effects/extraHits段, 不影響普通攻擊本身的目標選擇邏輯, 且此處還疊加ifLeader條件)。"
+  "_note": "批A: 補建「額外攻擊1名敵軍」缺失段(見extraHits[1]_note), 取代批31 A的空白_todo(見下方_history)。本correction同時把過去只存在於docs/data/tactics_parsed.json手工patch(scratchpad/_patch_batch52b.py同類批次, 批52c)的when/extraHits[0]兩個欄位正式搬入corrections.json, 使其成為reparse的真實冪等輸出——這些欄位過去雖已在HEAD生效, 但因未寫回本檔, 若未來有人改動corrections.json觸發reparse重跑, 會有被靜默清空的風險, 一併補齊消除。coef/rate/type維持批31 A的既有決策不動(見下方_todo, 雙態機制缺口仍真實存在)。批D(R32): lockTarget:true經全庫頂層欄位孤兒掃描確認為死欄位——本戰法when.on==\"activeFired\"走active_fired_for()反應式派發, 該函式的coef傷害段固定用pick_targets(foes_of(holder),cnt), 完全不讀t.get(\"lockTarget\")(唯一讀取lockTarget的程式碼路徑是fight()主迴圈type==\"active\"一般路徑, 本戰法type==\"passive\"+反應式, 兩者皆不符), 正式移除(見set.lockTarget:null), 取代先前只設true從未真正生效的舊資料。",
+  "_todo": "「自身成功發動突擊戰法後，對目標發動1次兵刃攻擊（傷害率95%）」本體傷害段的type:\"passive\"+coef+rate:1近似(取代理想的type:\"charge\"擲骰通道)仍維持批31 A的既有決策不動: 若改type:\"charge\"會讓chargeup/stack兩個常駐buff退化成「必須先成功發動過一次charge才會套用」, 比現有近似更嚴重, 需要類似裝備proc的「一份JSON戰法展開成主體(passive,常駐buff)+附掛偽charge子戰法(傷害段,走charge擲骰通道)」雙態機制, 目前無此通用原語, 誠實維持現況(仍是「每回合無條件95%傷害」的近似, 高估「須自身成功發動突擊戰法」這個條件)。「自身為主將時，普通攻擊有68%機率鎖定敵軍主將」的目標鎖定機制仍未建模(engine_limitations.md 13節「普通攻擊不讀targetSel/lockTarget」已知限制, 現有lockTarget/targetSel皆只作用於戰法本身的coef/effects/extraHits段, 不影響普通攻擊本身的目標選擇邏輯, 且此處還疊加ifLeader條件; 批D(R32): 因此本戰法的lockTarget:true自始至終是文不對題的孤兒欄位, 已於本批移除, 此缺口本身仍待未來擴充do_normal_attack的目標鎖定原語才能解決, 非本批範圍)。"
  },
  {
   "nameZh": "雁行陣",
@@ -9081,10 +9075,19 @@
   "rate": 0.4,
   "n": 1,
   "prep": 1,
-  "effects": [],
+  "effects": [
+   {
+    "k": "chaos",
+    "who": "enemy",
+    "dur": 2,
+    "ifTargetHas": "沙暴",
+    "_note": "批D: 補建原文「若目標處於沙暴狀態，則額外使目標進入混亂（攻擊和戰法無差別選擇目標）狀態，持續2回合」——過去effects=[]完全空白, 只有coef=3.35承載主段兵刃傷害。ifTargetHas:\"沙暴\"(批16原語+批52g具名dot狀態比對, sgz.py target_has()的d[3]==ctype分支, \"沙暴\"已由DOT_NAME_BY_TACTIC登記, 見飛沙走石/楚歌四起等戰法)+chaos(批12 ModeF既有原語)組合即可精確表達, 無需新原語。chaos屬ctrl_k, 本效果無e.n時預設t.n=1(頂層n:1)且優先鎖定tgt(主coef段兵刃攻擊命中的同一單體), 天然對齊原文「其/目標」回指主段目標的語意, 不需額外沿用main_hit_tgts。"
+   }
+  ],
   "quality": "A",
   "cat": "ACTIVE",
-  "src": "INHERITANCE"
+  "src": "INHERITANCE",
+  "_note": "批D: 全庫48筆定稿對齊複核發現此戰法次效果(沙暴→混亂條件觸發)過去完全未建模(effects空白), 核對確認ifTargetHas+chaos+具名dot狀態比對三者皆為既有原語, 組合補建, 非新增機制。"
  },
  {
   "nameZh": "不辱使命",
