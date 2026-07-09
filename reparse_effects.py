@@ -28,6 +28,10 @@ docs/data/tactics_parsed.json 的 coef/rate/n/nMax/dur/heal-coef。
   遊戲內無此戰法) 直接把 parsed 的 type 設 "none"(排除戰鬥與選單), 略過其餘抽取步驟。
 
 用法: python reparse_effects.py
+
+本文回寫(user 2026-07-09): 定稿本文必須同步回 data/tactics.json。
+  抽完/修正後請跑: python sync_tactics_effecttext.py
+  （來源: tactics_overrides.effectText > corrections.effectText > 合格 _evidence）
 輸出: 就地覆寫 docs/data/tactics_parsed.json, 並印出回填報告。
 """
 import json

@@ -31,7 +31,9 @@
 | 內容 | 量 | 說明 |
 |------|----|------|
 | 武將 | 193 | 勢力/性別/六維+成長/五兵種適性/自帶戰法/可用兵書 |
-| 戰法 | 384 | 原始 effectText → 引擎 15 原語編碼 |
+| 戰法 | 384 | `data/tactics.json` 全文庫 effectText → 引擎原語編碼（`docs/data/tactics_parsed.json`） |
+
+**本文回寫（必須）**: 定稿中文必須回寫 `data/tactics.json` 方便 diff。執行 `python sync_tactics_effecttext.py`（來源: overrides → corrections.effectText → 合格 `_evidence`）。
 | 兵書 | 47 | 作戰/虛實/軍形/九變 × 主/副 |
 | 緣分 | 20 | 如桃園結義(劉關張) |
 | 裝備 | 35 | 武器/防具/坐騎… |
@@ -40,8 +42,9 @@
 
 ## 已知近似(精度天花板)
 
-引擎是**趨勢正確的近似**,非逐幀還原:
-- 條件/多模式戰法(「敵出主動時」「第N回合起」「奇偶切換」)無法判條件,指揮/被動傷害用觸發折扣近似(`sgz.py` 頂部 `CMD_TRIGGER`/`PASSIVE_TRIGGER` 旋鈕)
+引擎以**技能原文為真相**對齊,結構性缺口列於 `docs/data/engine_limitations.md`:
+- 治療已支援 who/e.n/群體/自身/主將/急救 eventTarget(批52);其餘如冷卻、真疊加、主將數值分支仍待補
+- 條件/多模式戰法部分仍近似;指揮/被動傷害可用觸發折扣旋鈕(`CMD_TRIGGER`/`PASSIVE_TRIGGER`)
 - 部分戰法數值經考據修正,帶 `_src`/`_real`/`_conf` 註記;`_conf=med` 以官方面板為準
 - 武將取 Lv50、雙方同級(等級壓制略過);士氣固定滿
 - 改資料不必動引擎,效果原語都在 JSON

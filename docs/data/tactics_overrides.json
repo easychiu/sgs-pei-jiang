@@ -1,5 +1,5 @@
 {
- "_note": "外部查證(Gemini/agy, 2026-07-02)的 effectText/type 覆蓋層。reparse_effects.py 讀 root data/tactics.json 後、抽取前, 先用本檔替換對應戰法的 effectText(以及必要時 type)。confidence/source 只作紀錄, 不影響抽取邏輯。桃園結義 confidence=med, 維持 _est 標記(見 reparse_effects.py 的 touched_meaningful 判定, 不特別処理)。宜城之志 已由 user 確認為遊戲內查無此戰法的幽靈條目(無武將引用), invalid=true, reparse 遇到時強制 type:none(排除戰鬥與選單)。明察秋毫/爭分奪秒 查證為內政類戰法(委任官用, 不參與戰鬥), 同樣強制 type:none。批9(2026-07-02, agy_est_tactics.json): 14個原 _est 自帶戰法的外部查證, 全 high confidence, 逐條落地見 reparse_effects.py 的 BATCH9_* 白名單群組; 錦帆百翎 沿用本檔既有較舊查證(20%/5%版本)更新為本次查證的2026年4月平衡調整後數值(30%/15%), 直接覆寫舊 effectText。",
+ "_note": "外部查證(Gemini/agy, 2026-07-02)的 effectText/type 覆蓋層。reparse_effects.py 讀 root data/tactics.json 後、抽取前, 先用本檔替換對應戰法的 effectText(以及必要時 type)。confidence/source 只作紀錄, 不影響抽取邏輯。桃園結義 confidence=med, 維持 _est 標記(見 reparse_effects.py 的 touched_meaningful 判定, 不特別処理)。宜城之志 已由 user 確認為遊戲內查無此戰法的幽靈條目(無武將引用), invalid=true, reparse 遇到時強制 type:none(排除戰鬥與選單)。明察秋毫/爭分奪秒 查證為內政類戰法(委任官用, 不參與戰鬥), 同樣強制 type:none。批9(2026-07-02, agy_est_tactics.json): 14個原 _est 自帶戰法的外部查證, 全 high confidence, 逐條落地見 reparse_effects.py 的 BATCH9_* 白名單群組; 錦帆百翎 沿用本檔既有較舊查證(20%/5%版本)更新為本次查證的2026年4月平衡調整後數值(30%/15%), 直接覆寫舊 effectText。 【本文回寫】定稿 effectText/_evidence 必須回寫 data/tactics.json（sync_tactics_effecttext.py）。",
  "overrides": {
   "國之楨榦": {
    "effectText": "戰鬥中，提升我軍全體統率（提升值相當於自身統率的20%）；並使我軍全體獲得10%倒戈和攻心效果（受統率屬性影響）。敵軍每擁有一個指揮或被動戰法，使我軍群體（2-3人）受到兵刃傷害降低3%（受統率屬性影響）。效果全程生效。",
@@ -171,6 +171,11 @@
    "effectText": "戰鬥中，自身突擊戰法發動機率提高15%（自身為副將時，受武力影響）且自身成功發動突擊戰法後，對目標發動1次兵刃攻擊（傷害率95%，第2回合起，有68%機率額外攻擊1名敵軍並使自身突擊戰法發動率提高3%）；自身為主將時，普通攻擊有68%機率鎖定敵軍主將。（root data/tactics.json的raw文字為舊版本(2023-09-27前), agy查證確認現行版本已改為: 突擊發動率+15%基礎值、額外攻擊分支本身會疊加提升3%突擊發動率, 且「鎖定敵軍主將」改為主將限定而非泛用；本override取代舊版）",
    "confidence": "high",
    "source": "agy查證(2026-07-03): 《三國志·戰略版》張遼自帶被動戰法「陷陣突襲」最新官方效果文字"
+  },
+  "暗箭難防": {
+   "effectText": "準備1回合，對敵軍群體（2人）發動一次兵刃攻擊（傷害率260%）；並有60%概率（受速度影響）捕獲敵軍單體武將（捕獲效果無法被淨化），使其無法行動和造成傷害、禁用指揮和被動戰法、進入禁療狀態，且無法被其友方武將選中，持續2回合；同時最多捕獲一名武將，若施放時已有敵軍武將被捕獲，則轉而對其造成兵刃傷害（傷害率530%）。",
+   "confidence": "high",
+   "source": "user全文 2026-07-09 (取代 raw 舊版:武力縮放/主將連坐)"
   }
  }
 }

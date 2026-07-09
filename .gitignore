@@ -9,7 +9,7 @@ cards/out/
 
 # sgsdeck 來源殘留(獨立發佈不收)
 data/reference/
-data/tactics.json
+# data/tactics.json 改為追蹤: user 要求定稿本文必須回寫全文庫以便 diff(sync_tactics_effecttext.py)
 data/tactics_backup.json
 
 # 資料建置管線(綁 sgsdeck/scratchpad, 不隨公開站發佈)
