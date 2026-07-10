@@ -2000,6 +2000,15 @@ CAPABILITY_INVENTORY_IGNORE = {
     # 批52: heal選標「優先兵力最低者」/「共用同一份治療池」, 見既有heal相關_note; 窄用欄位,
     # heal本身已在忽略清單, 這兩者是既有heal選標邏輯的延伸旗標, 非獨立新能力。
     "preferLowest", "sharedPool",
+    # 批G: lifestealGiven(倒戈效果量加成, 對稱既有已忽略的healGiven, 見hit()倒戈結算處),
+    # 長慮「攻心效果+30%」專屬新增, 與healGiven同性質(窄用的「XGiven」加成族), 比照
+    # healBoost/healGiven既有忽略慣例列入, 不另立自然語言別名(避免與healGiven的既有別名
+    # 描述混淆, 兩者字面都含「Given」但服務不同結算管線)。
+    "lifestealGiven",
+    # 批G: extraHit(衝陣專屬k標記字串, 非任何dispatch分支消費的實際k類型, 純供資料辨識,
+    # 見equips_parsed.json「衝陣」_note——實際觸發邏輯由e.coef驅動, 走on_deal_eq的coef
+    # 直傷派發, 非k派發), 單一裝備專屬窄機制, 無自然語言對照措辭。
+    "extraHit",
 }
 
 

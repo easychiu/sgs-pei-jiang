@@ -271,9 +271,9 @@
     "k": "heal",
     "who": "self",
     "coef": 0.1,
-    "dur": 99,
-    "_approx": "heal-self≈heal-weakest",
-    "_note": "source為『普攻後回復自身兵力』; heal原語固定補我方最殘者(不區分self), 且為prep單次套用而非每次普攻後觸發, 屬雙重近似(治療對象與時點皆非精確)"
+    "dur": 1,
+    "when": {"on": "dealtDamage", "normalOnly": true},
+    "_note": "批G(B): 原文「普通攻擊後，恢復自身兵力（回復率10%）」——觸發對象(who:\"self\")批F已修正正確, coef:0.1對應本文明確的「回復率10%」數值, 維持不變; 本批修正觸發時點: 改用e.when:{on:\"dealtDamage\", normalOnly:true}(對稱既有裝備效果級on_deal_eq反應式消費端, normalOnly限定只在普攻後觸發, 不含戰法傷害)取代先前prep階段(戰鬥開場)單次套用的近似(舊版heal只在開戰時治療一次, 而非'每次普攻後'皆觸發, 嚴重低估實際回復頻率)。"
    }
   ]
  },
@@ -345,7 +345,16 @@
     "who": "self",
     "val": 0.1,
     "dur": 99,
-    "_note": "奇謀傷害+10%,並使攻心效果+30%; 引擎無區分謀略會心(奇謀)/治療會心(攻心)的獨立倍率,僅取奇謀部分用amp近似"
+    "dmgType": "intel",
+    "_approx": "「奇謀傷害+10%」本身仍是crit-ev折算(引擎無獨立會心判定事件, 待C類crit_system_primitive原語族落地), amp.val=0.1直接體現期望替代值, 犧牲會心的二元觸發性質(全庫crit_system_primitive家族共通限制)。",
+    "_note": "批G(B): 原文「提高10%奇謀傷害，並使自身攻心效果提高30%」——補dmgType:\"intel\"(批24既有原語, 奇謀=謀略會心, 只對謀略傷害生效, 取代先前不分兵刃/謀略籠統套用的近似)。「攻心+30%」語意獨立補上, 見下方新增的lifestealGiven效果段。"
+   },
+   {
+    "k": "lifestealGiven",
+    "who": "self",
+    "val": 0.3,
+    "dur": 99,
+    "_note": "批G(B): 原文「並使自身攻心效果提高30%」——攻心=倒戈(lifesteal)的裝備稱呼, 補k:\"lifestealGiven\"(批G本次新增, 對稱既有healGiven「施放的治療×(1+val)」, 掛在hit()的lifesteal結算處, 見sgz.py/engine.js), 取代先前完全遺漏「攻心+30%」語意的近似(舊版僅取奇謀部分套amp, 攻心加成完全未建模)。"
    }
   ]
  },
@@ -439,9 +448,10 @@
    {
     "k": "heal",
     "who": "self",
-    "coef": 0.25,
+    "coef": 1.0,
     "dur": 99,
-    "_note": "每回合25%機率恢復兵力(回復率100%); heal原語每回合套用一次(prep階段),用期望值0.25*1.0=0.25近似"
+    "rate": 0.25,
+    "_note": "批G(A): 原文「每回合25%機率恢復兵力（回復率100%）」——取代舊版EV折算(coef:0.25恆定套用), 改用coef:1.0(滿級100%治療率)+rate:0.25(滿級25%機率)。裝備效果走heal_only常駐通道(u.eq合成單效果戰法, 見sgz.py apply_passives), 依賴批G引擎修正(heal_only的t.rate擲骰僅在e.rate缺席時才進行, e.rate存在時交由函式開頭的批23 A4通用閘門統一擲骰判定)每回合獨立重新擲骰, 取代先前每回合套用一次期望值0.25*1.0=0.25的近似。"
    }
   ]
  },
@@ -451,11 +461,11 @@
   "exclusive": null,
   "effects": [
    {
-    "k": "silence",
+    "k": "healblock",
     "who": "enemy",
+    "n": 1,
     "dur": 1,
-    "_approx": "no-禁療-primitive",
-    "_note": "source為『首回合普攻後使隨機敵單體禁療1回合(無法被治療)』; 引擎無『禁療』原語, 借 silence(禁主動戰法)近似——語意不同(禁療針對治療, silence針對主動戰法), 僅為最接近的控制類替代, 且以prep套用近似『首回合普攻後』觸發時點"
+    "_note": "批G(B): 原文「戰鬥首回合，普通攻擊後使隨機敵軍單體進入禁療狀態，持續1回合」——改用k:\"healblock\"(既有原語, 全庫戰法已大量使用如振軍擊營/騎虎難下/萬軍奪帥)取代先前借用silence(禁主動戰法)的語意錯誤替代(禁療針對治療, silence針對主動戰法, 兩者完全不同), 零新原語, 純粹是裝備管線未同步套用戰法管線已有healblock原語的技術債修正。補n:1(單體, 對應'隨機敵軍單體')。觸發時點『首回合普攻後』仍以prep套用近似(裝備效果級dealtDamage反應式事件列表on_deal_eq在引擎中不存在, 只有on_hit_eq受擊方向, 造成傷害方向的裝備級反應式仍缺對應消費端), 維持既有prep近似不變, 非本批range。"
    }
   ]
  },
@@ -472,12 +482,12 @@
   "exclusive": null,
   "effects": [
    {
-    "k": "mitig",
+    "k": "dodge",
     "who": "self",
-    "val": 0.0016,
+    "prob": 0.04,
     "dur": 99,
-    "scale": "intel",
-    "_note": "受謀略傷害4%機率完全免疫; 無'完全免疫'原語,用期望值折算mitig≈4%*100%但因mitig只對mitig類傷害籠統生效(不分兵刃/謀略),故大幅降權避免誤傷兵刃減傷;此為極粗略近似"
+    "dmgType": "intel",
+    "_note": "批G(B): 原文「受到謀略傷害時，有4%機率完全免疫此次傷害」(equips_effects_source.json確認無「受智力影響」修飾語, 舊版scale:\"intel\"為EV折算年代的無根據附加, 本次不予保留)——改用k:\"dodge\"(既有規避原語, 每次受擊即時判定, 不像block是「預先banking格擋層」的計次消耗態, 更貼合「此次傷害」的即時語意, block若配合everyRound每回合預先賦予格擋層會在無謀略傷害命中的回合持續累積未消耗的charge, 與本文「4%機率」的即時性不符)+dmgType:\"intel\"(批G本次新增的規避類型過濾, 只對謀略傷害生效, 見sgz.py/engine.js dodge_dmg_type)+prob:0.04(真機率, 每次受擊即時擲骰, 非per-round banking)+dur:99(規避常駐, 對稱既有全域規避慣例)。取代舊版「大幅降權mitig, 不分兵刃/謀略籠統生效」的極粗略近似——完全免疫(單次觸發)+謀略限定+真機率三個語意成分現皆精確落地。"
    }
   ]
  },
@@ -489,10 +499,14 @@
    {
     "k": "amp",
     "who": "self",
-    "val": 0.006,
-    "dur": 99,
-    "_approx": "crit-ev",
-    "_note": "受傷時3%機率獲得10%會心,持續2回合,可疊加2次; 期望值≈3%*10%*2(可疊２)≈0.6%,近似"
+    "val": 0.10,
+    "dur": 2,
+    "rate": 0.03,
+    "when": {"on": "damaged"},
+    "stackKey": true,
+    "maxStacks": 2,
+    "_approx": "「獲得10%會心」本身仍是crit-ev折算(引擎無獨立會心判定事件, 待C類crit_system_primitive原語族落地, 見scratchpad/no_approx_inventory.json), amp.val=0.10直接體現「觸發後等同+10%常駐增傷」的期望替代值, 犧牲會心的二元觸發性質(此為全庫crit_system_primitive家族共通限制, 非本裝備獨有)。",
+    "_note": "批G(A): 原文「受到傷害時，有3%機率獲得10%會心，持續2回合，可疊加2次」——觸發機率/疊層語意取代舊版EV折算(val=0.006恆定套用): 改用when:{on:\"damaged\"}(既有反應式事件, 對稱on_hit_eq裝備效果級反應通道)+rate:0.03(真機率, 每次受傷各自獨立擲骰)+stackKey:true+maxStacks:2(既有per-target疊層原語, 對稱密計誅逆precedent)。「會心」本身的10%增傷幅度仍是crit-ev近似(見_approx), 僅觸發率/可疊加語意從EV折算升級為真機率+真疊層。"
    }
   ]
  },
@@ -556,7 +570,9 @@
     "coef": 0.05,
     "kind": "phys",
     "prob": 1,
-    "_note": "受普攻時反彈5%傷害; counter用固定coef近似(非傷害的5%,而是固定係數傷害,粗略近似)"
+    "normalOnly": true,
+    "_approx": "「反彈5%傷害」仍是固定coef重算(counter現行機制以c[\"coef\"]重新計算一次全新的damage(), 而非讀取本次受到的傷害量dmg並取其5%), 與傷害來源比例脫鉤, 需要counter支援e.ofDamage式的『依本次受到傷害量比例輸出』版本(現有ofDamage只掛在k:\"heal\"效果, counter無此讀取路徑), 待C類擴充。",
+    "_note": "批G(B): 原文「受到普通攻擊時，反彈5%傷害」——補normalOnly:true(批G本次新增, 對稱redirect既有guard_normal_only/amp/mitig既有normalOnly慣例)取代先前「不分普攻/戰法傷害皆觸發反擊」的高估近似。「反彈傷害的5%」(依本次受到的傷害量比例輸出)仍是固定coef重算的近似(見_approx), 非本批range。"
    }
   ]
  },
@@ -570,7 +586,8 @@
     "who": "self",
     "val": 0.05,
     "dur": 99,
-    "_note": "降低受到兵刃傷害5%; mitig不分兵刃/謀略,用整體mitig近似(略寬)"
+    "dmgType": "phys",
+    "_note": "批G(B): 原文「降低自身受到的兵刃傷害5%」——補dmgType:\"phys\"(批24既有原語, 全庫已大量precedent如刀出如霆/古之惡來), 取代先前mitig不分兵刃/謀略籠統生效的近似(舊版連謀略傷害也一併減免5%, 高估)。"
    }
   ]
  },
@@ -593,12 +610,11 @@
   "exclusive": null,
   "effects": [
    {
-    "k": "dot",
-    "who": "enemy",
+    "k": "extraHit",
     "coef": 0.3,
-    "dur": 1,
-    "_approx": "first-hit≈round1-dot",
-    "_note": "source為『首回合首次造成傷害時附加一次額外兵刃傷害』; 引擎無『首次傷害』觸發點, 用首回合 dot(dur:1)近似單次額外傷害; 未改 charge proc 因 charge 會每回合每次普攻觸發, 過量"
+    "kind": "phys",
+    "when": {"on": "dealtDamage", "rounds": [1]},
+    "_note": "批G(B): 原文「戰鬥首回合，首次造成傷害時附加一次額外兵刃傷害」——e.when:{on:\"dealtDamage\", rounds:[1]}(批G本次新增的裝備效果級dealtDamage反應式消費端on_deal_eq, 對稱既有on_hit_eq受擊方向)+e.coef(批G本次新增, on_deal_eq效果級也支援coef直傷派發, 對稱戰法級on_deal_tacs既有t.coef慣例, 見sgz.py/engine.js dealt_damage_for), 精確表達「首回合、首次造成傷害的當下、附加一次額外傷害」——on_deal_eq的hit_flags去重(每回合每效果最多觸發1次, 每回合重置)天然對應'首次'語意, rounds:[1]限定僅第1回合, 沿用觸發本次事件的同一目標dst(非額外選標)。取代舊版「首回合dot(dur:1)」近似(dot是持續傷害管線, 傷害延後到tick()才真正扣兵力, 語意上是'次回合結算的DoT', 而非'這一擊之後立刻追加一次額外傷害', 且未真正綁定'首次造成傷害'的觸發時點, 是prep套用一次的近似); k欄位保留(\"extraHit\", 非任何既有dispatch分支消費, 純供資料辨識用, 實際觸發邏輯由e.coef驅動)。"
    }
   ]
  },
@@ -675,9 +691,23 @@
     "k": "amp",
     "who": "self",
     "val": 0.2,
-    "dur": 2,
-    "_approx": "crit-ev",
-    "_note": "會心+奇謀機率各20%期望值折算為統一amp; dur:2 為裝備效果套用後的『存續回合數』, 非真實『戰鬥前2回合』的回合窗(裝備效果於prep一次性套用, 無 when.rounds 回合窗控制; 此處因 source 恰為前2回合、dur:2 存續2回合而數值巧合吻合, 但機制上是存續時長非回合窗)"
+    "dur": 1,
+    "dmgType": "phys",
+    "everyRound": true,
+    "when": {"until": 2},
+    "_approx": "「會心20%」本身仍是crit-ev折算(引擎無獨立會心判定事件, 待C類crit_system_primitive原語族落地), amp.val=0.2直接體現期望替代值, 犧牲會心的二元觸發性質(全庫crit_system_primitive家族共通限制)。",
+    "_note": "批G(A): 原文「戰鬥前2回合，提高自身20%會心與奇謀幾率」——回合窗語意取代舊版近似(舊版dur:2是裝備套用後的『存續回合數』, 非真實『戰鬥前2回合』回合窗, 機制上是時長非窗口): 改用everyRound:true(批30既有原語, 讓非heal效果在heal_only常駐通道逐回合重新套用/檢查)+when:{until:2}(僅第1-2回合生效)+dur:1(每回合各自套用當下1回合, 由everyRound通道逐回合續期, 對稱整軍經武等既有parity+dur:1 precedent)取代dur:2存續時長近似。並補dmgType:\"phys\"(會心=兵刃傷害加成, 批24既有原語)拆分自「奇謀」(謀略傷害加成, 見下一效果段), 取代先前「會心+奇謀合併成單一無條件全類型amp」的近似(高估: 先前單一amp不分傷害類型, 對兵刃/謀略傷害都同時套用20%, 而原文明確是兩個獨立20%機率各自對應不同傷害類型)。"
+   },
+   {
+    "k": "amp",
+    "who": "self",
+    "val": 0.2,
+    "dur": 1,
+    "dmgType": "intel",
+    "everyRound": true,
+    "when": {"until": 2},
+    "_approx": "「奇謀20%」本身仍是crit-ev折算(引擎無獨立會心判定事件, 待C類crit_system_primitive原語族落地), amp.val=0.2直接體現期望替代值, 犧牲會心的二元觸發性質(全庫crit_system_primitive家族共通限制)。",
+    "_note": "批G(A): 原文「戰鬥前2回合...奇謀幾率」——對稱上一效果段(會心/phys), 本段對應「奇謀」(謀略暴擊, dmgType:intel), 同樣改用everyRound+when:{until:2}+dur:1取代舊版dur:2存續時長近似, 並與上段各自dmgType分流(取代先前合併成單一全類型amp的高估)。"
    }
   ]
  },

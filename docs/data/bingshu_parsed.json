@@ -434,10 +434,11 @@
   "type": "副兵書",
   "effects": [
    {
-    "k": "heal",
+    "k": "healBoost",
     "who": "self",
-    "coef": 0.3,
-    "dur": 1
+    "val": 0.3,
+    "dur": 99,
+    "_note": "批G(F遺留): 原文「受到的治療效果提高」(data/bingshu.json)——是「自身受到的治療量×(1+val)」語意(healBoost, 對稱既有healGiven「施放的治療×(1+val)」慣例), 非「自身施放treatment給他人」的k:\"heal\"。舊版k:\"heal\"是kind誤植(把'受到治療提高'錯建成'自己每回合治療自己一次固定量'), 改用healBoost精確表達; coef改為val(healBoost讀e[\"val\"], 非coef), dur維持常駐(99, 對稱healGiven/healBoost既有全域慣例, 原99被誤標成dur:1可能是沿用heal的單回合套用慣例, 但healBoost是持續性buff而非單次觸發, 不應為dur:1)。"
    }
   ]
  },
@@ -733,10 +734,18 @@
   "type": "主兵書",
   "effects": [
    {
-    "k": "heal",
+    "k": "mitig",
     "who": "self",
-    "coef": 0.5,
-    "dur": 1
+    "val": -0.03,
+    "dur": 99,
+    "_note": "批G(F遺留): 原文「自身受到傷害提升3%」(data/bingshu.json)——負值mitig使(1-mit)>1, 對稱既有amp(enemy正值誤幫敵增傷→轉存為負mitig易傷)慣例, 精確表達「自身受到傷害提升」(而非降低)。舊版k:\"heal\"完全不對應此語意(kind誤植)。"
+   },
+   {
+    "k": "healGiven",
+    "who": "self",
+    "val": 0.12,
+    "dur": 99,
+    "_note": "批G(F遺留): 原文「造成治療提升12%」——對應healGiven「施放的治療×(1+val)」(既有原語), 非k:\"heal\"(自己每回合固定治療自己)。舊版單一k:\"heal\", coef:0.5完全未表達此複合語意(受傷+3%/施療+12%兩個獨立效果), 現拆成兩段各自精確原語。"
    }
   ]
  },

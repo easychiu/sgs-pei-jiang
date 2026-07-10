@@ -476,7 +476,17 @@ class Unit:
         # 10%兵力」) —— 與上面 delayed_eq(回合視窗一次性套用)不同語意: on="damaged"/"attacked"
         # 是「受傷當下觸發」, 不是「特定回合開啟時套用一次」。與 on_hit_effect_tacs(戰法版本)
         # 對應的裝備版本, 在 on_hit() 反應式事件點結算。
-        self.on_hit_eq = [e for e in _eq_all if e.get("when") and e["when"].get("on")]
+        # 批G: 明確排除 on=="dealtDamage"(見下方新增的 on_deal_eq), 對稱戰法級
+        # on_hit_effect_tacs/on_deal_effect_tacs 的白名單收斂慣例(見上方批31 A修復註解: 過去
+        # truthy檢查會讓dealtDamage被誤當成damaged/attacked放行, 與on_deal_eq觸發路徑重複結算)。
+        self.on_hit_eq = [e for e in _eq_all if e.get("when") and e["when"].get("on") in ("attacked", "damaged")]
+        # 批G: 裝備效果級 e.when.on=="dealtDamage"(「自身造成傷害時/後」反應式, 對比on_hit_eq的
+        # attacked/damaged是「自己受擊」視角, 這裡是「自己打人」視角)——過去裝備管線只有
+        # on_hit_eq(受擊方向), 沒有對稱on_deal_tacs/on_deal_effect_tacs(造成傷害方向)的裝備級
+        # 消費端, 導致「首回合首次造成傷害時附加一次額外兵刃傷害」(衝陣)這類裝備只能退化用
+        # 首回合dot近似(單次額外傷害, 但實際上是prep套用, 非真的「首次造成傷害時」觸發)。
+        # 掛在 dealt_damage() 對 src(施加傷害的一方)掃描, 與 on_hit_eq 完全對稱。
+        self.on_deal_eq = [e for e in _eq_all if e.get("when") and e["when"].get("on") == "dealtDamage"]
         # 裝備 proc(普攻後觸發, 如 昭烈12%繳械/踩踏額外傷): 包成偽突擊(charge)戰法附加, 走既有 charge 觸發路徑(普攻後 rate 擲骰)。
         # 偽戰法不在戰法庫, 不參與同名戰法去重與 NONEQUIP 過濾; nameZh 預設「特技·名」供 TRACE 辨識。
         # proc:True 旗標 → 標記為「特技偽戰法」, 非真突擊戰法: 日後若加 chargeup(突擊發動率加成)原語, 必須排除 t["proc"] is True(user 明確指示: 特技不吃突擊加成, 例虎豹騎/三勢陣/經天緯地/陷陣突襲)。
@@ -542,6 +552,7 @@ class Unit:
         self.block = []                                # 批22: 次數型格擋(抵禦/警戒同族) —— [{"val","n","src"}], 消耗順序見 hit(); val=1.0全擋/0.x部分減傷, n=剩餘次數
         self.dodge_prob = 0.0                          # 規避機率
         self.dodge_dur = 0                             # 規避剩餘回合
+        self.dodge_dmg_type = None                     # 批G: 規避限定的傷害類型(phys/intel), None=不分類型(向後相容既有全域規避)
         self.surehit_dur = 0                           # 必中: 無視對方 dodge, 剩餘回合
         self.healblock = 0                             # 批8: 禁療(healblock) 剩餘回合, >0 時 heal 效果對其無效
         # 批52d: 虎嗔(huchen) —— 將門虎女負面狀態; 可被草船/刮骨等 dispel(debuffs)清除。
@@ -824,29 +835,40 @@ class Unit:
                 self.stat_adds = [a for a in self.stat_adds if not (a[0] == stat and a[3] == src)]
         self.stat_adds.append([stat, add, dur, src, flags])
 
-    def push_block(self, val, n, src=None):
+    def push_block(self, val, n, src=None, dmg_type=None):
         """批22: block(次數型格擋, 抵禦/警戒同族) —— 與 shield/mitig 語意不同: 不是持續減傷/
         固定量吸收池, 而是「剩餘次數」計次器, 每次受擊消耗1次(而非按傷害量扣減), val=1.0時
         完全格擋該次傷害、val=0.x時該次傷害打折(如警戒 -75.35%≈val=0.7535)。同源(同 src)
         再次施加時疊加次數(而非同 push_add/push_mod 慣例的「同源刷新覆蓋」), 貼合原文
-        「抵禦(N次)」「目前抵禦總次數為N」的疊次語意。"""
+        「抵禦(N次)」「目前抵禦總次數為N」的疊次語意。
+        批G: dmg_type(可選, 尾端新增, 向後相容既有全部呼叫點)—— 對稱 amp/mitig 既有的
+        dmgType 過濾慣例(批24 D2), 限定此格擋只對該類型(phys/intel)傷害生效, 省略時維持
+        原行為(不分類型, 任何傷害皆可消耗, 如「抵禦」「警戒」既有全域格擋)。榮光「受到謀略
+        傷害時, 有4%機率完全免疫此次傷害」需要限定只對intel傷害生效, 過去block無此過濾維度,
+        只能改用大幅降權的mitig近似(見equips_parsed.json _note 歷史記錄)。"""
         for b in self.block:
-            if src and b.get("src") == src and abs(b["val"] - val) < 1e-9:
+            if src and b.get("src") == src and abs(b["val"] - val) < 1e-9 and b.get("dmgType") == dmg_type:
                 b["n"] += n
                 return
-        self.block.append({"val": val, "n": n, "src": src})
+        self.block.append({"val": val, "n": n, "src": src, "dmgType": dmg_type})
 
-    def consume_block(self):
-        """消耗一次格擋(若有): 從陣列頭(先加的先消耗, 貼合戰報「總次數」單一計數語意)扣1次,
-        n<=0時整筆移除。回傳消耗到的 val(0=無格擋可消耗, 呼叫端不應觸發)。"""
-        if not self.block:
-            return 0
-        b = self.block[0]
-        b["n"] -= 1
-        val = b["val"]
-        if b["n"] <= 0:
-            self.block.pop(0)
-        return val
+    def consume_block(self, dmg_type=None):
+        """消耗一次格擋(若有, 且該格擋層未限定類型或類型與本次傷害相符): 從陣列中第一筆符合
+        條件者(先加的先消耗, 貼合戰報「總次數」單一計數語意)扣1次, n<=0時整筆移除。回傳消耗
+        到的 val(0=無格擋可消耗, 呼叫端不應觸發)。
+        批G: dmg_type(可選)—— 本次傷害類型(phys/intel), 只消耗 b["dmgType"] 為 None(不分類型,
+        既有全域格擋如「抵禦」「警戒」)或與 dmg_type 相符的格擋層(如榮光只設 intel), 類型不符
+        的格擋層(如未來新增「兵刃專屬格擋」)略過不消耗、不影響。向後相容: 全庫既有格擋資料皆
+        未帶 dmgType(None), 此處邏輯對它們完全不變(第一個 None 類型的格擋層永遠優先匹配)。"""
+        for i, b in enumerate(self.block):
+            if b.get("dmgType") is not None and b["dmgType"] != dmg_type:
+                continue
+            b["n"] -= 1
+            val = b["val"]
+            if b["n"] <= 0:
+                self.block.pop(i)
+            return val
+        return 0
 
     def tick(self):
         for dmg, *_ in self.dots:                      # 持續傷害結算(dots[2]為undispellable旗標, 不影響結算量)
@@ -885,6 +907,7 @@ class Unit:
         self.dodge_dur = max(0, self.dodge_dur - 1)
         if self.dodge_dur <= 0:
             self.dodge_prob = 0.0
+            self.dodge_dmg_type = None  # 批G: 到期一併清除類型限定, 避免下次無條件dodge(dmgType=None)誤沿用舊的殘留類型過濾
         self.surehit_dur = max(0, self.surehit_dur - 1)
         if self.shield:
             self.shield["dur"] -= 1
@@ -953,7 +976,7 @@ def damage(src, dst, coef, kind, src_troop=None, is_normal=None, is_active=None,
 
 
 def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_active=None, is_charge=None):  # 造成傷害(含規避/護盾/代承轉移/反擊), 累積結算層數; 批31 A: is_active(可選, 尾端新增, 向後相容既有全部呼叫點)—— 傳入本次傷害是否為主動戰法所致; 批40 B: is_charge(可選, 對稱is_active)—— 傳入本次傷害是否為突擊戰法所致
-    if not src.surehit_dur and dst.dodge_dur and random.random() < dst.dodge_prob:  # 規避: 完全迴避一次傷害(必中無視)
+    if not src.surehit_dur and dst.dodge_dur and (dst.dodge_dmg_type is None or dst.dodge_dmg_type == kind) and random.random() < dst.dodge_prob:  # 規避: 完全迴避一次傷害(必中無視); 批G: dodge_dmg_type限定只對該類型(phys/intel)生效, None=向後相容不分類型
         if on_event:
             on_event(dst, src, is_normal, 0, kind)  # 批39 C: 補傳kind(本次傷害類型), 供on_hit()對稱dealt_damage的when.dmgType過濾
         return
@@ -965,7 +988,7 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_a
     # 最大兵力的6%時(最低100兵力)」才消耗1次警戒並減傷。未達門檻的傷害不消耗、不減傷,
     # 照常全額打進去(見 engine.js 同段註解/engine_limitations.md 第30節)。
     if dst.block and dmg > BLOCK_CONSUME_THRESHOLD:
-        block_val = dst.consume_block()
+        block_val = dst.consume_block(dmg_type=kind)  # 批G: 傳入本次傷害類型(phys/intel), 只消耗未限定類型或類型相符的格擋層(見consume_block docstring)
         dmg *= max(0.0, 1 - block_val)
     if dst.shield and dst.shield["amt"] > 0:          # 護盾: 先於兵力扣減吸收傷害
         absorb = min(dst.shield["amt"], dmg)
@@ -989,7 +1012,11 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_a
         dst.settle["layers"] = min(dst.settle["max"], dst.settle["layers"] + 1)
     ls = src.addbonus("lifesteal")                    # 批8: 倒戈 —— 造成傷害時按比例回復自身兵力(以本次造成的傷害量 dmg 為基準), 上限 START_TROOP
     if ls > 0 and src.alive:
-        src.troop = min(START_TROOP, src.troop + dmg * ls)
+        # 批G: lifestealGiven(倒戈效果量加成) —— 對稱既有healGiven(施放的治療×(1+val)), 掛在
+        # src(倒戈觸發者)自己身上, 使倒戈本身回復的兵力量再乘上(1+val)。長慮「使自身攻心效果
+        # 提高30%」需要此欄位("攻心"=倒戈lifesteal的裝備稱呼), 過去引擎無此加成維度, 只能取
+        # amp近似的奇謀部分, 完全遺漏攻心+30%語意。
+        src.troop = min(START_TROOP, src.troop + dmg * ls * max(0.0, 1 + src.addbonus("lifestealGiven")))
     # 批33: on_event/on_deal 補傳 dmg(本次結算後的實際傷害量, 已經過block/shield/代承折算,
     # 與寫入 wounded 池的量一致) —— 供 e["ofDamage"](傷害比例治療) 反應式heal使用, 見
     # on_hit()/dealt_damage() 呼叫端與 apply_effects() heal 分支(dmg 參數)。
@@ -1010,7 +1037,7 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_a
         if dst.huchen["hits"] >= dst.huchen["maxHits"]:
             settle_huchen(dst, early=True)
     c = dst.counter                                   # 反擊: 直接還擊 src(不經 hit, 不遞迴)
-    if c and dst.alive and src.alive and random.random() < c.get("prob", 1.0):
+    if c and dst.alive and src.alive and not (c.get("normalOnly") and not is_normal) and random.random() < c.get("prob", 1.0):  # 批G: normalOnly限定只在普攻(is_normal=True)時觸發, 省略時向後相容(任意傷害皆可觸發)
         ck = c.get("kind", "phys")
         cd = damage(dst, src, c["coef"], ck)
         src.troop -= cd
@@ -1247,8 +1274,12 @@ TARGETSEL_KEY = {
     "maxTroop": lambda u: u.troop,  # 批45 C: 兵力最高準則(對稱minTroop), 見engine_limitations.md第17節——
     # 過去只有minTroop(=mostDamaged, 兵力最低=最受損)一種方向, 「兵力最高」的敵軍/我軍選標
     # 缺口(定謀貴決「使敵軍兵力最高的武將...」)長年只能誠實揭露維持無targetSel近似, 現補上。
+    "maxSpeed": lambda u: u.eff("speed"),  # 批G: 速度最快準則(對稱既有maxForce/maxIntel/maxTroop準則
+    # 家族), 萬軍奪帥「使敵軍速度最快的武將降速」過去因準則家族缺這個具體枚舉值, 只能退化套用
+    # 全體敵軍(較原文寬鬆, 高估), 現補上, 與既有maxForce/maxIntel/maxTroop同一套pick_by_criterion
+    # 呼叫路徑, 非新機制, 純粹是準則枚舉表補一個成員。
 }
-TARGETSEL_MIN = {"minTroop", "minIntel", "minCommand", "mostDamaged"}  # maxTroop故意不加入此集合, 使pick_by_criterion對它用max()而非min()
+TARGETSEL_MIN = {"minTroop", "minIntel", "minCommand", "mostDamaged"}  # maxTroop/maxSpeed故意不加入此集合, 使pick_by_criterion對它們用max()而非min()
 
 
 def pick_by_criterion(units, sel, ally_pool=False):
@@ -1770,7 +1801,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             #      同樣用 when_fired 去重。
             #   3) 無 when(e["when"]/t["when"]皆無)且無 e["once"] → 維持原行為: 每回合持續
             #      治療(急救/休整類戰法本意如此)。
-            #   以上都通過後才擲 t["rate"] 骰(rate<1 時只有部分回合真正治療, 而非年年必中)。
+            #   以上都通過後才擲 e["rate"]??t["rate"] 骰(rate<1 時只有部分回合真正治療, 而非年年必中)。
             if heal_only:
                 hw = e.get("when") or t.get("when")
                 if hw:
@@ -1786,7 +1817,17 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     if id(e) in caster.when_fired:
                         continue
                     caster.when_fired.add(id(e))
-                if random.random() >= t.get("rate", 1):
+                # 批G: t["rate"]僅在e["rate"]缺席時才擲骰 —— 過去此處無條件讀t["rate"], 但
+                # e["rate"]本身早已被上方「批23 A4: 效果級e["rate"]折算一致性」通用閘門(函式開頭,
+                # 對所有k統一處理)擲骰判定過一次(non-heal_only的prep/active/charge等路徑同樣適用
+                # 此通用閘門, heal_only路徑亦不例外), 若這裡帶e["rate"]又重複讀e["rate"]骰一次會
+                # 使機率被平方(0.1×0.1≈0.01, 而非期望的0.1), 犯了同批註解自己警告的錯誤(「避免在
+                # 這裡對同一效果重複擲骰, 機率會被平方, 造成低估」)。修正: e["rate"]存在時, 通用
+                # 閘門已完整處理該效果本回合是否觸發, 這裡不再二次擲骰(直接放行, 不比對t["rate"]);
+                # 只有e["rate"]缺席(該效果未自帶機率)時才退回擲t["rate"](戰法整體觸發率), 對稱
+                # everyRound非heal通道既有的ev_rate=e.get("rate", t.get("rate", 1))慣例, 但避免其
+                # 「取e.rate或t.rate其一」的寫法在heal_only此處被誤用成「兩者都各自獨立擲一次」。
+                if e.get("rate") is None and random.random() >= t.get("rate", 1):
                     continue
             # 批52: heal 選標對齊原文 —— 過去一律「我方最殘一人」, 忽略 who/e.n/targetSel,
             # 導致「恢復自身」「治療我軍主將」「我軍群體2人/全體」全部失真(engine_limitations #1)。
@@ -1895,7 +1936,21 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                                key=lambda a: a.eff("force"), default=caster)
             else:
                 guardian = caster
-            for a in allies:
+            # 批G: who 分流(leader/subs) —— 過去此處無條件對「除guardian外的全體allies」套用
+            # 同一share, 不像其他k類型(mitig/amp/heal/…)已支援who:leader(僅index0主將)/
+            # who:subs(index0以外副將)分流, 導致「為副將分擔30%/為主將分擔60%」這類依受益者
+            # 身份給不同share值的戰法(肉身鐵壁)只能合併成單一均值近似(0.45)。現對稱既有
+            # who=="leader"/who=="subs"慣例(見上方dests泛用分派區塊), 若redirect效果帶
+            # who:"leader"/"subs"則只套用到對應子集, 省略who(或who:"ally", 向後相容既有全部
+            # 資料)時維持原行為(對guardian以外的全體allies套用同一share)。
+            redirect_who = e.get("who", "ally")
+            if redirect_who == "leader":
+                recipients = [allies[0]] if allies and allies[0].alive else []
+            elif redirect_who == "subs":
+                recipients = [a for a in allies[1:] if a.alive]
+            else:
+                recipients = list(allies)
+            for a in recipients:
                 if a.alive and a is not guardian and not getattr(a, "captured", 0):
                     a.guardian, a.guard_share = guardian, e.get("share", 0.3)
                     a.guard_dur = e.get("dur", 99)    # 讀 e.dur(預設99=近似全程, 向後相容); 到期由 tick 清除
@@ -2372,8 +2427,15 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     # (=常駐被動慣例, 向後相容無 dur 欄位的既有反擊資料)。+1 補償: tick 施加當
                     # 回合末即扣1, 與 taunt/dodge/surehit/shield 慣例一致。tick() 逐回合遞減,
                     # 歸零時清除(見 tick() 對應段落)。
+                    # 批G: e["normalOnly"] —— 對稱既有redirect(guard_normal_only)/amp/mitig
+                    # 已支援的normalOnly慣例, 限定此反擊只在受到普通攻擊(is_normal=True)時觸發,
+                    # 省略時向後相容(任意傷害來源皆可觸發反擊, 現行全庫既有counter資料行為不變)。
+                    # 荊棘「受到普通攻擊時，反彈5%傷害」需要此限定(舊版counter不分普攻/戰法傷害,
+                    # 高估觸發範圍)。「反彈傷害的5%」(依本次受到的傷害量比例輸出, 而非固定coef
+                    # 重算)仍缺對應原語, 維持既有近似, 移C類(counter缺ofDamage式比例輸出版本)。
                     u.counter = {"coef": e.get("coef", 1.0), "kind": e.get("kind", "phys"),
-                                 "prob": e.get("prob", 1.0), "dur": e.get("dur", 99) + 1}
+                                 "prob": e.get("prob", 1.0), "dur": e.get("dur", 99) + 1,
+                                 "normalOnly": bool(e.get("normalOnly"))}
             elif k == "taunt":                         # 嘲諷: 中招者普攻/單體戰法強制指向施放者
                 u.taunt_by = caster
                 u.taunt_dur = max(u.taunt_dur, e.get("dur", 1) + 1)
@@ -2384,6 +2446,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             elif k == "dodge":                         # 規避: 機率完全迴避一次傷害
                 u.dodge_prob = e.get("prob", 0.2)
                 u.dodge_dur = max(u.dodge_dur, e.get("dur", 1) + 1)
+                u.dodge_dmg_type = e.get("dmgType")   # 批G: 限定規避只對此類型(phys/intel)傷害生效, 對稱amp/mitig/block既有dmgType過濾慣例(榮光「受謀略傷害時完全免疫」需要只免疫intel傷害); 省略時None=向後相容既有全域規避(不分類型)
             elif k == "block":                         # 批22: block(次數型格擋, 抵禦/警戒同族) —— times:N(剩餘次數), val:1.0全擋/0.x部分減傷
                 # val 的 scale 縮放用 0~1 專屬 clamp(非 sv_val 的 ±SCALE_CLAMP, 因 block val 是
                 # 「減傷比例」語意, 不應為負值或超過1.0全擋)。
@@ -2392,7 +2455,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 # 倍率都固定用第一次掃描到該效果時(prep 階段)算出的值。
                 # 批35 A: cap_val_of 套用 e["capVal"](值上限), 在既有 0~1 clamp 之前先夾一次。
                 b_val = max(0.0, min(1.0, cap_val_of(e.get("val", 1.0) * locked_scale_of(caster, e), e.get("capVal")))) if e.get("scale") else e.get("val", 1.0)
-                u.push_block(b_val, e.get("times", 1), src)
+                u.push_block(b_val, e.get("times", 1), src, dmg_type=e.get("dmgType"))  # 批G: e["dmgType"]限定格擋類型(榮光「受謀略傷害時完全免疫」等), 省略時向後相容(不分類型)
             elif k == "surehit":                       # 必中: 無視對方 dodge
                 u.surehit_dur = max(u.surehit_dur, e.get("dur", 1) + 1)
             elif k == "healblock":                     # 批8: 禁療 —— heal 套用處(apply_effects 開頭)已排除 healblock 中的目標
@@ -2443,6 +2506,10 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 u.push_add("healBoost", e["val"], e["dur"], src)
             elif k == "healGiven":
                 u.push_add("healGiven", e["val"], e["dur"], src)
+            # 批G: lifestealGiven(倒戈效果量×(1+val)) —— 對稱healGiven, 實際套用在hit()倒戈結算處
+            # (見hit()內 lifesteal 段)。長慮「使自身攻心效果提高30%」需要此欄位。
+            elif k == "lifestealGiven":
+                u.push_add("lifestealGiven", e["val"], e["dur"], src)
             # 批16: fakeReport(偽報) —— 中招者被動+指揮戰法失效: 每回合擲骰的coef段與on_hit反應被抑制
             # (prep已套用效果不回收, 近似)。insight 可免(同其他控制類慣例)。
             # 批22: 偽報疊加規則(戰報實測「身上已存在同等或更強的偽報效果」→不覆蓋) —— 新 dur
@@ -2695,7 +2762,11 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             src.stack["n"] = min(src.stack["max"], src.stack["n"] + 1)
 
         def dealt_damage_for(src, dst, is_normal, kind, dmg, holder, want_who):  # holder: 效果持有者(可能不同於src); want_who: 同on_hit_for慣例
-            if not holder.alive or (not holder.on_deal_tacs and not holder.on_deal_effect_tacs):
+            # 批G: 早退判斷補上on_deal_eq(裝備效果級dealtDamage), 否則只帶裝備級dealtDamage
+            # 反應式(無戰法級on_deal_tacs/on_deal_effect_tacs)的持有者會在此處被提前擋掉, 永遠
+            # 進不到下方on_deal_eq迴圈(衝陣「首回合首次造成傷害時」若無其他戰法級dealtDamage反應式
+            # 戰法陪同, 會被此早退邏輯完全跳過)。
+            if not holder.alive or (not holder.on_deal_tacs and not holder.on_deal_effect_tacs and not holder.on_deal_eq):
                 return
             if holder.fake_report_dur:                  # 批16: 偽報 —— 抑制反應式觸發(被動/指揮戰法失效), 與 on_hit 同慣例
                 return
@@ -2792,6 +2863,41 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                         holder.hit_flags.add(id(e))
                     apply_effects(holder, dst if holder is src else None, {"effects": [e], "kind": t.get("kind", "phys"), "nameZh": t.get("nameZh")},
                                  allies_of(holder), foes_of(holder), rate_checked=True, reactive=True, dmg=dmg)  # 已擲過 e["rate"], 避免重複擲骰; reactive供e.when.on閘門放行; 批33: dmg供e["ofDamage"]使用
+            # 批G: 裝備效果級 e.when.on=="dealtDamage"(見 on_deal_eq 註解) —— 同上, 用合成單效果
+            # 戰法呼叫 apply_effects, 對稱 on_hit_eq(受擊方向)的既有裝備級消費端。衝陣「首回合首次
+            # 造成傷害時附加一次額外兵刃傷害」需要此掛鉤點, 過去裝備管線只有on_hit_eq(受擊方向),
+            # 缺此方向(造成傷害)的消費端, dealtDamage的裝備效果會被靜默忽略(從未真正觸發)。
+            for e in holder.on_deal_eq:
+                ew = e["when"]
+                if not who_ok(ew):
+                    continue
+                if not _dmg_type_ok(ew.get("dmgType")):
+                    continue
+                if not _dmg_above_ok(ew):
+                    continue
+                if not _caster_is_leader_ok(ew):
+                    continue
+                if ew.get("normalOnly") and not is_normal:
+                    continue
+                if not round_ok({"when": ew}, CUR_ROUND):
+                    continue
+                if id(e) in holder.hit_flags:
+                    continue
+                ev_rate = e.get("rate", 1)
+                if random.random() >= ev_rate:
+                    continue
+                holder.hit_flags.add(id(e))
+                # 批G: e["coef"](可選)—— 對稱on_deal_tacs的t["coef"]直傷派發(見上方if t["coef"]:
+                # hit(...)分支), 讓裝備效果級dealtDamage也能表達「附加一次額外傷害」(而非只能是
+                # amp/mitig/heal等buff類effects), 衝陣「首次造成傷害時附加一次額外兵刃傷害」需要
+                # 此直接傷害輸出, 沿用觸發本次事件的同一目標dst(裝備效果無targetSel/多目標選標
+                # 需求, 保持與觸發者同一目標最簡單直觀)。與下方apply_effects(k派發)不互斥——
+                # e["k"]若非coef直傷類型(如"amp"/"mitig")仍會正常經過apply_effects處理, e["coef"]
+                # 只是額外多做一次直接hit()(對稱on_deal_tacs主戰法段「coef傷害+effects buff」
+                # 可並存的既有語意)。
+                if e.get("coef") and holder is src and dst and dst.alive:
+                    hit(holder, dst, e["coef"], e.get("kind", "phys"), False, on_hit, dealt_damage)
+                apply_effects(holder, dst if holder is src else None, {"effects": [e], "kind": "phys"}, allies_of(holder), foes_of(holder), rate_checked=True, reactive=True, dmg=dmg)
 
         if not src.alive:
             return
@@ -6772,6 +6878,188 @@ def demo():
     assert et_lowest.troop == before_lowest, \
         "173d: who:eventTarget不應治療全軍兵力最低者(曹操), 即使其兵力比事件受傷者更低——反應式急救的受詞是「受傷的那個單位」, 不是「預設補最殘」"
     print("    [批F 173d] 反應式急救(who:eventTarget)治療受傷者本人, 不誤選全軍兵力最低者 驗證通過")
+
+    # 174) 批G: heal_only 常駐通道的 t["rate"] 擲骰應僅在 e["rate"] 缺席時才進行——e["rate"]
+    # 存在時, 函式開頭的批23 A4通用閘門已擲過一次骰(對所有k統一適用, 含heal), 這裡不應再讀
+    # t["rate"]重複擲骰(否則機率被平方: 0.1×1.0的t.rate仍會再擲一次, 若誤讀e.rate當t.rate的
+    # fallback來源則會變成0.1×0.1=0.01, 犯了同批註解自己警告的「重複擲骰使機率平方」錯誤)。
+    # 用統計試驗驗證: e["rate"]=0.1的heal效果, 即使t["rate"]=1.0, 實際觸發率應接近10%(僅通用
+    # 閘門的單次擲骰生效)而非100%(舊bug: heal_only硬讀t.rate=1.0視為必中)或1%(若heal_only又
+    # 誤讀e.rate=0.1當t.rate的fallback來源重複擲骰)。
+    random.seed(174)
+    HG174_TRIALS = 400
+    hg174_fired = 0
+    for _ in range(HG174_TRIALS):
+        hg174_u = Unit(POOL["張飛"], "槍")
+        hg174_u.troop = START_TROOP * 0.5
+        hg174_u.wounded = START_TROOP * 0.5
+        before174 = hg174_u.troop
+        apply_effects(hg174_u, None,
+                      {"nameZh": "測試174", "rate": 1.0, "kind": "phys",
+                       "effects": [{"k": "heal", "who": "self", "coef": 1.0, "dur": 1, "rate": 0.1}]},
+                      [hg174_u], [], heal_only=True)
+        if hg174_u.troop > before174:
+            hg174_fired += 1
+    hg174_pct = hg174_fired / HG174_TRIALS
+    assert 0.04 < hg174_pct < 0.18, \
+        f"174: e['rate']=0.1應使heal_only常駐通道實際觸發率≈10%(即使t['rate']=1.0), 400次試驗實得{hg174_pct*100:.1f}%"
+    # 向後相容: 未帶e["rate"]的既有heal資料應完全不受影響(fallback到t["rate"])
+    random.seed(174)
+    hg174b_fired = 0
+    for _ in range(HG174_TRIALS):
+        hg174b_u = Unit(POOL["張飛"], "槍")
+        hg174b_u.troop = START_TROOP * 0.5
+        hg174b_u.wounded = START_TROOP * 0.5
+        before174b = hg174b_u.troop
+        apply_effects(hg174b_u, None,
+                      {"nameZh": "測試174b", "rate": 0.2, "kind": "phys",
+                       "effects": [{"k": "heal", "who": "self", "coef": 1.0, "dur": 1}]},
+                      [hg174b_u], [], heal_only=True)
+        if hg174b_u.troop > before174b:
+            hg174b_fired += 1
+    hg174b_pct = hg174b_fired / HG174_TRIALS
+    assert 0.11 < hg174b_pct < 0.30, \
+        f"174b: 未帶e['rate']的heal應fallback採用t['rate']=0.2(向後相容), 400次試驗實得{hg174b_pct*100:.1f}%"
+    print(f"    [批G 174] heal_only常駐通道e['rate']優先於t['rate'](174: {hg174_pct*100:.1f}% 約10%)/向後相容fallback(174b: {hg174b_pct*100:.1f}% 約20%)驗證通過")
+
+    # 175) 批G: block(次數型格擋)支援e["dmgType"]過濾(榮光「受謀略傷害時完全免疫」) —— 帶
+    # dmgType的格擋層只消耗同類型傷害, 不影響其餘類型傷害的照常結算。
+    random.seed(175)
+    bk175_u = Unit(POOL["甘寧"], "弓")
+    bk175_u.push_block(1.0, 1, src="測試175", dmg_type="intel")
+    before175_phys = bk175_u.troop
+    hit(Unit(POOL["張飛"], "槍"), bk175_u, 5.0, "phys", is_normal=True)
+    assert bk175_u.troop < before175_phys, "175: dmgType='intel'的格擋不應消耗於phys傷害(應照常扣血)"
+    assert len(bk175_u.block) == 1 and bk175_u.block[0]["n"] == 1, "175: phys傷害不應消耗intel專屬格擋層(應仍剩1層)"
+    before175_intel = bk175_u.troop
+    hit(Unit(POOL["諸葛亮"], "弓"), bk175_u, 5.0, "intel", is_normal=False)
+    assert bk175_u.troop == before175_intel, "175: dmgType='intel'的格擋應完全免疫intel傷害(val=1.0全擋)"
+    assert len(bk175_u.block) == 0, "175: intel傷害應消耗掉intel專屬格擋層(用盡後移除)"
+    # 向後相容: 未帶dmgType的格擋應維持原行為(不分類型皆可消耗)
+    bk175b_u = Unit(POOL["甘寧"], "弓")
+    bk175b_u.push_block(1.0, 1, src="測試175b")
+    before175b = bk175b_u.troop
+    hit(Unit(POOL["張飛"], "槍"), bk175b_u, 5.0, "phys", is_normal=True)
+    assert bk175b_u.troop == before175b, "175b: 未帶dmgType的格擋應向後相容, 不分類型皆可消耗(phys傷害應被全擋)"
+    assert len(bk175b_u.block) == 0, "175b: 格擋層應在消耗後移除"
+    print("    [批G 175] block支援e['dmgType']過濾(榮光「受謀略傷害完全免疫」精確落地)/向後相容不分類型格擋驗證通過")
+
+    # 176) 批G: dodge(規避)支援e["dmgType"]過濾(榮光改用dodge取代block, 見equips_parsed.json) ——
+    # dodge_dmg_type="intel"時只對謀略傷害生效, phys傷害不受影響(每次都照常結算, 不消耗/不影響)。
+    random.seed(176)
+    dg176_u = Unit(POOL["甘寧"], "弓")
+    dg176_u.dodge_prob, dg176_u.dodge_dur, dg176_u.dodge_dmg_type = 1.0, 5, "intel"  # 100%規避(確定觸發), 便於驗證方向而非機率本身
+    before176_phys = dg176_u.troop
+    hit(Unit(POOL["張飛"], "槍"), dg176_u, 5.0, "phys", is_normal=True)
+    assert dg176_u.troop < before176_phys, "176: dodge_dmg_type='intel'不應對phys傷害生效(應照常扣血, 即使dodge_prob=1.0)"
+    before176_intel = dg176_u.troop
+    hit(Unit(POOL["諸葛亮"], "弓"), dg176_u, 5.0, "intel", is_normal=False)
+    assert dg176_u.troop == before176_intel, "176: dodge_dmg_type='intel'應對intel傷害生效(100%規避, 完全免疫)"
+    # 向後相容: 未帶dmgType的dodge應維持原行為(不分類型皆可規避)
+    dg176b_u = Unit(POOL["甘寧"], "弓")
+    dg176b_u.dodge_prob, dg176b_u.dodge_dur = 1.0, 5
+    before176b = dg176b_u.troop
+    hit(Unit(POOL["張飛"], "槍"), dg176b_u, 5.0, "phys", is_normal=True)
+    assert dg176b_u.troop == before176b, "176b: 未帶dmgType的dodge應向後相容, 不分類型皆可規避(100%規避phys傷害亦應生效)"
+    print("    [批G 176] dodge支援e['dmgType']過濾(榮光改用dodge精確落地)/向後相容不分類型規避驗證通過")
+
+    # 177) 批G: redirect(傷害轉移)支援e["who"]分流(leader/subs) —— 肉身鐵壁「為副將分擔30%/
+    # 為主將分擔60%」需要依受益者身份給不同share值, 過去redirect無條件對guardian以外全體allies
+    # 套用同一share, 只能合併成單一均值近似(0.45)。用guard:"self"(持有者rd177_holder自己當
+    # guardian, 對稱肉身鐵壁實際用法), allies=[主將, 副將A, 副將B, 持有者(第4人排最後, 避免
+    # 持有者剛好是allies[0]主將導致'leader段被guardian排除'vs'leader段確實只選allies[0]'
+    # 兩種情況無法區分)兩段who分流各自套用不同share。
+    rd177_leader = Unit(POOL["劉備"], "槍")   # allies[0] = 主將
+    rd177_sub1 = Unit(POOL["關羽"], "槍")
+    rd177_sub2 = Unit(POOL["張飛"], "槍")
+    rd177_holder = Unit(POOL["諸葛亮"], "弓")   # 持有者自己(guard:self的guardian), 排在allies最後, 非主將
+    rd177_allies = [rd177_leader, rd177_sub1, rd177_sub2, rd177_holder]
+    tac177 = {"nameZh": "測試177", "effects": [
+        {"k": "redirect", "who": "leader", "guard": "self", "share": 0.6, "dur": 5},
+        {"k": "redirect", "who": "subs", "guard": "self", "share": 0.3, "dur": 5},
+    ]}
+    apply_effects(rd177_holder, None, tac177, rd177_allies, [])
+    assert abs(rd177_leader.guard_share - 0.6) < 1e-9 and rd177_leader.guardian is rd177_holder, \
+        f"177: who='leader'應使隊伍主將(rd177_leader, allies[0])獲得guard_share=0.6且guardian=持有者, 實得share={rd177_leader.guard_share}"
+    assert abs(rd177_sub1.guard_share - 0.3) < 1e-9 and abs(rd177_sub2.guard_share - 0.3) < 1e-9, \
+        f"177: who='subs'應使兩名副將各自guard_share=0.3(對稱肉身鐵壁'為副將分擔30%'), 實得{rd177_sub1.guard_share}/{rd177_sub2.guard_share}"
+    assert rd177_sub1.guardian is rd177_holder and rd177_sub2.guardian is rd177_holder, \
+        "177: 副將的guardian應為持有者rd177_holder自己(guard:self)"
+    # 向後相容: 未帶who(或who='ally')的redirect應維持原行為(對guardian以外全體allies套用同一share)
+    rd177c_holder = Unit(POOL["諸葛亮"], "弓")
+    rd177c_a = Unit(POOL["劉備"], "槍")
+    rd177c_b = Unit(POOL["關羽"], "槍")
+    tac177c = {"nameZh": "測試177c", "effects": [{"k": "redirect", "who": "ally", "guard": "self", "share": 0.45, "dur": 5}]}
+    apply_effects(rd177c_holder, None, tac177c, [rd177c_a, rd177c_b, rd177c_holder], [])
+    assert abs(rd177c_a.guard_share - 0.45) < 1e-9 and abs(rd177c_b.guard_share - 0.45) < 1e-9, \
+        "177c: 向後相容, who='ally'(或省略)應維持原行為對guardian以外全體allies套用同一share"
+    print("    [批G 177] redirect支援e['who']分流(leader/subs, 肉身鐵壁精確落地)/向後相容不分身份統一share驗證通過")
+
+    # 178) 批G: counter(反擊)支援e["normalOnly"] —— 荊棘「受到普通攻擊時, 反彈5%傷害」需要
+    # 限定只在普攻(is_normal=True)觸發, 戰法傷害(is_normal=False)不應觸發反擊。
+    ct178_u = Unit(POOL["甘寧"], "弓")
+    ct178_u.counter = {"coef": 1.0, "kind": "phys", "prob": 1.0, "dur": 5, "normalOnly": True}
+    ct178_atk_normal = Unit(POOL["張飛"], "槍")
+    before178_normal = ct178_atk_normal.troop
+    hit(ct178_atk_normal, ct178_u, 5.0, "phys", is_normal=True)
+    assert ct178_atk_normal.troop < before178_normal, "178: normalOnly=True的counter應在普攻(is_normal=True)時觸發反擊(攻擊者應損兵)"
+    ct178_atk_tactic = Unit(POOL["張飛"], "槍")
+    before178_tactic = ct178_atk_tactic.troop
+    hit(ct178_atk_tactic, ct178_u, 5.0, "phys", is_normal=False)
+    assert ct178_atk_tactic.troop == before178_tactic, "178: normalOnly=True的counter不應在戰法傷害(is_normal=False)時觸發反擊(攻擊者不應損兵)"
+    # 向後相容: 未帶normalOnly的counter應維持原行為(任意傷害來源皆可觸發反擊)
+    ct178b_u = Unit(POOL["甘寧"], "弓")
+    ct178b_u.counter = {"coef": 1.0, "kind": "phys", "prob": 1.0, "dur": 5}
+    ct178b_atk = Unit(POOL["張飛"], "槍")
+    before178b = ct178b_atk.troop
+    hit(ct178b_atk, ct178b_u, 5.0, "phys", is_normal=False)
+    assert ct178b_atk.troop < before178b, "178b: 未帶normalOnly的counter應向後相容, 任意傷害來源(含戰法傷害)皆可觸發反擊"
+    print("    [批G 178] counter支援e['normalOnly'](荊棘「受普攻時反擊」精確落地)/向後相容任意傷害觸發驗證通過")
+
+    # 179) 批G: 裝備效果級 e.when.on=="dealtDamage"(on_deal_eq) —— 衝陣「首回合首次造成傷害時
+    # 附加一次額外兵刃傷害」。驗證(a)分類正確收錄進on_deal_eq(不誤入on_hit_eq); (b)e["coef"]
+    # 直傷派發邏輯(不透過apply_effects的k派發, 直接hit())在單元層級正確運作; (c)完整fight()
+    # 端到端不崩潰(真實資料經完整戰鬥迴圈跑過, 含 dealt_damage_for 早退判斷/hit_flags去重/
+    # round_ok窗口檢查全部串接正確)。
+    cz179_u = Unit(POOL["甘寧"], "弓", equip=["坐騎·衝陣"])
+    assert len(cz179_u.on_deal_eq) == 1 and cz179_u.on_deal_eq[0]["k"] == "extraHit", \
+        "179a: 衝陣應正確分類進on_deal_eq(裝備效果級dealtDamage反應式), 不應誤入on_hit_eq或eq(prep)"
+    assert not cz179_u.on_hit_eq and not cz179_u.eq, \
+        "179a: 衝陣的效果不應同時出現在on_hit_eq(受擊方向)或eq(prep一次性套用), 避免重複結算"
+    cz179_dst = Unit(POOL["諸葛亮"], "弓")
+    before179 = cz179_dst.troop
+    e179 = cz179_u.on_deal_eq[0]
+    hit(cz179_u, cz179_dst, e179["coef"], e179.get("kind", "phys"), False)
+    assert cz179_dst.troop < before179, "179b: e['coef']直傷派發應能對dst造成傷害(不透過apply_effects的k派發, 直接hit()呼叫)"
+    # 179c: 完整fight()端到端跑1000場不崩潰, 且與未裝備衝陣的對照組相比不應報錯/不應產生NaN兵力
+    random.seed(901)
+    r179_with = simulate(["甘寧", "張飛", "關羽"], ["諸葛亮", "劉備", "趙雲"], n=200, eqA=[["坐騎·衝陣"], [], []])
+    assert 0 <= r179_with["A勝率"] <= 1 and 0 <= r179_with["B勝率"] <= 1, \
+        f"179c: 衝陣裝備下完整fight()端到端200場應正常產生合法勝率(A={r179_with['A勝率']}, B={r179_with['B勝率']}), 不應崩潰或產生非法值"
+    print("    [批G 179] 裝備效果級on_deal_eq(衝陣「首回合首次造成傷害附加額外傷害」精確落地, e['coef']直傷派發)/分類正確/端到端無崩潰驗證通過")
+
+    # 180) 批G: lifestealGiven(倒戈效果量加成) —— 對稱既有healGiven, 長慮「使自身攻心效果提高
+    # 30%」需要此欄位。驗證: 30%加成應使倒戈回復量從dmg*ls提升到dmg*ls*1.3。用相同random.seed()
+    # 使兩次hit()的±4%傷害隨機浮動(damage()內建機制, 見engine_limitations既有記錄)完全一致,
+    # 才能精確比較倍率(否則兩次獨立呼叫的隨機浮動差異會使誤差超出容忍範圍)。
+    ls180_src = Unit(POOL["甘寧"], "弓")
+    ls180_src.push_add("lifesteal", 0.5, 9)             # 50% 倒戈(誇大值方便驗證)
+    ls180_src.troop = START_TROOP * 0.5                 # 留出回血空間(避免撞START_TROOP上限)
+    troop_before_180 = ls180_src.troop
+    random.seed(1800)
+    hit(ls180_src, Unit(POOL["諸葛亮"], "弓"), 1.0, "phys")
+    gain_plain_180 = ls180_src.troop - troop_before_180
+    ls180b_src = Unit(POOL["甘寧"], "弓")
+    ls180b_src.push_add("lifesteal", 0.5, 9)
+    ls180b_src.push_add("lifestealGiven", 0.3, 9)       # 額外+30%倒戈效果量(對稱長慮)
+    ls180b_src.troop = START_TROOP * 0.5
+    troop_before_180b = ls180b_src.troop
+    random.seed(1800)
+    hit(ls180b_src, Unit(POOL["諸葛亮"], "弓"), 1.0, "phys")
+    gain_boost_180 = ls180b_src.troop - troop_before_180b
+    assert abs(gain_boost_180 - gain_plain_180 * 1.3) < 0.1, \
+        f"180: lifestealGiven=0.3應使倒戈回復量提升至無加成版本的1.3倍, plain={gain_plain_180:.1f} boosted={gain_boost_180:.1f} expect≈{gain_plain_180*1.3:.1f}"
+    print(f"    [批G 180] lifestealGiven(長慮「攻心效果+30%」精確落地): plain={gain_plain_180:.1f} boosted(+30%)={gain_boost_180:.1f} 驗證通過")
 
     print("self-check OK")
 
