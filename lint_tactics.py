@@ -623,10 +623,42 @@ KNOWN_EFFECT_FIELDS = {
     # fire_extra_hits()/fireExtraHits()), 對稱kindByStat/ifTargetHasNot兩種context皆有對應
     # 讀取邏輯的既有慣例, 摧鋒斷刃(vs預設"caster")/竊幸乘寵(extraHits段)/聚石成金(vs:"leader")
     # 首次落地, engine_limitations.md本批新節。
+    "maxStack",  # 批52(補登記, R9登記缺口): 同來源(戰法名)同種效果允許至多N層獨立實例並存
+    # (見push_add/push_mod/push_stat_add的max_stack參數), 跨所有k種類通用(pushAdd/pushMod/
+    # pushStatAdd三者共用同一套機制), 智計/累世立名(批K)首次在資料層實際使用而發現此登記缺口
+    # (欄位本身/引擎讀取邏輯自批52即存在, 純粹是R9白名單當時忘記登記)。
+    # 禁近似令-批K新增跨k通用欄位 ------------------------------------------------------
+    "once",  # 通用一次性消耗閘門(對稱既有everyRound內部的e.once, 本批擴充成apply_effects開頭
+    # 的通用閘門, 任何k/任何呼叫路徑皆生效), 見Unit.whenFired/self.when_fired, 誓守無降/
+    # 淵然難測首次落地, 見上方ENGINE_CAPABILITY_ALIASES「反應式一次性消耗」條目。
+    "ifSelfStatCompare",  # 比較「已選定的效果目標自己」兩項屬性大小(同單位自己互比, 與
+    # ifStatCompare的跨單位比較方向不同), 淵然難測首次落地, 見上方別名「同一單位自己兩屬性
+    # 互比」條目。
+    "ifTargetHpAbove", "ifTargetHpBelow",  # 已選定的效果目標(受益者)自己兵力百分比條件(與
+    # 既有when.hpAbove/hpBelow只認caster自身不同), 肉身鐵壁首次落地, 見上方別名「他方單位
+    # 血量條件」條目。
+    "ifEnemyTroop",  # 敵隊兵種(兵種由隊伍決定)條件閘門, 左右開弓首次落地, 見上方別名「依
+    # 隊伍兵種類型分支」條目。
+    "ifCasterStackAtLeast",  # 施放者k=="stack"疊層數達門檻(對稱既有ifStackMaxed但門檻可調),
+    # 見上方別名「疊加次數作為觸發條件」條目(目前資料尚未實際使用, 已建之engine capability)。
+    "ifArmed",  # once_consumable族: caster.armedConsume.active為真才放行, 十二奇策首次落地
+    # (若使用, 見上方別名「消耗態狀態機」條目)。
+    "ifTargetIsRank", "ifTargetIsRankNot",  # target_rank_branch族: 已選定目標是否恰為
+    # pickByCriterion排名冠軍, 見上方別名「目標恰好符合排名準則」條目(目前資料尚未實際使用)。
+    "rateFactionBonus",  # faction_count_scale族: 依隊伍陣營人數線性加成觸發率, 見上方別名
+    # 「陣營計數」條目(目前資料尚未實際使用)。
+    "rateBonusPerBuffType",  # rate_self_dynamic族: 依自身持有增益狀態種類數動態加成觸發率,
+    # 見上方別名「依自身持有增益狀態數動態調整」條目(目前資料尚未實際使用)。
+    "eitherK",  # 批K7: 陣列, 本次觸發隨機擇一k值頂替e.k本身(於k分派之前處理, 跨所有k種類通用),
+    # 溯江搖櫓首次落地, 見上方別名「狀態擇一觸發」條目。
 }
 PER_KIND_FIELDS = {
     "amp": {"val", "dmgType", "normalOnly", "activeOnly", "chargeOnly",
-             "stackKey", "perStack", "maxStacks"},
+             "stackKey", "perStack", "maxStacks", "stackId"},
+    # 批K: stackId(dynamic_coef_from_counter族) —— 額外把amp+stackKey的疊層數寫進字串鍵
+    # 索引(u.ampLayersById/self.amp_layers_by_id), 供k=="settle"+e.perStackFrom跨效果讀取
+    # (密計誅逆settle結算需要讀取這段amp疊層數代入coef公式, 見settle條目/上方別名
+    # 「settle讀取指定疊層計數器」)。
     # 批A: k=="amp"+e.stackKey(per-target疊層變體, 對稱既有k=="stat"+stackKey, 但不支援
     # onMaxStacks/globalMax/e.add三個延伸, 見engine.js/sgz.py k==="amp"分支的ampLayers/
     # amp_layers計數器, 密計誅逆首次落地, engine_limitations.md第46節)。
@@ -640,22 +672,69 @@ PER_KIND_FIELDS = {
     # 批H: 會心/奇謀傷害幅度加成(疊在critUp觸發後的基礎+100%之上, 如「+20%會心傷害」使
     # 觸發倍率變成120%), 純幅度修飾語, 若持有者無對應dmgType的critUp來源則不生效(見華服/
     # 長慮「幅度類修飾語缺乏機率類觸發事件」下游消費端precedent)。
-    "mitig": {"val", "dmgType", "normalOnly"}, "stun": set(), "silence": set(), "disarm": set(),  # dmgType: 批24 D2, 兵刃/謀略傷害類型過濾; normalOnly: 批28 B3, 僅普攻傷害生效/受影響; activeOnly: 批31 A, 僅主動/突擊戰法傷害生效(amp限定)
+    "mitig": {"val", "dmgType", "normalOnly", "stackKey", "perStack", "maxStacks"},
+    # 批K: mitig+stackKey(對稱既有amp+stackKey per-target疊層變體), 離月首次落地, 見上方
+    # 別名「settle讀取指定疊層計數器」相鄰的stackKey家族說明(amp/mitig/critUp三者共用同一套
+    # stackKey機制形狀, 僅消費端各自獨立)。
+    "stun": set(), "silence": set(), "disarm": set(),  # dmgType: 批24 D2, 兵刃/謀略傷害類型過濾; normalOnly: 批28 B3, 僅普攻傷害生效/受影響; activeOnly: 批31 A, 僅主動/突擊戰法傷害生效(amp限定)
     "chaos": set(), "ambush": set(), "insight": set(), "immune": {"types"}, "first": set(),
     "stat": {"stat", "add", "mult",
-              "stackKey", "perStack", "maxStacks", "onMaxStacks", "globalMax", "globalEffects"},
+              "stackKey", "perStack", "maxStacks", "onMaxStacks", "globalMax", "globalEffects",
+              "addPerBuffType", "stackId", "fromStack", "perStackVal"},
+    # 批K7: stackId(dynamic_coef_from_counter族) —— stat+stackKey額外把疊層數寫進amp_layers_by_id
+    # (供k=="dot"+e.coefFromStack跨效果讀取, 絕地反擊)。fromStack+perStackVal(同族stat版) ——
+    # 不自己疊層, 改讀同一持有者k=="stack"計數器(this.stack.n)即時驅動, 見上方別名「stat隨stack
+    # 動態同步」條目(弓腰姬)。
+    # 批K: addPerBuffType(rate_self_dynamic族stat版本) —— {types,per,maxCount}, 依自身持有
+    # 增益狀態種類數動態疊加stat平加, 弓腰姬首次落地, 見上方別名「依自身持有增益狀態數動態
+    # 調整」條目。
     # 批42: stackKey(truthy旗標)/perStack(每層量級)/maxStacks(單目標疊層上限)/onMaxStacks
     # (該目標本地池耗盡時額外套用的效果陣列)/globalMax(持有者跨目標累計觸發次數上限)/
     # globalEffects(全場觸發後套用的效果陣列) —— 傲睨王侯「敵軍目標受普攻時觸發1個破綻,
     # 該目標降3%可疊…單目標破綻全觸發→…全場破綻觸發後→…」per-target疊層+雙閾值原語,
     # 見 engine.js/sgz.py k=="stat"&&e.stackKey 分支與 engine_limitations.md 第40節。
-    "dot": {"coef", "kind", "coefLeader"},  # 批23 A3: e.kind(dot段自帶傷害類型, 優先於t.kind,
+    "dot": {"coef", "kind", "coefLeader", "pierce", "coefFromStack", "name"},  # 批23 A3: e.kind(dot段自帶傷害類型, 優先於t.kind,
     # 見damage()呼叫端); coefLeader: 批52續, 主將時採用較高傷害率(取代基礎e.coef), 見sgz.py
     # 2270-2273行/engine.js 1825-1827行, 火燒連營首次登記(雖然該戰法實際案例是extraHits段
-    # 用ifLeader/ifSub互斥拆分, 非dot段本身用coefLeader, 但欄位本身確實只在k=="dot"分支實作)
-    "extra": {"val"}, "stack": {"per", "max", "stackPer"},  # stackPer: 批26 B2, "round"預設/"cast"每次發動遞增
-    "decay": {"v0", "rounds"}, "swap": set(), "pierce": {"val"}, "counter": {"coef", "kind", "prob", "guardFor"},  # guardFor: 批28 B1, 守護式反擊("leader"=登記進主將counter_guards, 由代為受擊者反擊)
-    "taunt": set(), "shield": {"amt", "pct"}, "dodge": {"prob"}, "surehit": set(),
+    # 用ifLeader/ifSub互斥拆分, 非dot段本身用coefLeader, 但欄位本身確實只在k=="dot"分支實作)。
+    # 批K: pierce(true, engine_wiring_gaps_misc族) —— 強制本段dot完全無視目標mitig(damage()
+    # forcePierce參數), 獅子奮迅首次落地, 見上方別名「無視防禦」條目。
+    "extra": {"val"}, "splash": {"val"},  # 批K: splash(splash_aoe_primitive族) —— 對稱既有extra,
+    # 消費於doNormalAttack/do_normal_attack(非damage()內), 瞋目橫矛/象兵/橫掃首次落地, 見上方
+    # 別名「濺射」條目。
+    "stack": {"per", "max", "stackPer"},  # stackPer: 批26 B2, "round"預設/"cast"每次發動遞增
+    "decay": {"v0", "rounds"}, "swap": set(), "pierce": {"val", "onKill"},
+    # 批K7: onKill(engine_wiring_gaps_misc族) —— 不立即套用, 改登記待hit()偵測到本單位親手
+    # 擊敗某目標時才真正授予, 虎痴首次落地, 見上方別名「擊敗後授予」條目。
+    "preAttackHook": {"hookKind", "coef", "scale", "guard"},
+    # 批K7: engine_wiring_gaps_misc族 —— 「即將受到普通攻擊」真反應式掛鉤點, hookKind:
+    # "redirectPre"(guard準則轉由隊友代承)/"healAllyPre"(coef/scale治療隨機隊友), 消費於
+    # do_normal_attack()/doNormalAttack(), 雲聚影從/益其金鼓首次落地, 見上方別名「即將受到
+    # 普通攻擊」條目。
+    "regen": {"coef", "scale"},
+    # 批K7: engine_wiring_gaps_misc族 —— 對稱dot的傷害版但方向是治療, 每回合各自結算, 消費
+    # 於tick(), 乘敵不虞首次落地, 見上方別名「每回合恢復持續N回合」條目。
+    "dmgShare": {"val", "scale"},
+    # 批K7: engine_wiring_gaps_misc族 —— 目標受傷後額外對其隊友分攤傷害, 消費於hit(), 連環計
+    # 首次落地, 見上方別名「受傷回饋隊友」條目。
+    "counter": {"coef", "kind", "prob", "guardFor", "ofDamage", "debuffAttacker", "selfStack"},
+    # guardFor: 批28 B1, 守護式反擊("leader"=登記進主將counter_guards, 由代為受擊者反擊)。
+    # 批K: ofDamage(engine_wiring_gaps_misc族) —— 依本次受到的實際傷害量比例反彈(對稱heal
+    # 既有ofDamage), 荊棘裝備首次落地(equips_parsed.json, 不受本linter掃描但登記備查), 見
+    # 上方別名「counter依本次傷害量比例輸出」條目。debuffAttacker/selfStack(counter_target_
+    # binding族) —— guardFor反擊觸發後對攻擊者/反擊執行者的額外副作用, 消費於hit()內
+    # counter_guards迴圈(非apply_effects的k派發), 古之惡來/虎衛軍首次落地, 見上方別名
+    # 「guardFor反擊精確綁定同一人」條目。
+    "taunt": {"tauntTarget"},  # 批K: tauntTarget(force_attack_reverse族) —— "leader"/"select",
+    # 定謀貴決/武鋒陣首次落地, 見上方別名「反向taunt」條目。
+    "preDmgHook": {"hookKind", "val", "step", "max", "dmgType", "pct", "delayRounds", "reducePct"},
+    # 批K: pre_damage_intercept族, 消費於damage()內, 見上方別名「傷害結算前攔截」條目。
+    "strike": {"sameTarget", "coef", "kind"},  # 批K: once_consumable族消費端(十二奇策)/
+    # engine_wiring_gaps_misc族(驍健神行沿用tgt同目標追加攻擊)——coef/kind為本k實際使用的
+    # 傷害參數(對稱dot/counter等其他k各自登記coef/kind的既有慣例, 非全域欄位); targetSel/
+    # ifTargetHas/ifArmed皆屬既有全域或已登記欄位, 這裡額外只需登記sameTarget(沿用tgt而非
+    # 重新選標), 見上方別名「同一次觸發同一目標的追加傷害」條目。
+    "shield": {"amt", "pct"}, "dodge": {"prob"}, "surehit": set(),
     "healblock": set(), "lifesteal": {"val"}, "rateup": {"val", "prepOnly", "nativeOnly", "inheritedOnly"},
     "chargeup": {"val", "prepOnly", "nativeOnly", "leaderBonus"}, "healBoost": {"val"},
     "healGiven": {"val"}, "fakeReport": set(), "dispel": {"what"}, "heal": {"coef", "once", "rate", "ofDamage",
@@ -679,13 +758,19 @@ PER_KIND_FIELDS = {
     # e.guardFor==="leader"的判斷。guard欄位新增合法值"random_sub"(隨機非主將副將, 夢中弒臣
     # 「使隨機副將為自己分擔」), 沿用既有guard欄位本身(R9只檢查欄位名而非列舉值), 不需額外
     # 登記。
-    "redirect": {"guard", "share", "normalOnly", "guardFor"}, "settle": {"init", "max", "base", "per"},
+    "redirect": {"guard", "share", "normalOnly", "guardFor"},
+    "settle": {"init", "max", "base", "per", "perStackFrom", "singleTarget"},
+    # 批K: perStackFrom(讀取指定stackId的疊層數代入coef公式)/singleTarget(結算只打單一目標
+    # 而非整隊)(dynamic_coef_from_counter族), 密計誅逆首次落地, 見上方別名「settle讀取指定
+    # 疊層計數器」條目。
     # 批J: stealStat(偷屬性) —— stat(欲偷的屬性名)/amount(基礎欲偷量, 受scale縮放)/
     # recipientSel(targetSel準則字串, 從allies挑受益者, 省略時預設caster本身)。who/dur/scale/
     # scaleDiv/everyRound/rate皆屬KNOWN_EFFECT_FIELDS全域欄位, 不重複於此列出。見
     # engine.js/sgz.py k==="stealStat"分支, 雁行陣「使我軍統率最低單體偷取敵軍全體10點統率」
     # 首次落地, engine_limitations.md本批新節。
-    "stealStat": {"stat", "amount", "recipientSel"},
+    "stealStat": {"stat", "amount", "recipientSel", "statOptions"},
+    # 批K: statOptions(陣列) —— 每次觸發隨機從陣列選一個屬性欄位偷取(至柔動剛「任一屬性」),
+    # 見上方別名「任一屬性隨機三選一」條目。
     # 批J: transferMitig(把來源側當下實際持有的正向mitig buff實例整個搬到去向側隨機一人身上)
     # ——from/to(各為"enemy"/"ally", 指定來源/去向側)。dur屬KNOWN_EFFECT_FIELDS全域欄位。見
     # engine.js/sgz.py k==="transferMitig"分支, 雁行陣「轉移傷害降低」首次落地。
@@ -2064,6 +2149,173 @@ ENGINE_CAPABILITY_ALIASES = {
                 "另外新增e.ofHeal欄位, 直接用既有e.ofDamage+on:healed組合即可精確表達(權僭九鼎/"
                 "移花接木批J首次以此組合遷移heal-siphon類戰法)。「引擎現無e.ofDamage的heal版本,"
                 "需要e.ofHeal讀opt.healAmt」這類措辭是批A能力落地前的舊近似說明, 落地後應改寫。",
+    # 批K(禁近似令-收官): pre_damage_intercept族 —— k:"preDmgHook"(hookKind分流probVoid/
+    # probMitig/stepMitig/deferSettle), 消費於damage()內(src/dst兩方向皆讀), 見engine.js/
+    # sgz.py damage()對稱段落。取代「hit()只有事後廣播, 無法在troop-=dmg之前修改本次dmg」的
+    # 舊架構限制說明。
+    "傷害結算前攔截": "k:\"preDmgHook\"(批K新增, pre_damage_intercept族)——hookKind:"
+                "\"probVoid\"(攻擊方自己掛, 每次造成傷害時機率使本次傷害乘(1-val), 挫銳)/"
+                "\"probMitig\"(防禦方自己掛, 每次受到傷害時機率額外折減)/\"stepMitig\"(防禦方"
+                "自己掛, 每次受擊按目前hits數遞減折減比例, 捨身救主/蕙質蘭心)/\"deferSettle\""
+                "(防禦方自己掛, 每次受到傷害時pct比例移出, 以reducePct打折後分delayRounds"
+                "回合攤還, 象兵),"
+                "皆消費於damage()內(見engine.js/sgz.py對應段落), 見Unit.preDmgHooks/"
+                "self.pre_dmg_hooks + deferredDmg/deferred_dmg。「無法在傷害結算前修改本次"
+                "dmg數值, 只有事後廣播」這類措辭是preDmgHook落地前的舊架構限制說明, 落地後"
+                "應改寫。",
+    "無視防禦": "e.pierce:true(批K新增, dot效果級, engine_wiring_gaps_misc族)——強制該dot段"
+                "damage()呼叫時forcePierce=true, 完全無視目標mitig(獅子奮迅), 見damage()"
+                "forcePierce第9參數。",
+    "攔截傷害": "preDmgHook(同上, hookKind:\"probVoid\")",
+    # 批K: force_attack_reverse族 —— k:"taunt"+e.tauntTarget("leader"/"select")
+    "反向taunt": "e.tauntTarget(批K新增, force_attack_reverse族)——\"leader\"=強制目標改為"
+                "我方主將(武鋒陣)/\"select\"=依targetSel從敵軍挑一個「被攻擊」的目標(定謀貴決),"
+                "見engine.js/sgz.py k===\"taunt\"分支。「taunt只有敵方被迫攻擊我方施放者一個"
+                "方向, 無法指定其他目標」這類措辭是tauntTarget落地前的舊近似說明, 落地後應"
+                "改寫。",
+    "嘲諷反向": "e.tauntTarget(同上)",
+    # 批K: splash_aoe_primitive族 —— k:"splash", 消費於doNormalAttack/do_normal_attack
+    "濺射": "k:\"splash\"(批K新增, splash_aoe_primitive族)——普攻命中tgt後, 同時對tgt「同"
+                "部隊其他武將」(fo中除tgt外存活成員)造成splashRatio倍率兵刃傷害, 見"
+                "doNormalAttack()/do_normal_attack()消費端(瞋目橫矛/象兵/橫掃)。「引擎無濺射"
+                "原語, 以extra額外傷害輸出近似」這類措辭是splash落地前的舊近似說明, 落地後"
+                "應改寫。",
+    "群攻濺射": "k:\"splash\"(同上)",
+    # 批K: leader_dual_base_coef族 —— t.coefLeader/t.coefWhenLeader, 消費於fight()主迴圈
+    "主將非主將兩個基礎係數": "t.coefLeader/t.coefWhenLeader(批K新增, leader_dual_base_coef"
+                "族)——coefLeader: 主將時無條件切換頂層coef(神機妙算); coefWhenLeader: 僅"
+                "當fire恰好透過whenLeader額外視窗通過時才切換(燕人咆哮第6回合), 見fight()"
+                "主迴圈coefEff/coef_eff計算段。「頂層coef是戰法級單一值, 無法表達主將/非"
+                "主將兩個不同基礎值分支」這類措辭是此二欄位落地前的舊近似說明, 落地後應改寫。",
+    # 批K: faction_count_scale族 —— countAllyFaction()+e.rateFactionBonus
+    "陣營計數": "countAllyFaction()/count_ally_faction()+e.rateFactionBonus(批K新增, "
+                "faction_count_scale族)——數出隊伍中特定陣營人數, per×max(0,count-1)加成"
+                "觸發率(南蠻渠魁/象兵), 見applyEffects/apply_effects的eRate計算段。「teamGate"
+                "只回傳布林值, 無法數出隊伍中特定陣營人數」這類措辭是此組合落地前的舊近似"
+                "說明, 落地後應改寫。",
+    # 批K: rate_self_dynamic族 —— countActiveBuffTypes()+e.rateBonusPerBuffType/e.addPerBuffType
+    "依自身持有增益狀態數動態調整": "countActiveBuffTypes()/count_active_buff_types()+"
+                "e.rateBonusPerBuffType(觸發率)/e.addPerBuffType(stat平加)(批K新增, "
+                "rate_self_dynamic族)——數出自身當下持有連擊/洞察/先攻/必中/破陣/規避狀態"
+                "種類數, per×count動態加成(臥薪嘗膽/弓腰姬)。「e.rate是靜態擲骰值, 無法依"
+                "當下持有幾種增益狀態動態相加」這類措辭是此組合落地前的舊近似說明, 落地後"
+                "應改寫。",
+    # 批K: dynamic_coef_from_counter族 —— e.stackId/ampLayersById + settle e.perStackFrom/e.singleTarget
+    "settle讀取指定疊層計數器": "e.stackId(amp+stackKey效果, 寫入u.ampLayersById字串鍵索引)"
+                "+k:\"settle\"的e.perStackFrom(讀取指定stackId的當下疊層數代入coef公式)+"
+                "e.singleTarget(結算只打單一目標而非整隊)(批K新增, dynamic_coef_from_counter"
+                "族), 見settle registration/discharge兩端(密計誅逆第6回合斬殺傷害率隨"
+                "疊層數增幅)。「settle的base/per是靜態值, 無法讀取另一個效果物件的疊層數"
+                "並代入coef公式」這類措辭是此組合落地前的舊近似說明, 落地後應改寫。",
+    # 批K: counter_target_binding族 —— counterGuards.debuffAttacker/selfStack
+    "guardFor反擊精確綁定同一人": "counterGuards條目的debuffAttacker(對攻擊者施加debuff)/"
+                "selfStack(反擊執行者自身疊層增益)兩欄位(批K新增, counter_target_binding族),"
+                "消費於hit()內counterGuards迴圈(古之惡來/虎衛軍), 見hit()/"
+                "counter_guards消費端。「guardFor觸發的反擊與本戰法其他效果段的目標選標各自"
+                "獨立, 無法讓兩者鎖定同一人」這類措辭是此組合落地前的舊近似說明, 落地後應"
+                "改寫。",
+    # 批K: once_consumable族 —— k:"armConsume"/k:"strike"+e.ifArmed, 通用e.once
+    "消耗態狀態機": "k:\"armConsume\"(武裝一次性資格)+k:\"strike\"+e.ifArmed(消費, 消費後"
+                "歸null)(批K新增, once_consumable族), 見applyEffects/apply_effects的"
+                "armConsume/strike分支+Unit.armedConsume/self.armed_consume(十二奇策"
+                "「下次發動主動戰法後」延遲單次消耗傷害)。「無「執行N次某動作後失效」的通用"
+                "計數器」這類措辭(高櫓連營的ammo/ammoReloadLeader批52g已解決, 十二奇策的"
+                "跨單位延遲消耗由本批armConsume/strike解決)是這兩組原語落地前的舊近似說明,"
+                "落地後應改寫。",
+    "一次性消耗資格": "k:\"armConsume\"/k:\"strike\"+e.ifArmed(同上)",
+    "反應式一次性消耗": "e.once(批K新增通用版, 對稱既有everyRound內部的e.once, 現擴充成"
+                "applyEffects/apply_effects開頭的通用閘門, 任何呼叫路徑皆生效)——效果級「整場"
+                "戰鬥內只消耗一次」的持久化去重(誓守無降/淵然難測), 用caster.whenFired/"
+                "self.when_fired(不隨回合重置)去重, 見applyEffects/apply_effects的e.once"
+                "閘門與各反應式迴圈(onHitFor/on_hit_for等)的e.once檢查。「hitFlags只提供"
+                "同回合節流, 無法表達整場戰鬥內只消耗一次」這類措辭是e.once通用化落地前的"
+                "舊近似說明, 落地後應改寫。",
+    # 批K: 其他小型原語(target_rank_branch/scale_compare延伸/hit_count_stage_trigger/兵種/血量條件)
+    "目標恰好符合排名準則": "e.ifTargetIsRank/e.ifTargetIsRankNot(批K新增, target_rank_branch"
+                "族)——比對已選定的效果目標是否恰為pickByCriterion(enemies,\"maxForce\"/"
+                "\"maxIntel\")選出的排名冠軍, 見applyEffects/apply_effects的dests filter"
+                "(閉月依目標恰為武力/智力最高分三支)。「targetSel只支援依準則主動挑目標,"
+                "沒有已選定目標是否恰好符合某排名準則的事後判斷」這類措辭是此組合落地前的"
+                "舊近似說明, 落地後應改寫。",
+    "同一單位自己兩屬性互比": "e.ifSelfStatCompare(批K新增, scale_compare族延伸)——比較"
+                "「已選定的效果目標自己」兩項屬性大小(與ifStatCompare的跨單位比較方向不同),"
+                "見applyEffects/apply_effects的dests filter(淵然難測若傷害來源武將武力"
+                "高於智力則...否則...)。",
+    "依隊伍兵種類型分支": "e.ifEnemyTroop(批K新增, engine_wiring_gaps_misc族)——兵種由隊伍"
+                "決定, enemies[0].ttype即代表整支敵隊兵種, 只在敵隊兵種恰好符合指定值時"
+                "效果才生效(左右開弓如果目標為騎兵), 見applyEffects/apply_effects的效果級"
+                "閘門。",
+    "疊加次數作為觸發條件": "e.ifCasterStackAtLeast(批K新增, hit_count_stage_trigger族)——"
+                "對稱既有e.ifStackMaxed(僅認已疊滿特例), 這裡是通用門檻caster.stack.n是否"
+                "達到指定層數(水淹七軍第三/四次施放觸發settle/extraHits), 見applyEffects/"
+                "apply_effects效果級閘門。",
+    "他方單位血量條件": "e.ifTargetHpAbove/e.ifTargetHpBelow(批K新增)——已選定的效果目標"
+                "(受益者)自己兵力百分比條件(肉身鐵壁當友軍兵力高於70%時), 與既有when.hpAbove/"
+                "hpBelow(只認caster自身)方向不同, 見applyEffects/apply_effects的dests"
+                "filter。",
+    "任一屬性隨機三選一": "e.statOptions(批K新增, k:\"stealStat\"擴充)——每次觸發隨機從陣列"
+                "選一個屬性欄位偷取(至柔動剛偷取來源智/統/速任一屬性), 見k===\"stealStat\""
+                "分支。",
+    "subs池targetSel": "who===\"subs\"+e.targetSel組合(批K新增)——targetSel的pool限縮到"
+                "副將二人(三勢陣損失兵力較多的副將/另一名副將只在兩名副將間比較), 見"
+                "applyEffects/apply_effects的targetSel pool判斷。",
+    "同一次觸發同一目標的追加傷害": "k:\"strike\"+e.sameTarget/e.ifTargetHas(批K新增)——沿用"
+                "本次applyEffects呼叫傳入的tgt(通常=同戰法effects陣列內排在前面的disarm等"
+                "狀態效果剛命中的同一人), 靠effects陣列內順序執行解決execution ordering問題"
+                "(驍健神行如果目標已經被繳械則造成兵刃攻擊), 見k===\"strike\"分支。",
+    "counter依本次傷害量比例輸出": "c.ofDamage/counter物件的ofDamage欄位(批K新增, 對稱heal"
+                "既有e.ofDamage慣例)——依本次受到的實際傷害量(dmg, 已經過block/shield折算)"
+                "比例反彈, 取代固定coef重新計算一次全新damage()的做法, 見hit()的counter"
+                "消費段(荊棘裝備受到普通攻擊時反彈5%傷害)。",
+    "兵書效果無activeFired接線": "Unit.activeFiredBs/self.active_fired_bs(批K新增)——兵書"
+                "效果級e.when.on===\"activeFired\"對稱既有onHitBs(受擊方向)的接線, 於"
+                "activeFiredFor()/active_fired_for()補上消費端(大謀不謀每次成功發動主動"
+                "戰法時...), 見Unit建構式與activeFiredFor對稱段落。「兵書效果只走self.bs"
+                "獨立管線, 無法被active_fired_tacs掃描, 沒有when.on:activeFired接線」這類"
+                "措辭是此接線落地前的舊近似說明, 落地後應改寫。",
+    "兵書stackKey疊層消費端": "critUp+e.stackKey(既有原語, 批H)本就支援per-target疊層, 只"
+                "是兵書效果過去缺乏activeFired接線讓觸發時機無法對上(見上方「兵書效果無"
+                "activeFired接線」條目), 兩者組合(activeFiredBs+critUp+stackKey)即可精確"
+                "表達(大謀不謀), 非「stackKey消費端本身不支援」的問題。",
+    # 批K7(收官續): 剩餘_approx族群新增原語 —— 全部消費於engine.js/sgz.py對稱段落。
+    "動態coef讀取": "e.coefFromStack(批K7新增, dynamic_coef_from_counter族)——k:\"dot\"效果"
+                "讀取caster身上另一個k:\"stat\"+e.stackKey+e.stackId效果的當下疊層數(經"
+                "amp_layers_by_id字串鍵跨效果傳遞), coef=base+per×layers, 見engine.js/sgz.py"
+                "dot分支對coefFromStack的判斷(絕地反擊第5回合根據疊層數AoE傷害)。「需要settle"
+                "風格動態coef讀取」這類措辭是coefFromStack落地前的舊近似說明。",
+    "受傷回饋隊友": "k:\"dmgShare\"(批K7新增, engine_wiring_gaps_misc族)——目標受傷後, 額外"
+                "對其隊伍中隨機一位其他成員造成val×dmg的分攤傷害, 見hit()/sgz.py hit()內"
+                "dst.dmgShare/dst.dmg_share判斷式(連環計鐵鎖連環)。「傷害轉移給第三方無對應"
+                "原語」這類措辭是dmgShare落地前的舊近似說明。",
+    "狀態擇一觸發": "e.eitherK(批K7新增, 陣列)——效果套用時隨機從陣列擇一k值頂替e.k本身, 見"
+                "engine.js/sgz.py applyEffects/apply_effects開頭對e.eitherK的判斷(溯江搖櫓"
+                "計窮或震懾擇一)。「簡化為固定單一狀態,未表達擇一語意」這類措辭是eitherK落地"
+                "前的舊近似說明。",
+    "stat隨stack動態同步": "e.fromStack+perStackVal(批K7新增, dynamic_coef_from_counter族)"
+                "——stat效果不自己疊層, 改註記同一持有者的k:\"stack\"計數器(this.stack/"
+                "self.stack)額外驅動該stat屬性, 交給eff()/Unit.eff()即時讀取this.stack.n×"
+                "perStackVal, 見engine.js eff()/sgz.py Unit.eff()對stack[\"statField\"]的"
+                "消費(弓腰姬武力隨功能性增益數量動態成長)。「取單層滿級值靜態近似,與傷害段"
+                "動態疊層不同步」這類措辭是fromStack落地前的舊近似說明。",
+    "擊敗後授予": "e.onKill(批K7新增, engine_wiring_gaps_misc族)——k:\"pierce\"效果不立即"
+                "套用, 改登記到Unit.onKillGrants/self.on_kill_grants, 待hit()偵測到本單位"
+                "親手擊敗某目標(was_alive且troop<=0)時才真正授予, 見hit()對onKillGrants的"
+                "消費段(虎痴破陣)。「約後半場生效,需val折算」這類措辭是onKill落地前的舊EV"
+                "近似說明。",
+    "即將受到普通攻擊": "k:\"preAttackHook\"(批K7新增, engine_wiring_gaps_misc族)——hookKind:"
+                "\"redirectPre\"(即將受擊時依guard準則轉由隊友代承, 雲聚影從)/\"healAllyPre\""
+                "(即將受擊時治療隨機隊友, 益其金鼓), 於do_normal_attack()/doNormalAttack()"
+                "呼叫主hit()之前消費tgt.preAttackHooks/tgt.pre_attack_hooks, 每次真實擲骰"
+                "(非prep一次性)。「engine無即將受擊事件掛鉤點, 只能prep一次性擲骰決定整場"
+                "有無」這類措辭是preAttackHook落地前的舊EV近似說明。",
+    "每回合恢復持續N回合": "k:\"regen\"(批K7新增, engine_wiring_gaps_misc族)——對稱dot的"
+                "傷害版但方向是治療, 登記到目標Unit.regens/self.regens清單, 見tick()逐回合"
+                "消費端(乘敵不虞休整狀態)。「heal效果不讀dur,只結算一次,折算成單次數值"
+                "(2倍低估)」這類措辭是regen落地前的舊近似說明。",
+    "extraHits自身傷害回血": "eh.lifesteal(批K7新增, engine_wiring_gaps_misc族)——對稱既有"
+                "lifesteal但顆粒度縮小到只讀該extraHits段自身造成的傷害量, 見fire_extra_hits/"
+                "fireExtraHits內對eh.lifesteal的消費(錦帆軍恢復傷害量30%兵力)。「30%傷害量"
+                "回血未建模」這類措辭是eh.lifesteal落地前的舊缺口說明。",
 }
 
 # =============================================================================
@@ -3388,6 +3640,100 @@ def check_r34(p, txt):
     return violations
 
 
+# ---------------------------------------------------------------------------
+# R35(批K, 禁近似令-收官永久防線): _approx 欄位永久禁止 —— 制度化「禁近似令」F~K全部戰果
+# (全庫_approx從116清零至0), 任何未來新增的 _approx 欄位一律違規, 防止已清零的近似值透過
+# 後續資料編輯(手動補資料/未來agy或grok外部查證誤植/reparse邏輯改動)悄悄回歸。
+#
+# 判定邏輯(兩層, 皆對稱既有規則的「低誤報優先」設計原則):
+#   (1) 硬性(100%確定性): 對 parsed 戰法物件遞迴掃描任何層級(頂層/effects/extraHits/set/
+#       choices及其巢狀effects)的 dict 是否含 "_approx" 鍵 → 違規, **無任何揭露可豁免**
+#       (_approx 本身就是被禁止的標記, 不存在"已揭露的_approx"這種合法狀態, 與其餘規則的
+#       「有_note/_todo等主題相關揭露即豁免」慣例不同, 這是刻意設計: R35 就是要讓 _approx
+#       這個鍵完全消失, 不是要讓它"被解釋")。
+#   (2) 軟性(散文包裝規避偵測): 只掃 **_todo** 欄位(不含_note)。全庫慣例: _note 是「歷史
+#       敘述」欄位(記錄「批X做了什麼改動/曾經是什麼近似/為何如此決策」, 天生大量合法提及
+#       「近似/EV折算」等字樣描述過去狀態, 全庫389筆戰法的_note若不分青紅皂白全文掃描,
+#       誤報率高到淹沒真正的違規, 批K實測全文掃描_note會拉出200+筆歷史敘述假警報); _todo
+#       則是「當下仍缺什麼」的前瞻欄位, 若_todo本身用「近似/EV折算」措辭描述現況, 才是真正
+#       疑似「散文包裝規避硬性_approx檢查」的情形。_todo若含這類字樣, 且全文內找不到「未
+#       建模/未實作/誠實維持/尚未/仍未/維持未/停損」等「已誠實揭露缺口」訊號詞(_todo本業
+#       就該是揭露缺口, 這裡只是要求措辭清楚地說「沒做」而非「做了但是近似」)→ 違規。
+# ---------------------------------------------------------------------------
+R35_APPROX_KW_RE = re.compile(r"近似|EV折算|期望值折算|prob-ev|crit-ev|暫用")
+R35_RESOLVED_SIGNAL_RE = re.compile(
+    r"已(?:改用|解決|移除|精確|落地|建|接線|明確)|現已|取代|曾(?:是|用|近似|經)|"
+    r"不再(?:是|近似|折算)|誠實(?:維持|揭露)|未建模|未實作|未建立|完全空白|尚未|仍未|維持未|停損|"
+    r"無對應原語|未表達|未編碼|未知|需新增.{0,12}原語"
+)
+
+
+def _todo_texts(p):
+    """收集戰法頂層 + 所有效果層級(effects/extraHits/choices及其巢狀effects)的「非空字串」
+    _todo 文字(不含_note/_note2, 見上方 check_r35 對 _todo vs _note 語意分工的設計說明)。"""
+    out = []
+    v = p.get("_todo")
+    if isinstance(v, str) and v.strip():
+        out.append(v)
+    for e in p.get("effects", []) or []:
+        v = e.get("_todo")
+        if isinstance(v, str) and v.strip():
+            out.append(v)
+    for eh in p.get("extraHits", []) or []:
+        v = eh.get("_todo")
+        if isinstance(v, str) and v.strip():
+            out.append(v)
+    for ch in p.get("choices", []) or []:
+        v = ch.get("_todo")
+        if isinstance(v, str) and v.strip():
+            out.append(v)
+        for e in ch.get("effects", []) or []:
+            v = e.get("_todo")
+            if isinstance(v, str) and v.strip():
+                out.append(v)
+    return out
+
+
+def _find_approx_key(obj):
+    """遞迴掃描: 任何層級的 dict 是否含 "_approx" 鍵(list 內每個元素也遞迴檢查)。"""
+    if isinstance(obj, dict):
+        if "_approx" in obj:
+            return True
+        return any(_find_approx_key(v) for v in obj.values())
+    if isinstance(obj, list):
+        return any(_find_approx_key(v) for v in obj)
+    return False
+
+
+def check_r35(p, txt):
+    violations = []
+    if _find_approx_key(p):
+        violations.append({
+            "name": p["nameZh"], "rule": "R35",
+            "message": "戰法(或其效果/extraHits/set/choices任一層級)含 _approx 欄位——"
+                       "禁近似令批K收官後全庫_approx應為0, 任何_approx出現一律視為違規"
+                       "(即使有_note/_todo等其他揭露亦不豁免, _approx本身就是被禁止的"
+                       "近似值標記, 不存在'已揭露的_approx'這種合法狀態)。",
+            "evidence": "found _approx key in parsed tactic",
+        })
+    seen_blobs = set()
+    for txt_blob in _todo_texts(p):
+        if txt_blob in seen_blobs:
+            continue
+        seen_blobs.add(txt_blob)
+        m = R35_APPROX_KW_RE.search(txt_blob)
+        if m and not R35_RESOLVED_SIGNAL_RE.search(txt_blob):
+            violations.append({
+                "name": p["nameZh"], "rule": "R35",
+                "message": f"_todo揭露文字含「{m.group(0)}」但全文找不到「未建模/未實作/"
+                           "誠實維持/尚未」等清楚的缺口揭露訊號詞, 疑似現行仍生效的近似值"
+                           "以_todo散文包裝規避R35硬性_approx檢查(_todo應清楚說「沒做」"
+                           "而非「做了但是近似」)。",
+                "evidence": txt_blob[:150].strip(),
+            })
+    return violations
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
@@ -3398,6 +3744,7 @@ RULES = [
     ("R23", check_r23), ("R24", check_r24), ("R25", check_r25), ("R26", check_r26),
     ("R27", check_r27), ("R28", check_r28), ("R29", check_r29), ("R30", check_r30),
     ("R31", check_r31), ("R32", check_r32), ("R33", check_r33), ("R34", check_r34),
+    ("R35", check_r35),
 ]
 
 
@@ -3676,8 +4023,11 @@ SELFTEST_CASES = {
         ("能力關鍵字在前否定詞在後應抓到(批29回歸測試: 江東猛虎ifLeader stale句型)",
          _base_tactic(coef=0, _approx="限自身為主將時觸發,引擎無條件判斷,暫維持為恆定生效"),
          "隨意文字", True),
-        ("否定詞隔了引號內無關名詞不應誤報(批29回歸測試: 挫銳假陽性案例)",
-         _base_tactic(coef=0, _approx="「造成傷害時65%機率完全無法造成傷害」引擎無「攔截傷害」原語，以amp近似"),
+        ("否定詞隔了引號內無關名詞不應誤報(批29回歸測試: 挫銳假陽性案例; 批K更新: 「攔截"
+         "傷害」已於批K落地為k:\"preDmgHook\"並登記別名, 原挫銳文字現屬「應被抓到」的合理"
+         "stale情境, 改用結構相同但無關聯的虛構詞彙保留本測試原本驗證的「引號內夾雜無關"
+         "名詞不誤判否定詞」語法穩健性意圖)",
+         _base_tactic(coef=0, _approx="「造成傷害時65%機率完全無法造成傷害」引擎無「某未登記虛構原語」原語，以amp近似"),
          "隨意文字", False),
         ("否定詞隔了引號內無關名詞不應誤報(批29回歸測試: 錦囊妙計假陽性案例)",
          _base_tactic(coef=0, _note="「17.5%→35%(主將時100%)跳過1回合準備」無對應原語(chargeup=突擊發動率非準備跳過)，未建模"),
@@ -3994,6 +4344,49 @@ SELFTEST_CASES = {
         ("無會心/奇謀字樣的本文不應觸發(其他戰法不受R34管轄)",
          _base_tactic(effects=[{"k": "amp", "who": "ally", "val": 0.1, "dur": 1}]),
          "提高我軍全體造成的傷害", False),
+    ],
+    "R35": [
+        ("effects內含_approx欄位應抓到(硬性檢查, 戰法頂層無其他問題但_approx本身就違規)",
+         _base_tactic(effects=[{"k": "amp", "who": "self", "val": 0.1, "dur": 1, "_approx": "prob-ev"}]),
+         "提高自身造成的傷害", True),
+        ("_approx帶完整_note揭露文字亦不豁免(R35刻意設計: _approx無可豁免狀態)",
+         _base_tactic(effects=[{"k": "amp", "who": "self", "val": 0.1, "dur": 1,
+                                 "_approx": "已知折算", "_note": "這是很詳細的揭露說明文字"}]),
+         "提高自身造成的傷害", True),
+        ("戰法頂層(非effects內)含_approx亦應抓到(遞迴掃描, 對稱一騎當千/絕地反擊等頂層案例)",
+         _base_tactic(_approx="某段近似敘述", effects=[]),
+         "提高自身造成的傷害", True),
+        ("extraHits內含_approx亦應抓到(遞迴掃描涵蓋extraHits)",
+         _base_tactic(effects=[], extraHits=[{"who": "sameTarget", "coef": 1.0, "_approx": "prob-ev"}]),
+         "提高自身造成的傷害", True),
+        ("set內含_approx亦應抓到(遞迴掃描涵蓋set, 對稱絕計折謀等set._approx案例)",
+         _base_tactic(effects=[], set={"coef": 0, "_approx": "殘留標記"}),
+         "提高自身造成的傷害", True),
+        ("choices內effects含_approx亦應抓到(遞迴掃描涵蓋choices巢狀effects)",
+         _base_tactic(effects=[], choices=[{"weight": 1, "effects": [{"k": "amp", "val": 0.1, "_approx": "x"}]}]),
+         "提高自身造成的傷害", True),
+        ("無_approx且_note為歷史紀錄(含「已改用/取代」訊號詞)不應誤報(全庫常態寫法)",
+         _base_tactic(effects=[{"k": "critUp", "who": "self", "val": 0.1, "dur": 1, "dmgType": "phys",
+                                 "_note": "原本用amp近似折算EV, 現已改用critUp真擲骰取代舊近似"}]),
+         "提高自身造成的傷害", False),
+        ("無_approx且_todo誠實揭露未建模(非現行近似, 是誠實維持未實作)不應誤報",
+         _base_tactic(effects=[],
+                      _todo="本文某段機制過於複合, engine無法表達, 誠實維持未建模, 完全空白不擅自近似"),
+         "提高自身造成的傷害", False),
+        ("無_approx且完全無揭露文字亦不應誤報(R35只管_approx欄位與散文包裝關鍵字, 不是全庫揭露稽核)",
+         _base_tactic(effects=[{"k": "amp", "who": "self", "val": 0.1, "dur": 1}]),
+         "提高自身造成的傷害", False),
+        ("_note含'近似'字樣但_note不在R35軟性檢查範圍內(只查_todo, 見check_r35設計說明),"
+         "不應誤報——_note是歷史敘述欄位, 全庫389筆戰法常態合法提及'近似'描述過去狀態,"
+         "若連_note都掃會拉出大量無關歷史敘述假警報(批K實測200+筆), 故只查_todo",
+         _base_tactic(effects=[{"k": "amp", "who": "self", "val": 0.1, "dur": 1,
+                                 "_note": "此處數值為近似值, 依原文機率折算而來"}]),
+         "提高自身造成的傷害", False),
+        ("_todo含'近似'字樣且全文找不到任何缺口揭露訊號詞應抓到(疑似用_todo散文規避硬性"
+         "_approx檢查, 真正的R35軟性檢查目標案例)",
+         _base_tactic(effects=[{"k": "amp", "who": "self", "val": 0.1, "dur": 1}],
+                      _todo="此處數值為近似值, 依原文機率折算而來"),
+         "提高自身造成的傷害", True),
     ],
 }
 

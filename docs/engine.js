@@ -265,6 +265,30 @@
     if (gate.factions === "allSame") return uniq === 1;
     return true;                                    // 未知 gate 種類: 保守放行(不擋), 避免資料錯字導致戰法整組消失
   }
+  // 禁近似令-批K: countAllyFaction(faction_count_scale族) —— 數出隊伍(allies, 含自己)中
+  // 陣營恰為 faction 的存活人數。與 teamGateOk(只回傳布林值allDiff/allSame)不同層級: 這裡
+  // 回傳實際計數, 供 rateFactionBonus(見 applyEffects eRate 計算段)線性縮放觸發率使用
+  // (南蠻渠魁/象兵「部隊每多1名蠻族武將額外提高X%機率」)。
+  function countAllyFaction(allies, faction) {
+    if (!faction) return 0;
+    return (allies || []).filter(a => a.alive && a.g && a.g.faction === faction).length;
+  }
+  // 禁近似令-批K: countActiveBuffTypes(rate_self_dynamic族) —— 數出 u 當下持有的「功能性
+  // 增益狀態」種類數(僅認連擊/洞察/先攻/必中/破陣五種, 對應臥薪嘗膽本文列舉的候選池), 供
+  // rateBonusPerBuffType(見 applyEffects eRate 計算段)動態加成觸發率使用。
+  function countActiveBuffTypes(u, types) {
+    if (!u || !types || !types.length) return 0;
+    let n = 0;
+    for (const ty of types) {
+      if (ty === "extra" && u.addbonus("extra") > 0) n++;
+      else if (ty === "insight" && u.insight > 0) n++;
+      else if (ty === "first" && u.first > 0) n++;
+      else if (ty === "surehit" && u.surehitDur > 0) n++;
+      else if (ty === "pierce" && u.addbonus("pierce") > 0) n++;
+      else if (ty === "dodge" && u.dodgeDur > 0) n++;
+    }
+    return n;
+  }
   class Unit {
     constructor(g, ttype, bsName, eqName, add, inherit, season, teamFactions, campLv, isCampHolder) {
       this.g = g; this.ttype = ttype; this.troop = START_TROOP; this.stun = 0;
@@ -319,7 +343,14 @@
       // 批22: 兵書效果級 e.when.on(急救類反應式治療, 如三軍之眾「戰鬥第2-4回合自身獲得急救」)
       // —— 與裝備 onHitEq 同慣例, 兵書效果本無獨立回合窗機制(applyPassives 只在 prep/healOnly
       // 套用整包 this.bs), 帶 e.when.on 的效果分離到此陣列, 於 onHit() 反應式事件點結算。
-      this.onHitBs = _bsAll.filter(e => e.when && e.when.on);
+      this.onHitBs = _bsAll.filter(e => e.when && e.when.on && e.when.on !== "activeFired");
+      // 禁近似令-批K: activeFiredBs(once_consumable/engine_wiring_gaps_misc族) —— 兵書效果
+      // 走 self.bs 獨立管線, 過去只有 onHitBs(on:damaged/attacked方向)接線, 沒有對稱
+      // activeFired(自身/我軍/敵軍成功發動主動戰法時)方向的消費端, 導致「每次成功發動主動
+      // 戰法時...」措辭的兵書效果(如逆鱗)只能無聲被 onHitBs 的迴圈誤判(該迴圈只認
+      // attacked/damaged, 從未真正檢查 on 值是否為 activeFired, 過去這類資料只是靜默無效)。
+      // 從 onHitBs 中排除 activeFired 者, 另建此陣列, 於 activeFiredFor() 補上對稱消費端。
+      this.activeFiredBs = _bsAll.filter(e => e.when && e.when.on === "activeFired");
       const _eq = Array.isArray(eqName) ? eqName : (eqName ? [eqName] : []);
       const _eqSeen = new Set();                      // 同名特技(跨type, 如四欄皆有的"無畏")遊戲規則只生效一件: 依基底名稱去重, 先出現者為準
       const _eqObjs = _eq.map(nm => EQUIPS[nm]).filter(Boolean).filter(e => !_eqSeen.has(e.name) && (_eqSeen.add(e.name), true));
@@ -367,7 +398,46 @@
       // 除錯辨識), campLv=0時不推入(向後相容, adds為空陣列不影響任何既有戰鬥數學)。
       if (this.campLv > 0) this.adds.push(["amp", this.campLv * CAMP_DMG_PER_LV, 9999, "兵種營"]);
       this.settle = null; this.guardian = null; this.guardShare = 0; this.guardDur = 0; this.guardNormalOnly = false;  // guardDur: 代承剩餘回合, 歸零清 guardian; guardNormalOnly: 只代承普攻傷害(如 援助), 戰法傷害不轉移
-      this.stack = null; this.decay = null; this.swap = 0; this.counter = null;
+      this.stack = null; this.decay = null; this.swap = 0; this.counter = null; this.dmgShare = null;
+      // 禁近似令-批K: regens(engine_wiring_gaps_misc族) —— 「每回合恢復一次兵力,持續N回合」
+      // 的休整/regen類狀態獨立逐回合累計治療清單(對稱this.dots的傷害版, 見tick()消費端),
+      // 取代乘敵不虞「引擎active heal不讀dur,實際只治1次=2倍低估, 改用單次折算216%近似」的
+      // 缺口——改為真正逐回合各自結算108%, 不需要把2回合份折算成單次數值。每筆[healAmt, left]。
+      this.regens = [];
+      // 禁近似令-批K: preDmgHook —— 「傷害結算前攔截修正」統一掛鉤, 取代 pre_damage_intercept
+      // 族長年的「hit()只有事後廣播、無法在troop-=dmg之前修改本次dmg」缺口(見engine_limitations.md
+      // 該節/no_approx_inventory.json pre_damage_intercept族)。掛在 damage() 內部(src/dst 兩個
+      // 方向皆消費同一個陣列欄位, 見 damage() 對應段落), 每筆 {hookKind, val, step, max, hits,
+      // rate, dmgType, pct, delayRounds, reducePct, dur}:
+      //   probVoid(攻擊方自己掛, 消費src.preDmgHooks): 每次造成傷害時rate機率本次傷害乘(1-val)
+      //     (val=1即完全歸零, 挫銳「造成傷害時65%機率完全無法造成傷害」)。
+      //   probMitig(防禦方自己掛, 消費dst.preDmgHooks): 每次受到傷害時rate機率本次傷害額外
+      //     乘(1-val)(承天靖世「受到謀略傷害有X%機率可被統帥屬性降低」)。
+      //   stepMitig(防禦方自己掛): 每次受到傷害必定按目前hits數算出(val+step×min(hits,max))
+      //     的比例減傷, hits每次受擊+1(不歸零, 上限max次不再繼續遞減, 捨身救主「每次受到傷害後
+      //     該減傷效果降低3%,上限降低30次」)。
+      //   deferSettle(防禦方自己掛): 每次受到傷害時, pct比例的本次傷害移出, 按(1-reducePct)
+      //     打折後平均攤到delayRounds回合(於tick()逐回合扣血), 而非當下立即扣(象兵「將傷害的
+      //     25%-50%延後於3回合內逐步結算,並使結算傷害降低10%-20%」)。
+      // dur: 掛鉤本身的有效期(回合數, tick()遞減歸零移除); deferSettle已排出的隊列不受dur影響,
+      // 獨立於deferredDmg欄位持續攤還到底(即使觸發hook本身已到期, 已排入隊的錢仍要付完)。
+      this.preDmgHooks = [];
+      this.deferredDmg = [];  // deferSettle 排隊中的分期傷害: [{amt, left}], tick() 逐回合扣血遞減
+      // 禁近似令-批K: preAttackHooks(engine_wiring_gaps_misc族) —— 「自身即將受到普通攻擊時」
+      // 反應式清單(見 doNormalAttack() 消費端), 與 preDmgHooks(傷害已確定發生後的攔截/修正)
+      // 是不同時機點: 這裡是「即將被打」這件事本身的觸發, 供雲聚影從/益其金鼓等使用。
+      this.preAttackHooks = [];
+      // 禁近似令-批K: armedConsume(once_consumable族) —— 「本次施放已武裝一份一次性追加觸發
+      // 資格, 待我軍(含自己)下次成功發動主動戰法時消耗」的旗標(十二奇策), 見 k==="armConsume"
+      // (施放端)/k==="strike"+e.ifArmed(消費端, 消費後歸null)。null=尚未武裝(向後相容既有
+      // 全部未使用此機制的資料)。
+      this.armedConsume = null;
+      // 禁近似令-批K: guardStackN(counter_target_binding族) —— counterGuards觸發反擊成功時,
+      // 「反擊執行者自己」或「被反擊的攻擊者」額外累積的疊層計數(古之惡來對攻擊者施加降傷/
+      // 虎衛軍反擊者自身統率提升), 見 hit() 內 counterGuards 迴圈消費端。Map<counterGuards
+      // 條目本身, 已疊層數>, 惰性建立, 掛在「反擊執行者」(gu)身上(與該筆counterGuards條目
+      // 本身綁定, 不同條目各自獨立計數)。
+      this.guardStackN = null;
       // 批A(11筆高嚴重重建): charge —— 「可消耗資源池」(死戰不退「蓄威」), 與既有 stack(傷害
       // 增益倍率, 疊層本身就是最終傷害的一部分)語意不同: charge.n 是「剩餘可消耗次數」, 消耗後
       // n 遞減, 不直接影響任何傷害倍率(是否觸發下一次攻擊的資源, 而非攻擊力大小本身)。
@@ -409,6 +479,9 @@
       // (foesOf(holder)全體共用同一個效果物件, 但各自的 exploitLayers 是自己 Unit 實例上的
       // 獨立Map, 天然不互相干擾)。
       this.exploitLayers = null;
+      // 禁近似令-批K: ampLayersById(dynamic_coef_from_counter族) —— k:"amp"+e.stackKey+
+      // e.stackId 的字串鍵索引版本(見該分支詳細註解), 惰性建立(null直到第一次疊層才建物件)。
+      this.ampLayersById = null;
       this.exploitCapped = null;                    // 批42: 同上, Set<效果物件> —— 記錄該目標「本效果已達maxStacks上限並觸發過onMaxStacks」, 防止之後每次疊層(已封頂不再增加)重複觸發onMaxStacks次數效果(如傲睨王侯「單體破綻全觸發→虛弱+受傷提高」只應在剛好達到15/5層那一次觸發, 非之後同目標若又被攻擊而重複觸發)。
       // 批42: exploitGlobal —— 「持有者(施放者/caster)」視角的跨目標累計觸發次數計數器,
       // Map<效果物件, {n, fired}>, 掛在持有者(而非目標)身上, 對應原文「場上所有破綻觸發後」
@@ -508,6 +581,11 @@
       let v = this[stat];
       for (const [s, add, , src] of this.statAdds) if ((s === stat || s === "all") && !this.suppressed(src)) v += add;  // 裝備平加(獨立階段, 在陣營/兵種營後、戰法乘算前)
       for (const [s, m, , src] of this.mods) if ((s === stat || s === "all") && !this.suppressed(src)) v *= m;
+      // 禁近似令-批K: this.stack.statField/statPerVal(dynamic_coef_from_counter族) —— 對稱
+      // amp() 讀 this.stack.per×this.stack.n 的既有寫法, 供 k:"stat"+e.fromStack 註記的
+      // 「stat屬性隨同一枚stack計數器動態成長」(弓腰姬, 見其註冊端註解), 即時讀取當下層數,
+      // 天然跟隨stack.n逐回合變化同步, 不需要每回合重新pushStatAdd。
+      if (this.stack && this.stack.statField === stat) v += (this.stack.statPerVal || 0) * this.stack.n;
       return v;
     }
     // 批24 D2: dmgType(可選) —— 只加總「該條目未宣告 dmgType, 或宣告的 dmgType 與呼叫端指定
@@ -650,6 +728,16 @@
     tick() {
       for (const d of this.dots) { this.troop -= d[0]; this.wounded += d[0] * woundedRate(CUR_R); }  // 批18: dot 掉血同樣按當前回合轉化率計入傷兵池
       this.dots = this.dots.filter(d => --d[1] > 0);
+      // 禁近似令-批K: regens(engine_wiring_gaps_misc族) —— 對稱上方dots掉血, 逐回合按登記
+      // 金額治療(受傷兵池/START_TROOP上限雙重夾住, 沿用heal效果既有相同clamp慣例), 到期
+      // 遞減移除(對稱dots的--d[1]>0慣例)。
+      if (this.regens.length) {
+        for (const rg of this.regens) {
+          const actual = Math.max(0, Math.min(rg[0], this.wounded, START_TROOP - this.troop));
+          this.troop += actual; this.wounded -= actual;
+        }
+        this.regens = this.regens.filter(rg => --rg[1] > 0);
+      }
       this.mods = this.mods.filter(m => --m[2] > 0);
       this.adds = this.adds.filter(a => --a[2] > 0);
       this.statAdds = this.statAdds.filter(a => --a[2] > 0);   // 裝備平加到期移除(如 疾馳 speed+25 dur:2)
@@ -669,6 +757,18 @@
         if (this.huchen.left <= 0) settleHuchen(this, false);
       }
       if (this.decay && --this.decay.left <= 0) this.decay = null;
+      // 禁近似令-批K: preDmgHook 到期清除(見 Unit 建構式註解) + deferredDmg 逐回合攤還扣血
+      // (deferSettle 排出的分期傷害獨立於觸發它的 hook 本身是否仍存活, 已排入隊的錢仍要付完)。
+      if (this.preDmgHooks.length) this.preDmgHooks = this.preDmgHooks.filter(h => --h.dur > 0);
+      if (this.preAttackHooks.length) this.preAttackHooks = this.preAttackHooks.filter(h => --h.dur > 0);
+      if (this.deferredDmg.length) {
+        let paid = 0;
+        this.deferredDmg = this.deferredDmg.filter(q => {
+          this.troop -= q.amt; this.wounded += q.amt * woundedRate(CUR_R); paid += q.amt;
+          return --q.left > 0;
+        });
+        if (TRACE && paid >= 1) lg(`　▸ ${this.nm} 延後傷害分期結算 -${Math.round(paid)}`);
+      }
       this.tauntDur = Math.max(0, this.tauntDur - 1);
       if (this.tauntDur <= 0) this.tauntBy = null;
       if (this.guardDur) { this.guardDur = Math.max(0, this.guardDur - 1); if (this.guardDur <= 0) { this.guardian = null; this.guardShare = 0; this.guardNormalOnly = false; } }  // 代承到期: 清 guardian(如 援助 首回合援護 dur:1)
@@ -677,6 +777,7 @@
       this.surehitDur = Math.max(0, this.surehitDur - 1);
       if (this.shield && --this.shield.dur <= 0) this.shield = null;
       if (this.counter && --this.counter.dur <= 0) this.counter = null;  // 批23 A2: 反擊到期清除(過去 dur 幽靈欄位從不遞減, 帶時限的反擊變永久)
+      if (this.dmgShare && --this.dmgShare.dur <= 0) this.dmgShare = null;  // 禁近似令-批K: dmgShare 到期清除(對稱counter既有慣例)
       this.hitFlags.clear();                           // 受擊觸發(when.on) 每回合各戰法重置一次觸發額度
       if (this.immune.length) this.immune = this.immune.filter(a => --a[1] > 0);  // 批16: immuneTo 逐回合遞減
       this.fakeReportDur = Math.max(0, this.fakeReportDur - 1);  // 批16: 偽報 逐回合遞減
@@ -696,7 +797,7 @@
   //   錨3 屬性差大負值(保底) → 實測 ≈90  傷害 ⇒ DMG_FLOOR = 90/sqrt(10000) = 0.9
   // 之後有更多實測數據(不同兵力/等級)可再校準, 目前僅50級單一等級係數樣本, 折入常數中。
   const DMG_A = 4.76, DMG_B = 1.44, DMG_FLOOR = 0.9;
-  function damage(src, dst, coef, kind, srcTroop, isNormal, isActive, isCharge) {
+  function damage(src, dst, coef, kind, srcTroop, isNormal, isActive, isCharge, forcePierce) {
     const troop = srcTroop == null ? src.troop : srcTroop;
     const atk = kind === "intel" ? src.eff("intel") : src.eff("force");
     const def = kind === "intel" ? dst.eff("intel") : dst.eff("command");
@@ -723,8 +824,50 @@
     if (src.captured > 0) return 0;
     const totalAmp = src.amp(kind, isNormal, isActive, isCharge);
     base *= totalAmp <= -1 ? 0 : 1 + Math.max(-0.9, totalAmp);
-    const mit = dst.addbonus("mitig", kind, isNormal) * (1 - Math.min(1, src.addbonus("pierce")));
+    // 禁近似令-批K: forcePierce(可選, 尾端新增, 向後相容既有全部呼叫點) —— dot 效果級 e.pierce:true
+    // 專用(見 applyEffects k==="dot"分支), 強制本次結算完全無視 dst 的 mitig(無論 src 的
+    // pierce 累加值多少), 取代「無視防禦」與「無視統率智力(atk-def公式本身)」被迫混用src.
+    // addbonus("pierce")(會連帶影響caster所有其他傷害來源, 而非只影響這一個dot段)的舊近似
+    // (獅子奮迅「叛逃狀態...無視防禦」, engine_wiring_gaps_misc族)。
+    const mit = forcePierce ? 0 : dst.addbonus("mitig", kind, isNormal) * (1 - Math.min(1, src.addbonus("pierce")));
     base *= Math.max(0.1, 1 - mit);
+    // 禁近似令-批K: preDmgHook —— 「傷害結算前攔截修正」(pre_damage_intercept族, 見 Unit
+    // 建構式 this.preDmgHooks 註解)。攻擊方(src)自己掛的 probVoid 與防禦方(dst)自己掛的
+    // probMitig/stepMitig/deferSettle 皆在此處(amp/mitig/crit皆已算完之後, 隨機帶之前)消費,
+    // 與 crit 同屬「這一下攻擊有沒有命中某個離散事件」的獨立判定層, 不受 amp -90%封頂/crit
+    // 隨機帶影響, 也不影響它們。
+    if (src.preDmgHooks && src.preDmgHooks.length) {
+      for (const h of src.preDmgHooks) {
+        if (h.dmgType && h.dmgType !== kind) continue;
+        if (h.hookKind === "probVoid" && rnd() < (h.rate || 0)) {
+          base *= Math.max(0, 1 - (h.val ?? 1));
+          if (TRACE) lg(`　▸ ${src.nm} 攻擊結算前被攔截, 本次傷害降低${Math.round((h.val ?? 1) * 100)}%`);
+        }
+      }
+    }
+    if (dst.preDmgHooks && dst.preDmgHooks.length) {
+      for (const h of dst.preDmgHooks) {
+        if (h.dmgType && h.dmgType !== kind) continue;
+        if (h.hookKind === "probMitig") {
+          if (rnd() < (h.rate || 0)) {
+            base *= Math.max(0, 1 - (h.val || 0));
+            if (TRACE) lg(`　▸ ${dst.nm} 受到傷害結算前被攔截降低${Math.round((h.val || 0) * 100)}%`);
+          }
+        } else if (h.hookKind === "stepMitig") {
+          const effHits = Math.min(h.hits, h.max ?? 30);
+          const cur = Math.max(0, (h.val ?? 0) + (h.step ?? 0) * effHits);
+          if (cur > 0) base *= Math.max(0, 1 - cur);
+          h.hits += 1;
+        } else if (h.hookKind === "deferSettle") {
+          const deferAmt = base * (h.pct || 0);
+          base -= deferAmt;
+          const rounds = h.delayRounds || 3;
+          dst.deferredDmg = dst.deferredDmg || [];
+          dst.deferredDmg.push({ amt: (deferAmt * (1 - (h.reducePct || 0))) / rounds, left: rounds });
+          if (TRACE) lg(`　▸ ${dst.nm} ${Math.round(deferAmt)}傷害延後結算(降低${Math.round((h.reducePct || 0) * 100)}%後分${rounds}回合)`);
+        }
+      }
+    }
     // 批H: 會心(兵刃暴擊)/奇謀(謀略暴擊)真擲骰層 —— 禁近似令下取代全庫14筆「crit-ev」期望值
     // 折算(見 no_approx_inventory.json crit_system_primitive族/engine_limitations.md本節)。
     // 機制: 每次造成傷害時, 先擲一次crit判定, rate=src此刻所有「會心/奇謀機率」來源加總
@@ -750,6 +893,10 @@
     return Math.max(0, base);
   }
   function hit(src, dst, coef, kind, isNormal, onEvent, onDeal, isActive, isCharge) {  // 批31 A: isActive(可選, 尾端新增, 向後相容既有全部呼叫點)—— 傳入本次傷害是否為主動戰法所致; 批40 B: isCharge(可選, 對稱isActive)—— 傳入本次傷害是否為突擊戰法所致
+    // 禁近似令-批K: wasAlive(engine_wiring_gaps_misc族, on-kill事件) —— 記錄本次命中前dst是否
+    // 存活, 供下方「本次命中後dst.troop<=0」的擊殺判定精準抓「這一下才是致命一擊」(而非對已死
+    // 單位重複觸發), 見虎痴 pierce.onKill 消費端。
+    const wasAlive = dst.troop > 0;
     if (!src.surehitDur && dst.dodgeDur && (dst.dodgeDmgType == null || dst.dodgeDmgType === kind) && rnd() < dst.dodgeProb) {  // 規避: 完全迴避一次傷害(必中無視); 批G: dodgeDmgType限定只對該類型(phys/intel)生效, null=向後相容不分類型
       if (TRACE) lg(`　→ ${dst.nm} 規避了攻擊`);
       if (onEvent) onEvent(dst, src, isNormal, 0, kind);  // 批39 C: 補傳kind(本次傷害類型), 供onHit()對稱dealtDamage的e.when.dmgType過濾(見下方onEvent呼叫端與onHit定義)
@@ -815,7 +962,33 @@
       else { dst.troop -= dmg; dst.wounded += dmg * wr; }
     }
     if (TRACE) lg(`　→ ${dst.nm} 損兵 ${Math.round(dmg)}，剩餘 ${Math.max(0, Math.round(dst.troop))}` + (dst.troop <= 0 ? " 【擊破】" : ""));
+    // 禁近似令-批K: onKillGrants(engine_wiring_gaps_misc族) —— 「這一下」把dst由存活打至
+    // 陣亡(wasAlive且現在troop<=0)時, 消費src身上登記的擊殺獎勵清單(見k==="pierce"+e.onKill
+    // 註冊端), 取代虎痴「破陣(擊敗鎖定目標後無視統率智力)需擊敗鎖定目標才獲得, 約後半場生效
+    // →val×0.5折算」的EV近似, 改為真正「擊敗目標的那一刻」才授予, 之後常駐到戰鬥結束。
+    if (wasAlive && dst.troop <= 0 && src.alive && src.onKillGrants && src.onKillGrants.length) {
+      for (const g of src.onKillGrants) {
+        if (g.kind === "pierce") src.pushAdd("pierce", g.val, g.dur ?? 99, "onKill:pierce");
+        if (TRACE) lg(`　▸ ${src.nm} 擊敗${dst.nm}, 獲得破陣(無視統率智力)`);
+      }
+      src.onKillGrants = [];
+    }
     if (dst.settle) dst.settle.layers = Math.min(dst.settle.max, dst.settle.layers + 1);
+    // 禁近似令-批K: dmgShare(engine_wiring_gaps_misc族) —— 「使其任一目標受到傷害時會回饋X%
+    // 傷害給其他敵軍」的傷害轉嫁給隊友機制(連環計), 與既有redirect(轉移給我方指定守護者,
+    // 承受方向)/absorbGuards/counter(還擊來源自己)方向都不同——這裡是「dst自己已經吃了這下
+    // 傷害之後, 額外再拉一個dst的隊友一起分攤」, 用 _FIGHT_CTX.alliesOf(dst) 取得dst自己的
+    // 隊伍(對dst而言的「我方」, 即src視角的敵方隊伍), 排除dst自己後隨機選一位分攤val×dmg。
+    // dmg>0(含被block/shield折算後的實際值)才觸發, 避免對零傷害攻擊也拉一個隊友陪打。
+    if (dmg > 0 && dst.dmgShare && dst.alive && _FIGHT_CTX.alliesOf) {
+      const mates = _FIGHT_CTX.alliesOf(dst).filter(x => x.alive && x !== dst);
+      if (mates.length) {
+        const buddy = mates[Math.floor(rnd() * mates.length)];
+        const shareAmt = dmg * dst.dmgShare.pct;
+        buddy.troop -= shareAmt; buddy.wounded += shareAmt * wr;
+        if (TRACE) lg(`　▸ ${dst.nm} 受傷回饋 ${Math.round(shareAmt)} 給 ${buddy.nm}`);
+      }
+    }
     const ls = src.addbonus("lifesteal");                            // 批8: 倒戈 —— 造成傷害時按比例回復自身兵力(以本次造成的傷害量 dmg 為基準), 上限 START_TROOP
     if (ls > 0 && src.alive) {
       const before = src.troop;
@@ -844,7 +1017,11 @@
     const c = dst.counter;
     if (c && dst.alive && src.alive && !(c.normalOnly && !isNormal) && rnd() < (c.prob ?? 1)) {  // 批G: normalOnly限定只在普攻(isNormal=true)時觸發, 省略時向後相容
       const ck = c.kind || "phys";
-      const cd = damage(dst, src, c.coef ?? 1, ck); src.troop -= cd; src.wounded += cd * woundedRate(CUR_R);
+      // 禁近似令-批K: c.ofDamage(engine_wiring_gaps_misc族) —— 對稱heal既有e.ofDamage慣例
+      // (依本次觸發事件的實際傷害量比例輸出), 取代反擊固定用coef重新計算一次全新damage()的
+      // 舊近似(裝備「受到普通攻擊時,反彈5%傷害」——反彈的是「這一下實際承受的傷害量」的5%,
+      // dmg是本次已經過block/shield折算後的實際傷害量)。
+      const cd = c.ofDamage != null ? dmg * c.ofDamage : damage(dst, src, c.coef ?? 1, ck); src.troop -= cd; src.wounded += cd * woundedRate(CUR_R);
       if (TRACE) lg(`　↩ ${dst.nm} 反擊 ${src.nm} 損兵 ${Math.round(cd)}，剩餘 ${Math.max(0, Math.round(src.troop))}`);
       // 批52e/f: 反擊亦計「造成傷害」(文武雙全等); 零傷(抵禦/虛弱)仍觸發
       if (onDeal && dst.alive) onDeal(dst, src, false, ck, cd);
@@ -867,9 +1044,34 @@
           if (TRACE) lg(`　↩ ${gu.nm}(守護${dst.nm}) 反擊 ${src.nm} 損兵 ${Math.round(gd)}，剩餘 ${Math.max(0, Math.round(src.troop))}`);
           // 批52f: 守護反擊零傷仍觸發 dealtDamage
           if (onDeal && gu.alive) onDeal(gu, src, false, gk, gd);
+          // 禁近似令-批K: counter_target_binding族 —— guardFor反擊觸發後, 額外副作用精確
+          // 綁定到「這一次」的攻擊者(src)或反擊執行者自己(gu), 不透過 applyEffects 的 who
+          // 派發(hit()無隊伍context, 見上方 g.debuffAttacker/g.selfStack 註冊處註解)。
+          if (g.debuffAttacker && src.alive) {
+            const da = g.debuffAttacker;
+            src.pushAdd("amp", -(da.val || 0), (da.dur ?? 1) + 1, "counterGuard:debuffAttacker", da.dmgType ? { dmgType: da.dmgType } : undefined);
+            if (TRACE) lg(`　▸ ${src.nm} 被${gu.nm}反擊命中, 造成傷害降低${Math.round((da.val || 0) * 100)}%(${(da.dur ?? 1)}回合)`);
+          }
+          if (g.selfStack) {
+            const ss = g.selfStack;
+            if (!gu.guardStackN) gu.guardStackN = new Map();
+            const already = gu.guardStackN.get(g) || 0;
+            if (ss.max == null || already < ss.max) {
+              const layers = already + 1;
+              gu.guardStackN.set(g, layers);
+              const total = (ss.perVal || 0) * layers;
+              gu.pushStatAdd(ss.statField || "force", total, ss.dur ?? 99, "counterGuard:selfStack");
+              if (TRACE) lg(`　▸ ${gu.nm} 守護反擊疊層 第${layers}層（累計${STAT_ZH[ss.statField] || ss.statField || "武力"}+${total.toFixed(1)}）`);
+            }
+          }
         }
       }
     }
+    // 禁近似令-批K: hit() 補 return dmg(過去無回傳值, 呼叫端一律另讀 damage() 的回傳值)——
+    // 供 fireExtraHits 的 eh.lifesteal(engine_wiring_gaps_misc族)讀取「這一段 extraHits 自己
+    // 造成的實際傷害量」計算自我回血, 純新增不影響任何既有呼叫端(過去全部呼叫點皆未讀取
+    // hit() 回傳值, 零回歸)。
+    return dmg;
   }
   function roundOk(t, r) {                          // 條件觸發(when): 回合是否符合戰法的發動窗口
     const w = t.when;
@@ -1096,9 +1298,45 @@
     const foesOf = _FIGHT_CTX.foesOf || (() => enemies);
     const al = typeof alliesOf === "function" ? alliesOf(u) : allies;
     const fo = typeof foesOf === "function" ? foesOf(u) : enemies;
-    const tgt = pickTargetChaos(u, al, fo);
+    let tgt = pickTargetChaos(u, al, fo);
     if (!tgt) return null;
+    // 禁近似令-批K: preAttackHooks(pre_damage_intercept鄰居, engine_wiring_gaps_misc族) ——
+    // 「自身即將受到普通攻擊時」的真反應式掛鉤點(區別於existing preDmgHooks, 那是攻擊/防禦方
+    // 傷害已確定要發生後的修正; 這裡是「即將被打」這件事本身觸發, 傷害是否照常落在tgt身上都
+    // 還未定), 取代 redirect/heal 過去只能「prep一次性擲骰決定整場有無」的EV折算, 改為每次
+    // 真正要挨打前才擲骰判定(見雲聚影從 redirectPre/益其金鼓 healAllyPre)。掛在tgt身上(即將
+    // 受擊的那一方), 只在普攻路徑觸發(原文皆明寫「即將受到普通攻擊」)。
+    if (tgt.preAttackHooks && tgt.preAttackHooks.length) {
+      const tgtMates = fo.filter(x => x.alive && x !== tgt);
+      for (const h of tgt.preAttackHooks) {
+        if (rnd() >= (h.rate ?? 1)) continue;
+        if (h.hookKind === "redirectPre" && tgtMates.length) {
+          let guard = tgtMates[0];
+          if (h.guard === "max_force") for (const a of tgtMates) if (a.eff("force") > guard.eff("force")) guard = a;
+          if (TRACE) lg(`　▸ ${tgt.nm} 觸發代承(preAttack), 改由 ${guard.nm} 承受此次普通攻擊`);
+          tgt = guard;
+        } else if (h.hookKind === "healAllyPre" && tgtMates.length) {
+          const recv = tgtMates[Math.floor(rnd() * tgtMates.length)];
+          if (recv.alive && !recv.healblock) {
+            const hcoefH = (h.coef ?? 0.5) * (h.scale ? scaleOf(tgt, h.scale) : 1);
+            const want = hcoefH * (tgt.troop * HEAL_TROOP_C);
+            const actual = Math.max(0, Math.min(want, recv.wounded, START_TROOP - recv.troop));
+            const before = recv.troop;
+            recv.troop += actual; recv.wounded -= actual;
+            if (TRACE && recv.troop - before >= 1) lg(`　▸ ${tgt.nm} 觸發即將受擊治療(preAttack) → ${recv.nm} +${Math.round(recv.troop - before)}`);
+          }
+        }
+      }
+    }
     hit(u, tgt, 1.0, "phys", true, onHit, onDeal);
+    // 禁近似令-批K: splash(splash_aoe_primitive族) —— 普攻命中tgt後, 若u持有splash加成
+    // (val=濺射比例), 同時對tgt「同部隊其他武將」(即tgt所在敵隊除tgt外的存活成員)造成
+    // splashRatio倍率的兵刃傷害, 與extra(重新隨機挑一個全新目標, 不保證同隊)語意不同——
+    // 這裡精確鎖定tgt本人的隊友, 真正的多目標同時結算(瞋目橫矛/象兵)。
+    const splashRatio = u.addbonus("splash");
+    if (splashRatio > 0) {
+      for (const mate of fo) if (mate !== tgt && mate.alive) hit(u, mate, splashRatio, "phys", true, onHit, onDeal);
+    }
     if (allowExtra !== false) {
       for (let i = 0; i < extraCount(u.addbonus("extra")); i++) {
         const nt = pickTargetChaos(u, al, fo);
@@ -1241,7 +1479,19 @@
       // 該筆_note)不同, 這裡改為真正動態比較atk.eff("force")與atk.eff("intel"), 更精確。
       const ehKind = eh.kindByStat === "maxForceIntel" ? (atk.eff("force") >= atk.eff("intel") ? "phys" : "intel") : (eh.kind || "phys");
       if (TRACE && dests.length) lg(`　▸ ${t.nameZh || "?"}〔額外段${eh.srcSel ? "·出手" + eh.srcSel : ""}${eh.targetSel ? "·" + eh.targetSel : ""}${mainTargetAllyAtk ? "·mainTargetAlly(" + atk.nm + "被迫出手)" : ""}〕${ehKind === "intel" ? "謀略" : "兵刃"}傷害(${Math.round(coef * 100)}%) by ${atk.nm} → ${dests.map(v => v.nm).join("、")}` + (eh._note ? `（${eh._note}）` : ""));
-      for (const v of dests) hit(atk, v, coef, ehKind, false, onHit, onDeal);
+      // 禁近似令-批K: eh.lifesteal(engine_wiring_gaps_misc族) —— 「僅限本extraHits段自身傷害
+      // 的回復欄位」, 對稱既有 lifesteal(持有者身上的standing addbonus, 對該單位往後所有
+      // 傷害都生效)但顆粒度縮小到只讀這一段的dmg(不透過addbonus通道, 避免誤及本戰法主coef段
+      // 等其他傷害來源), 供錦帆軍「若目標已潰逃則造成兵刃攻擊並恢復傷害量的30%兵力」——取代
+      // 「30%傷害量回血未建模(保守)」的既有缺口。
+      for (const v of dests) {
+        const ehDmg = hit(atk, v, coef, ehKind, false, onHit, onDeal);
+        if (eh.lifesteal && ehDmg > 0 && atk.alive) {
+          const before = atk.troop;
+          atk.troop = Math.min(START_TROOP, atk.troop + ehDmg * eh.lifesteal);
+          if (TRACE && atk.troop - before >= 1) lg(`　▸ ${atk.nm} extraHits倒戈回復 +${Math.round(atk.troop - before)}`);
+        }
+      }
     }
   }
 
@@ -1403,7 +1653,12 @@
     // 近似)。因pushAdd以src(戰法名+dmgType尾碼)去重, 主coef段結束後的常規applyEffects呼叫會
     // 以同一src刷新覆蓋(非疊加)本效果, 故pre-coef先套一次+post-coef再刷新一次不會會心率翻倍。
     for (const e of t.effects) {
-      const k = e.k;
+      // 禁近似令-批K: e.eitherK(dynamic_coef_from_counter族/target_rank_branch鄰居) —— 陣列,
+      // 本次觸發隨機擇一k值頂替e.k本身(溯江搖櫓「使隨機敵軍單體進入計窮或震懾狀態」——本文
+      // 明確是兩個控制狀態擇一觸發, 而非固定套用其中一種), 取代舊有「簡化為固定stun, 未表達
+      // 計窮或震懾的擇一語意」近似。每次觸發各自重新擲骰(非prep鎖定, 反應式觸發本身就該每次
+      // 獨立判定選中哪一種)。
+      const k = e.eitherK ? e.eitherK[Math.floor(rnd() * e.eitherK.length)] : e.k;
       if (opt.onlyKinds && !opt.onlyKinds.includes(k)) continue;  // 批H: 限定只處理指定k(pre-coef會心套用, 見上方註解)
       // 批35 B: block 的「準備階段鎖定」scale 值優先算定, 放在所有 continue 閘門(healOnly/
       // skipWhenEffects/when.on/rate/ifLeader/everyRound...)之前 —— 必須確保 prep 呼叫
@@ -1442,6 +1697,20 @@
       let eRate = e.rate;
       if (e.rateLeader != null && allies && allies[0] === caster) eRate = e.rateLeader;
       if (e.rateSub != null && allies && allies[0] !== caster) eRate = e.rateSub;
+      // 禁近似令-批K: rateFactionBonus(faction_count_scale族) —— 依隊伍陣營構成人數線性加成
+      // 觸發率(南蠻渠魁/象兵「部隊每多一名蠻族武將額外提高X%機率」)。額外加成=per×max(0,
+      // 隊伍中該陣營人數-1)(「每多一名」=超過持有者自己以外的同陣營人數), 見countAllyFaction()。
+      if (e.rateFactionBonus && eRate != null) {
+        const cnt = countAllyFaction(allies, e.rateFactionBonus.faction);
+        eRate = Math.max(0, Math.min(1, eRate + (e.rateFactionBonus.per || 0) * Math.max(0, cnt - 1)));
+      }
+      // 禁近似令-批K: rateBonusPerBuffType(rate_self_dynamic族) —— 依自身當下持有的功能性
+      // 增益「種類數」動態加成觸發率(臥薪嘗膽「依自身連擊/洞察/先攻/必中/破陣的狀態數,每多
+      // 一種提高5%→10%機率」), 取代e.rate只能是靜態擲骰值的既有限制, 見countActiveBuffTypes()。
+      if (e.rateBonusPerBuffType && eRate != null) {
+        const cnt = countActiveBuffTypes(caster, e.rateBonusPerBuffType.types || []);
+        eRate = Math.max(0, Math.min(1, eRate + (e.rateBonusPerBuffType.per || 0) * cnt));
+      }
       // 批52g: ratePerTarget/rateStatusBonus —— 逐目標擲骰, 跳過全局一次 rate
       const perTgtRate = !!(e.ratePerTarget || e.rateStatusBonus);
       if (!opt.rateChecked && !perTgtRate && eRate != null && rnd() >= eRate) { if (TRACE) lg(`　▸ ${effDesc(k, e, caster)}〔${Math.round(eRate * 100)}%機率〕未觸發`); continue; }
@@ -1486,6 +1755,31 @@
       // 狀態做條件判斷, 不修改/不新增計數邏輯本身, 成本低(對比批42 exploitLayers/批43 A
       // add型疊層需要新增整套計數/封頂/onMaxStacks原語, 本欄位只是既有stack狀態的讀取閘門)。
       if (e.ifStackMaxed && !(caster.stack && caster.stack.n >= caster.stack.max)) { if (TRACE) lg(`　▸ ${effDesc(k, e, caster)}〔限疊層已滿〕${caster.nm}尚未疊滿(${caster.stack ? caster.stack.n : 0}/${caster.stack ? caster.stack.max : "?"}), 未觸發`); continue; }
+      // 禁近似令-批K: e.ifCasterStackAtLeast(數值) —— 對稱既有 e.ifStackMaxed(僅認「已疊滿」
+      // 這個特例), 這裡是通用門檻「caster.stack.n 是否達到指定層數」(水淹七軍「第三次及之後
+      // 施放」= stack.n>=2 才觸發settle式即時結算/「第四次施放後」= stack.n>=3 才觸發
+      // extraHits, hit_count_stage_trigger族——stack.n 本身已由 stackPer:"cast" 於每次成功
+      // 發動時遞增, 只是過去無「讀取層數作為另一段效果觸發條件」的原語)。
+      if (e.ifCasterStackAtLeast != null && !(caster.stack && caster.stack.n >= e.ifCasterStackAtLeast)) { if (TRACE) lg(`　▸ ${effDesc(k, e, caster)}〔限疊層達${e.ifCasterStackAtLeast}〕${caster.nm}僅${caster.stack ? caster.stack.n : 0}層, 未觸發`); continue; }
+      // 禁近似令-批K: e.ifEnemyTroop(兵種字串, "騎"/"盾"/"弓"/"槍"/"器") —— 兵種由「隊伍」
+      // 決定(非個別武將), enemies[0].ttype 即代表整支敵隊的兵種, 只在敵隊兵種恰好符合指定
+      // 值時本效果才生效(左右開弓「如果目標為騎兵則額外造成潰逃狀態」, engine_wiring_gaps_misc
+      // 族「依隊伍兵種類型」分支, 過去引擎完全無法區分兵種, 只能對全體目標近似套用)。
+      if (e.ifEnemyTroop && !(enemies && enemies.length && enemies[0].ttype === e.ifEnemyTroop)) { if (TRACE) lg(`　▸ ${effDesc(k, e, caster)}〔限敵隊為${e.ifEnemyTroop}兵〕敵隊為${enemies && enemies[0] ? enemies[0].ttype : "?"}, 未觸發`); continue; }
+      // 禁近似令-批K: e.once(通用版) —— 對稱既有 everyRound/onHit 等個別路徑各自的 e.once
+      // 檢查(見 onHitFor 等), 這裡補上「不論從哪條路徑呼叫都成立」的通用一次性消耗閘門, 用
+      // caster.whenFired(不隨回合重置的持久化去重狀態)以效果物件本身為鍵。淵然難測「首回合
+      // 觸發時, 若...否則...」的兩個互斥分支各自只應觸發一次(不論母戰法是走反應式戰法級或
+      // 效果級路徑)。
+      if (e.once && caster.whenFired.has(e)) { continue; }
+      if (e.once) caster.whenFired.add(e);
+      // 禁近似令-批K: e.ifArmed(once_consumable族, k:"armConsume"/"strike"配對) —— 「消耗態
+      // 狀態機」通用旗標門檻: 只有 caster.armedConsume.active 為真才放行(見k==="strike"消費端
+      // 與k==="armConsume"施放端)。十二奇策「並使其下次發動主動戰法後,對敵軍單體造成謀略
+      // 攻擊」——armConsume(who:self, 十二奇策成功發動當下套用)武裝一次性資格, strike(掛在
+      // e.when.on:"activeFired",who:"ally", 監聽包含自己在內的我軍任一人下次成功發動主動
+      // 戰法)命中時消耗掉這份資格並造成傷害, 不消耗則不觸發(未被武裝時視為條件不成立)。
+      if (e.ifArmed && !(caster.armedConsume && caster.armedConsume.active)) { if (TRACE) lg(`　▸ ${effDesc(k, e, caster)}〔待消耗武裝〕${caster.nm}尚未取得可消耗的觸發資格, 未觸發`); continue; }
       // 批30 A: 非heal效果的逐回合重擲通道(e.everyRound) —— 過去只有 k==="heal" 在
       // opt.healOnly(見 applyPassives 的逐回合呼叫)這條路徑下逐回合重新掃描/擲骰套用, 其餘
       // k(amp/mitig/block/stat/...)一旦在 prep 套用一次就不會再被重新判定, 導致「每回合X%
@@ -1681,10 +1975,51 @@
         }
         continue;
       }
+      // 禁近似令-批K: k==="regen"(engine_wiring_gaps_misc族) —— 「每回合恢復一次兵力,持續N
+      // 回合」的休整類狀態, 登記到目標的this.regens清單(見tick()消費端逐回合各自結算), 取代
+      // 「heal效果不讀dur, 只結算一次, 折算成單次coef×dur近似(2倍低估)」的既有缺口。coef/
+      // scale/healTroopBase公式與heal effects完全同款(僅治療對象選標簡化為self/leader/
+      // targetSel/預設全體, 本戰法族群通常只需單體, 無heal完整who矩陣的必要)。
+      if (k === "regen") {
+        const whoR = e.who || "ally";
+        const poolR = allies.filter(a => a.alive && !a.healblock && !a.captured);
+        let targetsR;
+        if (e.targetSel) { const picked = pickByCriterion(poolR, e.targetSel); targetsR = picked ? [picked] : []; }
+        else if (whoR === "self") targetsR = (caster.alive && !caster.healblock) ? [caster] : [];
+        else if (whoR === "leader") targetsR = (allies[0] && allies[0].alive && !allies[0].healblock) ? [allies[0]] : [];
+        else targetsR = poolR.slice();
+        const hcoefR = (e.coef ?? 0.8) * (e.scale ? scaleOf(caster, e.scale) : 1);
+        const healTroopBaseR = t.type === "active" ? caster.troop * HEAL_TROOP_C : caster.healBase;
+        const amtR = hcoefR * healTroopBaseR;
+        for (const v of targetsR) { v.regens.push([amtR, e.dur ?? 2]); if (TRACE) lg(`　▸ ${v.nm} 獲得休整(每回合恢復${Math.round(amtR)}, 持續${e.dur ?? 2}回合)`); }
+        continue;
+      }
       if (k === "settle") {
         let tg = null;
-        for (const x of enemies) if (x.alive && (!tg || x.eff("command") > tg.eff("command"))) tg = x;
-        if (tg) { tg.settle = { layers: e.init ?? 1, max: e.max ?? 3, left: e.dur ?? 2, caster, snap: caster.troop, base: e.base ?? 1.5, per: e.per ?? 0.4, kind: t.kind || "intel" }; if (TRACE) lg(`　▸ 猛毒·結算傷害 → ${tg.nm}`); }
+        // 禁近似令-批K: e.perStackFrom(dynamic_coef_from_counter族) —— 選標改為「敵軍中該
+        // stackId疊層數最高者」(對應「最終降傷施加次數」——被施加最多次的那個目標), 取代
+        // 預設的「統率最高」選標(密計誅逆settle結算的目標必須與另一段amp-stackKey疊層的
+        // 目標一致, 而非泛用統率最高)。
+        if (e.perStackFrom) {
+          for (const x of enemies) if (x.alive) {
+            const lv = (x.ampLayersById && x.ampLayersById[e.perStackFrom]) || 0;
+            const bestLv = tg ? ((tg.ampLayersById && tg.ampLayersById[e.perStackFrom]) || 0) : -1;
+            if (lv > bestLv) tg = x;
+          }
+        } else {
+          for (const x of enemies) if (x.alive && (!tg || x.eff("command") > tg.eff("command"))) tg = x;
+        }
+        if (tg) {
+          tg.settle = {
+            layers: e.init ?? 1, max: e.max ?? 3, left: e.dur ?? 2, caster, snap: caster.troop,
+            base: e.base ?? 1.5, per: e.per ?? 0.4, kind: t.kind || "intel",
+            perStackFrom: e.perStackFrom || null,
+            // 禁近似令-批K: e.singleTarget(true) —— 結算只打tg本人(密計誅逆「對敵軍單體造成
+            // 一次斬殺傷害」), 省略時維持既有行為(打tg所在整隊, 猛毒既有慣例)。
+            singleTarget: !!e.singleTarget,
+          };
+          if (TRACE) lg(`　▸ 猛毒·結算傷害 → ${tg.nm}`);
+        }
         continue;
       }
       if (k === "redirect") {
@@ -1733,7 +2068,10 @@
       // 封頂。recipientSel(targetSel準則字串, 見TARGETSEL_KEY)從allies挑受益者, 省略時預設
       // caster本身。
       if (k === "stealStat") {
-        const statField = e.stat;
+        // 禁近似令-批K: e.statOptions(陣列) —— 「任一屬性(隨機)」語意(至柔動剛「偷取來源智/
+        // 統/速任一屬性」), 每次觸發隨機從陣列選一個屬性欄位, 取代固定只認e.stat單一屬性的
+        // 既有近似(過去只能挑一個代表屬性, 現精確表達三選一隨機)。
+        const statField = e.statOptions ? e.statOptions[Math.floor(rnd() * e.statOptions.length)] : e.stat;
         const wantEach = (e.amount ?? 0) * (e.scale ? scaleOf(caster, e.scale, e.scaleDiv) : 1);
         const recipient = e.recipientSel ? pickByCriterion(allies, e.recipientSel) : caster;
         if (recipient && recipient.alive && wantEach > 0) {
@@ -1819,6 +2157,37 @@
         }
         continue;
       }
+      // 禁近似令-批K: armConsume(once_consumable族施放端) —— 武裝一份一次性追加觸發資格
+      // (見 Unit 建構式 this.armedConsume 註解/e.ifArmed 頂層閘門/k==="strike"消費端)。
+      if (k === "armConsume") {
+        const whoAC = e.who || "self";
+        const destsAC = whoAC === "self" ? (caster.alive ? [caster] : []) : allies.filter(a => a.alive);
+        for (const uu of destsAC) { uu.armedConsume = { active: true }; if (TRACE) lg(`　▸ ${uu.nm} 取得下次隊友發動主動戰法後的追加觸發資格`); }
+        continue;
+      }
+      // 禁近似令-批K: strike(once_consumable族消費端) —— 由 e.ifArmed 頂層閘門(見上方)確保
+      // 只有 caster.armedConsume.active 為真才會執行到這裡, 對敵軍(targetSel 準則或隨機單體)
+      // 造成一次即時傷害後消耗掉這份資格(十二奇策「並使其下次發動主動戰法後,對敵軍單體造成
+      // 謀略攻擊」——與戰法頂層coef段的差異: 頂層coef是「本戰法自己發動當下」的傷害, 這裡是
+      // 「buff生效期間, 我軍任一人(含自己)下一次成功發動主動戰法」時才觸發的延遲、單次消耗
+      // 傷害, 兩者時機完全不同, 不可能用同一個頂層coef欄位表達)。
+      if (k === "strike") {
+        // 禁近似令-批K: e.sameTarget(true) —— 沿用本次applyEffects呼叫傳入的tgt(通常=本
+        // 戰法主段/disarm等狀態效果剛剛命中的同一人), 而非重新targetSel/隨機選(驍健神行
+        // 「如果目標已經被繳械則造成兵刃攻擊」——需要與effects陣列內排在前面的disarm效果
+        // 精確命中同一人, 且靠陣列內順序執行, 使disarm先於本段套用完成)。e.ifTargetHas
+        // (可選) —— 只在該目標已符合狀態時才出手(取代extraHits版「傷害在施加繳械前判定」
+        // 的執行順序缺陷: extraHits與effects是兩個獨立陣列, fireExtraHits在本戰法effects
+        // 套用之前就已執行完畢, 無法讀到「本次」才剛套用的disarm; 改成effects陣列內的
+        // sameTarget+ifTargetHas, 陣列本身依序執行, 天然解決了先後次序問題)。
+        const poolS = enemies.filter(x => x.alive);
+        let v = e.sameTarget ? (tgt && tgt.alive ? tgt : null)
+          : (e.targetSel ? pickByCriterion(enemies, e.targetSel) : (poolS.length ? poolS[Math.floor(rnd() * poolS.length)] : null));
+        if (v && e.ifTargetHas && !targetHas(v, e.ifTargetHas)) v = null;
+        if (v) { hit(caster, v, e.coef ?? 1, e.kind || t.kind || "intel", false, _FIGHT_CTX.onHit, _FIGHT_CTX.onDeal); if (TRACE) lg(`　▸ ${caster.nm} 消耗觸發資格 → ${v.nm} 追加攻擊`); }
+        if (e.ifArmed) caster.armedConsume = null;
+        continue;
+      }
       // 批A(11筆高嚴重重建): chargeConsume —— 「可消耗資源池」的消耗端(死戰不退「普攻後,有50%
       // 機率(受武力影響)消耗一層蓄威造成一次兵刃傷害,觸發後可繼續判定,每次觸發後機率降低8%,
       // 每回合最多觸發5次」)。掛在 when:{on:"dealtDamage",normalOnly:true} 反應式(普攻確實
@@ -1896,7 +2265,10 @@
       // 呼叫端與本函式頂層 tgt 參數 —— targetSel 在此處直接決定 dests, 完全不經過受混亂影響的
       // tgt/pickTargets 隨機路徑)。
       if (e.targetSel) {
-        const pool = who === "enemy" ? enemies : allies;
+        // 禁近似令-批K: who==="subs"+targetSel(counter_target_binding/split-ev族) —— pool
+        // 限縮到「副將二人」(allies.slice(1)), 供「損失兵力較多的副將/另一名副將」這類只在
+        // 兩名副將之間比較(而非全隊)的targetSel使用(三勢陣, 對稱既有enemy/ally兩種pool)。
+        const pool = who === "enemy" ? enemies : (who === "subs" ? allies.slice(1) : allies);
         const picked = pickByCriterion(pool, e.targetSel);
         dests = picked ? [picked] : [];
       }
@@ -1972,6 +2344,39 @@
       // 低於我軍主將」), 對稱ifTargetHas/ifTargetHasNot但比較的是「屬性大小」而非「狀態
       // 有無」, 見statCompareOk()。
       if (e.ifStatCompare) dests = dests.filter(u => statCompareOk(caster, u, allies, e.ifStatCompare));
+      // 禁近似令-批K: e.ifTargetHpAbove/ifTargetHpBelow —— 對稱既有when.hpAbove/hpBelow
+      // (只認caster自身), 這裡是「已選定的效果目標(受益者)自己」兵力百分比條件(肉身鐵壁
+      // 「當友軍兵力高於70%時」——受益的是友軍而非施放者自己, engine既有hpOk只查caster,
+      // 無法表達「他方單位」的血量條件)。
+      if (e.ifTargetHpAbove != null) dests = dests.filter(u => u.hpPct > e.ifTargetHpAbove);
+      if (e.ifTargetHpBelow != null) dests = dests.filter(u => u.hpPct < e.ifTargetHpBelow);
+      // 禁近似令-批K: e.ifSelfStatCompare(spec:{statA,statB,op}) —— 「已選定的效果目標自己」
+      // 兩項屬性大小互比(與ifStatCompare的「參照方vs目標」跨單位比較方向不同, 這裡同一單位
+      // 自己的兩個屬性互比), 淵然難測「若傷害來源武將武力高於智力則...否則...」需要判斷
+      // 「觸發本次反應式的攻擊者自己」武力vs智力。
+      if (e.ifSelfStatCompare) {
+        const spec = e.ifSelfStatCompare, opFn = {
+          gt: (a, b) => a > b, gte: (a, b) => a >= b, lt: (a, b) => a < b, lte: (a, b) => a <= b,
+        }[spec.op || "gt"];
+        dests = dests.filter(u => opFn(u.eff(spec.statA), u.eff(spec.statB)));
+      }
+      // 禁近似令-批K: ifTargetIsRank/ifTargetIsRankNot(target_rank_branch族) —— 「已選定的
+      // 目標是否恰好符合某屬性排名準則」的事後判斷, 與 targetSel(依準則主動挑目標)方向相反。
+      // spec: {stat:"force"|"intel", rank:"max"|"min"}。閉月「依目標恰好是不是武力/智力最高
+      // 分三支」: 混亂分支 ifTargetIsRank(武力最高) / 計窮分支 ifTargetIsRank(智力最高) /
+      // 否則分支 ifTargetIsRankNot([武力最高,智力最高])(兩者皆不是才生效)。用既有
+      // pickByCriterion(enemies, 準則)找出當下真正的排名冠軍, 與 dests 內每個目標比對是否
+      // 為同一人(嚴格 unit 物件相等, 因排名冠軍全隊唯一)。
+      const rankKeyOf = spec => (spec.stat === "intel" ? "maxIntel" : "maxForce");
+      if (e.ifTargetIsRank) {
+        const champ = pickByCriterion(enemies, rankKeyOf(e.ifTargetIsRank));
+        dests = dests.filter(u => u === champ);
+      }
+      if (e.ifTargetIsRankNot) {
+        const specs = Array.isArray(e.ifTargetIsRankNot) ? e.ifTargetIsRankNot : [e.ifTargetIsRankNot];
+        const champs = specs.map(s => pickByCriterion(enemies, rankKeyOf(s)));
+        dests = dests.filter(u => !champs.includes(u));
+      }
       // 批52g: whoNames —— 只對武將名在名單內的目標(黃巾副將含 SP)
       if (e.whoNames) {
         const wn = Array.isArray(e.whoNames) ? e.whoNames : [e.whoNames];
@@ -2066,12 +2471,39 @@
             const perStack = e.perStack ?? svVal(e.val);
             const totalVal = perStack * layers;
             u.pushAdd("amp", totalVal, e.dur, dtSrc, udFlags);
+            // 禁近似令-批K: e.stackId(dynamic_coef_from_counter族) —— 同時把本次疊層數寫進
+            // 字串鍵索引 u.ampLayersById[stackId], 供另一個獨立效果(k==="settle"+e.perStackFrom,
+            // 見其消費端)跨效果讀取「這個目標身上, 這個具名疊層計數器目前疊了幾層」, 解決
+            // JSON序列化下兩個效果物件無法互相持有物件參考(只能用共同約定的字串id間接引用)
+            // 的問題(密計誅逆「第6回合斬殺傷害率100%+25%×最終降傷施加次數」——settle結算時
+            // 需要讀取「本段amp-stackKey疊層」的當下層數代入coef公式)。
+            if (e.stackId) { u.ampLayersById = u.ampLayersById || {}; u.ampLayersById[e.stackId] = layers; }
             if (TRACE) lg(`　▸ ${u.nm} 疊層 第${layers}層（累計易傷/減傷${(totalVal * 100).toFixed(1)}%）`);
           }
           // 已達maxStacks: 語意上「這個目標已無法再疊」, 不做任何pushAdd(既有累計值維持不變,
           // 對稱stat stackKey的continue慣例, 差別是這裡沒有其餘k要處理無需continue跳出迴圈)。
         }
         else if (k === "amp") { const v = svVal(e.val); const ms = e.maxStack; who === "enemy" && v > 0 ? u.pushAdd("mitig", -v, e.dur, dtSrc, udFlags, ms) : u.pushAdd("amp", v, e.dur, dtSrc, udFlags, ms); }
+        // 禁近似令-批K: k==="dmgShare"(engine_wiring_gaps_misc族) —— 「使其任一目標受到傷害時
+        // 會回饋X%傷害給其他敵軍」的傷害轉嫁給隊友機制(連環計), 消費端見 hit() 內 dst.dmgShare
+        // 判斷式。取代舊有「用amp(敵全體固定+15%受傷)作EV代理近似, 方向類似但觸發條件/轉移
+        // 對象皆與原文不同」的結構性近似。
+        else if (k === "dmgShare") { u.dmgShare = { pct: svVal(e.val), dur: (e.dur ?? 2) + 1 }; if (TRACE) lg(`　▸ ${u.nm} 中鐵鎖連環(受傷回饋${(svVal(e.val) * 100).toFixed(1)}%給隊友)`); }
+        else if (k === "mitig" && e.stackKey) {
+          // 禁近似令-批K: mitig+e.stackKey(對稱既有amp+e.stackKey per-target疊層變體, 見上方
+          // k==="amp"分支)——離月「友軍受到治療時,40%機率+3%減傷,可疊5層,持續2回合」需要
+          // 每次觸發對目標疊1層(而非固定值), 沿用amp的ampLayers計數器與相同的疊層演算法。
+          if (!u.ampLayers) u.ampLayers = new Map();
+          const already = u.ampLayers.get(e) || 0;
+          if (e.maxStacks == null || already < e.maxStacks) {
+            const layers = already + 1;
+            u.ampLayers.set(e, layers);
+            const perStack = e.perStack ?? svVal(e.val);
+            const totalVal = perStack * layers;
+            u.pushAdd("mitig", totalVal, e.dur, dtSrc, udFlags);
+            if (e.stackId) { u.ampLayersById = u.ampLayersById || {}; u.ampLayersById[e.stackId] = layers; }
+          }
+        }
         else if (k === "mitig") u.pushAdd("mitig", svVal(e.val), e.dur, dtSrc, udFlags, e.maxStack);
         // 批H: critUp(會心/奇謀機率, val加法累積) / critDmgUp(會心/奇謀傷害幅度, 疊在基礎
         // +100%之上) —— 走與amp/mitig相同的pushAdd加法疊加通道, 由 damage() 於傷害結算時
@@ -2119,6 +2551,17 @@
         // ——同場多層恆定%, 不因戰鬥中智力浮動重算)。用pushMod(同src同stat「刷新覆蓋」既有慣例)
         // 每次重新算「當前層數×每層量級」的總乘數並覆寫, 天然等同疊加(因為新值已包含新層數),
         // 不需要另外的疊加型pushXxx原語。
+        // 禁近似令-批K: e.fromStack(dynamic_coef_from_counter族, stat版) —— 「本效果不自己
+        // 疊層, 改為註記同一持有者身上既有k:"stack"計數器(this.stack, 由stack效果驅動amp的
+        // 既有per-caster疊層通道)額外驅動一個stat屬性」, 註記後交給 eff() 的即時讀取(見其
+        // 對 this.stack.statField/statPerVal 的消費, 對稱既有 this.stack.per×this.stack.n
+        // 驅動amp的寫法)天然隨u.stack.n逐回合成長同步變動, 不需要每回合重新pushStatAdd。供
+        // 弓腰姬「依自身擁有的功能性增益數量額外提傷並疊加武力」——傷害段(stack驅動amp)與武力
+        // 段用同一個計數器動態同步, 取代舊有「取單層滿級值18點靜態近似, 與傷害段動態疊層不
+        // 同步」的做法。若u.stack尚未建立(effects陣列順序異常)則安全側no-op。
+        else if (k === "stat" && e.fromStack) {
+          if (u.stack) { u.stack.statField = e.stat; u.stack.statPerVal = e.perStackVal ?? 0; }
+        }
         else if (k === "stat" && e.stackKey) {
           if (!u.exploitLayers) u.exploitLayers = new Map();
           const already = u.exploitLayers.get(e) || 0;
@@ -2129,6 +2572,12 @@
           if (e.maxStacks != null && already >= e.maxStacks) continue;
           const layers = already + 1;
           u.exploitLayers.set(e, layers);
+          // 禁近似令-批K: e.stackId(dynamic_coef_from_counter族, 對稱amp/mitig+stackKey既有
+          // stackId寫入) —— 絕地反擊「自己每次受兵刃傷害+3→6點武力,最大疊加10次;第5回合根據
+          // 疊加次數對敵軍全體造成傷害」需要另一個獨立的dot效果(見k==="dot"+e.coefFromStack
+          // 消費端)跨效果讀取「自己身上這個具名疊層計數器目前疊了幾層」, 供第5回合AoE傷害的
+          // coef動態代入, 與ampLayersById共用同一個字串鍵命名空間(self-stacking時u===caster)。
+          if (e.stackId) { u.ampLayersById = u.ampLayersById || {}; u.ampLayersById[e.stackId] = layers; }
           const sc = lockedScaleOf(caster, e);
           // 批43 A: e.add(平點疊層) —— 批42 stackKey原先只支援 e.stat+mult(逐層%乘算, 如傲睨
           // 王侯), 全庫兄弟遷移掃描發現「可疊加N次」家族另有平點(add)疊層形態(如虎侯「+15點
@@ -2183,7 +2632,21 @@
             caster.exploitGlobal.set(e, g);
           }
         }
-        else if (k === "stat") { const ms = e.maxStack; const statField = resolveStatField(u, e.stat); if (e.add != null) u.pushStatAdd(statField, svAdd(e.add), e.dur, src, udFlags, ms); else u.pushMod(statField, svMult(e.mult ?? 1), e.dur, src, udFlags, ms); }  // 裝備平加(add)與乘算(mult)擇一; 批52 maxStack; 批I: e.stat==="maxStat"動態解析(resolveStatField)
+        else if (k === "stat") {
+          const ms = e.maxStack; const statField = resolveStatField(u, e.stat);
+          // 禁近似令-批K: e.addPerBuffType({types,per}) —— rate_self_dynamic族的stat版本
+          // (弓腰姬「每多1個功能性增益狀態,提高自身9→18點武力,最多疊加5次」與傷害段stack
+          // 同源計數但驅動stat而非amp, 過去無法讓stat讀取「當下持有幾種增益狀態」動態疊加,
+          // 取單層滿級值靜態近似)。add=per×count(封頂由呼叫端於e.maxCount控制, 對應「最多
+          // 疊加5次」——count本身已受countActiveBuffTypes天花板(最多5種可能類型)自然限制,
+          // 額外的e.maxCount再夾一次上限, 兩者皆非設計猜測而是既有候選類型數量的結構性上限)。
+          if (e.addPerBuffType) {
+            const cnt = Math.min(e.addPerBuffType.maxCount ?? 99, countActiveBuffTypes(caster, e.addPerBuffType.types || []));
+            u.pushStatAdd(statField, svAdd((e.addPerBuffType.per ?? 0) * cnt), e.dur, src, udFlags, ms);
+          }
+          else if (e.add != null) u.pushStatAdd(statField, svAdd(e.add), e.dur, src, udFlags, ms);
+          else u.pushMod(statField, svMult(e.mult ?? 1), e.dur, src, udFlags, ms);
+        }  // 裝備平加(add)與乘算(mult)擇一; 批52 maxStack; 批I: e.stat==="maxStat"動態解析(resolveStatField)
         // 批23 A3: dot 結算優先讀 e.kind(戰法整體是兵刃 t.kind="phys", 但灼燒/水攻類 dot 段
         // 依原文「受智力影響」應走謀略傷害類型, 過去誤用 t.kind 導致傷害類型錯位, 如天降火雨
         // 兵刃戰法掛的灼燒本應是 intel 類, 若戰法整體改記 kind="phys" 會連帶把 dot 也算成
@@ -2208,10 +2671,28 @@
           // 批52续: e.coefLeader —— 主將時更高傷害率
           let dotCoef = e.coef ?? 0.5;
           if (e.coefLeader != null && allies && allies[0] === caster) dotCoef = e.coefLeader;
+          // 禁近似令-批K: e.coefFromStack(dynamic_coef_from_counter族) —— coef不是固定值,
+          // 而是「基礎值+每層增量×caster身上具名疊層計數器(見k==="stat"+e.stackKey+e.stackId
+          // 消費端寫入ampLayersById)的當下層數」。絕地反擊「第5回合根據(自己受兵刃傷害觸發的)
+          // 疊加次數對敵軍全體造成傷害(60%→120%,每次+7%→14%)」——取代舊有「第5回合單一觸發
+          // 用EV rate=0.125折算全戰鬥期望值」的近似, 改為真正逐次疊加後、在第5回合精確讀取
+          // 當下疊層數代入coef公式(base+per×layers)。
+          if (e.coefFromStack) {
+            const layers = (caster.ampLayersById && caster.ampLayersById[e.coefFromStack.id]) || 0;
+            dotCoef = (e.coefFromStack.base ?? 0) + (e.coefFromStack.per ?? 0) * layers;
+          }
+          // 禁近似令-批K: e.pierce:true —— 「無視防禦」(獅子奮迅叛逃狀態), 強制本段 dot 傷害
+          // 完全無視目標 mitig(見 damage() 的 forcePierce 第9參數), 與 caster 自身的 pierce
+          // 累加值(會影響caster所有傷害來源)無關, 只影響這一個dot段本身。
           // 批52g: dots[3]=具名狀態(水攻/沙暴…)
-          u.dots.push([damage(caster, u, dotCoef, e.kind || t.kind || "intel"), e.dur, !!e.undispellable, resolveDotName(e, t)]);
+          u.dots.push([damage(caster, u, dotCoef, e.kind || t.kind || "intel", undefined, undefined, undefined, undefined, !!e.pierce), e.dur, !!e.undispellable, resolveDotName(e, t)]);
         }
         else if (k === "extra") u.pushAdd("extra", e.val, e.dur, src);
+        // 禁近似令-批K: splash(splash_aoe_primitive族) —— 「普攻命中目標時, 濺射傷害給目標
+        // 同部隊其他武將」的真群攻, 取代extra(額外傷害輸出, 施放者視角常駐加成)近似(瞋目橫矛/
+        // 象兵「群攻(普攻時對同部隊其他武將濺射70%/50%傷害)」)。val=濺射傷害率(相對於普攻本身
+        // 100%的比例), 累加式(pushAdd, 同extra/pierce既有慣例), 消費端見 doNormalAttack()。
+        else if (k === "splash") u.pushAdd("splash", e.val, e.dur, src);
         // 批26 B2: e.stackPer(可選, "round"預設/"cast") —— 過去疊層只有「每回合+1層」(見下方
         // fight() 主迴圈 tick 遞增), 原文常見「每次發動後傷害率提升X」(如水淹七軍/陷陣突襲)是
         // 「本戰法每次成功發動」才+1層, 與回合數無關。"cast"模式改由 applyStackCast() 在戰法
@@ -2231,7 +2712,33 @@
           }
         }
         else if (k === "decay") u.decay = { v0: e.v0 ?? 0.5, left: e.rounds ?? 8, total: e.rounds ?? 8 };
+        // 禁近似令-批K: preDmgHook 註冊 —— 見 Unit 建構式 this.preDmgHooks 詳細註解與 damage()
+        // 消費端。e.hookKind 決定方向與語意(probVoid=攻擊方自己掛/probMitig,stepMitig,
+        // deferSettle=防禦方自己掛), who 決定掛在誰身上(挫銳 who:"enemy" 掛在目標敵人身上,
+        // 之後該敵人自己出手攻擊時消費 src.preDmgHooks; 承天靖世/象兵/捨身救主 who:"self"或
+        // "ally" 掛在自己/我軍身上, 之後受到攻擊時消費 dst.preDmgHooks)。
+        else if (k === "preDmgHook") {
+          u.preDmgHooks.push({
+            hookKind: e.hookKind, val: e.val, step: e.step, max: e.max, hits: 0,
+            rate: e.rate, dmgType: e.dmgType, pct: e.pct, delayRounds: e.delayRounds,
+            reducePct: e.reducePct, dur: (e.dur ?? 99) + 1,
+          });
+          if (TRACE) lg(`　▸ ${u.nm} 獲得傷害結算前攔截〔${e.hookKind}〕`);
+        }
+        // 禁近似令-批K: k==="preAttackHook" 註冊 —— 見 Unit 建構式 this.preAttackHooks 詳細
+        // 註解與 doNormalAttack() 消費端。e.hookKind: "redirectPre"(即將受到普攻時,依guard
+        // 準則轉由隊友代承, 雲聚影從)/"healAllyPre"(即將受到普攻時,治療隨機隊友, 益其金鼓)。
+        // e.rate=每次觸發機率(每次普攻前重新擲骰, 非prep一次性), dur=常駐(整場戰鬥有效)。
+        else if (k === "preAttackHook") {
+          u.preAttackHooks.push({ hookKind: e.hookKind, rate: e.rate, guard: e.guard, coef: e.coef, scale: e.scale, dur: (e.dur ?? 99) + 1 });
+          if (TRACE) lg(`　▸ ${u.nm} 獲得即將受擊觸發〔${e.hookKind}〕`);
+        }
         else if (k === "swap") u.swap = Math.max(u.swap, (e.dur ?? 1) + 1);
+        // 禁近似令-批K: e.onKill(engine_wiring_gaps_misc族) —— 不立即套用pierce, 改登記到
+        // u.onKillGrants(待hit()偵測到u親手擊敗某目標時才真正授予, 見hit()消費端), 供虎痴
+        // 「如果擊敗目標，會使自身獲得破陣狀態，直到戰鬥結束」精確表達條件觸發時機(取代舊有
+        // 「首回合即常駐生效, 無條件全程無視減傷」的高估)。
+        else if (k === "pierce" && e.onKill) { u.onKillGrants = u.onKillGrants || []; u.onKillGrants.push({ kind: "pierce", val: e.val, dur: 9999 }); }
         else if (k === "pierce") u.pushAdd("pierce", e.val, e.dur, src);
         // 批A(11筆高嚴重重建): chargeAdd —— 「可消耗資源池」的獲得端(死戰不退「自身受到傷害時,
         // 有80%機率獲得一層蓄威效果,可累積20層」), 對稱既有stack但語意不同(見Unit建構式
@@ -2254,7 +2761,15 @@
         // ...對攻擊者造成兵刃傷害」)。只支援 guardFor:"leader", 其餘 who 仍走原本路徑。
         else if (k === "counter") {
           if (e.guardFor === "leader" && allies.length && allies[0].alive) {
-            allies[0].counterGuards.push({ unit: u, coef: e.coef ?? 1, kind: e.kind || "phys", prob: e.prob ?? 1 });
+            // 禁近似令-批K: e.debuffAttacker/e.selfStack(counter_target_binding族) —— guardFor
+            // 反擊觸發後, 「同一次」額外副作用精確綁定到「觸發本次反擊的攻擊者」(古之惡來
+            // 「使其造成兵刃傷害降低9%→18%」——同一次猛擊命中的那個攻擊者本人, 而非泛用
+            // who:enemy全體)或反擊執行者「自己」的疊層增益(虎衛軍「副將提高6→12武力,最多
+            // 提高5次」——每次成功反擊+1層, 累加, 見 hit() counterGuards 消費端一併處理這兩
+            // 個欄位)。原樣透傳到 counterGuards 條目上, 供 hit() 內對 src(攻擊者)/gu(反擊者)
+            // 直接施加, 不經過 applyEffects 的 who/dests 派發(hit()無隊伍context, 見 hit()
+            // 內consumeGuardExtra() 詳細註解)。
+            allies[0].counterGuards.push({ unit: u, coef: e.coef ?? 1, kind: e.kind || "phys", prob: e.prob ?? 1, debuffAttacker: e.debuffAttacker || null, selfStack: e.selfStack || null });
           } else {
             // 批G: e.normalOnly —— 對稱既有redirect(guardNormalOnly)/amp/mitig已支援的
             // normalOnly慣例, 限定此反擊只在受到普通攻擊(isNormal=true)時觸發, 省略時向後
@@ -2262,7 +2777,19 @@
             u.counter = { coef: e.coef ?? 1, kind: e.kind || "phys", prob: e.prob ?? 1, dur: (e.dur ?? 99) + 1, normalOnly: !!e.normalOnly };
           }
         }
-        else if (k === "taunt") { u.tauntBy = caster; u.tauntDur = Math.max(u.tauntDur, (e.dur ?? 1) + 1); }
+        else if (k === "taunt") {
+          // 禁近似令-批K: e.tauntTarget(force_attack_reverse族) —— 反向taunt, 被強制攻擊的
+          // 目標不再永遠是「caster自己」, 可改指定:
+          //   "leader": 目標=我方隊伍主將(武鋒陣「主將優先成為敵軍戰法目標」, dests=enemies,
+          //     每個敵人u的tauntBy改指向allies[0]而非caster)。
+          //   "select": 依e.targetSel從敵軍挑一個「被攻擊」的目標(定謀貴決「使敵軍兵力最高的
+          //     武將嘲諷我軍全體」, dests=allies, 我方全隊tauntBy皆指向該敵人)。
+          // 省略e.tauntTarget維持既有行為(u.tauntBy=caster), 向後相容既有全部taunt資料。
+          let forceTarget = caster;
+          if (e.tauntTarget === "leader") forceTarget = (allies && allies[0] && allies[0].alive) ? allies[0] : null;
+          else if (e.tauntTarget === "select") forceTarget = e.targetSel ? pickByCriterion(enemies, e.targetSel) : null;
+          if (forceTarget) { u.tauntBy = forceTarget; u.tauntDur = Math.max(u.tauntDur, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 被迫優先攻擊 ${forceTarget.nm}`); }
+        }
         else if (k === "shield") {
           const amt = (e.amt ?? 0) + (e.pct ? e.pct * caster.troop : 0);
           u.shield = { amt: (u.shield ? u.shield.amt : 0) + amt, dur: (e.dur ?? 99) + 1, undispellable: !!e.undispellable };  // +1 補償: tick 施加當回合末即扣1, 與 taunt/dodge/surehit 慣例一致
@@ -2487,9 +3014,17 @@
             if (!dmgAboveOk(e.when)) continue;
             if (!roundOk({ when: e.when }, CUR_R)) continue;
             if (holder.hitFlags.has(e)) continue;
+            // 禁近似令-批K: e.once(反應式on:damaged/on:dealtDamage/on:activeFired/on:healed
+            // 皆共用此效果級迴圈) —— hitFlags只提供「同回合節流」(見holder.hitFlags每回合
+            // tick()清空), 無法表達「整場戰鬥內只消耗一次」(誓守無降「自身2回合內受到下一次
+            // 謀略傷害時,計窮敵軍主將」的『下一次』=單次消耗, 而非每回合都可能重新觸發)。
+            // whenFired(見Unit建構式)是「效果物件去重, 不隨回合重置」的既有欄位(既有when.rounds
+            // /e.once等機制早已使用), 借用同一份持久化去重狀態表達reactive路徑的一次性消耗。
+            if (e.once && holder.whenFired.has(e)) continue;
             const evRate = e.rate ?? t.rate ?? 1;
             if (rnd() >= evRate) continue;
             holder.hitFlags.add(e);
+            if (e.once) holder.whenFired.add(e);
             if (TRACE) lg(`【${holder.side}】${holder.nm} 戰法【${t.nameZh}】急救效果（${holder === dst ? "受擊觸發" : "友軍/敵軍受擊觸發"}）發動`);
             applyEffects(holder, src, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(holder), foesOf(holder), { rateChecked: true, reactive: true, dmg, evtTarget: dst });  // 批23 A4: 這裡已擲過 e.rate, 避免 applyEffects 通用閘門重複擲骰; reactive:true 供內部 e.when.on 閘門判定放行; 批33: dmg供e.ofDamage使用; 批42: evtTarget供who:"eventTarget"
           }
@@ -2595,11 +3130,13 @@
             // 批52e: everyHit/maxStack —— 每次造成傷害可同回合多次(文武雙全); 預設每效果每回合1次
             const multi = !!(e.everyHit || e.maxStack);
             if (!multi && holder.hitFlags.has(e)) continue;
+            if (e.once && holder.whenFired.has(e)) continue;  // 禁近似令-批K: 見onHitFor同款e.once註解
             // 批52f: 預設不要求 dmg>0(抵禦/虛弱歸零仍算); 僅 e.requireDmg===true 才過濾
             if ((e.requireDmg != null ? e.requireDmg : false) && !(dmg > 0)) continue;
             const evRate = e.rate ?? t.rate ?? 1;
             if (rnd() >= evRate) continue;
             if (!multi) holder.hitFlags.add(e);
+            if (e.once) holder.whenFired.add(e);
             if (TRACE) lg(`【${holder.side}】${holder.nm} 戰法【${t.nameZh}】效果（${holder === src ? "造成傷害觸發" : "友軍/敵軍造成傷害觸發"}）發動`);
             applyEffects(holder, holder === src ? dst : null, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(holder), foesOf(holder), { rateChecked: true, reactive: true, dmg });  // 已擲過 e.rate, 避免重複擲骰; reactive 供 e.when.on 閘門放行; 批33: dmg供e.ofDamage使用
           }
@@ -2634,7 +3171,7 @@
     };
     const activeFired = (u) => {  // 批31 A: 反應式觸發(when.on:"activeFired") —— 自己成功發動主動/突擊戰法時掛到 fight() 主迴圈事件點, 與 dealtDamage(自己造成傷害視角)/onHit(自己受擊視角)對稱; 只認「自身」戰法成功fire這件事本身, 不要求造成傷害; 批38 A: 新增who:"ally"/"enemy"跨單位廣播(見 broadcastHolders/activeFiredFor) —— 解決十二奇策「我軍全體下次發動主動戰法後」/經天緯地「我軍全體發動主動/突擊戰法時」(who:"ally")、神機妙算/舌戰群儒「敵軍發動主動戰法時」(who:"enemy")這一族全庫最大殘餘原語缺口(見engine_limitations.md 21/27節)
       const activeFiredFor = (u, holder, wantWho) => {  // holder: 效果持有者(可能不同於u=實際發動主動戰法的單位); wantWho: 同onHitFor慣例
-        if (!holder.alive || (!holder.activeFiredTacs.length && !holder.activeFiredEffectTacs.length)) return;
+        if (!holder.alive || (!holder.activeFiredTacs.length && !holder.activeFiredEffectTacs.length && !holder.activeFiredBs.length)) return;
         if (holder.fakeReportDur) return;             // 批16: 偽報 —— 抑制反應式觸發(被動/指揮戰法失效), 與 onHit/dealtDamage 同慣例
         const whoOk = w => (w && w.who) === wantWho || (!wantWho && !(w && w.who));
         // 批A(11筆高嚴重重建): casterIsLeader —— 「(我軍)主將發動主動/突擊戰法時」這類措辭
@@ -2682,6 +3219,19 @@
             if (TRACE) lg(`【${holder.side}】${holder.nm} 戰法【${t.nameZh}】效果（${holder === u ? "自身發動主動戰法觸發" : "友軍/敵軍發動主動戰法觸發"}）發動`);
             applyEffects(holder, null, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, alliesOf(holder), foesOf(holder), { rateChecked: true, reactive: true });  // 已擲過 e.rate, 避免重複擲骰; reactive 供 e.when.on 閘門放行
           }
+        }
+        // 禁近似令-批K: 兵書效果級 e.when.on==="activeFired"(見 activeFiredBs 註解) —— 同上,
+        // 用合成單效果戰法呼叫 applyEffects, 對稱 onHitBs(受擊方向)的既有兵書級消費端。
+        for (const e of holder.activeFiredBs) {
+          if (!whoOk(e.when)) continue;
+          if (!casterIsLeaderOk(e.when)) continue;
+          if (!roundOk({ when: e.when }, CUR_R)) continue;
+          if (holder.hitFlags.has(e)) continue;
+          const evRate = e.rate ?? 1;
+          if (rnd() >= evRate) continue;
+          holder.hitFlags.add(e);
+          if (TRACE) lg(`【${holder.side}】${holder.nm}〔兵書〕（${holder === u ? "自身發動主動戰法觸發" : "友軍/敵軍發動主動戰法觸發"}）發動`);
+          applyEffects(holder, null, { effects: [e], kind: "phys" }, alliesOf(holder), foesOf(holder), { rateChecked: true, reactive: true });
         }
       };
       if (!u.alive) return;
@@ -2833,10 +3383,17 @@
           // 批52i: rateScale 頂層發動率受屬性縮放
           if (t0.rateScale) baseRate = Math.min(1, baseRate * rateScaleOf(u, t0.rateScale, t0.scaleDiv));
           // 批52续: when + whenLeader(主將專屬額外回合)
+          // 禁近似令-批K: firedViaLeaderWindow(leader_dual_base_coef族) —— 記錄本次fire是
+          // 「透過whenLeader額外開放的回合視窗」通過, 而非base t.when本身通過, 供下方
+          // t0.coefWhenLeader(僅在透過whenLeader視窗fire時才切換的coef分支)判斷(燕人咆哮
+          // 「自身為主將時,第6回合對敵軍全體發動兵刃攻擊(44%→88%,不同於第2/4回合的104%)」
+          // ——base視窗(第2/4回合)不論是否主將皆用基礎coef, 只有透過whenLeader開的額外視窗
+          // (第6回合)才切換成不同的coefWhenLeader值)。
+          let firedViaLeaderWindow = false;
           const whenOk = (tt) => {
             if (tt.when && tt.when.on) return false;
             if (roundOk(tt, r)) return true;
-            if (isLeader && tt.whenLeader && roundOk({ when: tt.whenLeader }, r)) return true;
+            if (isLeader && tt.whenLeader && roundOk({ when: tt.whenLeader }, r)) { firedViaLeaderWindow = true; return true; }
             if (!tt.when && !tt.whenLeader) return true;
             return false;
           };
@@ -2876,6 +3433,15 @@
             // 本效果(不疊加, 見applyEffects opt.onlyKinds註解), 故不會會心率翻倍。只對active型套用
             // (command/passive的crit走prep階段applyPassives, 不經此路徑; 其coef段多為0無主攻擊)。
             if (t0.type === "active") applyEffects(u, null, t, alliesOf(u), foesOf(u), { onlyKinds: ["critUp", "critDmgUp"] });
+            // 禁近似令-批K: coefEff(leader_dual_base_coef族) —— 頂層coef「主將/非主將兩個
+            // 完全不同基礎係數分支」, 取代「基礎值+單一topup」既有慣例力有未逮之處(神機妙算
+            // 「coef=1.28僅主將分支,非主將應為基礎值100%」——t0.coefLeader優先權高於t.coef,
+            // 只在isLeader時切換; t0.coefWhenLeader優先權最高但只在fire恰好透過whenLeader
+            // 額外視窗通過時才切換, 兩者可獨立存在於同一戰法(視需要組合), 皆省略時完全維持
+            // t.coef既有行為, 向後相容全庫既有資料)。
+            const coefEff = (firedViaLeaderWindow && t0.coefWhenLeader != null) ? t0.coefWhenLeader
+              : (isLeader && t0.coefLeader != null) ? t0.coefLeader
+              : t.coef;
             if (t.coef) {
               let cnt = t.nMax ? (t.n + Math.floor(rnd() * (t.nMax - t.n + 1))) : t.n;
               // 批52g: ammo 限制本回合發射次數
@@ -2898,19 +3464,19 @@
               // 批52g: effectsPerHit —— 每次 hitsRepeat 後立即套 effects(五雷震懾)
               const isActiveDmg = t0.type === "active" ? true : undefined;  // 批31 A: 供e.activeOnly amp判定「本段傷害是否為主動戰法所致」; command/passive走同一段程式碼但非主動戰法, 傳undefined(安全側不套用activeOnly加成, 見addbonus()註解)
               const effPerHit = !!t.effectsPerHit;
-              if (t.targetSel) { const v = pickByCriterion(foesOf(u), t.targetSel); if (v) { hit(u, v, t.coef, t.kind, false, onHit, dealtDamage, isActiveDmg); _mainHitTgt = v; } }
-              else if (t.lockTarget && cnt <= 1 && !t.hitsRepeat) { const v = resolveLockedTarget(u, t0, foesOf(u)); if (v) { hit(u, v, t.coef, t.kind, false, onHit, dealtDamage, isActiveDmg); _mainHitTgt = v; } }  // lockTarget 鍵用 t0(原始戰法物件), 避免 choices 每次合成新物件破壞跨回合鎖定
+              if (t.targetSel) { const v = pickByCriterion(foesOf(u), t.targetSel); if (v) { hit(u, v, coefEff, t.kind, false, onHit, dealtDamage, isActiveDmg); _mainHitTgt = v; } }
+              else if (t.lockTarget && cnt <= 1 && !t.hitsRepeat) { const v = resolveLockedTarget(u, t0, foesOf(u)); if (v) { hit(u, v, coefEff, t.kind, false, onHit, dealtDamage, isActiveDmg); _mainHitTgt = v; } }  // lockTarget 鍵用 t0(原始戰法物件), 避免 choices 每次合成新物件破壞跨回合鎖定
               else if (t.hitsRepeat) {
                 for (let i = 0; i < cnt; i++) {
                   const v = pickTarget(foesOf(u), u);
                   if (v) {
-                    hit(u, v, t.coef, t.kind, false, onHit, dealtDamage, isActiveDmg);
+                    hit(u, v, coefEff, t.kind, false, onHit, dealtDamage, isActiveDmg);
                     _mainHitTgt = v;
                     if (effPerHit && t.type === "active") applyEffects(u, v, t, alliesOf(u), foesOf(u));
                   }
                 }
               }
-              else { const vs = pickTargets(foesOf(u), cnt); for (const v of vs) hit(u, v, t.coef, t.kind, false, onHit, dealtDamage, isActiveDmg); if (vs.length === 1) _mainHitTgt = vs[0]; else _mainHitTgts = vs; }  // 批45 A: 群體(vs.length>1)額外記錄完整目標陣列
+              else { const vs = pickTargets(foesOf(u), cnt); for (const v of vs) hit(u, v, coefEff, t.kind, false, onHit, dealtDamage, isActiveDmg); if (vs.length === 1) _mainHitTgt = vs[0]; else _mainHitTgts = vs; }  // 批45 A: 群體(vs.length>1)額外記錄完整目標陣列
             }
             if (t.extraHits) fireExtraHits(u, t, _mainHitTgt, alliesOf, foesOf, onHit, dealtDamage);  // 批13: 多段傷害(兵刃+謀略雙段/主傷+補刀等)
             // 批12 ModeF: 混亂下單體主動戰法目標改敵我不分(pickTargetChaos); 群體/AoE(who=enemy 全體/
@@ -2951,7 +3517,12 @@
       for (const u of [...A, ...B]) {
         const s = u.settle; if (!s) continue;
         if (s.layers >= s.max || s.left <= 1) {
-          for (const v of (setA.has(u) ? A : B)) if (v.alive) { const sd = damage(s.caster, v, s.base + s.per * s.layers, s.kind, s.snap); v.troop -= sd; v.wounded += sd * woundedRate(CUR_R); }
+          // 禁近似令-批K: e.perStackFrom(dynamic_coef_from_counter族) —— 結算coef改讀u身上
+          // 該stackId的當下疊層數(而非settle自己的內部layers計數, 兩者是不同的計數器,
+          // 見registration端perStackFrom註解), 「最終降傷施加次數」取結算當下(第6回合)的層數。
+          const stackLayers = s.perStackFrom ? ((u.ampLayersById && u.ampLayersById[s.perStackFrom]) || 0) : s.layers;
+          const targets = s.singleTarget ? [u] : (setA.has(u) ? A : B);
+          for (const v of targets) if (v.alive) { const sd = damage(s.caster, v, s.base + s.per * stackLayers, s.kind, s.snap); v.troop -= sd; v.wounded += sd * woundedRate(CUR_R); }
           u.settle = null;
         } else s.left -= 1;
       }
