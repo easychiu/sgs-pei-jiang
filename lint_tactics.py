@@ -623,6 +623,16 @@ PER_KIND_FIELDS = {
     # 批A: k=="amp"+e.stackKey(per-target疊層變體, 對稱既有k=="stat"+stackKey, 但不支援
     # onMaxStacks/globalMax/e.add三個延伸, 見engine.js/sgz.py k==="amp"分支的ampLayers/
     # amp_layers計數器, 密計誅逆首次落地, engine_limitations.md第46節)。
+    "critUp": {"val", "dmgType", "normalOnly", "stackKey", "perStack", "maxStacks"},
+    # 批H: 會心(兵刃暴擊)/奇謀(謀略暴擊)機率, 真擲骰(取代全庫14筆crit-ev EV折算, 見
+    # no_approx_inventory.json crit_system_primitive族/engine_limitations.md本節)。val加法
+    # 累積, dmgType路由"phys"=會心/"intel"=奇謀, stackKey+perStack+maxStacks對稱amp的
+    # per-target疊層變體(逆鱗「受到傷害時3%機率獲得10%會心可疊加2次」首次使用此組合), 見
+    # engine.js/sgz.py k=="critUp"分支(damage()讀addbonus("critUp",...)擲骰消費)。
+    "critDmgUp": {"val", "dmgType", "normalOnly"},
+    # 批H: 會心/奇謀傷害幅度加成(疊在critUp觸發後的基礎+100%之上, 如「+20%會心傷害」使
+    # 觸發倍率變成120%), 純幅度修飾語, 若持有者無對應dmgType的critUp來源則不生效(見華服/
+    # 長慮「幅度類修飾語缺乏機率類觸發事件」下游消費端precedent)。
     "mitig": {"val", "dmgType", "normalOnly"}, "stun": set(), "silence": set(), "disarm": set(),  # dmgType: 批24 D2, 兵刃/謀略傷害類型過濾; normalOnly: 批28 B3, 僅普攻傷害生效/受影響; activeOnly: 批31 A, 僅主動/突擊戰法傷害生效(amp限定)
     "chaos": set(), "ambush": set(), "insight": set(), "immune": {"types"}, "first": set(),
     "stat": {"stat", "add", "mult",
@@ -1918,6 +1928,26 @@ ENGINE_CAPABILITY_ALIASES = {
                 "鎖住同戰法內其餘不需要hp條件的effects段, 現在同一戰法內部分effects段可各自"
                 "獨立掛hp條件, 不強制共用同一個when)",
     "戰法級when會連帶鎖住前4回合": "e.when.hpBelow/hpAbove(同上)",
+    # 批H: 會心(兵刃暴擊)/奇謀(謀略暴擊)真擲骰系統 —— k:"critUp"(機率, val加法累積,
+    # dmgType路由"phys"=會心/"intel"=奇謀)+k:"critDmgUp"(觸發後傷害幅度加成, 疊在基礎
+    # +100%之上), 見engine.js/sgz.py damage()對稱段落(擲骰rnd()<critRate命中則
+    # base*=1+critBonus, TRACE「觸發會心,兵刃傷害提升100.00%」比照官方戰報原文)。取代
+    # 全庫14筆(10戰法+4裝備)「crit-ev」機率×幅度EV折算常駐amp近似, 見
+    # no_approx_inventory.json crit_system_primitive族/engine_limitations.md本節。
+    "會心": "critUp/critDmgUp(批H新增, k:\"critUp\"=兵刃暴擊機率/k:\"critDmgUp\"=觸發後傷害"
+                "幅度加成, 見damage()對稱段落; 「引擎無獨立會心判定事件/crit系統/crit_system_"
+                "primitive原語族未落地」這類措辭是本原語落地前的舊近似說明, 落地後應改寫並"
+                "補上critUp(dmgType:\"phys\"))",
+    "奇謀": "critUp/critDmgUp(同上; dmgType:\"intel\"=奇謀/謀略暴擊)",
+    "會心機率": "critUp(同上, dmgType:\"phys\")",
+    "奇謀機率": "critUp(同上, dmgType:\"intel\")",
+    "會心傷害": "critDmgUp(同上, dmgType:\"phys\", 幅度修飾語疊在critUp觸發後的基礎+100%之上)",
+    "奇謀傷害": "critDmgUp(同上, dmgType:\"intel\")",
+    "crit_system_primitive": "critUp/critDmgUp(批H落地, 見上方「會心」條目; no_approx_"
+                "inventory.json該族14筆已逐筆遷移, 若仍見「待C類crit_system_primitive原語族"
+                "落地」字樣屬批H之前的舊揭露, 應改寫)",
+    "犧牲會心的二元觸發性質": "critUp(批H新增, 見上方「會心」條目——真機率擲骰已保留二元"
+                "觸發性質與方差, 不再犧牲, 此措辭是crit-ev EV折算年代的舊近似說明)",
 }
 
 # =============================================================================
@@ -3176,6 +3206,69 @@ def check_r33(p, txt):
     return violations
 
 
+# ---------------------------------------------------------------------------
+# R34(批H): 會心/奇謀措辭必須有真crit原語 —— 「禁近似令-批H」的機械化防線, 對稱既有
+# R19(dmgType適用而未用)/R33(heal選標必須與本文一致)的「本文明確語意 vs parsed 欄位
+# 不符」機械檢查手法, 但這裡抓的是「一整個機制家族(crit_system_primitive)是否已用真
+# 原語(critUp/critDmgUp)取代EV折算」, 而非單一欄位缺失。
+#
+# 背景: no_approx_inventory.json crit_system_primitive族盤點時, 全庫14筆(10戰法+4裝備)
+# 「會心/奇謀」相關戰法/裝備一律用crit-ev(機率×觸發幅度)EV折算成常駐amp值, 完全犧牲
+# 觸發的二元性(方差)。批H新增k:"critUp"(機率, 真擲骰)/k:"critDmgUp"(觸發後傷害幅度
+# 加成)取代之(見engine.js/sgz.py damage()對稱段落), 14筆逐一遷移完成, 另全庫掃描補上
+# 3筆equips(長慮/逆鱗/王道)+3筆bingshu(將威/大謀不謀/出奇制勝殘留)+2筆bonds(五虎上將/
+# 五子良將)共22筆。本規則是防未來新資料回歸「本文寫會心/奇謀, 卻仍用amp/mitig假裝」
+# 的舊模式, 而非本次批H全庫掃描本身(本次掃描後全庫應為0違規)。
+#
+# 判定邏輯: 原文含「會心」或「奇謀」(游戲UI正式機制名稱, 排除純戰法/裝備自身名稱裡的
+# 巧合字眼, 因為本規則吃的是 effectText/root data原文, 不是 nameZh, 「虛實奇謀」這類
+# 純flavor名稱的效果本文若完全不含會心/奇謀字樣不會誤觸發, 已核對全庫此假陽性風險
+# 極低——「奇謀」二字若出現在effectText內, 幾乎必定指涉暴擊機制本身, 非泛用中文詞彙,
+# 與R3/R19等既有規則的關鍵字選字風格一致) + 該戰法/裝備的effects陣列裡完全沒有任何
+# k in ("critUp","critDmgUp") 的效果 + 無主題相關揭露(_topic_disclosed, 見下方
+# R34_TOPIC_KW, 涵蓋所有現存的合法停損案例: 百步穿楊的coef-fold結構性限制/西涼鐵騎與
+# 錦帆軍等的ifLeaderIs+scale複合缺口/鋒芒畢露與大謀不謀等的無數字錨點估計值揭露) →
+# 違規。
+#
+# 低誤報設計: 「會心」「奇謀」在effectText裡幾乎不會用於其他語意(對比R10的"目標"這種
+# 泛用詞需要AMBIGUOUS_TOPIC_KW額外語境檢查, 這兩個詞在遊戲文本裡是專有機制名稱), 故
+# 不需要窄化語境比對, 直接子字串搜尋即可(同R1/R3/R19對明確技術詞彙的既有慣例)。
+# ---------------------------------------------------------------------------
+R34_CRIT_KW_RE = re.compile(r"會心|奇謀")
+R34_CRIT_KINDS = {"critUp", "critDmgUp"}
+# 揭露關鍵字須指向「crit原語本身/EV折算/暴擊機制」相關的技術詞彙, 涵蓋現存全部合法
+# 停損案例的實際用詞(見上方batch H各筆_note/_todo逐一核對): critUp/critDmgUp(原語
+# 名稱本身)/crit_system_primitive(族名)/crit-ev(舊EV折算標記, 歷史文字提及)/折算/EV
+# (泛用折算詞彙)/暴擊(中文別稱)/二元觸發/擲骰(真機率相關描述)。任一命中即視為已知
+# 且已誠實揭露(同全庫_topic_disclosed既有慣例), 不要求逐字比對「critUp」三個字本身
+# ——鋒芒畢露/大謀不謀等「數值缺乏原文佐證」案例的揭露文字雖已改用critUp但仍帶_est/
+# _todo繼續揭露「數值本身」這個殘留問題, 同樣需要被本規則豁免(該殘留問題屬D類/待查證
+# 範圍, 非R34要抓的「完全沒用crit原語」核心問題)。
+R34_TOPIC_KW = ("critUp", "critDmgUp", "crit_system_primitive", "crit-ev", "折算", "EV",
+                "暴擊", "二元觸發", "擲骰")
+
+
+def check_r34(p, txt):
+    violations = []
+    if not R34_CRIT_KW_RE.search(txt):
+        return violations
+    effects = p.get("effects") or []
+    if any(e.get("k") in R34_CRIT_KINDS for e in effects):
+        return violations
+    if _topic_disclosed(p, R34_TOPIC_KW):
+        return violations
+    m = R34_CRIT_KW_RE.search(txt)
+    violations.append({
+        "name": p["nameZh"], "rule": "R34",
+        "message": f"原文含「{m.group(0)}」(會心=兵刃暴擊/奇謀=謀略暴擊, 批H新增k:\"critUp\""
+                   "真機率原語), 但effects陣列無任何critUp/critDmgUp效果, 且無揭露"
+                   "(crit_system_primitive族應已用critUp/critDmgUp取代EV折算, 見"
+                   "engine_limitations.md本節)",
+        "evidence": txt[:120].strip(),
+    })
+    return violations
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
@@ -3185,7 +3278,7 @@ RULES = [
     ("R20", check_r20), ("R21", check_r21), ("R22", check_r22),
     ("R23", check_r23), ("R24", check_r24), ("R25", check_r25), ("R26", check_r26),
     ("R27", check_r27), ("R28", check_r28), ("R29", check_r29), ("R30", check_r30),
-    ("R31", check_r31), ("R32", check_r32), ("R33", check_r33),
+    ("R31", check_r31), ("R32", check_r32), ("R33", check_r33), ("R34", check_r34),
 ]
 
 
@@ -3751,6 +3844,37 @@ SELFTEST_CASES = {
         ("無heal效果時不應觸發(其他k種類不受R33管轄)",
          _base_tactic(effects=[{"k": "amp", "who": "ally", "val": 0.1, "dur": 1}]),
          "為損失兵力最高的我軍單體提升攻擊力", False),
+    ],
+    "R34": [
+        ("本文含會心但effects仍是amp EV折算應抓到(百步穿楊/猛擊類舊近似回歸測試)",
+         _base_tactic(effects=[{"k": "amp", "who": "self", "val": 0.15, "dur": 2}]),
+         "普通攻擊之後，提高自身7.5%→15%會心機率（觸發時兵刃傷害提高100%），持續2回合", True),
+        ("補上critUp後不應誤報(猛擊批H遷移後的正確形狀)",
+         _base_tactic(effects=[{"k": "critUp", "who": "self", "val": 0.15, "dur": 2, "dmgType": "phys"}]),
+         "普通攻擊之後，提高自身7.5%→15%會心機率（觸發時兵刃傷害提高100%），持續2回合", False),
+        ("本文含奇謀但effects仍是amp EV折算應抓到(太平道法類舊近似回歸測試)",
+         _base_tactic(effects=[{"k": "amp", "who": "self", "val": 0.28, "dur": 99}]),
+         "獲得14%→28%奇謀並提高自帶主動戰法發動機率", True),
+        ("補上critUp(dmgType:intel)後不應誤報",
+         _base_tactic(effects=[{"k": "critUp", "who": "self", "val": 0.28, "dur": 99, "dmgType": "intel"}]),
+         "獲得14%→28%奇謀並提高自帶主動戰法發動機率", False),
+        ("critDmgUp(幅度修飾語, 如華服)亦視為合格crit原語, 不應誤報",
+         _base_tactic(effects=[{"k": "critDmgUp", "who": "self", "val": 0.12, "dur": 99, "dmgType": "phys"}]),
+         "提高12%會心傷害", False),
+        ("critUp+stackKey疊層形狀(逆鱗, 對稱amp+stackKey既有precedent)亦視為合格, 不應誤報",
+         _base_tactic(effects=[{"k": "critUp", "who": "self", "val": 0.10, "dur": 2, "dmgType": "phys",
+                                 "rate": 0.03, "when": {"on": "damaged"}, "stackKey": True, "maxStacks": 2}]),
+         "受到傷害時，有3%機率獲得10%會心，持續2回合，可疊加2次", False),
+        ("有主題相符的折算/EV揭露時應豁免不誤報(西涼鐵騎ifLeaderIs+scale複合缺口既有停損案例, 已用critUp但仍有殘留_todo)",
+         _base_tactic(effects=[{"k": "critUp", "who": "ally", "val": 0.25, "dur": 3, "dmgType": "phys"}],
+                       _todo="若馬騰統領則提高會心機率受速度影響, 條件式scale複合缺口, EV折算已由critUp取代但此殘留仍需查證"),
+         "戰鬥前3回合，提高我軍全體12.5%→25%會心機率（觸發時兵刃傷害提高100%）；若馬騰統領，則提高會心機率受速度影響", False),
+        ("完全無crit原語且無揭露應抓到(即使有ifLeaderIs等其他欄位, 仍應被R34獨立抓出crit本身缺失)",
+         _base_tactic(effects=[{"k": "amp", "who": "ally", "val": 0.06, "dur": 99, "ifLeaderIs": "甘寧"}]),
+         "若甘寧統領，提高友軍3%→6%會心", True),
+        ("無會心/奇謀字樣的本文不應觸發(其他戰法不受R34管轄)",
+         _base_tactic(effects=[{"k": "amp", "who": "ally", "val": 0.1, "dur": 1}]),
+         "提高我軍全體造成的傷害", False),
     ],
 }
 

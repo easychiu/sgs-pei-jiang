@@ -13,7 +13,9 @@
     "triggerCount": 3,
     "effects": [
       {"k": "stat", "who": "ally", "stat": "force", "mult": 1.1, "dur": 99},
-      {"k": "stat", "who": "ally", "stat": "command", "mult": 1.1, "dur": 99}
+      {"k": "stat", "who": "ally", "stat": "command", "mult": 1.1, "dur": 99},
+      {"k": "critUp", "who": "leader", "val": 0.08, "dur": 99, "dmgType": "phys",
+       "_note": "批H: 全庫掃補遺——原文(data/bonds.json)「使我軍全體的武力、統率提升10，並且我軍主將獲得8%會心」的「我軍主將獲得8%會心」段完全缺失(舊版parsed資料只有上方兩條stat, 無任何crit相關效果), 非EV折算錯誤而是徹底遺漏。calibration_anchors.json battle_report_20260703實測確認「緣分/戰法 五虎上將=全隊武+10統+10+關羽會心+8%」且「會心/奇謀為累加屬性」加法精確——本次補上critUp(who:leader, 0.08, dmgType:phys, 真擲骰), 對應「我軍主將」(who:leader既有原語, 非全隊)。武力/統率的flat+10 vs 現行mult:1.1(10%)的落差是另一個獨立的既有資料問題(非本次crit範圍, 未動)。"}
     ]
   },
   {
@@ -39,7 +41,9 @@
     "generals": ["張遼", "樂進", "于禁", "張郃", "徐晃"],
     "triggerCount": 3,
     "effects": [
-      {"k": "stat", "who": "ally", "stat": "speed", "mult": 1.14, "dur": 99}
+      {"k": "stat", "who": "ally", "stat": "speed", "mult": 1.14, "dur": 99},
+      {"k": "critUp", "who": "ally", "val": 0.04, "dur": 99, "dmgType": "phys",
+       "_note": "批H: 全庫掃補遺——原文(data/bonds.json)「使我軍全體的速度提升14，並獲得4%會心」的「並獲得4%會心」段完全缺失(舊版parsed資料只有速度stat, 無任何crit相關效果), 非EV折算錯誤而是徹底遺漏。本次補上critUp(who:ally=我軍全體, 對稱「速度提升」同範圍, 0.04, dmgType:phys, 真擲骰)。速度flat+14 vs 現行mult:1.14的落差是另一個獨立的既有資料問題(非本次crit範圍, 未動, 同五虎上將precedent)。"}
     ]
   },
   {

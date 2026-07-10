@@ -3121,3 +3121,97 @@ A0.124/Node A0.14, 差異屬500場獨立抽樣的正常統計雜訊)。另以鏡
 Node `smoke_batchD.js`概念對稱, 見批D scratchpad): hitsRepeat造成非零多次獨立命中/
 n=3無hitsRepeat正確AoE命中全部3個敵人/n<=1(絕大多數既有charge戰法)維持單體單次零回歸,
 三案例皆通過。
+
+## 51. 批H: 會心/奇謀(暴擊)系統 —— crit-ev EV折算全庫清剿, 真擲骰化 critUp/critDmgUp
+
+**背景**: no_approx_inventory.json 的 crit_system_primitive 族盤點確認全庫「會心(兵刃暴擊)/
+奇謀(謀略暴擊)」相關戰法與裝備一律用 crit-ev/prob-ev 手法把「機率×觸發後幅度」直接摺算成
+單一常駐 amp 值, 完全犧牲了觸發的二元性(方差)、可疊加性(多來源的率×幅度交叉項)、與被其他
+效果(如華服「幅度修飾」)引用的能力。禁近似令-批H 建立真會心系統取代之。
+
+### 引擎機制(雙引擎 docs/engine.js + sgz.py 對稱)
+
+新增兩個一級效果種類, 走與 amp/mitig 完全相同的 push_add 加法疊加通道與 who/dests/scale/
+dmgType/ifLeader/ifLeaderIs 既有 targeting 組合(零新增 targeting 邏輯):
+- **k:"critUp"** — 會心/奇謀「機率」, val 加法累積。dmgType 路由: "phys"=會心(兵刃暴擊)/
+  "intel"=奇謀(謀略暴擊), 與 amp/mitig 既有 dmgType 慣例一致。支援 scale/scaleDiv(曲線族
+  未定時預設除數350+_note揭露)/ifLeader/ifLeaderIs/n/nMax/stackKey(逆鱗「受傷3%機率獲得
+  10%會心可疊2次」的 per-target 疊層, 對稱 amp/stat 的 stackKey, 掛獨立 critLayers/crit_layers
+  計數器)。
+- **k:"critDmgUp"** — 會心/奇謀「傷害幅度」加成(如華服「+12%會心傷害」/校勝帷幄「+20%奇謀
+  傷害」), 疊在觸發後的基礎 +100% 之上。純幅度修飾語, 若持有者當下無對應 dmgType 的 critUp
+  來源(critRate=0)則不生效(對比舊 amp 無條件套用的「假設會心必定觸發」近似)。
+
+**結算時序(damage() 內)**: base *= amp(疊加/衰減/敵方減益, 封頂-90%) → base *= (1-mitig)
+(看破 pierce) → **【crit 層】** critRate = addbonus("critUp", kind, ...); 若 rnd()<critRate:
+critBonus = 1.0 + addbonus("critDmgUp", kind, ...); base *= (1+critBonus) → base *= 0.96~1.04
+(±4%隨機帶)。crit 為獨立乘法層, 疊在 amp/mitig 之後、±4%隨機帶之前——crit 是「這一下攻擊
+有沒有命中會心」的二元判定, 不受 amp 封頂-90%/總和<=-1虛弱語意牽動, 也不被 ±4% 基礎浮動
+稀釋其擲骰獨立性(兩者互不影響)。命中×2.0 傷害精確(critDmgUp=0時), TRACE(僅engine.js有
+日誌機制)輸出「觸發會心, 兵刃傷害提升100.00%」比照官方戰報原文(奇謀對應「觸發奇謀, 謀略
+傷害提升100.00%」)。
+
+**active型戰法 pre-coef 會心套用**: 「提高自身X%會心機率...隨後造成攻擊」(百步穿楊/左右開弓)
+的主AoE本身應吃到會心, 但 active 型戰法的 effects[] 在 fight() 主迴圈是「coef主攻擊之後」才
+套用(apply_passives 只處理 passive/command 型), 無法回溯影響同一次 firing 已結算的 coef。
+批H 在主迴圈 coef 迴圈之前補一次 apply_effects(only_kinds=("critUp","critDmgUp")), 讓 active
+型戰法的自身會心 buff 在主攻擊前先套用到施放者身上, 使該次 AoE 得以吃到真會心擲骰; 因
+push_add 以 src(戰法名+dmgType尾碼)去重, coef段後的常規 apply_effects 會以同一 src 刷新
+覆蓋(非疊加)本效果, 故 pre-coef+post-coef 兩次套用不會使會心率翻倍。取代舊有把會心EV折入
+coef本身的近似(coef-fold), 均值不變(1.8×(1+0.25×1.0)=2.25期望)但保留二元觸發方差。
+
+### 遷移範圍(逐筆 crit-ev → critUp/critDmgUp)
+
+盤點14筆(10戰法+4裝備)+全庫掃「會心/奇謀」措辭補遺(equips_effects_source/root effectText
+逐一核對)另補8筆:
+- **10戰法**: 剛勇無前(amp0.65留下+critUp0.20)/太平道法(critUp0.28 intel)/校勝帷幄
+  (critUp0.14 intel scale:intel + critDmgUp0.20)/百步穿楊(coef還原1.8+critUp0.25, pre-coef)/
+  西涼鐵騎(critUp0.25 phys)/鋒芒畢露(critUp0.15×phys+intel, _est佔位)/錦帆百翎(self
+  critUp0.50+critDmgUp0.30, ally ifLeader+n:2 critUp0.10+critDmgUp0.15+lifesteal)/錦帆軍
+  (critUp0.06 + ifLeaderIs:甘寧)/鷹視狼顧(critUp0.16 intel ifLeader)/猛擊(critUp0.15 phys)。
+- **4裝備**: 膽略(critUp0.05)/明略(critUp0.07 intel, 攻心OR分支未建)/凝神(critUp0.02)/
+  華服(critDmgUp0.12)。
+- **全庫補遺8筆**: 長慮(critDmgUp0.10 intel)/逆鱗(critUp0.10 stackKey)/王道(critUp0.20×
+  phys+intel)/將威(critUp0.025×2, calibration實測)/大謀不謀(critUp0.045×2)/五虎上將(bond,
+  critUp0.08 leader)/五子良將(bond, critUp0.04 ally)/左右開弓(coef還原1.8+critUp0.13,
+  pre-coef, R34掃出)。
+
+### 殘留限制(誠實揭露, 非 crit 原語本身可解, 皆已 _note/_todo/_est)
+
+1. **兵書 activeFired/stackKey 未接線**(大謀不謀): 兵書效果走獨立 self.bs 管線, 無戰法級的
+   when.on:"activeFired" 事件掛鉤與 stackKey 消費端, 故「每次發動主動戰法50%機率疊1層可疊2次」
+   的觸發/疊層動態未建模, val 依本文4.5%作單層常駐近似。
+2. **出奇制勝**「會心傷害和奇謀傷害提升」原文無數字錨點, critDmgUp 未建(禁近似不臆造), 已
+   flag 待 agy/grok 查證; 「自身造成傷害降低50%」段精確建 amp(-0.5)。
+3. **明略**「攻心或奇謀」擇一(或字)語意: 引擎 choices 原語未接裝備管線, 只建奇謀(critUp)分支,
+   攻心(lifesteal)分支近似省略。
+4. **stack/decay 驅動的動態會心率**(一身是膽 stack驅動/符命自立 decay驅動): critUp 目前只
+   支援靜態值(push_add疊加), addbonus("critUp") 未讀 stack/decay 物件本身(對比 amp() 讀
+   this.stack/this.decay), 需引擎新增「stack/decay 驅動 critUp」消費端才能精確, 屬 crit 之外
+   的正交缺口, 維持既有 stack/decay 驅動 amp 的近似。
+5. **裝備特技幽影**: equips_effects_source(速度+8) 與 root data/equips.json(2%奇謀機率) 兩
+   來源直接衝突, 非 crit 原語缺失而是資料完整性問題, 不擅自二選一, flag 待查證。
+
+### lint R34(禁近似令-批H 機械化防線)
+
+`check_r34`: 原文含「會心/奇謀」但 effects 無任何 critUp/critDmgUp 且無主題揭露(_topic_disclosed
+R34_TOPIC_KW: critUp/critDmgUp/crit_system_primitive/crit-ev/折算/EV/暴擊/二元觸發/擲骰)→違規。
+另 critUp/critDmgUp 登記進 PER_KIND_FIELDS(R9 schema)+ ENGINE_CAPABILITY_ALIASES(R20漂移
+偵測, 會心/奇謀/會心機率/奇謀機率/會心傷害/奇謀傷害/crit_system_primitive 等別名)。selftest
+9樣例(陽性: amp殘留應抓; 陰性: critUp/critDmgUp/stackKey/topic揭露皆豁免)。全庫零違規。
+
+### 對局歸因(EV折算 OLD vs 真擲骰 NEW, 各4000場, 指標=傷害/回合去戰鬥長度混淆)
+
+- 陸抗校勝帷幄(謀略): 均值-0.01%(不變)/方差+0.46%(變大)/勝率-0.001 — 教科書型。
+- 司馬懿鷹視狼顧(謀略): 均值+0.23%(不變)/方差+4.40%(變大)/勝率+0.002 — 教科書型。
+- 甘寧錦帆百翎(兵刃, 最高疊會心者): 方差+11.85%(變大)/均值+2.21%/勝率+0.039 — 均值小幅
+  上移是「可疊加性」的正確還原: 甘寧同時吃自身會心(0.50率/0.30幅度)與友軍段會心(0.10率/
+  0.15幅度), 真擲骰正確地把「率×幅度」跨來源交叉項相乘, 而舊 EV 折算(線性 amp 相加)系統性
+  低估了高疊會心單位的實際傷害。此為 crit_system_primitive 設計本意(恢復被 EV 折算犧牲的
+  可疊加性), 非回歸。
+
+### 驗收
+
+`python sgz.py test`(self-check OK) / `node --check docs/engine.js` / `python reparse_effects.py`
+連跑兩次 byte-diff 空(冪等) / `python lint_tactics.py --selftest`(130/0) / `python lint_tactics.py`
+(R1-R34全庫零違規) / crit相關 `_approx` 欄位 grep 清零 / 上述3組對局歸因。

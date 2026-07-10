@@ -668,6 +668,27 @@
     base *= totalAmp <= -1 ? 0 : 1 + Math.max(-0.9, totalAmp);
     const mit = dst.addbonus("mitig", kind, isNormal) * (1 - Math.min(1, src.addbonus("pierce")));
     base *= Math.max(0.1, 1 - mit);
+    // 批H: 會心(兵刃暴擊)/奇謀(謀略暴擊)真擲骰層 —— 禁近似令下取代全庫14筆「crit-ev」期望值
+    // 折算(見 no_approx_inventory.json crit_system_primitive族/engine_limitations.md本節)。
+    // 機制: 每次造成傷害時, 先擲一次crit判定, rate=src此刻所有「會心/奇謀機率」來源加總
+    // (k==="critUp", 依dmgType分流: dmgType="phys"=會心/兵刃暴擊, dmgType="intel"=奇謀/謀略
+    // 暴擊, 與amp/mitig既有dmgType路由慣例完全一致, 呼叫端傳入的kind本就已是phys/intel);
+    // 命中則本次傷害額外乘上(1+critMult), critMult=1.0(官方戰報實測基準「觸發會心,
+    // 兵刃傷害提升100.00%」, 見calibration_anchors.json crit節)+critDmgUp累加(k==="critDmgUp",
+    // 「會心傷害/奇謀傷害+X%」幅度修飾語, 如華服/長慮, 同dmgType路由, 未命中crit則此層不
+    // 生效也不消費critDmgUp)。與amp是「機率來源(critUp)」與「幅度來源(critDmgUp)」分離、
+    // 但透過同一個離散事件(擲骰命中與否)耦合的雙層設計, 不同於amp的單一靜態疊加值。
+    // 乘法層疊順序: 疊在amp/mitig之後(倍率獨立於±4%隨機帶之前) —— crit是「這一下攻擊有沒有
+    // 命中會心」的二元判定, 不應被視為amp累加的一部分(amp封頂-90%/總和<=-1虛弱語意不應牽動
+    // crit判定), 也不應被隨機帶±4%「稀釋」掉critRate本身的擲骰獨立性(±4%是每次攻擊都有的
+    // 基礎浮動, crit是額外的、獨立擲一次的二元事件, 兩者互不影響, 詳見engine_limitations.md
+    // 本節「與amp/mitig/±4%隨機帶的結算順序」)。
+    const critRate = src.addbonus("critUp", kind, isNormal, isActive, isCharge);
+    if (critRate > 0 && rnd() < critRate) {
+      const critBonus = 1.0 + src.addbonus("critDmgUp", kind, isNormal, isActive, isCharge);
+      base *= (1 + critBonus);
+      if (TRACE) lg(`　▸ ${src.nm} 觸發${kind === "phys" ? "會心" : "奇謀"}, ${kind === "phys" ? "兵刃" : "謀略"}傷害提升${(critBonus * 100).toFixed(2)}%`);
+    }
     base *= 0.96 + rnd() * 0.08;   // 隨機帶 0.96~1.04(對稱): rnd()*0.08 涵蓋 [0,0.08), 起點0.96 → 上限0.96+0.08=1.04
     return Math.max(0, base);
   }
@@ -1097,6 +1118,10 @@
     switch (k) {
       case "amp": return (e.who === "enemy" && val > 0 ? `易傷+${p(val)}${d}` : (val >= 0 ? `增傷+${p(val)}${d}` : `減傷${p(val)}${d}`)) + sfx;
       case "mitig": return (val >= 0 ? `減傷+${p(val)}${d}` : `易傷+${p(val)}${d}`) + sfx;
+      // 批H: critUp(會心/奇謀機率, 依dmgType分流顯示中文名)/critDmgUp(會心/奇謀傷害幅度加成,
+      // 疊在基礎+100%之上), 見 damage() 對稱段落。
+      case "critUp": return `${e.dmgType === "intel" ? "奇謀" : "會心"}機率+${p(val)}${d}` + sfx;
+      case "critDmgUp": return `${e.dmgType === "intel" ? "奇謀" : "會心"}傷害+${p(val)}${d}` + sfx;
       case "stun": return `震懾·全禁${d || "(1回合)"}`;
       case "silence": return `計窮·禁主動戰法${d || "(1回合)"}`;
       case "disarm": return `繳械·禁普攻${d || "(1回合)"}`;
@@ -1231,8 +1256,15 @@
   function applyEffects(caster, tgt, t, allies, enemies, opt) {
     opt = opt || {};
     const src = t.nameZh || null;                     // 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → null, 不去重)
+    // 批H: opt.onlyKinds(可選, 陣列) —— 限定本次只處理 k 在此清單內的效果段, 其餘一律跳過。
+    // 唯一用途: active型戰法在主coef攻擊之前, 先套用施放者自身的 critUp/critDmgUp 會心buff
+    // (只傳 onlyKinds:["critUp","critDmgUp"]), 讓「提高自身X%會心機率...隨後造成攻擊」這類
+    // 戰法(百步穿楊/左右開弓)的主AoE本身也能吃到真會心擲骰(取代舊有把會心EV折入coef本身的
+    // 近似)。因pushAdd以src(戰法名+dmgType尾碼)去重, 主coef段結束後的常規applyEffects呼叫會
+    // 以同一src刷新覆蓋(非疊加)本效果, 故pre-coef先套一次+post-coef再刷新一次不會會心率翻倍。
     for (const e of t.effects) {
       const k = e.k;
+      if (opt.onlyKinds && !opt.onlyKinds.includes(k)) continue;  // 批H: 限定只處理指定k(pre-coef會心套用, 見上方註解)
       // 批35 B: block 的「準備階段鎖定」scale 值優先算定, 放在所有 continue 閘門(healOnly/
       // skipWhenEffects/when.on/rate/ifLeader/everyRound...)之前 —— 必須確保 prep 呼叫
       // (fight() 開場的 applyPassives({prep:true, skipWhenEffects:true}))第一次掃描到
@@ -1745,11 +1777,15 @@
       // 限定只對主動戰法傷害生效(見士爭先赴)。批40 B: chargeOnly 旗標(同族, 對稱activeOnly)
       // —— 效果可選填 e.chargeOnly:true, 限定只對突擊戰法傷害生效(見一鼓作氣「突擊戰法造成
       // 傷害提升12%」/藏刀「突擊戰法造成傷害降低5%」)。
-      const normalOnly = (k === "amp" || k === "mitig") && !!e.normalOnly;
+      // 批H: critUp/critDmgUp(會心/奇謀機率與傷害幅度) 與 amp/mitig 共用同一套 dmgType/
+      // normalOnly/ifLeader/ifLeaderIs 條件旗標與 dtSrc 尾碼去重慣例(見 damage() 對稱段落
+      // 消費 addbonus("critUp"/"critDmgUp", dmgType, ...)), 故並列進下列判斷式。
+      const CRIT_KINDS = k === "amp" || k === "mitig" || k === "critUp" || k === "critDmgUp";
+      const normalOnly = CRIT_KINDS && !!e.normalOnly;
       const activeOnly = k === "amp" && !!e.activeOnly;
       const chargeOnly = k === "amp" && !!e.chargeOnly;
-      const ifLeaderTopup = (k === "amp" || k === "mitig") && !!e.ifLeader;  // 批41 B: 見下方dtSrc註解
-      const ifLeaderIsTopup = (k === "amp" || k === "mitig") && !!e.ifLeaderIs;  // 批44 A: 同ifLeaderTopup, 見下方dtSrc註解
+      const ifLeaderTopup = CRIT_KINDS && !!e.ifLeader;  // 批41 B: 見下方dtSrc註解
+      const ifLeaderIsTopup = CRIT_KINDS && !!e.ifLeaderIs;  // 批44 A: 同ifLeaderTopup, 見下方dtSrc註解
       const udFlags = (e.undispellable || e.dmgType || normalOnly || activeOnly || chargeOnly) ? { undispellable: !!e.undispellable, dmgType: e.dmgType, normalOnly, activeOnly, chargeOnly } : undefined;
       // dmgType 存在時, src 附加類型尾碼區分 dedup key(同一戰法內若有兩條不同 dmgType 的
       // amp/mitig, 如暫避其鋒「智力最高者減兵刃傷害」+「武力最高者減謀略傷害」, 兩者若共用
@@ -1798,6 +1834,31 @@
         }
         else if (k === "amp") { const v = svVal(e.val); const ms = e.maxStack; who === "enemy" && v > 0 ? u.pushAdd("mitig", -v, e.dur, dtSrc, udFlags, ms) : u.pushAdd("amp", v, e.dur, dtSrc, udFlags, ms); }
         else if (k === "mitig") u.pushAdd("mitig", svVal(e.val), e.dur, dtSrc, udFlags, e.maxStack);
+        // 批H: critUp(會心/奇謀機率, val加法累積) / critDmgUp(會心/奇謀傷害幅度, 疊在基礎
+        // +100%之上) —— 走與amp/mitig相同的pushAdd加法疊加通道, 由 damage() 於傷害結算時
+        // 讀 addbonus("critUp"/"critDmgUp", dmgType, ...) 消費(見該函式對稱段落), dmgType
+        // 依本文用詞路由: "phys"=會心(兵刃暴擊)/"intel"=奇謀(謀略暴擊)。與amp/mitig的差異
+        // 純粹是消費端不同(amp直接乘傷害基數, critUp是擲骰rate/critDmgUp是命中後幅度), 資料
+        // 層加法疊加/scale/ifLeader/dmgType等既有原語組合全部原樣沿用, 零新增targeting邏輯。
+        // critUp+e.stackKey(對稱k==="amp"+e.stackKey, 見上方詳細註解) —— 逆鱗「受到傷害時,
+        // 3%機率獲得10%會心,可疊加2次」需要per-target疊層(裝備效果src固定為null, push_add
+        // 的max_stack去重機制以src為鍵, 對裝備效果不生效, 必須用獨立的id(e)鍵疊層計數器,
+        // 與amp/stat的stackKey機制完全對稱, 只是掛在critLayers/crit_layers獨立Map, 避免與
+        // ampLayers/exploitLayers混淆)。
+        else if (k === "critUp" && e.stackKey) {
+          if (!u.critLayers) u.critLayers = new Map();
+          const already = u.critLayers.get(e) || 0;
+          if (e.maxStacks == null || already < e.maxStacks) {
+            const layers = already + 1;
+            u.critLayers.set(e, layers);
+            const perStack = e.perStack ?? svVal(e.val);
+            const totalVal = perStack * layers;
+            u.pushAdd("critUp", totalVal, e.dur, dtSrc, udFlags);
+            if (TRACE) lg(`　▸ ${u.nm} 會心疊層 第${layers}層（累計會心機率${(totalVal * 100).toFixed(1)}%）`);
+          }
+        }
+        else if (k === "critUp") u.pushAdd("critUp", svVal(e.val), e.dur, dtSrc, udFlags, e.maxStack);
+        else if (k === "critDmgUp") u.pushAdd("critDmgUp", svVal(e.val), e.dur, dtSrc, udFlags, e.maxStack);
         // 批16: immuneTo(單項控制免疫) —— isImmuneTo(k) 只免疫清單內控制類型, 與 insight(全免) 並列判斷
         // 批52h: 成功施加後 fireControlled(機鑑反彈); opt.noCtrlReflect 時跳過
         else if (k === "stun") { if (!u.insight && !u.isImmuneTo("stun")) { u.stun = Math.max(u.stun, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入震懾(全禁)`); if (!opt.noCtrlReflect) fireControlled(u, "stun", e.dur ?? 1, allies, enemies); } else if (TRACE) lg(`　▸ ${u.nm} 免疫震懾`); }
@@ -2563,6 +2624,12 @@
             if (TRACE) lg(`【${u.side}】${u.nm} 發動戰法【${t.nameZh}】` + (t.when ? `（第${r}回合條件）` : ""));
             let _mainHitTgt = null;   // 批13: 記錄主 coef 段命中的(單體)目標, 供 extraHits 同目標段(如屠几上肉 兵刃+謀略打同一人)沿用
             let _mainHitTgts = null;  // 批45 A: 記錄主 coef 段命中的(群體)目標陣列, 供效果段 e.sameTargets 沿用同一批目標(對稱 _mainHitTgt 的單體版本)——群體目標沿用原語, 見 applyEffects 的 opt.mainHitTgts/e.sameTargets
+            // 批H: active型戰法「提高自身X%會心機率...隨後造成攻擊」(百步穿楊/左右開弓)——在主coef
+            // 攻擊之前先套用施放者自身的critUp/critDmgUp會心buff, 使該次AoE本身得以吃到真會心擲骰
+            // (取代舊有把會心EV折入coef本身的近似)。post-coef的常規applyEffects會以同一src刷新覆蓋
+            // 本效果(不疊加, 見applyEffects opt.onlyKinds註解), 故不會會心率翻倍。只對active型套用
+            // (command/passive的crit走prep階段applyPassives, 不經此路徑; 其coef段多為0無主攻擊)。
+            if (t0.type === "active") applyEffects(u, null, t, alliesOf(u), foesOf(u), { onlyKinds: ["critUp", "critDmgUp"] });
             if (t.coef) {
               let cnt = t.nMax ? (t.n + Math.floor(rnd() * (t.nMax - t.n + 1))) : t.n;
               // 批52g: ammo 限制本回合發射次數

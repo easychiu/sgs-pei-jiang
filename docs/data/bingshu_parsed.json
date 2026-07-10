@@ -206,10 +206,22 @@
   "type": "主兵書",
   "effects": [
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "self",
-    "val": 0.1,
-    "dur": 99
+    "val": 0.045,
+    "dur": 99,
+    "dmgType": "phys",
+    "_approx": "50%觸發/持續2回合/可疊加2次的觸發率與疊層動態未建模(兵書效果無activeFired/stackKey接線, 見_note), 近似為單層常駐值(依本文4.5%原值, 未按觸發率/疊層折算)。",
+    "_note": "批H: 會心真擲骰化——原文「每次成功發動主動戰法時，有50%機率使自身獲得4.5%奇謀和會心，持續2回合，可疊加2次」。「4.5%奇謀和會心」= 奇謀(謀略暴擊)與會心(兵刃暴擊)各4.5%, 拆為本段critUp(0.045, dmgType:phys=會心)+下方critUp(0.045, dmgType:intel=奇謀), 取代舊版單一amp(0.1, 未說明拆分理由的EV折算)。val已依本文改為4.5%原值(取代舊0.1)。觸發率(50%)/持續(2回合)/疊層(可疊2次)的複合觸發動態未建模: 兵書效果只走self.bs這條獨立管線(見sgz.py Unit.__init__, 兵書效果不併入self.tactics, 無法被active_fired_tacs/active_fired_effect_tacs掃描), 沒有對稱戰法的when.on:activeFired接線, 也沒有stackKey per-target疊層的消費端——這是「activeFired/stackKey機制尚未接線到bingshu管線」的獨立engine wiring缺口, 與本批會心真擲骰化(只解決「機率有沒有真擲骰」)是正交的兩個問題, 現近似為單層常駐值。",
+    "_todo": "需要engine新增「兵書效果級when.on:activeFired」事件掛鉤(比照sgz.py active_fired_tacs/active_fired_effect_tacs對self.tactics的既有掃描, 為self.bs建立對稱的on_activefired_bs桶)以及「兵書效果級stackKey per-target疊層」消費端, 才能精確表達本兵書「每次發動主動戰法50%機率疊1層(4.5%會心/奇謀), 最多2層, 每層持續2回合」的完整觸發/疊層語意。"
+   },
+   {
+    "k": "critUp",
+    "who": "self",
+    "val": 0.045,
+    "dur": 99,
+    "dmgType": "intel",
+    "_note": "批H: 對稱上一效果段(phys/會心), 本段對應「奇謀」(謀略暴擊, dmgType:intel), 同一4.5%本文值, 觸發率/疊層動態同上一效果段說明。"
    }
   ]
  },
@@ -234,10 +246,20 @@
   "type": "副兵書",
   "effects": [
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "self",
-    "val": 0.1,
-    "dur": 99
+    "val": 0.025,
+    "dur": 99,
+    "dmgType": "phys",
+    "_note": "批H: 會心真擲骰化(全庫掃補遺)。calibration_anchors.json battle_report_20260703實測確認「兵書 將威=奇謀+2.5%+會心+2.5%」且「會心/奇謀為累加屬性: 郭嘉4.5+2.5=7.00%/關羽8+2.5=10.50% 加法精確」——本兵書真實數值為兩個獨立2.5%(非合併成單一常駐0.1的舊版), 拆回critUp(0.025, dmgType:phys)+下方critUp(0.025, dmgType:intel), 取代舊amp常駐EV折算(0.1, 數值本身也與實測不符, 一併訂正)。"
+   },
+   {
+    "k": "critUp",
+    "who": "self",
+    "val": 0.025,
+    "dur": 99,
+    "dmgType": "intel",
+    "_note": "批H: 對稱上一效果段(phys/會心), 本段對應「奇謀」(謀略暴擊, dmgType:intel), 同一2.5%實測值, 見上一效果段._note。"
    }
   ]
  },
@@ -795,10 +817,12 @@
    {
     "k": "amp",
     "who": "self",
-    "val": 0.1,
-    "dur": 99
+    "val": -0.5,
+    "dur": 99,
+    "_note": "批H全庫掃補遺: 原文(data/bingshu.json)「自身造成傷害降低50%，會心傷害和奇謀傷害提升」——舊版parsed資料(amp val:0.1, 無_note)與此原文毫無關聯, 疑為從未真正核對過原文的殘留佔位值。本次訂正「自身造成傷害降低50%」段: amp(who:self, val:-0.5)精確表達『自身造成的傷害』整體降低50%(amp的val可為負值直接表達降傷, 見damage()對totalAmp的處理, 對稱既有虛弱類val:-1.0慣例, 此處-0.5為部分降傷非歸零)。"
    }
-  ]
+  ],
+  "_todo": "「會心傷害和奇謀傷害提升」的具體百分比原文完全未給出數字, 無法確定幅度, 若強行用critDmgUp填入估計值屬於無錨點臆造(違反禁近似令鐵律1), 故暫不新增critDmgUp效果段, 待user提供官方卡/戰報實測或agy/grok查證明確百分比後再補上critDmgUp(dmgType待查證是否phys/intel各自獨立或合併, 原文「會心傷害和奇謀傷害」並列疑似兩者皆有各自數字)。目前資料(amp -0.5)只精確反映「自身造成傷害降低50%」這一半語意, 「會心/奇謀傷害提升」半語意完全缺失(0%建模), 非近似而是誠實的資料缺口, 待查證。"
  },
  {
   "name": "掩虛",

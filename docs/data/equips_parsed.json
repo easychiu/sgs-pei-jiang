@@ -160,12 +160,12 @@
   "exclusive": "趙雲",
   "effects": [
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "self",
     "val": 0.05,
     "dur": 99,
-    "_approx": "crit-ev",
-    "_note": "會心5%(觸發+100%傷害) 期望值折算: amp += 0.05*1.00"
+    "dmgType": "phys",
+    "_note": "批H: 會心真擲骰化——原文「提高自身5%會心幾率(觸發時兵刃傷害提高100%)」拆回critUp(0.05, dmgType:phys, 真擲骰), 取代舊amp常駐EV折算(0.05*1.00)。"
    }
   ]
  },
@@ -223,15 +223,15 @@
   "exclusive": "司馬懿",
   "effects": [
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "self",
     "val": 0.07,
     "dur": 99,
+    "dmgType": "intel",
     "when": {
      "from": 4
     },
-    "_approx": "crit-ev",
-    "_note": "第4回合起 7%攻心/奇謀 期望值折算; when.from=4 效果級回合窗(批8轉正, 不再全程近似)"
+    "_note": "批H: 會心真擲骰化——原文「戰鬥第4回合,自身獲得7%攻心或奇謀,持續到戰鬥結束」的奇謀(謀略暴擊)分支已用真擲骰critUp(val:0.07, dmgType:intel)精確表達, 取代舊amp常駐EV折算; when.from=4回合窗(批8轉正)維持不變。「攻心或奇謀」是擇一(或字)語意, 攻心(倒戈lifesteal)分支未建模——引擎的擇一分支原語(choices)目前只在戰法主派發接線, 未接上裝備效果的apply_passives合成wrapper路徑, 需額外引擎改動才能表達裝備級「A或B隨機擇一」, 屬本批會心真擲骰化以外的正交缺口(該族只解決「機率有沒有真擲骰」, 不含「兩個不同機制間的擇一分支」)。保守只精確表達較明確的奇謀分支, 攻心分支近似省略(較原文寬鬆), 誠實揭露待未來裝備級擇一分支原語落地後重建。"
    }
   ]
  },
@@ -283,11 +283,12 @@
   "exclusive": null,
   "effects": [
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "self",
     "val": 0.02,
     "dur": 99,
-    "_approx": "crit-ev"
+    "dmgType": "phys",
+    "_note": "批H: 會心真擲骰化——原文「提高自身2%會心機率」(equips_effects_source.json確認為純機率描述), 拆回critUp(0.02, dmgType:phys, 真擲骰), 取代舊amp常駐EV折算。"
    }
   ]
  },
@@ -341,13 +342,12 @@
   "exclusive": "司馬懿",
   "effects": [
    {
-    "k": "amp",
+    "k": "critDmgUp",
     "who": "self",
     "val": 0.1,
     "dur": 99,
     "dmgType": "intel",
-    "_approx": "「奇謀傷害+10%」本身仍是crit-ev折算(引擎無獨立會心判定事件, 待C類crit_system_primitive原語族落地), amp.val=0.1直接體現期望替代值, 犧牲會心的二元觸發性質(全庫crit_system_primitive家族共通限制)。",
-    "_note": "批G(B): 原文「提高10%奇謀傷害，並使自身攻心效果提高30%」——補dmgType:\"intel\"(批24既有原語, 奇謀=謀略會心, 只對謀略傷害生效, 取代先前不分兵刃/謀略籠統套用的近似)。「攻心+30%」語意獨立補上, 見下方新增的lifestealGiven效果段。"
+    "_note": "批H: 會心真擲骰化(全庫掃補遺——本裝備_approx早已明確標註「待C類crit_system_primitive原語族落地」, 今批H落地後回頭補齊)。原文「提高10%奇謀傷害」是純幅度修飾語(critDmgUp, dmgType:intel), 取代舊amp常駐EV折算, 疊在持有者「其他來源給的critUp觸發後」的基礎+100%之上(同華服precedent, 若持有者當下無任何intel-critUp來源則不生效)。「攻心+30%」語意由下方lifestealGiven效果段獨立表達(批G(B)已解決, 與本次crit遷移無關, 維持不變)。"
    },
    {
     "k": "lifestealGiven",
@@ -431,12 +431,12 @@
   "exclusive": "甘寧",
   "effects": [
    {
-    "k": "amp",
+    "k": "critDmgUp",
     "who": "self",
     "val": 0.12,
     "dur": 99,
-    "_approx": "crit-ev",
-    "_note": "會心傷害+12%(非會心機率,而是觸發後傷害加成的加成); 用amp直接體現期望增量"
+    "dmgType": "phys",
+    "_note": "批H: 會心真擲骰化——原文「提高12%會心傷害」是純幅度修飾語(非機率, 本裝備不附帶會心機率來源), 拆回critDmgUp(0.12, dmgType:phys), 疊在持有者「其他來源給的critUp觸發後」的基礎+100%之上(見damage()對稱段落), 取代舊amp直接體現(假設會心必定觸發的常駐增傷近似)。若持有者當下無任何critUp來源(critRate=0), 本效果不生效(對比舊版amp無條件套用, 現在精確表達「只在他人/自身觸發會心時才生效」的下游消費端語意, 見no_approx_inventory.json對本裝備的原始問題描述)。"
    }
   ]
  },
@@ -497,16 +497,16 @@
   "exclusive": null,
   "effects": [
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "self",
     "val": 0.10,
     "dur": 2,
+    "dmgType": "phys",
     "rate": 0.03,
     "when": {"on": "damaged"},
     "stackKey": true,
     "maxStacks": 2,
-    "_approx": "「獲得10%會心」本身仍是crit-ev折算(引擎無獨立會心判定事件, 待C類crit_system_primitive原語族落地, 見scratchpad/no_approx_inventory.json), amp.val=0.10直接體現「觸發後等同+10%常駐增傷」的期望替代值, 犧牲會心的二元觸發性質(此為全庫crit_system_primitive家族共通限制, 非本裝備獨有)。",
-    "_note": "批G(A): 原文「受到傷害時，有3%機率獲得10%會心，持續2回合，可疊加2次」——觸發機率/疊層語意取代舊版EV折算(val=0.006恆定套用): 改用when:{on:\"damaged\"}(既有反應式事件, 對稱on_hit_eq裝備效果級反應通道)+rate:0.03(真機率, 每次受傷各自獨立擲骰)+stackKey:true+maxStacks:2(既有per-target疊層原語, 對稱密計誅逆precedent)。「會心」本身的10%增傷幅度仍是crit-ev近似(見_approx), 僅觸發率/可疊加語意從EV折算升級為真機率+真疊層。"
+    "_note": "批H: 會心真擲骰化(全庫掃補遺——本裝備_approx早已明確標註「待C類crit_system_primitive原語族落地」, 今批H落地後回頭補齊)。原文「受到傷害時,有3%機率獲得10%會心,持續2回合,可疊加2次」的觸發率/疊層語意(when:on:damaged/rate:0.03/stackKey/maxStacks)批G(A)已精確落地不變, 本批只把「10%會心」本身從amp(常駐增傷EV替代值)改為critUp(dmgType:phys, 真擲骰), 使每疊1層=+10%真實會心機率(疊滿2層=20%機率), 不再犧牲會心的二元觸發性質。"
    }
   ]
  },
@@ -688,26 +688,24 @@
   "exclusive": null,
   "effects": [
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "self",
     "val": 0.2,
     "dur": 1,
     "dmgType": "phys",
     "everyRound": true,
     "when": {"until": 2},
-    "_approx": "「會心20%」本身仍是crit-ev折算(引擎無獨立會心判定事件, 待C類crit_system_primitive原語族落地), amp.val=0.2直接體現期望替代值, 犧牲會心的二元觸發性質(全庫crit_system_primitive家族共通限制)。",
-    "_note": "批G(A): 原文「戰鬥前2回合，提高自身20%會心與奇謀幾率」——回合窗語意取代舊版近似(舊版dur:2是裝備套用後的『存續回合數』, 非真實『戰鬥前2回合』回合窗, 機制上是時長非窗口): 改用everyRound:true(批30既有原語, 讓非heal效果在heal_only常駐通道逐回合重新套用/檢查)+when:{until:2}(僅第1-2回合生效)+dur:1(每回合各自套用當下1回合, 由everyRound通道逐回合續期, 對稱整軍經武等既有parity+dur:1 precedent)取代dur:2存續時長近似。並補dmgType:\"phys\"(會心=兵刃傷害加成, 批24既有原語)拆分自「奇謀」(謀略傷害加成, 見下一效果段), 取代先前「會心+奇謀合併成單一無條件全類型amp」的近似(高估: 先前單一amp不分傷害類型, 對兵刃/謀略傷害都同時套用20%, 而原文明確是兩個獨立20%機率各自對應不同傷害類型)。"
+    "_note": "批H: 會心真擲骰化(全庫掃補遺——本裝備_approx早已明確標註「待C類crit_system_primitive原語族落地」, 今批H落地後回頭補齊)。原文「戰鬥前2回合，提高自身20%會心與奇謀幾率」的回合窗語意(everyRound+when:until:2+dur:1)批G(A)已精確落地不變, 本批只把「會心20%」本身從amp(常駐增傷EV替代值)改為critUp(dmgType:phys, 真擲骰), 不再犧牲會心的二元觸發性質。"
    },
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "self",
     "val": 0.2,
     "dur": 1,
     "dmgType": "intel",
     "everyRound": true,
     "when": {"until": 2},
-    "_approx": "「奇謀20%」本身仍是crit-ev折算(引擎無獨立會心判定事件, 待C類crit_system_primitive原語族落地), amp.val=0.2直接體現期望替代值, 犧牲會心的二元觸發性質(全庫crit_system_primitive家族共通限制)。",
-    "_note": "批G(A): 原文「戰鬥前2回合...奇謀幾率」——對稱上一效果段(會心/phys), 本段對應「奇謀」(謀略暴擊, dmgType:intel), 同樣改用everyRound+when:{until:2}+dur:1取代舊版dur:2存續時長近似, 並與上段各自dmgType分流(取代先前合併成單一全類型amp的高估)。"
+    "_note": "批H: 同上一效果段, 本段對應「奇謀」(謀略暴擊, dmgType:intel), 同樣改critUp真擲骰化。"
    }
   ]
  },

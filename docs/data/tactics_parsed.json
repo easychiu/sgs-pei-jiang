@@ -60,7 +60,7 @@
     "per": 0.07,
     "max": 7,
     "_approx": "stack-cap",
-    "_note": "3.5%→7%會心,每次免疫控制後有機率(20%→40%)獲得一層,最多7層;引擎無事件觸發式疊層,以stack原語per=0.07/max=7近似(未對疊層機率做折算,略高估)",
+    "_note": "3.5%→7%會心,每次免疫控制後有機率(20%→40%)獲得一層,最多7層;引擎無事件觸發式疊層,以stack原語per=0.07/max=7近似(未對疊層機率做折算,略高估)。批H複核(會心真擲骰化批次, 全庫掃補遺——lint R34新增後掃出本筆先前遺漏, no_approx_inventory.json未收錄本筆): engine.js/sgz.py已新增真crit機制(k:\"critUp\", 見damage()/apply_effects)取代全庫14筆EV折算, 但critUp目前只支援靜態值(透過push_add疊加), 不支援像stack那樣的動態per-target/per-self疊層讀取(amp()讀this.stack.per*this.stack.n做動態計算, 但crit判定的addbonus(\"critUp\",...)目前只讀adds陣列的靜態疊加值, 未讀取stack物件本身)——需要engine新增「stack驅動critUp」的消費端(比照amp()對this.stack的既有處理, 為crit判定新增對稱讀取)才能精確表達本戰法「每次免疫控制後疊1層3.5%→7%會心, 最多7層」的語意, 屬於crit_system_primitive已解決的「機率有沒有真擲骰」之外的另一個正交缺口(「機率本身是否支援stack/decay等動態來源」, 與符命自立同類缺口), 非本批範圍。維持現行stack(per=0.07,max=7)驅動amp的既有近似(把「會心」機率近似成常駐傷害加成代理值)不變, 未升級為critUp。",
     "_todo": "批41 B(R27初掃): 原文「自身為主將時，基礎觸發機率提升至35%→70%」——ifLeader(批26新增)只支援布林條件閘門, 無法表達「主將時機率從20%→40%提升到35%→70%」這種依身份縮放機率數值的複合語意(同仁德載世R24precedent/engine_limitations.md第9節同類缺口); 且本效果本身已是「未對疊層機率做折算」的近似(見_note, 每次免疫控制視為必定+1層), 主將加成的機率縮放在此近似之上更難疊加表達, 現維持不建模主將加成, 已誠實揭露待未來若新增身份縮放機率原語再升級。"
    },
    {
@@ -1071,10 +1071,17 @@
    {
     "k": "amp",
     "who": "self",
-    "val": 0.85,
+    "val": 0.65,
     "dur": 1,
-    "_approx": "crit-ev",
-    "_note": "下一攻擊傷害提高65% + 20%會心機率期望折算(20%×約100%會心傷害基準略估),原0.65只含前者,現併入會心期望"
+    "dmgType": "phys"
+   },
+   {
+    "k": "critUp",
+    "who": "self",
+    "val": 0.2,
+    "dur": 1,
+    "dmgType": "phys",
+    "_note": "批H: 會心真擲骰化——原文「提高10%→20%會心」(滿級20%)是獨立的兵刃暴擊機率, 過去與65%固定增傷折算成單一amp常駐值(20%×100%會心傷害基準EV折算), 現拆回amp(0.65, 下一攻擊固定增傷)+critUp(0.20, dmgType:phys, 真機率擲骰, 觸發時額外+100%傷害, 見damage()對稱段落), 兩段皆dur:1(下一攻擊/持續1回合)。"
    }
   ],
   "quality": "S",
@@ -1084,7 +1091,7 @@
    "on": "damaged",
    "dmgType": "phys"
   },
-  "_note": "批39 C: when.on=\"damaged\"(reparse_effects.py ON_DAMAGED白名單套用)補when.dmgType:\"phys\"(reparse_effects.py ON_DAMAGED_DMGTYPE白名單, 原文「受到兵刃傷害後」限定觸發類型, 過去damaged反應式對任意傷害類型皆觸發, 誤及謀略傷害); engine.js/sgz.py onHit()新增dmgType過濾支援(對稱既有dealtDamage的when.dmgType, 批27), 見engine_limitations.md批39節。",
+  "_note": "批39 C: when.on=\"damaged\"(reparse_effects.py ON_DAMAGED白名單套用)補when.dmgType:\"phys\"(reparse_effects.py ON_DAMAGED_DMGTYPE白名單, 原文「受到兵刃傷害後」限定觸發類型, 過去damaged反應式對任意傷害類型皆觸發, 誤及謀略傷害); engine.js/sgz.py onHit()新增dmgType過濾支援(對稱既有dealtDamage的when.dmgType, 批27), 見engine_limitations.md批39節。批H: 會心真擲骰化, 見effects[1]._note。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -2339,11 +2346,12 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "self",
     "val": 0.28,
     "dur": 99,
-    "_approx": "crit-ev"
+    "dmgType": "intel",
+    "_note": "批H: 會心真擲骰化——原文「獲得14%→28%奇謀」(滿級28%)為謀略暴擊機率, 過去EV折算成單一amp常駐值, 現改用critUp(dmgType:intel)真機率擲骰, 觸發時額外+100%謀略傷害(見damage()對稱段落)。本效果與下方4條rateup(自帶主動戰法發動機率提升, 無關crit)彼此獨立, 不受影響。"
    },
    {
     "k": "rateup",
@@ -2421,7 +2429,7 @@
   "quality": "S",
   "cat": "PASSIVE",
   "src": "EVENT",
-  "_note": "批52g user確認: 黃巾名單含SP",
+  "_note": "批52g user確認: 黃巾名單含SP。批H: 會心真擲骰化, 見effects[0]._note。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -4501,13 +4509,21 @@
     "_note": "批23: mitig(who:leader,傷害移除)改用redirect(guard:self,share:0.3)——原文'為主將分擔30%傷害(分擔量視為兵力移除,不享受減傷加成)'本質是傷害轉嫁給施放者, 而非主將自身打折, redirect語意更貼切(直接把一部分傷害轉給guardian承受, 不經過mitig的減傷公式, 符合'不享受減傷加成'的原文限定)。既有限制: redirect無法只保護leader, 沿用guard:self近似保護全體我軍(既有慣例, 如千里馳援/古之惡來), 較原文'僅主將'更寬鬆(全隊都被分擔傷害, 而非只有主將)。"
    },
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "leader",
-    "val": 0.168,
+    "val": 0.14,
     "dur": 99,
-    "_approx": "crit-ev",
-    "_note": "14%奇謀機率(觸發+100%)+20%奇謀傷害 期望折算0.14+0.14*0.20 批25 R19: 原文「觸發時謀略傷害提高100%(奇謀/會心EV折算)」為單一傷害類型措辭, 補dmgType:\"intel\"(批24新增原語, 精確限定只對謀略傷害生效, 不再誤及兵刃傷害)。",
-    "dmgType": "intel"
+    "dmgType": "intel",
+    "scale": "intel",
+    "_note": "批H: 會心真擲骰化——原文「14%奇謀機率(受智力影響)」拆回critUp(真擲骰, dmgType:intel)+scale:intel(「受智力影響」修飾的正是這個機率分量本身, EV折算年代因機率與幅度已耦合成單一常數而不敢疊加scale, 現拆開後可還原)。scale曲線族(除數350 vs 375 vs rateup系384.6等)本效果尚無user實測樣本可裁決, 沿用全域SCALE預設(除數350), 屬D類(曲線precise但常數未定)保留, 非本批crit真擲骰化範圍。"
+   },
+   {
+    "k": "critDmgUp",
+    "who": "leader",
+    "val": 0.2,
+    "dur": 99,
+    "dmgType": "intel",
+    "_note": "批H: 20%奇謀傷害(幅度修飾語)——疊在critUp觸發後的基礎+100%之上, 使校勝帷幄的奇謀觸發傷害提升=100%+20%=120%(見damage()對稱段落critDmgUp消費邏輯)。"
    }
   ],
   "_src": "https://www.gamersky.com/handbooksy/202007/1308628.shtml",
@@ -4516,7 +4532,7 @@
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "_note": "批23: 移除lifesteal(who:leader,val:0.14)——原文完全無「倒戈」字樣, 過去把「14%攻心(奇謀)機率」重複借用成lifesteal觸發比例是無原文依據的臆造效果(奇謀=暴擊, 不等於倒戈回血, 兩者是不同機制); amp(奇謀EV折算)已完整表達奇謀機率×傷害的效果, 不需要額外編造回血。mitig(分擔傷害)改用redirect, 見effects[0]._note。 | 批28 A2: lint R1新現形——amp(val:0.168, crit-ev折算)的「受智力影響」修飾的是「14%奇謀機率」這個機率分量, 該機率已折算進0.168的EV常數中(0.14+0.14*0.2), 機率的智力縮放若再疊加scale會與EV折算重複計算縮放同一個機率分量(bias), 故有意不加scale, 屬已知的EV折算取捨(同全庫prob-ev/crit-ev慣例), 非資料缺口。 | 批28 A2: lint R22新現形——「造成謀略傷害時恢復自身...兵力」(攻心/lifesteal語意)已由hit()內建lifesteal機制(依本次造成的傷害量按比例回復, 見effects[1] amp的crit-ev折算已含攻心分量)精確表達, 非反應式回合輪詢, 不需要when.on:\"dealtDamage\"掛鉤(同lifesteal倒戈的既有排除慣例, 見R22_LIFESTEAL_CLAUSE_KW)——此戰法「攻心」措辭與「倒戈」同義但未被現行關鍵字表涵蓋, 記錄於此供lint關鍵字表未來擴充參考, 現階段以此揭露豁免。",
+  "_note": "批23: 移除lifesteal(who:leader,val:0.14)——原文完全無「倒戈」字樣, 過去把「14%攻心(奇謀)機率」重複借用成lifesteal觸發比例是無原文依據的臆造效果(奇謀=暴擊, 不等於倒戈回血, 兩者是不同機制)。mitig(分擔傷害)改用redirect, 見effects[0]._note。 | 批H: 會心真擲骰化, amp(0.168, crit-ev折算)拆回critUp(0.14,scale:intel)+critDmgUp(0.20), 見effects[1]/[2]._note, 舊有「不敢加scale避免與EV折算重複縮放」的取捨已隨真擲骰化解除。 | 批28 A2 lint R22殘留揭露(crit migration範圍外, 原樣保留): override effectText另有「並使其獲得14%攻心效果(造成謀略傷害時恢復自身等同於傷害量一定比例的兵力)」——此為獨立的lifesteal(攻心)機制, 與本批「奇謀(暴擊)」是兩個不同機制(暴擊≠回血), 目前完全未建模(非crit_system_primitive族範圍, 見長慮lifestealGiven precedent, 屬另一獨立缺口, 誠實揭露於此供未來排查, 非本批crit遷移任務範圍)。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -6423,11 +6439,20 @@
   "nameZh": "百步穿楊",
   "type": "active",
   "kind": "phys",
-  "coef": 2.25,
+  "coef": 1.8,
   "rate": 0.35,
   "n": 3,
   "prep": 1,
-  "effects": [],
+  "effects": [
+   {
+    "k": "critUp",
+    "who": "self",
+    "val": 0.25,
+    "dur": 2,
+    "dmgType": "phys",
+    "_note": "批H(禁近似令收尾): 會心真擲骰化——原文「準備1回合,提高自身12.5%→25%會心機率(觸發時兵刃傷害提高100%),持續2回合,隨後對全體敵軍造成兵刃攻擊」。舊版把25%會心EV(25%×100%=+25%)折入主傷coef(1.8→2.25)因當時active型戰法effects在coef之後才套用, 無法讓主AoE吃到掛buff後的會心。批H新增「active型戰法pre-coef會心套用」機制(見sgz.py/engine.js fight()主迴圈coef迴圈之前的apply_effects(only_kinds=critUp/critDmgUp)呼叫)後, 本效果的critUp會在主coef攻擊之前先套用到施放者身上, 使該次AoE本身得以吃到真會心擲骰(觸發時×2兵刃傷害), 同時buff持續2回合也涵蓋施放者後續普攻。coef已還原為基礎1.8(移除EV折入), 均值不變(1.8×(1+0.25×1.0)=2.25期望)但保留二元觸發方差, 符合禁近似令。"
+   }
+  ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INNATE",
@@ -6440,7 +6465,7 @@
     "_note": "若目標處於控制狀態則該次兵刃攻擊更強(120%→240%, 即基礎180%上再加60%);引擎無法判斷目標是否處於控制狀態, 以50%機率近似模擬「部分目標中控」的期望增量"
    }
   ],
-  "_note": "「準備1回合，提高自身12.5%→25%會心機率(觸發時兵刃傷害提高100%)」的會心(critical hit)機制本身無獨立原語(引擎無crit系統), 現況完全未建模(僅建了主段AoE傷害+extraHits的控制加成近似, 見extraHits._note), 會心加成部分(觸發時傷害+100%)未反映在coef裡, 可能低估本戰法的實際期望傷害。",
+  "_note": "批H(禁近似令收尾): 舊版維持coef-fold近似(把會心EV折入coef)的理由已被批H新增的「active型戰法pre-coef會心套用」機制解除——現在critUp在主coef攻擊之前套用(見effects[0]._note與sgz.py/engine.js fight()主迴圈的pre-coef呼叫點), 主AoE本身吃真會心擲骰, coef還原基礎1.8, EV折算完全physically移除, 符合禁近似令鐵律1。這是本批唯一需要搭配引擎新機制(pre-coef會心套用)才能同時滿足「禁近似(移除coef-fold)」與「均值近似不變(主AoE仍吃會心)」的案例(左右開弓同機制處理)。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -7208,7 +7233,7 @@
   "quality": "S",
   "cat": "PASSIVE",
   "src": "INNATE",
-  "_todo": "leader-only condition still unexpressible (applies to all holders, not just when caster is team leader); both rateup values also decay over 8 rounds per source but rateup has no decay-over-time support, so dur:99 (flat) is used as an _est simplification, likely overestimating late-round value.",
+  "_todo": "leader-only condition still unexpressible (applies to all holders, not just when caster is team leader); both rateup values also decay over 8 rounds per source but rateup has no decay-over-time support, so dur:99 (flat) is used as an _est simplification, likely overestimating late-round value. 批H複核(會心真擲骰化批次, 全庫掃補遺——lint R34新增後掃出本筆先前遺漏, no_approx_inventory.json未收錄本筆): 原文「提高100%會心機率(觸發+100%兵刃傷害)及奇謀機率(觸發+100%謀略傷害), 每回合逐漸降低, 直至戰鬥第8回合降至0」是「decay驅動的會心/奇謀機率」複合機制。engine.js/sgz.py已新增真crit機制(k:\"critUp\", 見damage()/apply_effects)取代全庫14筆EV折算, 但critUp目前只支援靜態值(透過push_add疊加, 見k==\"critUp\"分支), 不支援像stack/decay那樣的動態遞減/遞增讀取(amp()讀this.decay/this.stack做動態計算, 但crit判定的addbonus(\"critUp\",...)目前只讀adds陣列的靜態疊加值, 未讀取decay/stack物件)——需要engine新增「decay驅動critUp」的消費端(比照amp()對this.decay的既有處理, 為crit_rate()新增對稱讀取)才能精確表達本戰法「會心/奇謀機率隨回合線性遞減」的語意, 屬於crit_system_primitive已解決的「機率有沒有真擲骰」之外的另一個正交缺口(「機率本身是否支援decay/stack等動態來源」), 非本批範圍。維持現行decay(v0=1,rounds=8)驅動amp的既有近似(把「100%會心+100%奇謀機率」都近似成單一「開場+100%增傷,8回合線性歸零」的常駐傷害加成代理值, 已誠實記錄於_real欄位), 未升級為critUp。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -8884,19 +8909,18 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "ally",
     "val": 0.25,
     "dur": 3,
     "dmgType": "phys",
-    "_approx": "「12.5%→25%會心機率, 觸發時兵刃傷害+100%」EV折算為常駐25%增傷(0.25機率×100%傷害加成=25% EV, 未建模會心的二元觸發性質)",
-    "_note": "批24 D2: dmgType落地: 原_approx稱「只作用於兵刃傷害而非常駐全類型增傷」(誠實揭露高估), 批24新增e.dmgType原語後補dmgType:phys, 不再誤及謀略傷害輸出。批37 A(R1): 原文「若馬騰統領，則提高會心機率受速度影響」的「受速度影響」修飾的是「會心機率」本身(觸發率隨速度縮放), 非本amp效果的val(EV折算後的常駐增傷數值)——此馬騰條件式會心率縮放本身完全未建模(見頂層_todo), amp.val無scale欄位是正確的(它折算的是傷害加成量, 不是觸發機率), 特此釐清避免誤判為scale缺失。"
+    "_note": "批H: 會心真擲骰化——原文「12.5%→25%會心機率(滿級25%), 觸發時兵刃傷害+100%」拆回critUp真擲骰(dmgType:phys), 取代舊amp常駐EV折算(0.25機率×100%傷害加成=25% EV), 不再犧牲觸發的二元性/方差。「若馬騰統領,則提高會心機率受速度影響」的條件式scale複合仍未解決, 見頂層_todo(該缺口與crit原語本身是否落地無關, 純粹是「條件式scale」表達力缺口, 詳述於_todo)。"
    }
   ],
   "quality": "S",
   "cat": "TROOP",
   "src": "INHERITANCE",
-  "_todo": "批44 A複核: 「若馬騰統領，則提高會心機率受速度影響」的特定武將條件加成仍未建模。批44新增的ifLeaderIs可精確表達「持有者=馬騰時」的條件判斷本身(engine.js/sgz.py applyEffects已支援), 但本效果(effects[0] amp)是「12.5%→25%會心機率, 觸發時兵刃傷害+100%」已EV折算成常駐25%增傷的單一數值(見_note: 「未建模會心的二元觸發性質」)——「受速度影響」修飾的是會心機率本身(觸發率隨施放者速度縮放), 而非這個EV折算後的增傷值, 現有ifLeaderIs只能整段開關/加減一個固定值(如base+topup), 無法表達「馬騰統領時, 對某個尚未拆分出來的『觸發率』欄位額外套用scale:speed」這種「條件式scale」複合缺口——與白馬義從「若公孫瓚統領,提高發動率受速度影響」同一族(rateup本身雖支援scale, 但沒有ifLeaderIs能限定「只在特定武將持有時才scale, 其餘情形維持固定值」的條件式scale開關)。ifLeaderIs能解決「持有者是否為馬騰」的判斷, 但無法解決「馬騰的加成量本身還要再乘上一個依速度變動的曲線」——需要更進一步的原語(如e.scaleIfLeaderIs之類的複合欄位)才能精確表達, 保守維持現狀(amp.val=0.25無條件常駐, 不做馬騰+速度縮放加成)。",
+  "_todo": "批44 A複核+批H複核(會心真擲骰化): 「若馬騰統領，則提高會心機率受速度影響」的特定武將條件加成仍未建模。批44新增的ifLeaderIs可精確表達「持有者=馬騰時」的條件判斷本身(engine.js/sgz.py applyEffects已支援), 批H新增的critUp已可真機率表達基礎25%會心率本身(見effects[0]), 但「受速度影響」修飾的是這個機率值本身要依馬騰統領時的速度動態縮放(非額外加算一個固定delta, 原文未給出馬騰情形下的具體數字範圍, 只說「受速度影響」)——若用ifLeaderIs+scale拼裝「基礎25%(無條件)+速度縮放的topup段」會需要「topup段本身的基礎值是0再乘scale」這種語意(即馬騰時最終應是25%×SCALE(speed)而非25%+額外delta×SCALE(speed)), 現有ifLeaderIs只能表達「base(無條件)+topup(有條件, 各自獨立val)相加」的雙態語意(見白毦兵/丹陽兵precedent), 無法表達「同一個base值本身在特定條件下改用縮放版本(而非額外相加)」這種「條件式scale覆寫」——與白馬義從「若公孫瓚統領,提高發動率受速度影響」同一族缺口(rateup本身雖支援scale, 但沒有能限定「只在特定武將持有時才scale, 其餘情形維持固定值」的條件式scale開關/覆寫機制)。需要更進一步的原語(如e.scaleIfLeaderIs之類的複合欄位, 語意為「若ifLeaderIs條件成立, 對本效果val套用scale; 否則val維持原樣不縮放」)才能精確表達, 保守維持現狀(critUp.val=0.25無條件真機率, 不做馬騰+速度縮放加成)。此缺口與crit_system_primitive族(本批已解決)是正交的兩個問題: 前者是「機率有沒有真擲骰」, 後者是「機率值能否依條件式縮放」, 批H只解決前者。",
   "troopLimit": [
    "CAVALRY"
   ]
@@ -9419,12 +9443,22 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "ally",
     "val": 0.15,
     "dur": 99,
+    "dmgType": "phys",
     "_est": true,
-    "_todo": "原文「機率提升會心與奇謀機率，可疊加」為機率型爆發機制(會心/奇謀)，DSL無對應原語(amp僅為固定傷害%非機率觸發加成)，暫以amp+15%粗略折算爆發期望，數值缺乏原文佐證僅為估計佔位"
+    "_todo": "批H複核: 原文「提升會心與奇謀機率，可疊加」現已可用真crit原語critUp精確表達機制本身(取代舊amp固定傷害%誤用), 但仍完全無具體數字(無「X%→Y%」範圍可查), 「顯著提升爆發」本身即模糊描述, 15%為缺乏原文佐證的估計佔位值, 需user提供官方卡/戰報實測數字方能去除_est。"
+   },
+   {
+    "k": "critUp",
+    "who": "ally",
+    "val": 0.15,
+    "dur": 99,
+    "dmgType": "intel",
+    "_est": true,
+    "_todo": "批H複核: 同effects[0], 原文「會心與奇謀」兩者並提, 奇謀(謀略暴擊)段對稱補上, 同樣是缺乏原文佐證的估計佔位值。"
    }
   ],
   "quality": "S",
@@ -9490,29 +9524,49 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "self",
-    "val": 0.65,
+    "val": 0.5,
     "dur": 99,
-    "_approx": "crit-ev",
-    "_note": "50%會心機率×(100%基礎會心+30%會心傷害)=0.5×1.3=0.65 批25 R19: 原文「觸發時兵刃傷害提高100%(會心EV折算)」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。",
-    "dmgType": "phys"
+    "dmgType": "phys",
+    "_note": "批H: 會心真擲骰化——原文「自身50%會心機率(觸發+100%兵刃傷害)」, 拆回critUp(0.50, 真擲骰, 取代舊amp常駐EV折算0.5×1.3=0.65)。"
    },
    {
-    "k": "amp",
-    "who": "ally",
-    "val": 0.12,
+    "k": "critDmgUp",
+    "who": "self",
+    "val": 0.3,
     "dur": 99,
-    "_approx": "crit-ev",
     "dmgType": "phys",
-    "_note": "友軍10%會心機率×(100%+15%會心傷害)=0.115≈0.12; 原0.25把「15%會心傷害」當獨立平加項(0.10+0.15)高估約2×—會心傷害僅在會心觸發時生效; 且原文為友軍群體2人, engine who:ally=全體(略高估)。批37 A(R19): 友軍會心與自身會心(上方who:self效果, 已標dmgType:phys)同一「觸發時兵刃傷害提高100%」基準折算而來(原文只在自身段明確寫出「兵刃傷害提高100%」, 友軍段沿用同一會心機制未重複贅述), 補dmgType:\"phys\"與self效果一致, 不再誤及謀略傷害。"
+    "_note": "批H: 30%會心傷害(幅度修飾語)——疊在critUp觸發後的基礎+100%之上, 使自身會心觸發傷害=100%+30%=130%(見damage()對稱段落critDmgUp消費邏輯), 對應原文「及30%會心傷害」。"
+   },
+   {
+    "k": "critUp",
+    "who": "ally",
+    "val": 0.1,
+    "dur": 99,
+    "dmgType": "phys",
+    "ifLeader": true,
+    "n": 2,
+    "_note": "批H: 會心真擲骰化——原文「自身為主將時,提高友軍群體(2人)10%會心機率」, 拆回critUp(0.10, dmgType:phys, 真擲骰, 取代舊amp常駐EV折算0.115≈0.12)。批H順手補ifLeader:true(既有原語, 批26已存在)——舊版_note聲稱「自身為主將時才有友軍段(條件取真)」但effects物件本身從未實際帶ifLeader欄位(核對tactics_parsed.json確認: 三個effects皆ifLeader=None), 是「note描述與資料不符」的既有技術債(非crit相關, 但因本批必須整段重寫這幾個effect物件, 順手補上避免把舊technical debt原樣複製進新critUp/critDmgUp資料, 不算scope creep——欄位本身零新增, 只是把本戰法自己note早已聲稱的條件真正落地)。补e.n:2對應原文「友軍群體(2人)」(舊amp/lifesteal版本未帶n, who:ally全體套用高估, 一併修正對齊本文明確人數)。"
+   },
+   {
+    "k": "critDmgUp",
+    "who": "ally",
+    "val": 0.15,
+    "dur": 99,
+    "dmgType": "phys",
+    "ifLeader": true,
+    "n": 2,
+    "_note": "批H: 15%會心傷害(友軍段幅度修飾語)——疊在友軍critUp觸發後的基礎+100%之上=115%, 對應原文「15%會心傷害」, 同ifLeader:true+n:2限定(見上方critUp._note)。"
    },
    {
     "k": "lifesteal",
     "who": "ally",
     "val": 0.15,
     "dur": 99,
-    "_note": "15%倒戈(造成兵刃傷害恢復自身兵力); 原文限友軍群體2人, engine全體近似; 自身為主將時才有友軍段(條件取真)"
+    "ifLeader": true,
+    "n": 2,
+    "_note": "15%倒戈(造成兵刃傷害恢復自身兵力); 補ifLeader:true+n:2, 理由同上方critUp._note(舊版聲稱有主將條件但實際欄位缺失, 本次一併補上落地; n:2對齊原文「友軍群體2人」, 取代原who:ally全體高估)。"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -9525,7 +9579,8 @@
    "BOW",
    "SPEAR",
    "SIEGE"
-  ]
+  ],
+  "_note": "批H: 會心真擲骰化全段重建(5個effects: self段critUp+critDmgUp, ally段critUp+critDmgUp+lifesteal), 取代舊3段amp/lifesteal EV折算。順手修正ally段缺失的ifLeader:true(舊note聲稱有此條件但欄位實際缺席, 見各effect._note)與缺失的n:2(原文明確「群體2人」, 舊版who:ally全體套用略高估), 兩者皆非crit本身缺口, 屬本批重寫這幾個effect物件時一併發現並修正的相鄰技術債, 非scope creep(零新原語, 僅補上本戰法自己文檔已聲稱但未落地的既有欄位)。"
  },
  {
   "nameZh": "錦帆軍",
@@ -9537,11 +9592,13 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "ally",
     "val": 0.06,
     "dur": 99,
-    "_approx": "原文「若甘寧統領，提高友軍3%→6%會心」為特定武將條件觸發的會心機率加成, 引擎無「持有者=甘寧時」的條件判斷, 現簡化為無條件全隊常駐+6%增傷(會心機率轉換為等效增傷EV: 6%會心×觸發時+100%傷害≈EV+6%增傷, 但同時遺漏「甘寧統領」的持有者條件, 非甘寧持有時也會套用, 高估)"
+    "dmgType": "phys",
+    "ifLeaderIs": "甘寧",
+    "_note": "批H: 會心真擲骰化+ifLeaderIs持有者條件補齊(一次動作解決兩個交叉問題, 見no_approx_inventory.json「錦帆軍」條目同時橫跨A類[EV折算未做真機率化]與B類[ifLeaderIs持有者條件缺失])。原文「若甘寧統領，提高友軍3%→6%會心」(滿級6%), 拆回critUp(0.06, dmgType:phys, 真擲骰, 取代舊amp常駐EV折算+6%增傷)+ifLeaderIs:\"甘寧\"(批44既有原語, 非甘寧持有時本效果不觸發, 取代舊版「非甘寧持有時也套用, 高估」的缺陷)。"
    }
   ],
   "quality": "S",
@@ -9557,7 +9614,7 @@
     "_note": "「若目標已潰逃則造成兵刃攻擊110%並恢復30%傷害量」分支; 穩態已潰逃機率≈1-(0.55)²≈0.6折算; 30%傷害量回血未建模(保守); who改為sameTarget(沿用主段已選定的同一目標, 原文明確是'目標已潰逃'的同一人, 非重新隨機挑選); n欄已移除(sameTarget分支不讀n/nMax) 批33補記: 本批新增e.ofDamage(heal效果傷害比例治療)無法直接套用於此extraHits段——ofDamage是heal效果專屬欄位, 掛在on:\"damaged\"/dealtDamage反應式heal上, 而本段「恢復傷害量30%兵力」是extraHits(直接hit()呼叫)造成傷害的同一時刻自我回血, 語意上更接近lifesteal(倒戈, hit()內建按傷害量比例回復), 但lifesteal是「持有者身上的standing addbonus, 對該單位往後所有傷害都生效」, 若無條件掛lifesteal會誤及本戰法主coef段(灼燒DoT)等其他傷害來源, 需要「僅限本extraHits段自身傷害的回復欄位」(如e.lifesteal掛在extraHits條目本身, 只對該段結算的dmg生效), 現有lifesteal/ofDamage皆不支援此顆粒度, 非本批範圍, 維持prob-ev近似placeholder。"
    }
   ],
-  "_note": "批41 A2修正(取代批23方向搞反的教訓): 原文兩版本(2023-05-09更新版/原始版)皆一致寫「傷害率32%→64%」, 滿級應為coef=0.64——批23 _note誤把「過去parsed.coef是0.64」當成bug本身(稱其為「主段傷害被腰斬近半」), 反向宣稱1.28才是正確值並把coef改成1.28, 實際是敘事方向搞反(1.28=64%的2倍, 才是真正被腰斬/加倍錯誤的那個), 本批核對原文後訂正回coef=0.64。extraHits段(潰逃後追打)對應原文「傷害率55%→110%」, 其係數與110%一致無誤, 未動。amp(0.06)對應「提高友軍3%→6%會心」, 數值一致, 「甘寧統領」持有者條件遺漏(非coef敘事問題)維持既有揭露不變。n(目標數)=1(對齊nMax=0)——原文「部隊普通攻擊時,使目標進入潰逃」是普攻觸發的單體DoT, 過去t.n=3曾把主coef段(灼燒DoT)與extraHits(潰逃後追打)都誤放大成打全體3名敵軍, 已改為只打1人(普攻命中的同一目標), extraHits用who:sameTarget精確沿用同一目標(非重新隨機挑3人), 此部分批23已修正維持不變。",
+  "_note": "批41 A2修正(取代批23方向搞反的教訓): 原文兩版本(2023-05-09更新版/原始版)皆一致寫「傷害率32%→64%」, 滿級應為coef=0.64——批23 _note誤把「過去parsed.coef是0.64」當成bug本身(稱其為「主段傷害被腰斬近半」), 反向宣稱1.28才是正確值並把coef改成1.28, 實際是敘事方向搞反(1.28=64%的2倍, 才是真正被腰斬/加倍錯誤的那個), 本批核對原文後訂正回coef=0.64。extraHits段(潰逃後追打)對應原文「傷害率55%→110%」, 其係數與110%一致無誤, 未動。批H: amp(0.06)已改用critUp(0.06)+ifLeaderIs:\"甘寧\"(見effects[0]._note), 舊有「甘寧統領持有者條件遺漏」缺口已解決(批44 ifLeaderIs原語就緒後順手補上, 非coef敘事問題)。n(目標數)=1(對齊nMax=0)——原文「部隊普通攻擊時,使目標進入潰逃」是普攻觸發的單體DoT, 過去t.n=3曾把主coef段(灼燒DoT)與extraHits(潰逃後追打)都誤放大成打全體3名敵軍, 已改為只打1人(普攻命中的同一目標), extraHits用who:sameTarget精確沿用同一目標(非重新隨機挑3人), 此部分批23已修正維持不變。",
   "nMax": 0,
   "troopLimit": [
    "BOW"
@@ -10680,13 +10737,13 @@
     "_note": "批31 A評估: 前4回合自身發動主動戰法時100%使我軍全體獲得1次1回合80%攻心——本批新增 when.on:\"activeFired\"(見engine_limitations.md新增節)原則上正是為此類語意設計, 但無法在本戰法套用: activeFired的效果級掛鉤(active_fired_effect_tacs)沿用批27 dealtDamage同款設計, 要求母戰法無t.when(engine_limitations.md 6.4「e.when的母戰法無t.when限制」)才會被預篩收錄——本戰法頂層已有when:{from:5}(供coef主傷段使用), 若lifesteal效果改掛e.when.on:\"activeFired\"+until:4, 因母戰法t.when為真, 整個戰法在fight()回合迴圈的effect級activeFired掃描路徑會被排除在外(不會被收錄進active_fired_effect_tacs), 效果完全不會觸發, 比現況(維持既有近似)更糟。此為與heal機制不同的結構性差異: heal透過獨立的heal_only通道特批繞過此限制(engine_limitations.md 6.4末段說明), lifesteal無對應特批通道。維持既有EV式簡化近似(與when:{from:5}窗口互斥, 效果隨窗口第5回合才一次性套用, 而非原文「前4回合」的獨立時窗)不變, 量值小(0.8×1次性)暫不強行修復, 若未來要解需先擴充「母戰法可有t.when、效果級when.on仍獨立生效」的通用能力(超出本批範圍)。【批37複核仍成立】「母戰法可有t.when、效果級when.on仍獨立生效」的通用能力至批37仍不存在(activeFired/dealtDamage效果級預篩仍要求!t.when), 停損決策維持。"
    },
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "self",
     "val": 0.16,
     "dur": 99,
+    "dmgType": "intel",
     "ifLeader": true,
-    "_approx": "crit-ev",
-    "_note": "批41 A: 補ifLeader(批26原語, 見西涼鐵騎等同庫3筆precedent正確用法)——原文「自身為主將時，獲得8%→16%奇謀機率」明確為主將身份閘門條件, 舊版無條件對任何施放者套用+16%(高估非主將情形)。自身為主將時+8%→16%奇謀機率(觸發時謀略傷害+100%), EV=0.16×1.0折算常駐增傷; 原用extra 0.16=16%機率追加普攻, 原語誤用(奇謀係數作用於謀略傷害非普攻次數)。"
+    "_note": "批H: 會心真擲骰化——原文「自身為主將時，獲得8%→16%奇謀機率(觸發時謀略傷害+100%)」拆回critUp(0.16, dmgType:intel, 真擲骰), 取代舊amp常駐EV折算(0.16×1.0)。ifLeader:true維持不變(批41 A已補, 見西涼鐵騎等同庫precedent)。本段本文無「受智力影響」字樣(該修飾詞在同戰法內是修飾「傷害率77%→154%」的coef段, 非這條奇謀機率段, 核對INHERITANCE段原文逐字確認), 故不加scale, 避免無錨點臆造縮放曲線。"
    }
   ],
   "_src": " +他AI補全effectText/重解",
@@ -10696,7 +10753,7 @@
   "when": {
    "from": 5
   },
-  "_note": "主修正: 補 when:{from:5} —— coef 1.54×rate 0.8原本第1回合起每回合擲骰(多算4回合, 傷害期望高估2×)。同名條目「鷹視」(root data無原文, _est clone)未動, 建議後續同步。批41 A: amp(who:self,val:0.16)補ifLeader(見效果_note), 修復R27主將身份揭露違規——僅修此段, lifesteal效果的批31/§6.4停損決策未動。",
+  "_note": "主修正: 補 when:{from:5} —— coef 1.54×rate 0.8原本第1回合起每回合擲骰(多算4回合, 傷害期望高估2×)。同名條目「鷹視」(root data無原文, _est clone)未動, 建議後續同步。批41 A: amp(who:self,val:0.16)補ifLeader(見效果_note), 修復R27主將身份揭露違規——僅修此段, lifesteal效果的批31/§6.4停損決策未動。批H: 會心真擲骰化, amp→critUp(見effects[1]._note), ifLeader/lifesteal段皆未受影響。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -11149,11 +11206,19 @@
   "nameZh": "左右開弓",
   "type": "active",
   "kind": "phys",
-  "coef": 2.03,
+  "coef": 1.8,
   "rate": 0.35,
   "n": 1,
   "prep": 0,
   "effects": [
+   {
+    "k": "critUp",
+    "who": "self",
+    "val": 0.13,
+    "dur": 1,
+    "dmgType": "phys",
+    "_note": "批H(禁近似令收尾, 全庫掃補遺——lint R34新增後掃出本筆先前遺漏): 會心真擲骰化——原文「提高自身6.5%→13%會心機率(觸發時兵刃傷害提高100%), 對敵軍單體造成一次兵刃攻擊」。舊版把13%會心EV折入主傷coef(1.8→2.03)因當時active型戰法effects在coef之後才套用。批H新增「active型戰法pre-coef會心套用」機制(見sgz.py/engine.js fight()主迴圈)後, critUp在主coef攻擊之前先套用, 使該次單體兵刃攻擊得以吃到真會心擲骰(觸發時×2), coef還原基礎1.8, 均值不變(1.8×(1+0.13×1.0)=2.034期望)但保留二元觸發方差。dur:1(原文無「持續X回合」修飾會心段, 只此次攻擊有效; 末尾「持續2回合」是修飾騎兵潰逃DoT, 非會心)。"
+   },
    {
     "k": "dot",
     "who": "enemy",
@@ -11168,7 +11233,8 @@
   "src": "INHERITANCE",
   "troopLimit": [
    "BOW"
-  ]
+  ],
+  "_note": "批H(禁近似令收尾): 舊版coef-fold(把會心EV折入coef)已被批H新增的「active型戰法pre-coef會心套用」機制解除——critUp現在在主coef攻擊之前套用, 主攻擊吃真會心擲骰, coef還原基礎1.8, EV折算physically移除, 符合禁近似令。與百步穿楊同機制處理。騎兵潰逃DoT段的兵種判斷缺口(dot._approx)屬另一獨立問題(非crit範圍), 維持既有揭露不變。"
  },
  {
   "nameZh": "廬江上甲",
@@ -12902,13 +12968,12 @@
   "prep": 0,
   "effects": [
    {
-    "k": "amp",
+    "k": "critUp",
     "who": "self",
     "val": 0.15,
     "dur": 2,
-    "_approx": "crit-ev",
-    "_note": "會心15%(取滿級)×傷害+100%期望值折算=0.15 批25 R19: 原文「觸發時兵刃傷害提高100%(會心EV折算)」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。",
-    "dmgType": "phys"
+    "dmgType": "phys",
+    "_note": "批H: 會心真擲骰化——原文(批H0已訂正數值)「提高自身7.5%→15%會心機率(滿級15%, 觸發時兵刃傷害+100%), 持續2回合」拆回critUp(0.15, dmgType:phys, 真擲骰), 取代批H0仍沿用的amp常駐EV折算(0.15)。"
    }
   ],
   "quality": "B",
@@ -12921,7 +12986,7 @@
    "SPEAR",
    "SIEGE"
   ],
-  "_note": "批H0(2026-07-10): 舊版_evidence「使自己增加15%→30%會心幾率...持續1回合」經grok雙來源(巴哈戰法一覽+丁原傳承說明)查證核實為數值錯誤(見docs/data/tactics_overrides.json「猛擊」override, 滿級應為7.5%→15%非15%→30%, 且原文為普通攻擊觸發而非泛用增益, 持續2回合非1回合); 改正val:0.3→0.15(EV折算基底15%×100%=0.15), dur:1→2。"
+  "_note": "批H0(2026-07-10): 舊版_evidence「使自己增加15%→30%會心幾率...持續1回合」經grok雙來源(巴哈戰法一覽+丁原傳承說明)查證核實為數值錯誤(見docs/data/tactics_overrides.json「猛擊」override, 滿級應為7.5%→15%非15%→30%, 且原文為普通攻擊觸發而非泛用增益, 持續2回合非1回合); 改正val:0.3→0.15(EV折算基底15%×100%=0.15), dur:1→2。批H: 會心真擲骰化, amp→critUp(見effects[0]._note), 數值/dur/dmgType不變, 僅機制從EV折算改為真機率擲骰。"
  },
  {
   "nameZh": "砍伐",

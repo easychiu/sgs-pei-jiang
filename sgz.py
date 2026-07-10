@@ -576,6 +576,11 @@ class Unit:
         # 落地使用。刻意不做onMaxStacks/globalMax/e["add"]三個延伸(見sgz.py apply_effects
         # k=="amp"分支註解, 密計誅逆無此語意需求, 精簡版足夠)。
         self.amp_layers = None
+        # 批H: crit_layers —— dict[id(效果物件) -> 已疊層數], k=="critUp"+e["stackKey"]的
+        # per-target疊層計數(對稱amp_layers, 獨立欄位避免與amp/stat的疊層計數器混淆語意)。
+        # 逆鱗「受到傷害時,3%機率獲得10%會心,可疊加2次」首次落地使用, 見apply_effects
+        # k=="critUp"分支。
+        self.crit_layers = None
         # 批52g: ammo —— 彈藥計數(高櫓連營), dict[戰法名 -> 剩餘次數]
         self.ammo = {}
         self.heal_rounds_fired = {}                     # 批15: heal 效果 e["when"]["rounds"](明確列出的特定回合)的「每回合各觸發一次」去重, dict[id(效果物件) -> set(已觸發回合數)], 見 apply_effects 的 heal 分支
@@ -971,6 +976,28 @@ def damage(src, dst, coef, kind, src_troop=None, is_normal=None, is_active=None,
     base *= 0.0 if total_amp <= -1 else 1 + max(-0.9, total_amp)  # 增傷(疊加/衰減/敵方減益)
     mit = dst.addbonus("mitig", kind, is_normal) * (1 - min(1.0, src.addbonus("pierce")))  # 看破: 無視部分減傷
     base *= max(0.1, 1 - mit)
+    # 批H: 會心(兵刃暴擊)/奇謀(謀略暴擊)真擲骰層 —— 禁近似令下取代全庫14筆「crit-ev」期望值
+    # 折算(見 no_approx_inventory.json crit_system_primitive族/engine_limitations.md本節)。
+    # 機制: 每次造成傷害時, 先擲一次crit判定, rate=src此刻所有「會心/奇謀機率」來源加總
+    # (k=="critUp", 依dmgType分流: dmgType="phys"=會心/兵刃暴擊, dmgType="intel"=奇謀/謀略
+    # 暴擊, 與amp/mitig既有dmgType路由慣例完全一致, 呼叫端傳入的kind本就已是phys/intel);
+    # 命中則本次傷害額外乘上(1+crit_mult), crit_mult=1.0(官方戰報實測基準「觸發會心,
+    # 兵刃傷害提升100.00%」, 見calibration_anchors.json crit節)+critDmgUp累加(k=="critDmgUp",
+    # 「會心傷害/奇謀傷害+X%」幅度修飾語, 如華服/長慮, 同dmgType路由, 未命中crit則此層不生效
+    # 也不消費critDmgUp)。與amp是「機率來源(critUp)」與「幅度來源(critDmgUp)」分離、但透過
+    # 同一個離散事件(擲骰命中與否)耦合的雙層設計, 不同於amp的單一靜態疊加值。
+    # 乘法層疊順序: 疊在amp/mitig之後(倍率獨立於±4%隨機帶之前) —— crit是「這一下攻擊有沒有
+    # 命中會心」的二元判定, 不應被視為amp累加的一部分(amp封頂-90%/總和<=-1虛弱語意不應牽動
+    # crit判定), 也不應被隨機帶±4%「稀釋」掉critRate本身的擲骰獨立性(±4%是每次攻擊都有的
+    # 基礎浮動, crit是額外的、獨立擲一次的二元事件, 兩者互不影響, 詳見engine_limitations.md
+    # 本節「與amp/mitig/±4%隨機帶的結算順序」)。
+    # sgz.py 無 TRACE/日誌機制(見上方Unit.__init__同款既有註解), 此處純結算不列印; TRACE
+    # 字樣輸出(比照遊戲戰報原文「觸發會心, 兵刃傷害提升100.00%」)僅在 docs/engine.js 實作
+    # (供瀏覽器UI推演明細用), 見該檔 damage() 對稱段落。
+    crit_rate = src.addbonus("critUp", kind, is_normal, is_active, is_charge)
+    if crit_rate > 0 and random.random() < crit_rate:
+        crit_bonus = 1.0 + src.addbonus("critDmgUp", kind, is_normal, is_active, is_charge)
+        base *= (1 + crit_bonus)
     base *= random.uniform(0.96, 1.04)
     return max(0, base)
 
@@ -1608,7 +1635,15 @@ def fire_controlled(victim, kind, dur, allies, enemies):
 
 def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=False, skip_when_effects=False,
                    rate_checked=False, reactive=False, dmg=None, evt_target=None, heal_amt=None, main_hit_tgts=None,
-                   no_ctrl_reflect=False):
+                   no_ctrl_reflect=False, only_kinds=None):
+    # 批H: only_kinds(可選, tuple) —— 限定本次只處理 k 在此清單內的效果段, 其餘一律跳過。
+    # 唯一用途: active型戰法在主coef攻擊之前, 先套用施放者自身的 critUp/critDmgUp 會心buff
+    # (只傳 only_kinds=("critUp","critDmgUp")), 讓「提高自身X%會心機率...隨後造成攻擊」這類
+    # 戰法(百步穿楊/左右開弓)的主AoE本身也能吃到真會心擲骰(取代舊有把會心EV折入coef本身的
+    # 近似——見fight()主迴圈active分支coef迴圈之前的pre-coef呼叫點, 及對應戰法corrections的
+    # _note)。因push_add以src(戰法名+dmgType尾碼)去重, 主coef段結束後的常規apply_effects
+    # 呼叫會以同一src刷新覆蓋(非疊加)本效果, 故pre-coef先套一次+post-coef再刷新一次不會造成
+    # 會心率翻倍(單一adds條目), 只是把套用時機提前到coef命中之前, 使該次攻擊得以擲骰。
     # 批42: evt_target(可選) —— 對稱 engine.js opt.evtTarget, 供 who=="eventTarget" 精確鎖定
     # 「本次反應式事件的事件單位本身」(如傲睨王侯敵軍受普攻時, 事件單位=被打的那個敵人, 而非
     # 泛用敵軍全體/隨機N人)。由 on_hit_for/dealt_damage_for 呼叫端傳入, 見下方 who 分派。
@@ -1621,6 +1656,8 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
     src = t.get("nameZh")                              # 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → None, 不去重)
     for e in t["effects"]:
         k = e["k"]
+        if only_kinds is not None and k not in only_kinds:  # 批H: 限定只處理指定k(pre-coef會心套用, 見函式docstring)
+            continue
         # 批35 B: block 的「準備階段鎖定」scale 值優先算定, 放在所有 continue 閘門(heal_only/
         # skip_when_effects/when.on/rate/ifLeader/everyRound...)之前 —— 必須確保 prep 呼叫
         # (fight() 開場的 apply_passives(no_heal=True, skip_when_effects=True))第一次掃描到
@@ -2190,12 +2227,16 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # 我軍及敵軍全體普通攻擊傷害35%」, 對比redirect既有的normalOnly慣例, 語意不同但欄位
         # 命名沿用一致性)。damage() 結算時依 is_normal 過濾, 見 amp()/addbonus() 的 is_normal
         # 參數。
+        # 批H: critUp/critDmgUp(會心/奇謀機率與傷害幅度) 與 amp/mitig 共用同一套 dmgType/
+        # normalOnly/ifLeader/ifLeaderIs 條件旗標與 dt_src 尾碼去重慣例(見 damage() 對稱段落
+        # 消費 addbonus("critUp"/"critDmgUp", dmg_type, ...)), 故並列進下列判斷式。
+        crit_kinds = ("amp", "mitig", "critUp", "critDmgUp")
         dmg_type = e.get("dmgType")
-        normal_only = bool(e.get("normalOnly")) if k in ("amp", "mitig") else False
+        normal_only = bool(e.get("normalOnly")) if k in crit_kinds else False
         active_only = bool(e.get("activeOnly")) if k == "amp" else False  # 批31 A: 對稱於normalOnly, 目前僅amp支援(士爭先赴)
         charge_only = bool(e.get("chargeOnly")) if k == "amp" else False  # 批40 B: 對稱activeOnly, 僅amp支援(一鼓作氣/藏刀)
-        if_leader_topup = bool(e.get("ifLeader")) if k in ("amp", "mitig") else False  # 批41 B: 見下方dt_src註解
-        if_leader_is_topup = bool(e.get("ifLeaderIs")) if k in ("amp", "mitig") else False  # 批44 A: 同if_leader_topup, 見下方dt_src註解
+        if_leader_topup = bool(e.get("ifLeader")) if k in crit_kinds else False  # 批41 B: 見下方dt_src註解
+        if_leader_is_topup = bool(e.get("ifLeaderIs")) if k in crit_kinds else False  # 批44 A: 同if_leader_topup, 見下方dt_src註解
         ud_flags = {"undispellable": bool(e.get("undispellable")), "dmgType": dmg_type, "normalOnly": normal_only, "activeOnly": active_only, "chargeOnly": charge_only} \
             if (e.get("undispellable") or dmg_type or normal_only or active_only or charge_only) else None
         # dmgType 存在時, src 附加類型尾碼區分 dedup key(同一戰法內若有兩條不同 dmgType 的
@@ -2255,6 +2296,35 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     u.push_add("amp", v, e["dur"], dt_src, ud_flags, max_stack=ms)
             elif k == "mitig":
                 u.push_add("mitig", sv_val(e["val"]), e["dur"], dt_src, ud_flags, max_stack=e.get("maxStack"))
+            # 批H: critUp(會心/奇謀機率, val加法累積) / critDmgUp(會心/奇謀傷害幅度, 疊在基礎
+            # +100%之上) —— 走與amp/mitig相同的push_add加法疊加通道, 由 damage() 於傷害結算
+            # 時讀 addbonus("critUp"/"critDmgUp", dmg_type, ...) 消費(見該函式對稱段落),
+            # dmg_type 依本文用詞路由: "phys"=會心(兵刃暴擊)/"intel"=奇謀(謀略暴擊)。與amp/
+            # mitig的差異純粹是消費端不同(amp直接乘傷害基數, critUp是擲骰rate/critDmgUp是
+            # 命中後幅度), 資料層加法疊加/scale/ifLeader/dmgType等既有原語組合全部原樣沿用,
+            # 零新增targeting邏輯(對稱engine.js同名分支)。
+            # critUp+e.get("stackKey")(對稱k=="amp"+e.get("stackKey"), 見上方詳細註解) ——
+            # 逆鱗「受到傷害時,3%機率獲得10%會心,可疊加2次」需要per-target疊層(裝備效果src
+            # 固定為None, push_add的max_stack去重機制以src為鍵, 對裝備效果不生效, 必須用獨立
+            # 的id(e)鍵疊層計數器, 與amp/stat的stackKey機制完全對稱, 只是掛在crit_layers獨立
+            # dict, 避免與amp_layers/exploit_layers混淆)。
+            elif k == "critUp" and e.get("stackKey"):
+                if u.crit_layers is None:
+                    u.crit_layers = {}
+                ekey = id(e)
+                already = u.crit_layers.get(ekey, 0)
+                max_stacks = e.get("maxStacks")
+                if max_stacks is None or already < max_stacks:
+                    layers = already + 1
+                    u.crit_layers[ekey] = layers
+                    per_stack = e.get("perStack", sv_val(e["val"]))
+                    total_val = per_stack * layers
+                    u.push_add("critUp", total_val, e["dur"], dt_src, ud_flags)
+                # 已達max_stacks: 這個目標已無法再疊, 不做任何push_add(累計值維持不變)。
+            elif k == "critUp":
+                u.push_add("critUp", sv_val(e["val"]), e["dur"], dt_src, ud_flags, max_stack=e.get("maxStack"))
+            elif k == "critDmgUp":
+                u.push_add("critDmgUp", sv_val(e["val"]), e["dur"], dt_src, ud_flags, max_stack=e.get("maxStack"))
             # 批16: immuneTo(單項控制免疫) —— is_immune_to(k) 只免疫清單內控制類型, 與 insight(全免) 並列判斷
             # 批52h: 成功施加後 fire_controlled 廣播(機鑑先識反彈); no_ctrl_reflect 時跳過
             elif k == "stun":
@@ -3186,6 +3256,14 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                         main_hit_tgt = None  # 批13: 記錄主 coef 段命中的(單體)目標, 供 extraHits 同目標段沿用
                         main_hit_tgts = None  # 批45 A: 記錄主 coef 段命中的(群體)目標陣列, 供效果段 e["sameTargets"] 沿用同一批目標(對稱 main_hit_tgt 的單體版本)
                         is_active_dmg = t0["type"] == "active" or None  # 批31 A: 供e.activeOnly amp判定「本段傷害是否為主動戰法所致」; command/passive走同一段程式碼但非主動戰法, 傳None(安全側不套用activeOnly加成, 見addbonus()docstring)
+                        # 批H: active型戰法「提高自身X%會心機率...隨後造成攻擊」(百步穿楊/左右開弓)——
+                        # 在主coef攻擊之前先套用施放者自身的critUp/critDmgUp會心buff, 使該次AoE本身
+                        # 得以吃到真會心擲骰(取代舊有把會心EV折入coef本身的近似)。post-coef的常規
+                        # apply_effects會以同一src刷新覆蓋本效果(不疊加, 見apply_effects only_kinds
+                        # docstring), 故不會會心率翻倍。只對active型套用(command/passive的crit走prep
+                        # 階段apply_passives, 不經此路徑; 其coef段多為0無主攻擊, 不需pre-coef)。
+                        if t0["type"] == "active":
+                            apply_effects(u, None, t, allies_of(u), foes_of(u), only_kinds=("critUp", "critDmgUp"))
                         if t["coef"]:
                             cnt = t["n"]
                             if t.get("nMax"):
@@ -3699,12 +3777,13 @@ def demo():
         "曹純當主將 vs 非曹純主將: 前者 chargeup 加成應較高(曹純特例額外值>0)"
 
     # --- 批7: 發動率縮放(rate-scale) + 太平道法落地 -------------------------------
-    # 29) 太平道法資料落地: amp 0.28 + 2 條 rateup(一般6%/準備戰法額外6%, 皆 scale=intel+nativeOnly)
+    # 29) 太平道法資料落地: critUp 0.28(dmgType:intel, 批H會心真擲骰化) + 2 條 rateup(一般6%/準備戰法額外6%, 皆 scale=intel+nativeOnly)
     assert "太平道法" in TACTICS, "太平道法應由 reparse 落地(inherit 傳承戰法, 非任何武將自帶)"
     tp_tac = TACTICS["太平道法"]
     assert not tp_tac.get("_est"), "太平道法資料落地後不應再有 _est 標記"
-    tp_amp = next(e for e in tp_tac["effects"] if e["k"] == "amp")
-    assert abs(tp_amp["val"] - 0.28) < 1e-9, "太平道法奇謀(amp近似) 應為升滿值0.28(14%→28%)"
+    tp_amp = next(e for e in tp_tac["effects"] if e["k"] == "critUp")
+    assert abs(tp_amp["val"] - 0.28) < 1e-9, "太平道法奇謀(critUp真擲骰, 批H) 應為升滿值0.28(14%→28%)"
+    assert tp_amp.get("dmgType") == "intel", "太平道法critUp應限定dmgType:intel(奇謀=謀略暴擊)"
     tp_rateups = [e for e in tp_tac["effects"] if e["k"] == "rateup"]
     tp_self = [e for e in tp_rateups if e.get("who", "self") == "self"]
     assert len(tp_self) == 2, "太平道法應有2條自身rateup(一般+準備戰法額外)"
@@ -5691,16 +5770,16 @@ def demo():
     assert abs(wsbq112_leader_mitig - wsbq112_sub_mitig - 0.06) < 1e-6, \
         f"圍師必闕: 主將施放者的mitig(intel)應比非主將多0.06(ifLeader top-up段疊加, 非覆蓋), 實得主將={wsbq112_leader_mitig}, 非主將={wsbq112_sub_mitig}, 差={wsbq112_leader_mitig - wsbq112_sub_mitig}"
 
-    # 113) 鷹視狼顧(真實資料, v18零分修復): amp(who:self,val:0.16)補ifLeader後, 非主將施放者
-    # 不應吃這16%奇謀增傷(謀略傷害), 主將施放者應吃到。
+    # 113) 鷹視狼顧(真實資料, v18零分修復+批H會心真擲骰化): critUp(who:self,val:0.16,
+    # dmgType:intel)補ifLeader後, 非主將施放者不應吃這16%奇謀機率, 主將施放者應吃到。
     yslg113_tac = TACTICS["鷹視狼顧"]
     yslg113_leader = Unit(POOL["司馬懿"], "槍")
     yslg113_other = Unit(POOL["張飛"], "槍")
     apply_effects(yslg113_leader, None, yslg113_tac, [yslg113_leader, yslg113_other], [], no_heal=True)
-    assert abs(yslg113_leader.addbonus("amp", "intel") - 0.16) < 1e-6, "鷹視狼顧: 主將施放者應吃到16%奇謀增傷(amp intel)"
+    assert abs(yslg113_leader.addbonus("critUp", "intel") - 0.16) < 1e-6, "鷹視狼顧: 主將施放者應吃到16%奇謀機率(critUp intel, 批H真擲骰化)"
     yslg113_sub = Unit(POOL["司馬懿"], "槍")
     apply_effects(yslg113_sub, None, yslg113_tac, [yslg113_other, yslg113_sub], [], no_heal=True)
-    assert abs(yslg113_sub.addbonus("amp", "intel")) < 1e-9, "鷹視狼顧: 非主將施放者不應吃16%奇謀增傷(ifLeader閘門應擋下, v18零分修復)"
+    assert abs(yslg113_sub.addbonus("critUp", "intel")) < 1e-9, "鷹視狼顧: 非主將施放者不應吃16%奇謀機率(ifLeader閘門應擋下, v18零分修復)"
 
     print(f"    [批41] 鷹視狼顧/錦帆軍v18零分修復+R27 ifLeader top-up尾碼去重(112/113)驗證通過")
 
