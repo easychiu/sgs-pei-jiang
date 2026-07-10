@@ -2406,11 +2406,20 @@ def _dot_has_damage(p):
     return any(e.get("k") == "dot" and (e.get("coef") or 0) > 0 for e in (p.get("effects") or []))
 
 
+def _counter_has_damage(p):
+    # 批H0(R25補遺): counter(反擊)效果自帶獨立 coef, 承載「受到普通攻擊時對攻擊者造成傷害」
+    # 這類反應式傷害宣告(如還擊/千里走單騎/古之惡來等 8 筆全庫既有案例, top coef=0 為設計常態
+    # ——傷害走 counter 段而非戰法主段), 與 dot/extraHits/choices 同屬「傷害由其他承載管道
+    # 表達, 非零輸出」的合法設計, 應計入白名單, 否則任何原文用「對攻擊者造成傷害」措辭且無
+    # 其他傷害段的 counter-only 戰法都會被 R25 誤判(還擊即實例)。
+    return any(e.get("k") == "counter" and (e.get("coef") or 0) > 0 for e in (p.get("effects") or []))
+
+
 def check_r25(p, txt):
     violations = []
     if (p.get("coef") or 0) > 0:
         return violations
-    if _extra_hits_has_damage(p) or _choices_has_damage(p) or _dot_has_damage(p):
+    if _extra_hits_has_damage(p) or _choices_has_damage(p) or _dot_has_damage(p) or _counter_has_damage(p):
         return violations
     for block in split_version_blocks(txt):
         # 逐子句核對, 排除「無法造成傷害」(虛弱類負面狀態措辭, 非本戰法自身傷害輸出宣告)
