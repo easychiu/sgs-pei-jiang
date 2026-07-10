@@ -44,7 +44,12 @@ RATE_NOT_TRIGGER = ("規避", "會心", "奇謀")
 
 SINGLE_TARGET_RE = re.compile(r"單體(?:（\s*1\s*人\s*）)?")
 GROUP_TARGET_RE = re.compile(r"群體\s*(?:（\s*(\d+)\s*人\s*）)?")
-GROUP_RANGE_RE = re.compile(r"[（(]\s*(\d+)\s*[~～-]\s*(\d+)\s*人\s*[)）]")
+# 批F: 原本要求「人」後緊接右括號(\s*[)）]), 漏掉「（2-3 人，治療率...）」這種「人」與右括號
+# 之間還夾了逗號+其他子句內容的常見寫法(仁德載世/金城湯池等「N-M 人」句型全庫核對18筆中
+# 唯一的漏網案例, 因「人」前多一個空格+後面接逗號子句)。改用「同一括號內, 人後面允許非右括號
+# 字元(不含右括號本身, 避免跨括號誤配到下一組全然無關的括號內容)直到右括號出現為止」, 仍要求
+# 右括號存在(避免括號未閉合的異常文字誤配), 只是不再要求「人」與右括號之間淨空。
+GROUP_RANGE_RE = re.compile(r"[（(]\s*(\d+)\s*[~～-]\s*(\d+)\s*人[^（）()]*[)）]")
 ALL_TARGET_RE = re.compile(r"全體")
 
 # 「擇一」需排除「選擇一名/選擇一個」(單純挑選單一目標的措辭, 非多效果分支擇一);
@@ -636,12 +641,20 @@ PER_KIND_FIELDS = {
     "taunt": set(), "shield": {"amt", "pct"}, "dodge": {"prob"}, "surehit": set(),
     "healblock": set(), "lifesteal": {"val"}, "rateup": {"val", "prepOnly", "nativeOnly", "inheritedOnly"},
     "chargeup": {"val", "prepOnly", "nativeOnly", "leaderBonus"}, "healBoost": {"val"},
-    "healGiven": {"val"}, "fakeReport": set(), "dispel": {"what"}, "heal": {"coef", "once", "rate", "ofDamage"},
+    "healGiven": {"val"}, "fakeReport": set(), "dispel": {"what"}, "heal": {"coef", "once", "rate", "ofDamage",
+                                                                              "all", "preferLowest", "sharedPool"},
     # 批22: heal 的 rate 欄位 —— 效果級 e.when.on(急救類反應式治療, 如陷陣營/雲聚影從/長健/
     # 三軍之眾)專用的「本次觸發機率」(區分於戰法整體 t.rate), 見 engine.js/sgz.py 的
     # onHitEffectTacs/onHitEq/onHitBs 註解。
     # 批33: heal 的 ofDamage 欄位 —— 傷害比例治療(非屬性公式), 治療量=ofDamage×本次觸發事件的
     # 實際傷害量(dmg 由反應式呼叫端傳入), 與 coef/scale 屬性公式互斥擇一, 見草船借箭。
+    # 批F: heal 選標對齊本文全面改造新增3個heal專屬欄位(who/n/nMax/targetSel已是全域欄位,
+    # 不重複於此列出) —— all: 「我軍全體」精確表達(對稱amp/mitig/stat等效果種類既有
+    # 「who:ally無n→全體」通用慣例, heal過去無此路徑, 見金丹秘術); preferLowest: 群體治療時
+    # 優先完全恢復兵力最低者(青州兵「優先完全恢復我軍兵力最低單體」); sharedPool: 總治療量
+    # 一次算出後依序填滿(對應「總治療率」分攤語意, 與preferLowest常搭配使用, 見青州兵/既有
+    # sgz.py 批52 selftest 142號斷言)。三者皆只在 k=="heal" 分支實作(非跨k通用欄位), 故歸入
+    # PER_KIND_FIELDS 而非 KNOWN_EFFECT_FIELDS。
     "redirect": {"guard", "share", "normalOnly"}, "settle": {"init", "max", "base", "per"},
     "block": {"val", "times"},  # 批22: 次數型格擋(抵禦/警戒同族) —— val:1.0全擋/0.x部分減傷, times:剩餘次數
     "chargeAdd": {"max"},  # 批A(11筆高嚴重重建): 「可消耗資源池」獲得端(死戰不退「蓄威」),
@@ -899,8 +912,12 @@ def check_r12(p, txt):
 #
 # CTRL_K 家族(stun/silence/disarm/taunt/chaos)不受本規則管轄(它們讀 t["n"]/t["nMax"], 早已
 # 由既有機制正確處理群體/單體選標, 見 apply_effects 的 ctrl_k 分支)。heal/settle/redirect/
-# dispel 也排除(各自有獨立選標邏輯, 不讀 e["n"]; heal 固定選"我方兵力最低者", dispel 目前
-# 對 who 指定的整組 dests 生效, settle/redirect 有各自的目標決定方式, 見 engine_limitations.md)。
+# dispel 也排除(各自有獨立選標邏輯, 不讀 R13 讀取的 e["n"]全體池慣例; heal 有專屬的 R33
+# 規則負責, 見下方——批52/批F後 heal 已支援 who/e.n/targetSel/e.all, 不再是"固定選我方兵力
+# 最低者"的舊行為, 但其選標語意與 amp/mitig/stat 等全體池效果不同款(who:eventTarget反應式/
+# targetSel準則選標/e.all全體皆為heal特有分支), 故不直接併入本規則, 另開R33專屬處理;
+# dispel 目前對 who 指定的整組 dests 生效, settle/redirect 有各自的目標決定方式, 見
+# engine_limitations.md)。
 #
 # 只在效果的 who 對應「敵/我方全體池」(enemy/ally, 含未指定預設ally)時才有意義——who 為
 # self/leader/subs 本身就是明確的角色選標, 不受"單體/N人"全體池語意影響, 不算本規則管轄範圍。
@@ -2991,6 +3008,156 @@ def check_r32(p, txt):
     return violations
 
 
+# ---------------------------------------------------------------------------
+# R33(批F): heal 效果選標必須與本文措辭一致 —— 「引擎不得有『預設補最殘』全域慣例」
+# (user鐵律2)的機械化防線, 對稱 R13(其餘非CTRL效果種類的單體/N人/全體目標數檢查), 但 R13
+# 明確排除 heal(見 R13_NONCTRL_KINDS 上方註解「heal 固定選『我方兵力最低者』」)——那條註解
+# 描述的是批52之前的舊行為, 批52/批F已讓 heal 支援 who/e.n/targetSel/e.all, 不再有理由排除。
+#
+# 三個子檢查(各自獨立觸發, 同一效果可能同時違反多條):
+#
+# (a) 本文含「損失兵力最X/兵力最低/最低血量/負傷最高」等選標語意 + 緊鄰治療動詞(治療/恢復/
+#     回復) → 該 heal 效果必須有 targetSel 屬於 HEAL_MOSTDAMAGED_TARGETSEL(mostDamaged/
+#     minTroop, 兩者在 pick_by_criterion 都是選目前兵力最低者, 見 TARGETSEL_MIN 集合、
+#     刮骨療毒用mostDamaged/垂心萬物用minTroop兩種既有寫法皆對應同一種選標行為)。
+#
+# (b) 本文含「隨機」緊鄰「單體/目標」(如「隨機單體」「目標隨機」, 見 HEAL_EXPLICIT_RANDOM_RE)
+#     → 該 heal 效果不得落入「無 who/n/targetSel 明示」的隱含後備分支(該後備分支選最殘 1人,
+#     方向與『隨機』相反)。用嚴格緊鄰的正則(而非泛見「隨機」二字)避免誤判——「隨機執行N次」
+#     (勠力同心)/「隨機兵刃反擊」(揮兵謀勝, 「或」字並列另一效果非治療本身)/「隨機敵軍單體」
+#     (百計多謀, 修飾敵方效果非治療)/「對隨機敵人」(眾志成城, 同左)都不該觸發, 這些「隨機」
+#     修飾的是別的效果或次數, 不是heal的目標選擇, 全庫核對後只有「隨機單體」「目標隨機」兩種
+#     緊鄰句型才是本規則要抓的本義(見批F分類D益其金鼓/解煩衛兩筆真實案例)。
+#
+# (c) 本文含「單體」(緊鄰治療動詞, 沿用 R13 的 window 定位手法) 但缺 who=self/leader/
+#     eventTarget/targetSel 且 e.n 不是 1 → 目標數與本文「單體」不符(比照 R13 對其他效果種類
+#     的既有邏輯, 只是 R13 本身不管 heal, 這裡另開一條 heal 專屬版本, 因為 heal 的「單體」
+#     還需要额外排除 self/leader/eventTarget/targetSel 這些「已經是精確單體選標, 只是不透過
+#     e.n=1 表達」的合法寫法, 不能直接套 R13 原始邏輯)。
+#
+# (d) 本文含「群體(N人)」/「(N~M人)」(緊鄰治療動詞) 但 e.n 不等於該數字(或 e.all 未設而本文
+#     其實是「全體」且隊伍人數與該群體數相同的巧合情形, 保守不在此規則額外判定, 避免與(c)/
+#     (a)重疊誤判——群體人數比對維持簡單直接: e.n 存在時比對是否相符, e.n 不存在時才報)。
+#
+# 低誤報設計(比照全庫既有慣例): 只在窗口內有明確錨點時才判定, 抓不到就不報; 任何主題綁定
+# 揭露(_note/_todo等提及「目標」「單體」「群體」「最殘」「兵力最低」「隨機」等關鍵字, 沿用
+# R13_TARGET_TOPIC_KW的既有慣例) 一律豁免——heal 效果級的既有 _note(如批F新增的逐筆說明)
+# 天然滿足此豁免條件, 故本規則主要用於「捕捉批F之後任何新資料若重新踩進『預設補最殘』回歸」
+# 的防線, 而非本次批F本身(本次修正已逐筆手寫_note, 自然豁免, 全庫應為0違規)。
+# ---------------------------------------------------------------------------
+HEAL_ACTION_KW = ("治療", "恢復", "回復")
+HEAL_MOSTDAMAGED_KW_RE = re.compile(r"損失兵力最\S|兵力最低|最低血量|負傷最高|兵力損失最")
+HEAL_MOSTDAMAGED_TARGETSEL = {"mostDamaged", "minTroop"}
+# 嚴格緊鄰: 「隨機」直接接「單體/目標」, 或「目標」接「隨機」(見上方(b)子檢查docstring
+# 三個負樣例的排除理由)。
+HEAL_EXPLICIT_RANDOM_RE = re.compile(r"隨機(?:單體|目標)|目標\s*隨機")
+# heal 專屬「單體」錨點: 緊鄰治療動詞(6字內, 比照R13 R13_ALL_ADJACENT_LOOKBACK同量級窗口),
+# 排除「其中一種/三選一」等擇一分支句型(choices自身結構已表達, 不重複由R33判定)。
+HEAL_SINGLE_ANCHOR_RE = re.compile(r"(?:治療|恢復|回復)[^。；;]{0,6}單體|單體[^。；;]{0,10}(?:治療|恢復|回復)")
+
+
+def _r33_window_for_heal(txt):
+    """在原文中找出含治療動詞的子句(沿用 split_clauses 版本區塊切分, 避免跨歷史版本誤配)。
+    一個戰法可能有多個 heal 效果對應多個子句, 但目前全庫核對後同一戰法內若有多個heal效果,
+    各自的選標語意通常已能個別對上明確的子句——保守起見, 回傳「所有含治療動詞的子句」讓
+    呼叫端逐一嘗試比對(而非只取第一個), 找不到任何子句時回傳空list(不誤報)。"""
+    out = []
+    for clause in split_clauses(txt):
+        if any(kw in clause for kw in HEAL_ACTION_KW):
+            out.append(clause)
+    return out
+
+
+def check_r33(p, txt):
+    violations = []
+    if not txt:
+        return violations
+    effects = p.get("effects", []) or []
+    heal_effects = [(i, e) for i, e in enumerate(effects) if e.get("k") == "heal"]
+    if not heal_effects:
+        return violations
+    clauses = _r33_window_for_heal(txt)
+    if not clauses:
+        return violations
+    for i, e in heal_effects:
+        who = e.get("who", "ally")
+        target_sel = e.get("targetSel")
+        n = e.get("n")
+        scope = f"effects[{i}](k=heal)"
+        # 效果級揭露先豁免一次(主題綁定, 同R13慣例)——批F新增的_note逐筆說明會自然命中此豁免。
+        if _topic_disclosed(p, R13_TARGET_TOPIC_KW, effect=e):
+            continue
+        for clause in clauses:
+            # (a) 「損失最多/兵力最低/最低血量/負傷最高」→ 必須有 targetSel(mostDamaged/minTroop)
+            if HEAL_MOSTDAMAGED_KW_RE.search(clause):
+                if target_sel not in HEAL_MOSTDAMAGED_TARGETSEL and who not in ("self", "leader", "eventTarget"):
+                    violations.append({
+                        "name": p["nameZh"], "rule": "R33",
+                        "message": f"{scope} 本文措辭「兵力最低/損失最多」但缺 targetSel(mostDamaged/minTroop), "
+                                   f"現況 who={who!r} targetSel={target_sel!r}(引擎不應再有『預設補最殘』"
+                                   "全域慣例, 須顯式聲明選標準則, 見engine_limitations.md R33節)",
+                        "evidence": clause.strip(),
+                    })
+                    break  # 同一效果同一原因只報一次, 換下一個heal效果
+            # (b) 「隨機單體/目標隨機」→ 不得落入隱含後備(無who/n/targetSel明示的min-troop分支)
+            if HEAL_EXPLICIT_RANDOM_RE.search(clause):
+                implicit_fallback = (
+                    not target_sel and who == "ally" and n is None
+                    and not e.get("all") and not e.get("sharedPool")
+                )
+                if implicit_fallback:
+                    violations.append({
+                        "name": p["nameZh"], "rule": "R33",
+                        "message": f"{scope} 本文措辭明寫「目標隨機」但缺 e.n(隱含後備分支選最殘1人, "
+                                   "與本文『隨機』方向相反, 見engine_limitations.md R33節)",
+                        "evidence": clause.strip(),
+                    })
+                    break
+            # (c) 「單體」(緊鄰治療動詞) → 需要 who=self/leader/eventTarget/targetSel 或 e.n==1,
+            #     否則若 e.n 存在但不是1(如群體N人卻誤標成1), 或 e.n 缺失時(仍會落入隱含後備
+            #     min-troop分支, 與批F後不應再有此慣例的原則衝突, 即使結果剛好是1人也要求
+            #     顯式化), 皆屬違規——但已被(a)/(b)命中的效果不重複由(c)再報一次(避免同一句
+            #     子多條規則對同一根因洗版), 故只在(a)/(b)關鍵字都不命中此子句時才檢查(c)。
+            if (not HEAL_MOSTDAMAGED_KW_RE.search(clause) and not HEAL_EXPLICIT_RANDOM_RE.search(clause)
+                    and HEAL_SINGLE_ANCHOR_RE.search(clause)):
+                is_explicit_single = (
+                    who in ("self", "leader", "eventTarget") or target_sel is not None or n == 1
+                )
+                if not is_explicit_single:
+                    violations.append({
+                        "name": p["nameZh"], "rule": "R33",
+                        "message": f"{scope} 本文措辭「單體」但缺顯式選標(who=self/leader/eventTarget, "
+                                   f"targetSel, 或 e.n=1), 現況 who={who!r} n={n!r} targetSel={target_sel!r}"
+                                   "(不應依賴隱含min-troop後備分支表達單體語意, 見engine_limitations.md R33節)",
+                        "evidence": clause.strip(),
+                    })
+                    break
+            # (d) 「群體(N人)」/「(N~M人)」→ e.n 存在時須數字相符(e.n 缺失時不在此條額外重複
+            #     報告, 因為「單體」錨點條件互斥、且「群體缺e.n」已由既有 R13 姊妹規則的heal
+            #     排除範圍外情形——批F後 heal 亦適用同一數字核對, 故仍在此條檢查數字相符性,
+            #     但「完全缺e.n」的情形已足夠由(c)以外的獨立分支涵蓋: 若本文是群體N人而缺
+            #     e.n, 又不含「單體」關鍵字, (c)不會觸發, 需要(d)自己補上此檢查)。
+            grp_range = GROUP_RANGE_RE.search(clause)
+            grp = GROUP_TARGET_RE.search(clause)
+            expect_n = None
+            if grp_range:
+                expect_n = int(grp_range.group(1))
+            elif grp and grp.group(1):
+                expect_n = int(grp.group(1))
+            if expect_n is not None and expect_n > 1:
+                if who in ("self", "leader", "eventTarget"):
+                    continue  # 角色選標本身已是明確語意, 與「群體N人」的全體池語意無關(比照R13既有R13_ROLE_WHO排除)
+                if n != expect_n and not e.get("all") and not e.get("sharedPool"):
+                    violations.append({
+                        "name": p["nameZh"], "rule": "R33",
+                        "message": f"{scope} 本文措辭「群體({expect_n}人)」但 e.n={n!r} 不符"
+                                   "(引擎不應依賴隱含min-troop後備分支表達群體語意, 見engine_limitations.md R33節)",
+                        "evidence": clause.strip(),
+                    })
+                    break
+    return violations
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
@@ -3000,7 +3167,7 @@ RULES = [
     ("R20", check_r20), ("R21", check_r21), ("R22", check_r22),
     ("R23", check_r23), ("R24", check_r24), ("R25", check_r25), ("R26", check_r26),
     ("R27", check_r27), ("R28", check_r28), ("R29", check_r29), ("R30", check_r30),
-    ("R31", check_r31), ("R32", check_r32),
+    ("R31", check_r31), ("R32", check_r32), ("R33", check_r33),
 ]
 
 
@@ -3502,6 +3669,70 @@ SELFTEST_CASES = {
         ("type==none的內政戰法整戰法跳過, 不應誤報(即使帶著奇怪欄位)",
          _base_tactic(type="none", coef=0, totallyUnknownField=True),
          "內政類戰法，不參與戰鬥", False),
+    ],
+    "R33": [
+        # (a) 「兵力最低/損失最多」→ 需要 targetSel(mostDamaged/minTroop)
+        ("刮骨療毒式回歸(本文兵力最高但heal缺targetSel, 應抓到)",
+         _base_tactic(effects=[{"k": "heal", "who": "ally", "coef": 2.56, "dur": 1, "scale": "intel"}]),
+         "為損失兵力最高的我軍單體清除負面狀態並為其恢復兵力（治療率256%，受智力影響）", True),
+        ("同一戰法補上targetSel:mostDamaged後不應誤報",
+         _base_tactic(effects=[{"k": "heal", "who": "ally", "coef": 2.56, "dur": 1, "scale": "intel",
+                                 "targetSel": "mostDamaged"}]),
+         "為損失兵力最高的我軍單體清除負面狀態並為其恢復兵力（治療率256%，受智力影響）", False),
+        ("targetSel:minTroop亦視為合格(垂心萬物既有寫法, 不應誤報)",
+         _base_tactic(effects=[{"k": "heal", "who": "ally", "coef": 1.0, "dur": 1, "targetSel": "minTroop"}]),
+         "為我軍兵力最低的武將恢復兵力（治療率100%）", False),
+        # (b) 「隨機單體/目標隨機」→ 不得落入隱含min-troop後備分支
+        ("益其金鼓式回歸(本文明寫隨機單體但heal缺e.n落入隱含min-troop, 應抓到)",
+         _base_tactic(effects=[{"k": "heal", "who": "ally", "coef": 0.75, "dur": 1, "scale": "force"}]),
+         "自身即將受到普通攻擊時，治療我軍隨機單體（治療率75%）", True),
+        ("補上e.n=1後不應誤報(顯式隨機挑1人, 取代隱含後備)",
+         _base_tactic(effects=[{"k": "heal", "who": "ally", "coef": 0.75, "dur": 1, "scale": "force", "n": 1}]),
+         "自身即將受到普通攻擊時，治療我軍隨機單體（治療率75%）", False),
+        ("勠力同心式陰性樣例('隨機執行N次'修飾次數而非目標, e.n=1後只殘留(c)的合格判定, 不應誤報, 防止(b)的隨機正則誤傷)",
+         _base_tactic(effects=[{"k": "heal", "who": "ally", "coef": 1.0, "dur": 1, "n": 1}]),
+         "治療我軍單體並提升其統率，隨機執行1-4次、受智力影響、統率提升16點。", False),
+        ("(b)獨立驗證: '隨機執行N次'即使heal完全無選標(who=ally無n)也不應被(b)誤觸發(only(c)才該管, 見上一筆同文字改用n=1後的對照); 此處刻意用who=self規避(c), 純粹隔離驗證(b)regex本身不誤傷",
+         _base_tactic(effects=[{"k": "heal", "who": "self", "coef": 1.0, "dur": 1}]),
+         "治療我軍單體並提升其統率，隨機執行1-4次、受智力影響、統率提升16點。", False),
+        # (c) 「單體」(緊鄰治療動詞) → 需要 who=self/leader/eventTarget/targetSel 或 e.n==1
+        ("百計多謀式回歸(本文單體但heal缺顯式選標落入隱含min-troop, 應抓到)",
+         _base_tactic(effects=[{"k": "heal", "who": "ally", "coef": 0.4, "dur": 1, "scale": "intel"}]),
+         "戰鬥中，每回合有機率治療我軍單體（治療率40%，受智力影響）", True),
+        ("補上e.n=1後不應誤報",
+         _base_tactic(effects=[{"k": "heal", "who": "ally", "coef": 0.4, "dur": 1, "scale": "intel", "n": 1}]),
+         "戰鬥中，每回合有機率治療我軍單體（治療率40%，受智力影響）", False),
+        ("who:eventTarget亦視為合格單體選標(反應式急救類, 不應誤報)",
+         _base_tactic(effects=[{"k": "heal", "who": "eventTarget", "coef": 0.75, "dur": 1,
+                                 "when": {"on": "damaged"}, "rate": 0.5}]),
+         "使我軍單體獲得急救狀態，每次受到傷害時有50%機率回復一定兵力（治療率75%）", False),
+        ("who:self亦視為合格單體選標(不應誤報)",
+         _base_tactic(effects=[{"k": "heal", "who": "self", "coef": 0.5, "dur": 2, "scale": "force"}]),
+         "恢復自身兵力並提高統率", False),
+        # (d) 「群體(N人)」→ e.n 須數字相符
+        ("仁德載世式回歸(本文群體2-3人但heal缺e.n, 應抓到)",
+         _base_tactic(effects=[{"k": "heal", "who": "ally", "coef": 0.68, "dur": 1, "scale": "intel"}]),
+         "每回合治療我軍群體（2-3 人，治療率34%→68%，受智力影響）", True),
+        ("補上e.n=2後不應誤報(nMax=3的範圍取下界比對, 主要驗證非0非None)",
+         _base_tactic(effects=[{"k": "heal", "who": "ally", "coef": 0.68, "dur": 1, "scale": "intel",
+                                 "n": 2, "nMax": 3}]),
+         "每回合治療我軍群體（2-3 人，治療率34%→68%，受智力影響）", False),
+        ("e.n數字不符應抓到(群體2人但誤標n=1)",
+         _base_tactic(effects=[{"k": "heal", "who": "ally", "coef": 1.2, "dur": 1, "n": 1}]),
+         "為我軍群體（2人）恢復兵力（治療率120%）", True),
+        # 金丹秘術式陰性樣例: e.all:true 精確表達「我軍全體」, 群體N人數字檢查應放行(不誤報)
+        ("e.all:true對應本文全體語意, 不應誤報",
+         _base_tactic(effects=[{"k": "heal", "who": "ally", "coef": 0.58, "dur": 1, "scale": "intel", "all": True}]),
+         "使我軍全體獲得休整狀態，每回合恢復一次兵力（回復58%，受智力影響）", False),
+        # 主題綁定揭露豁免: 效果級_note提及目標相關關鍵字時應豁免(對稱R13既有慣例)
+        ("已有主題相符的_note揭露時應豁免不誤報(topic關鍵字'單體'命中R13_TARGET_TOPIC_KW)",
+         _base_tactic(effects=[{"k": "heal", "who": "ally", "coef": 2.56, "dur": 1,
+                                 "_note": "已知本文為我軍單體選標, 待未來校準targetSel"}]),
+         "為損失兵力最高的我軍單體恢復兵力（治療率256%）", False),
+        # 無heal效果/無本文時應直接跳過(不誤報)
+        ("無heal效果時不應觸發(其他k種類不受R33管轄)",
+         _base_tactic(effects=[{"k": "amp", "who": "ally", "val": 0.1, "dur": 1}]),
+         "為損失兵力最高的我軍單體提升攻擊力", False),
     ],
 }
 

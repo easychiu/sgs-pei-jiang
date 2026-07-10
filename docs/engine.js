@@ -1396,9 +1396,10 @@
         //   who:eventTarget → 反應式事件單位(急救/ofDamage 類);
         //   targetSel → 依準則挑 1 人; e.n(/nMax) → 隨機挑 N 名可治療友軍;
         //   預設(who=ally 且無 n) → 維持舊行為「最殘 1 人」(單體向後相容)。
-        // 禁療(healblock) 者一律不進可治療池。
+        // 禁療(healblock) 者一律不進可治療池; 批F: 補captured過濾(對稱sgz.py既有行為, 被捕獲
+        // 單位不應被選為heal目標, 過去engine.js此處遺漏, 屬雙引擎同步缺口, 隨heal選標改造一併補上)。
         const whoH = e.who || "ally";
-        const pool = allies.filter(a => a.alive && !a.healblock);
+        const pool = allies.filter(a => a.alive && !a.healblock && !a.captured);
         let hurts = [];
         if (e.targetSel) {
           const picked = pickByCriterion(pool, e.targetSel);
@@ -1412,6 +1413,12 @@
         } else if (whoH === "eventTarget") {
           const et = opt.evtTarget;
           hurts = (et && et.alive && !et.healblock) ? [et] : [];
+        } else if (e.all) {
+          // 批F: e.all(新原語) —— 「我軍全體」精確表達, 對稱amp/mitig/stat等效果種類既有
+          // 「who:ally且無n → 全體」通用慣例(見上方dests的預設分支 `dests = allies.filter(...)`)。
+          // heal過去無此路徑, 無n時一律落到下方「預設(單體, min troop)」分支, 導致「我軍全體」
+          // 語意的戰法(如金丹秘術「我軍全體獲得...休整狀態」)被誤治成全軍僅1人, 漏治其餘友軍。
+          hurts = pool.slice();
         } else if (e.n != null) {
           const n = e.n;
           const cnt = e.nMax != null ? n + Math.floor(rnd() * (e.nMax - n + 1)) : n;
@@ -1419,6 +1426,16 @@
           if (e.preferLowest || e.sharedPool) hurts = pool.slice().sort((a, b) => a.troop - b.troop).slice(0, cnt);
           else hurts = pickTargets(pool, cnt);
         } else {
+          // 批F: 此分支為「單體, 無who/n/targetSel明示」的最終後備 —— 過去(批52前)是全域唯一
+          // 行為(全庫heal一律套用), 現僅限「本文確實只描述我軍單體, 且未指定特定選標準則(如
+          // 兵力最低/損失最多)」的戰法才會落到這裡, 語意應是「隨機挑1人」而非「固定選最殘」。
+          // 批F資料全掃已將全庫「本文明示兵力最低/損失最多」的heal效果都改掛顯式targetSel、
+          // 「本文明示群體N人」的都改掛e.n、「本文明示隨機/單體無準則」的都改掛e.n:1、反應式
+          // 急救類都改掛who:eventTarget —— 理論上不應再有戰法會落到此分支(全庫掃描後仍保留
+          // 此行為僅作最終防禦性後備, 避免未來新戰法資料一時漏標時直接治療對象變成空陣列)。
+          // 維持既有min-troop實作(非改隨機)是刻意選擇: 此為向後相容的安全後備值, 不代表「預設
+          // 補最殘」是被允許的全域慣例(那條慣例已於批F移除, 全庫戰法皆改顯式選標, 見上方各
+          // 分支), 只是「萬一資料遺漏時」的保守後備、而非常態路徑。
           let hurt0 = null;
           for (const a of pool) if (!hurt0 || a.troop < hurt0.troop) hurt0 = a;
           hurts = hurt0 ? [hurt0] : [];

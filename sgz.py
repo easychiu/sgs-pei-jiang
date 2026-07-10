@@ -1811,6 +1811,12 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 hurts = [a for a in allies[1:] if a.alive and not a.healblock and not getattr(a, "captured", 0)]
             elif who_h == "eventTarget":
                 hurts = [evt_target] if (evt_target and evt_target.alive and not evt_target.healblock and not getattr(evt_target, "captured", 0)) else []
+            elif e.get("all"):
+                # 批F: e["all"](新原語) —— 「我軍全體」精確表達, 對稱amp/mitig/stat等效果種類既有
+                # 「who:ally且無n → 全體」通用慣例。heal過去無此路徑, 無n時一律落到下方「預設
+                # (單體, min troop)」分支, 導致「我軍全體」語意的戰法(如金丹秘術「我軍全體獲得
+                # ...休整狀態」)被誤治成全軍僅1人, 漏治其餘友軍。
+                hurts = list(pool)
             elif e.get("n") is not None:
                 n = e["n"]
                 cnt = n + random.randint(0, e["nMax"] - n) if e.get("nMax") else n
@@ -1820,6 +1826,13 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 else:
                     hurts = pick_targets(pool, cnt)
             else:
+                # 批F: 此分支為「單體, 無who/n/targetSel明示」的最終後備 —— 過去(批52前)是全域
+                # 唯一行為(全庫heal一律套用), 現僅限「本文確實只描述我軍單體, 且未指定特定選標
+                # 準則(如兵力最低/損失最多)」的戰法才會落到這裡, 語意應是「隨機挑1人」而非
+                # 「固定選最殘」。批F資料全掃已將全庫符合各分支語意的heal效果都改掛顯式who/n/
+                # targetSel/all, 理論上不應再有戰法會落到此分支, 仍保留作最終防禦性後備(維持
+                # min-troop而非改隨機, 是刻意的向後相容安全值, 非常態路徑, 不代表「預設補最殘」
+                # 是被允許的全域慣例)。
                 hurt0 = min(pool, key=lambda a: a.troop, default=None)
                 hurts = [hurt0] if hurt0 else []
             # 治療量公式(對每個目標獨立結算; ofDamage/scale 依施放者, healBoost 依受療者)
@@ -6667,6 +6680,98 @@ def demo():
                   [szbt_u2], [szbt_foe], rate_checked=True)
     assert szbt_u2.charge["n"] == charge_before, "172c: 本回合已達maxChain上限時不應再消耗蓄威(即使rate:1.0)"
     print("    [批A 172] 死戰不退: k==\"chargeAdd\"+k==\"chargeConsume\" 資源池+鏈式消耗+回合上限 驗證通過")
+
+    # 173) 批F驗收: heal選標「禁止近似/預設補最殘」鐵律的端到端斷言 —— 隨機分布均勻性/
+    # 刮骨療毒仍mostDamaged/滿血目標恢復0(真實溢出)/反應式治療受傷者本人(非全軍min-troop)。
+    # 173a) 隨機分布: who:ally+n:1(無targetSel)對3個兵力互異的友軍反覆施放, 統計各自被選
+    # 次數應「近均勻」(不應系統性偏向兵力最低者, 否則就是預設補最殘的回歸, 見刮骨療毒的
+    # 對照組173b: 那個才該固定選最殘)。
+    random.seed(700)
+    N_TRIALS_173 = 3000
+    rd_a = Unit(POOL["曹操"], "騎")
+    rd_b = Unit(POOL["劉備"], "槍")
+    rd_c = Unit(POOL["孫權"], "弓")
+    rd_allies = [rd_a, rd_b, rd_c]
+    rd_counts = {id(u): 0 for u in rd_allies}
+    tac_rd = {"type": "active", "kind": "phys", "nameZh": "測試173隨機分布",
+              "effects": [{"k": "heal", "who": "ally", "coef": 0.01, "dur": 1, "n": 1}]}
+    for _ in range(N_TRIALS_173):
+        for u, tr in zip(rd_allies, (9000.0, 5000.0, 2000.0)):   # 兵力互異且固定, 只重擲heal選標本身
+            u.troop, u.wounded = tr, START_TROOP - tr
+        apply_effects(rd_a, None, tac_rd, rd_allies, [])
+        after = {id(u): u.troop for u in rd_allies}
+        healed = [u for u in rd_allies if after[id(u)] > (9000.0 if u is rd_a else 5000.0 if u is rd_b else 2000.0) + 1e-6]
+        assert len(healed) == 1, f"173a: 每次應恰好命中1人, 實際{len(healed)}"
+        rd_counts[id(healed[0])] += 1
+    for u in rd_allies:
+        frac = rd_counts[id(u)] / N_TRIALS_173
+        assert abs(frac - 1 / 3) < 0.05, \
+            f"173a: who:ally+n:1(無targetSel)應近均勻隨機分布, {u.g.name}(兵力{u.troop})被選比例={frac:.3f}, 預期≈0.333(±0.05); 若持續偏向兵力最低者(孫權), 屬「預設補最殘」回歸(鐵律2禁止)"
+    print(f"    [批F 173a] heal選標隨機分布均勻性(N={N_TRIALS_173}, who:ally+n:1無targetSel): "
+          f"{ {u.g.name: round(rd_counts[id(u)]/N_TRIALS_173, 3) for u in rd_allies} } 驗證通過")
+
+    # 173b) 對照組: 刮骨療毒(targetSel:mostDamaged)在同樣3個兵力互異友軍下, 應「固定」選最殘者
+    # (孫權, 兵力最低), 不受(a)的隨機性影響——同一套引擎機制下兩種選標語意並存, 互不干擾。
+    random.seed(701)
+    ggld_tac = TACTICS.get("刮骨療毒")
+    assert ggld_tac is not None, "173b前置: 資料庫應含刮骨療毒"
+    ggld_effects = ggld_tac.get("effects") or []
+    ggld_heal = next(e for e in ggld_effects if e.get("k") == "heal")
+    assert ggld_heal.get("targetSel") == "mostDamaged", \
+        f"173b前置: 刮骨療毒heal效果應有targetSel=mostDamaged(批F資料修正), 實際={ggld_heal.get('targetSel')!r}"
+    ggld_hit_counts = {id(u): 0 for u in rd_allies}
+    for _ in range(200):
+        for u, tr in zip(rd_allies, (9000.0, 5000.0, 2000.0)):
+            u.troop, u.wounded = tr, START_TROOP - tr
+        apply_effects(rd_a, None, {"type": "active", "kind": "intel", "nameZh": "刮骨療毒", "effects": [ggld_heal]},
+                      rd_allies, [])
+        after = {id(u): u.troop for u in rd_allies}
+        healed = [u for u in rd_allies if after[id(u)] > (9000.0 if u is rd_a else 5000.0 if u is rd_b else 2000.0) + 1e-6]
+        assert healed == [rd_c], f"173b: targetSel=mostDamaged應固定選兵力最低者(孫權), 實際命中{[u.g.name for u in healed]}"
+    print("    [批F 173b] 刮骨療毒(targetSel=mostDamaged)固定選最殘者, 200次全中孫權(對照173a隨機分布) 驗證通過")
+
+    # 173c) 滿血目標恢復0(真實溢出, user治療分類學背書「群體主動類滿血時發動直接溢出」)——
+    # who:ally+n:1(隨機)命中一個已滿血的友軍時, 該友軍實際恢復量應為0(而非引擎額外幫忙
+    # 挑一個還沒滿血的人補上, 那樣才是隱藏的「預設補最殘」變體)。
+    random.seed(702)
+    full_a = Unit(POOL["曹操"], "騎")
+    full_b = Unit(POOL["劉備"], "槍")
+    full_a.troop, full_a.wounded = START_TROOP, 0.0   # 滿血(無傷兵池可回)
+    full_b.troop, full_b.wounded = 3000.0, START_TROOP - 3000.0   # 重傷
+    tac_full = {"type": "active", "kind": "phys", "nameZh": "測試173滿血溢出",
+                "effects": [{"k": "heal", "who": "ally", "coef": 2.0, "dur": 1, "n": 1}]}
+    n_zero_when_full_selected = 0
+    n_full_selected = 0
+    for _ in range(500):
+        full_a.troop, full_a.wounded = START_TROOP, 0.0
+        full_b.troop, full_b.wounded = 3000.0, START_TROOP - 3000.0
+        before_a = full_a.troop
+        apply_effects(full_a, None, tac_full, [full_a, full_b], [])
+        if full_a.troop == before_a:   # 滿血者被選中(此局heal沒有命中重傷的full_b)
+            n_full_selected += 1
+            if full_a.troop - before_a == 0:
+                n_zero_when_full_selected += 1
+    assert n_full_selected > 0, "173c前置: 500次隨機應至少有部分回合選中滿血目標(否則測試設計本身有誤)"
+    assert n_zero_when_full_selected == n_full_selected, \
+        f"173c: 滿血目標被選中時應恢復0(真實溢出浪費, 不應被引擎悄悄轉給重傷者), {n_full_selected}次選中滿血目標中有{n_full_selected - n_zero_when_full_selected}次實際恢復量非0"
+    print(f"    [批F 173c] 滿血目標被選中時恢復0(真實溢出, {n_full_selected}/500次選中滿血目標且全數恢復0) 驗證通過")
+
+    # 173d) 反應式治療受傷者本人(who:eventTarget) —— 三軍之眾/草船借箭/陷陣營/雲聚影從/青囊/
+    # 援救同款反應式急救類, 必須治療「事件本身的受傷者」, 即使全軍中有其他友軍兵力更低。
+    # 用合成戰法直接驗證eventTarget機制本身(不依賴特定戰法名稱, 避免與B項資料改動耦合)。
+    random.seed(703)
+    et_hurt = Unit(POOL["張飛"], "槍")     # 本次受傷事件的當事人(中等傷)
+    et_lowest = Unit(POOL["曹操"], "騎")   # 全軍兵力最低者, 但這次沒受傷/不是事件目標
+    et_hurt.troop, et_hurt.wounded = 6000.0, START_TROOP - 6000.0
+    et_lowest.troop, et_lowest.wounded = 1000.0, START_TROOP - 1000.0
+    tac_et = {"effects": [{"k": "heal", "who": "eventTarget", "coef": 1.0, "dur": 1,
+                           "when": {"on": "damaged"}, "rate": 1.0}]}
+    before_hurt, before_lowest = et_hurt.troop, et_lowest.troop
+    apply_effects(et_hurt, None, tac_et, [et_lowest, et_hurt], [], rate_checked=True, reactive=True, evt_target=et_hurt)
+    assert et_hurt.troop > before_hurt, "173d: who:eventTarget應治療事件受傷者本人(張飛)"
+    assert et_lowest.troop == before_lowest, \
+        "173d: who:eventTarget不應治療全軍兵力最低者(曹操), 即使其兵力比事件受傷者更低——反應式急救的受詞是「受傷的那個單位」, 不是「預設補最殘」"
+    print("    [批F 173d] 反應式急救(who:eventTarget)治療受傷者本人, 不誤選全軍兵力最低者 驗證通過")
 
     print("self-check OK")
 
