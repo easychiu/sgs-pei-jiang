@@ -672,7 +672,28 @@ PER_KIND_FIELDS = {
     # 一次算出後依序填滿(對應「總治療率」分攤語意, 與preferLowest常搭配使用, 見青州兵/既有
     # sgz.py 批52 selftest 142號斷言)。三者皆只在 k=="heal" 分支實作(非跨k通用欄位), 故歸入
     # PER_KIND_FIELDS 而非 KNOWN_EFFECT_FIELDS。
-    "redirect": {"guard", "share", "normalOnly"}, "settle": {"init", "max", "base", "per"},
+    # 批J(禁近似令-transfer轉移族): redirect新增guardFor欄位——對稱既有counter的
+    # guardFor:"leader"(守護式反擊), 這裡是「單次全額(或e.share指定比例)代承」模式: 登記進
+    # allies[0].absorbGuards/absorb_guards, 由hit()在主將受普攻時只轉移「這一下」的傷害(古之
+    # 惡來「...隨後為我軍主將承擔此次普通攻擊」), 見engine.js/sgz.py redirect分支對
+    # e.guardFor==="leader"的判斷。guard欄位新增合法值"random_sub"(隨機非主將副將, 夢中弒臣
+    # 「使隨機副將為自己分擔」), 沿用既有guard欄位本身(R9只檢查欄位名而非列舉值), 不需額外
+    # 登記。
+    "redirect": {"guard", "share", "normalOnly", "guardFor"}, "settle": {"init", "max", "base", "per"},
+    # 批J: stealStat(偷屬性) —— stat(欲偷的屬性名)/amount(基礎欲偷量, 受scale縮放)/
+    # recipientSel(targetSel準則字串, 從allies挑受益者, 省略時預設caster本身)。who/dur/scale/
+    # scaleDiv/everyRound/rate皆屬KNOWN_EFFECT_FIELDS全域欄位, 不重複於此列出。見
+    # engine.js/sgz.py k==="stealStat"分支, 雁行陣「使我軍統率最低單體偷取敵軍全體10點統率」
+    # 首次落地, engine_limitations.md本批新節。
+    "stealStat": {"stat", "amount", "recipientSel"},
+    # 批J: transferMitig(把來源側當下實際持有的正向mitig buff實例整個搬到去向側隨機一人身上)
+    # ——from/to(各為"enemy"/"ally", 指定來源/去向側)。dur屬KNOWN_EFFECT_FIELDS全域欄位。見
+    # engine.js/sgz.py k==="transferMitig"分支, 雁行陣「轉移傷害降低」首次落地。
+    "transferMitig": {"from", "to"},
+    # 批J: transferDebuff(把來源側群體當下實際持有的負面狀態隨機挑n~nMax種不同種類整個搬到
+    # 去向側隨機單位身上)——from/to同transferMitig。n/nMax/dur皆屬KNOWN_EFFECT_FIELDS全域
+    # 欄位。見engine.js/sgz.py k==="transferDebuff"分支, 雁行陣「轉移負面狀態」首次落地。
+    "transferDebuff": {"from", "to"},
     "block": {"val", "times"},  # 批22: 次數型格擋(抵禦/警戒同族) —— val:1.0全擋/0.x部分減傷, times:剩餘次數
     "chargeAdd": {"max"},  # 批A(11筆高嚴重重建): 「可消耗資源池」獲得端(死戰不退「蓄威」),
     # max=封頂層數(預設20); 觸發機率靠effects級通用的e.rate(見KNOWN_EFFECT_FIELDS)+
@@ -1725,8 +1746,15 @@ ENGINE_CAPABILITY_ALIASES = {
                 "counterGuards 清單, 由 hit() 在主將受普攻時代為觸發還擊, 見 engine.js/sgz.py)",
     "主將受擊時": "guardFor(同上)",
     "為主將承受": "guardFor(同上; 若該筆描述的是「代為反擊攻擊者」而非「代為承受傷害轉移」, 對應"
-                "counter.guardFor:\"leader\"; 若確實是傷害轉移/代承語意, 引擎現有 redirect 機制只能"
-                "保護全體我軍而非單獨鎖定主將, 此限制仍真實存在, 不算 stale, 見 engine_limitations.md)",
+                "counter.guardFor:\"leader\"; 若確實是傷害轉移/代承語意, 批J(禁近似令-transfer"
+                "轉移族)已新增 redirect.guardFor:\"leader\"(單次全額或e.share指定比例代承, 登記進"
+                "allies[0].absorbGuards/absorb_guards, 見hit()內對應判斷, 古之惡來「隨後為我軍"
+                "主將承擔此次普通攻擊」首次落地)——「redirect機制只能保護全體我軍分擔傷害, 無法"
+                "精確限定僅主將+僅這一次」這類措辭是redirect.guardFor落地前的舊近似說明, 落地後"
+                "應改寫並補上k:\"redirect\"+guardFor:\"leader\"。",
+    "單一目標傷害轉移": "redirect.guardFor:\"leader\"(批J新增, 同上「為主將承受」條目)",
+    "單次代承": "redirect.guardFor:\"leader\"(批J新增, 同上「為主將承受」條目; 「單次」對應"
+                "guardFor機制本身每回合限觸發1次的節流慣例, 「全額」對應e.share預設1.0)",
     "每次發動": "stackPer(批26新增, stack 效果欄位 stackPer:\"cast\", 每次成功發動遞增疊層,"
                 "對比預設 stackPer:\"round\" 逐回合遞增, 見 engine.js/sgz.py applyStackCast();"
                 "批37 B 新增第三種模式 stackPer:\"attack\", 每次普攻確實命中造成傷害後遞增,"
@@ -1995,6 +2023,47 @@ ENGINE_CAPABILITY_ALIASES = {
                 "落地」字樣屬批H之前的舊揭露, 應改寫)",
     "犧牲會心的二元觸發性質": "critUp(批H新增, 見上方「會心」條目——真機率擲骰已保留二元"
                 "觸發性質與方差, 不再犧牲, 此措辭是crit-ev EV折算年代的舊近似說明)",
+    # 批J: 禁近似令-transfer轉移族 —— stealStat(偷屬性)/transferMitig(buff轉移)/
+    # transferDebuff(debuff轉移)三原語 + redirect新增guard:"random_sub"(隨機非主將副將代承)
+    # /guardFor:"leader"(單次全額代承, 見上方「為主將承受」條目更新)。三者共同的核心約束:
+    # 轉移量/轉移種類必須等於來源實際擁有的量/種類, 來源沒有就轉移0, 不無中生有。見
+    # engine.js/sgz.py k==="stealStat"/"transferMitig"/"transferDebuff"分支 +
+    # collectDebuffTokens/collect_debuff_tokens + engine_limitations.md本批新節。
+    "偷取統率": "stealStat(批J新增, 禁近似令-transfer轉移族)——偷屬性原語, 從每個victim實際"
+                "扣除min(e.amount×scale, victim現有可扣量), 不得扣至負值, e.recipientSel"
+                "(targetSel準則字串)挑選受益者, 受益者只獲得所有victim實際被扣除量之加總(而非"
+                "固定套用戰法表面數字), 見engine.js/sgz.py k===\"stealStat\"分支, 雁行陣「使我軍"
+                "統率最低單體偷取敵軍全體10點統率」首次落地。「偷取統率/偷屬性完全無對應原語,"
+                "用stat組合對稱近似」這類措辭是stealStat落地前的舊近似說明, 落地後應改寫並補上"
+                "k:\"stealStat\"。",
+    "偷屬性": "stealStat(同上)",
+    "轉移傷害降低": "transferMitig(批J新增, 禁近似令-transfer轉移族)——把e.from側當下實際"
+                "持有的正向mitig(傷害降低)buff實例整個搬到e.to側隨機一人身上, 若來源側當下無人"
+                "持有這類buff則不觸發(轉移0, 不無中生有), 見engine.js/sgz.py"
+                "k===\"transferMitig\"分支, 雁行陣首次落地。「需要buff實例內省+移除+複製到另一"
+                "單位的原語, 現有dispel/redirect皆非此語意」這類措辭是transferMitig落地前的舊"
+                "近似說明, 落地後應改寫。",
+    "轉移負面狀態": "transferDebuff(批J新增, 禁近似令-transfer轉移族)——把e.from側群體當下"
+                "實際持有的負面狀態隨機挑n~nMax種不同種類整個搬到e.to側隨機單位身上, 若來源側"
+                "當下沒有負面狀態則轉移0種、只有部分種類現存也不硬湊到nMax要求, 見"
+                "engine.js/sgz.py k===\"transferDebuff\"分支+collectDebuffTokens/"
+                "collect_debuff_tokens, 雁行陣首次落地。「需要buff/debuff實例內省...現有dispel/"
+                "redirect/雙方各自套用對稱效果近似皆非此語意」這類措辭是transferDebuff落地前的"
+                "舊近似說明, 落地後應改寫。",
+    "隨機副將分擔": "redirect guard:\"random_sub\"(批J新增, 禁近似令-transfer轉移族)——代承者"
+                "=隨機一位當下存活的非主將副將(若無存活副將則guard退回caster本身, 天然等同"
+                "「找不到可轉嫁對象就不轉嫁」, 不無中生有另尋轉嫁對象), 見engine.js/sgz.py"
+                "redirect分支對e.guard===\"random_sub\"的判斷, 夢中弒臣「使隨機副將為自己分擔"
+                "傷害」首次落地。「redirect原語的guardian/guarded方向與本戰法相反, 無法表達"
+                "主將的傷害轉嫁給隨機1名副將」這類措辭是guard:\"random_sub\"落地前的舊近似說明,"
+                "落地後應改寫並補上guard:\"random_sub\"。",
+    "e.ofHeal": "e.ofDamage(既有原語, 批33新增/批A擴充)——ofDamage欄位語意其實已是「本次觸發"
+                "事件的量」的通用比例治療, on:\"healed\"反應式(批43新增)呼叫端傳的是opt.healAmt/"
+                "heal_amt(本次觸發事件的實際治療量), 批A(11筆高嚴重重建)已補上讀取此分支的程式碼"
+                "(`ofEventAmt = opt.dmg != null ? opt.dmg : opt.healAmt`), 故治療量比例轉移不需要"
+                "另外新增e.ofHeal欄位, 直接用既有e.ofDamage+on:healed組合即可精確表達(權僭九鼎/"
+                "移花接木批J首次以此組合遷移heal-siphon類戰法)。「引擎現無e.ofDamage的heal版本,"
+                "需要e.ofHeal讀opt.healAmt」這類措辭是批A能力落地前的舊近似說明, 落地後應改寫。",
 }
 
 # =============================================================================

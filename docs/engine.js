@@ -380,6 +380,14 @@
       // prob}, 見 applyEffects 的 guardFor 分支與 hit() 內的觸發判斷。與 guardian(傷害轉移
       // 代承)是不同機制, 可並存不衝突。
       this.counterGuards = [];
+      // 批J(禁近似令-transfer轉移族): absorbGuards —— redirect.guardFor:"leader" 的登記清單,
+      // 對稱 counterGuards(守護式反擊) 但語意是「代為承受這一次普攻傷害本身」而非「代為反擊」
+      // (古之惡來「...隨後為我軍主將承擔此次普通攻擊」)。與常駐 guardian(redirect 一般模式,
+      // %分擔every hit直到guardDur到期)不同: 這是「僅此一次(已被guardFor鎖定觸發的這次普攻)
+      // +可配比例(e.share, 預設1.0=全額)」的單次轉移, 每個 absorbGuards 項每回合最多觸發1次
+      // (hitFlags 節流, 同 counterGuards 慣例), 見 applyEffects 的 redirect.guardFor 分支與
+      // hit() 內對應判斷。
+      this.absorbGuards = [];
       this.tauntBy = null; this.tauntDur = 0;      // 嘲諷: 被嘲諷時強制普攻/單體戰法指向 tauntBy, 剩餘回合
       this.shield = null;                          // 護盾: {amt, dur} 吸收固定量傷害, 先於兵力扣減
       this.block = [];                              // 批22: 次數型格擋(抵禦/警戒同族) —— [{val, n, src}], 消耗順序見 hit(); val=1.0全擋/0.x部分減傷, n=剩餘次數
@@ -773,14 +781,39 @@
       if (TRACE && absorb > 0) lg(`　▸ ${dst.nm} 護盾吸收 ${Math.round(absorb)}` + (dst.shield.amt <= 0 ? "（已破盾）" : ""));
       if (dst.shield.amt <= 0) dst.shield = null;
     }
-    const g = dst.guardian;
     const wr = woundedRate(CUR_R);        // 批18: 傷兵池 —— 本次受到的傷害按當前回合轉化率計入(準備階段 CUR_R=0 用第1回合檔)
-    if (g && g.alive && g !== dst && !(dst.guardNormalOnly && !isNormal)) {
-      const gShare = dmg * dst.guardShare, dShare = dmg * (1 - dst.guardShare);
-      g.troop -= gShare; g.wounded += gShare * wr;
-      dst.troop -= dShare; dst.wounded += dShare * wr;
-    }  // normalOnly 援護: 戰法傷害(isNormal=false)不轉移
-    else { dst.troop -= dmg; dst.wounded += dmg * wr; }
+    // 批J(禁近似令-transfer轉移族): absorbGuards(單次全額代承, redirect.guardFor:"leader")
+    // —— 優先於下方常駐 guardian(%分擔every hit直到guardDur到期)判斷: 只在普攻(isNormal)時,
+    // 找第一個「本回合(對該代承者而言)尚未觸發過」的登記項, 把「這一下」攻擊的傷害(依
+    // ag.share, 預設1.0=全額)轉給該代承者, dst 只承受剩餘部分(share<1時); 找到就處理完這一下
+    // 的兵力轉移, 不再落入下方 guardian 常駐邏輯(兩者互斥擇一, 避免同一下傷害被兩套機制各自
+    // 折算一次, 造成傷害量憑空增減)。節流鍵沿用 counterGuards 慣例(掛在代承者自己的 hitFlags
+    // 上, 而非 dst 身上——「每個代承單位每回合最多代承1次」, 對應原文guardFor機制既有的節流
+    // 語意)。
+    let absorbed = false;
+    if (isNormal && dst.alive) {
+      for (const ag of dst.absorbGuards) {
+        if (!ag.unit.alive || ag.unit === dst) continue;
+        if (ag.unit.hitFlags.has(ag)) continue;
+        if (rnd() >= (ag.prob ?? 1)) continue;
+        ag.unit.hitFlags.add(ag);
+        const aShare = ag.share ?? 1.0, aAmt = dmg * aShare, dAmt = dmg * (1 - aShare);
+        ag.unit.troop -= aAmt; ag.unit.wounded += aAmt * wr;
+        if (dAmt > 0) { dst.troop -= dAmt; dst.wounded += dAmt * wr; }
+        if (TRACE) lg(`　▸ ${ag.unit.nm} 代${dst.nm}承受此次普攻傷害 ${Math.round(aAmt)}` + (aShare < 1 ? `（${dst.nm}自行承受剩餘${Math.round(dAmt)}）` : ""));
+        absorbed = true;
+        break;
+      }
+    }
+    if (!absorbed) {
+      const g = dst.guardian;
+      if (g && g.alive && g !== dst && !(dst.guardNormalOnly && !isNormal)) {
+        const gShare = dmg * dst.guardShare, dShare = dmg * (1 - dst.guardShare);
+        g.troop -= gShare; g.wounded += gShare * wr;
+        dst.troop -= dShare; dst.wounded += dShare * wr;
+      }  // normalOnly 援護: 戰法傷害(isNormal=false)不轉移
+      else { dst.troop -= dmg; dst.wounded += dmg * wr; }
+    }
     if (TRACE) lg(`　→ ${dst.nm} 損兵 ${Math.round(dmg)}，剩餘 ${Math.max(0, Math.round(dst.troop))}` + (dst.troop <= 0 ? " 【擊破】" : ""));
     if (dst.settle) dst.settle.layers = Math.min(dst.settle.max, dst.settle.layers + 1);
     const ls = src.addbonus("lifesteal");                            // 批8: 倒戈 —— 造成傷害時按比例回復自身兵力(以本次造成的傷害量 dmg 為基準), 上限 START_TROOP
@@ -922,9 +955,12 @@
   // buffs: amp(正值)/mitig(正值)/stat mult>1或add>0/rateup/chargeup/shield/dodge/surehit/lifesteal/healBoost/healGiven/counter/pierce/extra/first/insight
   // debuffs: amp(負值)/mitig(負值)/stat mult<1或add<0 + 控制欄位(stun/silence/disarm/chaos/dot/healblock/fakeReport/swap)
   // 只挪動「數值型」adds/mods/statAdds 依正負號分類; 控制欄位(debuffs專屬)直接歸零/清空。
+  // 批J(禁近似令-transfer轉移族): notUD 從 dispelUnit 內部提出成共用函式(原僅 dispelUnit
+  // 本地閉包), 供新增的 collectDebuffTokens 一併重用同一份「是否可被驅散/轉移」判斷, 避免
+  // 兩處各自維護一份 undispellable 判斷式而日後改動時彼此漂移。
+  function notUD(entry) { return !(entry[4] && entry[4].undispellable); }
   function dispelUnit(u, what) {
     const isBuff = a => (a[0] === "amp" || a[0] === "mitig") ? a[1] > 0 : true;   // 除 amp/mitig 外的 adds 種類(rateup/chargeup/healBoost/healGiven/lifesteal/pierce/extra)一律視為buff
-    const notUD = a => !(a[4] && a[4].undispellable);
     if (what === "buffs") {
       u.adds = u.adds.filter(a => !(isBuff(a) && notUD(a)));
       u.mods = u.mods.filter(m => !((m[1] >= 1) && notUD(m)));
@@ -941,6 +977,48 @@
       // 批52j: captured 不清除(無法被淨化)
     }
     if (TRACE) lg(`　▸ ${u.nm} 被驅散〔${what === "buffs" ? "增益" : "減益"}〕`);
+  }
+  // 批J(禁近似令-transfer轉移族): collectDebuffTokens —— 供 k:"transferDebuff" 使用, 掃描
+  // pool(存活單位陣列)內每個單位當下持有的「負面狀態」具體實例, 回傳 token 陣列, 每個 token
+  // = {kind(供依種類分組挑選), unit(持有者), move(dest,dur)=>把這個實例從unit搬到dest}。
+  // 分類口徑刻意與既有 dispelUnit 的 debuffs 分支完全一致(負值amp/mitig、mult<1的mods、
+  // 負值statAdds、dot、stun/silence/disarm/chaos/healblock/fakeReport/ambush/huchen), 不另立
+  // 新標準, 確保「什麼算負面狀態」全庫只有一套定義。move() 內部同時完成「來源移除」與「目的地
+  // 重建」兩步, 避免呼叫端分兩步做時忘記其中一步、或順序錯置導致資料读取到已移除的實例。
+  function collectDebuffTokens(pool) {
+    const out = [];
+    for (const u of pool) {
+      // 批J: notUD(undispellable) 過濾 —— 與 dispelUnit 一致, 標記 undispellable 的實例不可
+      // 被驅散, 同理也不該能被 transferDebuff 這個「移除來源實例」的操作繞過, 故一併排除。
+      for (const a of u.adds) if ((a[0] === "amp" || a[0] === "mitig") && a[1] < 0 && notUD(a)) {
+        out.push({ kind: a[0], unit: u, move: (dest, dur) => { u.adds.splice(u.adds.indexOf(a), 1); dest.pushAdd(a[0], a[1], dur, a[3]); } });
+      }
+      for (const m of u.mods) if (m[1] < 1 && notUD(m)) {
+        out.push({ kind: "mod:" + m[0], unit: u, move: (dest, dur) => { u.mods.splice(u.mods.indexOf(m), 1); dest.pushMod(m[0], m[1], dur, m[3]); } });
+      }
+      for (const s of u.statAdds) if (s[1] < 0 && notUD(s)) {
+        out.push({ kind: "stat:" + s[0], unit: u, move: (dest, dur) => { u.statAdds.splice(u.statAdds.indexOf(s), 1); dest.pushStatAdd(s[0], s[1], dur, s[3]); } });
+      }
+      for (const d of u.dots) if (!d[2]) {   // d[2]=undispellable旗標(見dot k-type施加處), 對稱dispelUnit保留undispellable dot的慣例
+        out.push({ kind: "dot:" + (d[3] || "?"), unit: u, move: (dest, dur) => { u.dots.splice(u.dots.indexOf(d), 1); dest.dots.push([d[0], dur, d[2], d[3]]); } });
+      }
+      if (u.stun > 0) out.push({ kind: "stun", unit: u, move: (dest, dur) => { u.stun = 0; dest.stun = Math.max(dest.stun, (dur ?? 1) + 1); } });
+      if (u.silence > 0) out.push({ kind: "silence", unit: u, move: (dest, dur) => { u.silence = 0; dest.silence = Math.max(dest.silence, (dur ?? 1) + 1); } });
+      if (u.disarm > 0) out.push({ kind: "disarm", unit: u, move: (dest, dur) => { u.disarm = 0; dest.disarm = Math.max(dest.disarm, (dur ?? 1) + 1); } });
+      if (u.chaos > 0) out.push({ kind: "chaos", unit: u, move: (dest, dur) => { u.chaos = 0; dest.chaos = Math.max(dest.chaos, (dur ?? 1) + 1); } });
+      if (u.healblock > 0) out.push({ kind: "healblock", unit: u, move: (dest, dur) => { u.healblock = 0; dest.healblock = Math.max(dest.healblock, (dur ?? 1) + 1); } });
+      if (u.fakeReportDur > 0) out.push({ kind: "fakeReport", unit: u, move: (dest, dur) => { u.fakeReportDur = 0; dest.fakeReportDur = Math.max(dest.fakeReportDur, (dur ?? 1) + 1); } });
+      if (u.ambush > 0) out.push({ kind: "ambush", unit: u, move: (dest, dur) => { u.ambush = 0; dest.ambush = Math.max(dest.ambush, (dur ?? 1) + 1); } });
+      if (u.huchen) out.push({ kind: "huchen", unit: u, move: (dest) => { dest.huchen = u.huchen; u.huchen = null; } });
+    }
+    return out;
+  }
+  // 批J: pickN —— 通用「從陣列隨機挑n個不重複元素」, 對稱既有 pickTargets(Unit專用, 含.alive
+  // 過濾), 但這裡的元素是任意值(如 kind 字串), 不做 alive 過濾。n>=陣列長度時回傳整份洗牌拷貝。
+  function pickN(arr, n) {
+    const pool = arr.slice(), out = [];
+    for (let i = 0; i < n && pool.length; i++) { const idx = Math.floor(rnd() * pool.length); out.push(pool[idx]); pool.splice(idx, 1); }
+    return out;
   }
   function pickTarget(units, attacker, allyPool) {            // 普攻/單體戰法: 隨機挑一個存活敵軍(不再固定打兵力最高); 嘲諷: 攻擊者身上有 tauntBy 時強制指向該目標
     if (attacker && attacker.tauntDur && attacker.tauntBy && attacker.tauntBy.alive && units.includes(attacker.tauntBy)
@@ -1610,8 +1688,30 @@
         continue;
       }
       if (k === "redirect") {
+        // 批J(禁近似令-transfer轉移族): e.guardFor==="leader" —— 「單次全額代承」模式(古之惡來
+        // 「我軍主將即將受到普攻時...隨後為我軍主將承擔此次普通攻擊」), 對稱既有 counter 的
+        // guardFor:"leader"(守護式反擊), 但這裡是「代為承受」而非「代為反擊」。不走下方常駐
+        // guardian(%分擔每一下直到guardDur到期)的路徑, 改登記進 allies[0].absorbGuards, 由
+        // hit() 在主將受普攻時只轉移「這一下」的傷害(不影響後續攻擊), 每回合限觸發1次(見
+        // hit() 內 absorbGuards 節流)。與 counterGuards 是兩份獨立清單, 可並存(同一次guardFor
+        // 觸發時兩者互不干擾, 各自的 hitFlags 節流鍵不同)。
+        if (e.guardFor === "leader") {
+          if (allies.length && allies[0].alive) allies[0].absorbGuards.push({ unit: caster, share: e.share ?? 1.0, prob: e.prob ?? 1 });
+          continue;
+        }
         let guard = caster;
         if (e.guard === "max_force") { for (const a of allies) if (a.alive && (guard === caster || a.eff("force") > guard.eff("force"))) guard = a; }
+        // 批J: e.guard==="random_sub" —— 代承者=隨機一位「當下存活」的非主將副將(夢中弒臣
+        // 「如果自己為主將，則使隨機副將為自己分擔20%→40%傷害」), 與既有 max_force(取武力
+        // 最高) 同層級但改採均勻隨機。若無存活副將(全滅或本隊僅1人), guard 落回 caster 本身
+        // ——下方 `a !== guard` 判斷會使 recipients(=[caster], 因 who:"leader" 時 caster 即
+        // allies[0])被排除, 天然等同「找不到可轉嫁對象則不轉嫁」(不無中生有), 而非另尋他法
+        // 硬湊一個轉嫁對象。此隨機挑選在效果套用當下(戰鬥前2回合首次生效時)決定一次, 之後
+        // 隨 guardDur 持續固定, 不逐回合/逐次攻擊重新抽選(與既有 max_force 挑選時機一致)。
+        else if (e.guard === "random_sub") {
+          const subs = allies.filter(a => a.alive && a !== allies[0]);
+          guard = subs.length ? subs[Math.floor(rnd() * subs.length)] : caster;
+        }
         // 批G: who 分流(leader/subs) —— 過去無條件對「除guard外的全體allies」套用同一share,
         // 不像其他k類型已支援who:leader(僅index0主將)/who:subs(index0以外副將)分流, 導致
         // 「為副將分擔30%/為主將分擔60%」這類依受益者身份給不同share值的戰法(肉身鐵壁)只能
@@ -1622,6 +1722,78 @@
         else recipients = allies;
         for (const a of recipients) if (a.alive && a !== guard && !a.captured) { a.guardian = guard; a.guardShare = e.share ?? 0.3; a.guardDur = e.dur ?? 99; a.guardNormalOnly = !!e.normalOnly; }  // 讀 e.dur(預設99=近似全程, 向後相容) + e.normalOnly(只代承普攻); 到期由 tick 清除
         if (TRACE) lg(`　▸ ${guard.nm} 代承友軍傷害(分擔${Math.round((e.share ?? 0.3) * 100)}%${e.dur && e.dur < 90 ? `, ${e.dur}回合` : ""})`);
+        continue;
+      }
+      // 批J(禁近似令-transfer轉移族): stealStat —— 偷屬性原語(雁行陣「使我軍統率最低單體
+      // 偷取敵軍全體10點統率」)。核心約束: 不能無中生有——從每個victim實際扣除
+      // min(欲偷量, victim現有可扣量(=其當下effective值, 不得扣至負數)), 施放者/受益者
+      // 只獲得「所有victim實際被扣除量」的加總(而非固定填e.amount, 若victim現有量不足10點
+      // 就只能偷到那麼多)。與既有 k:"stat" 的差異: k:"stat" 是無條件疊加, 不檢查/不連動另一方;
+      // stealStat 是「一方扣多少, 另一方就恰好收多少」的成對操作, 且扣除量會先被victim現有值
+      // 封頂。recipientSel(targetSel準則字串, 見TARGETSEL_KEY)從allies挑受益者, 省略時預設
+      // caster本身。
+      if (k === "stealStat") {
+        const statField = e.stat;
+        const wantEach = (e.amount ?? 0) * (e.scale ? scaleOf(caster, e.scale, e.scaleDiv) : 1);
+        const recipient = e.recipientSel ? pickByCriterion(allies, e.recipientSel) : caster;
+        if (recipient && recipient.alive && wantEach > 0) {
+          const victimPool = (e.who === "ally" ? allies : enemies).filter(x => x.alive);
+          let total = 0;
+          for (const v of victimPool) {
+            const avail = Math.max(0, v.eff(statField));
+            const actual = Math.min(wantEach, avail);
+            if (actual > 0) { v.pushStatAdd(statField, -actual, e.dur ?? 1, src); total += actual; }
+          }
+          if (total > 0) {
+            recipient.pushStatAdd(statField, total, e.dur ?? 1, src);
+            if (TRACE) lg(`　▸ ${recipient.nm} 偷取${STAT_ZH[statField] || statField} +${total.toFixed(1)}(來源實際扣除量之和, 不無中生有)`);
+          }
+        }
+        continue;
+      }
+      // 批J: transferMitig —— 把「敵方(或指定來源側)當下實際持有的正向mitig(傷害降低)buff
+      // 實例」整個搬到我方(或指定去向側)隨機一人身上(雁行陣「轉移傷害降低: 將敵軍隨機武將的
+      // 傷害降低效果轉移至我軍隨機武將」)。若來源側當下沒有任何人持有這樣的buff, 不觸發(轉移
+      // 0, 不無中生有, 不得無來源憑空生出一份mitig buff給接收方)。轉移=移動(從來源陣列真的
+      // splice移除該實例)而非複製, val照抄來源實例原值, dur改用e.dur(對應原文「持續1回合」,
+      // 非沿用來源剩餘時長)。
+      if (k === "transferMitig") {
+        const fromPool = (e.from === "ally" ? allies : enemies).filter(x => x.alive);
+        const toPool = (e.to === "ally" ? allies : enemies).filter(x => x.alive);
+        const candidates = [];
+        for (const u of fromPool) for (const a of u.adds) if (a[0] === "mitig" && a[1] > 0) candidates.push({ unit: u, entry: a });
+        if (candidates.length && toPool.length) {
+          const pick = candidates[Math.floor(rnd() * candidates.length)];
+          const dest = toPool[Math.floor(rnd() * toPool.length)];
+          pick.unit.adds.splice(pick.unit.adds.indexOf(pick.entry), 1);
+          dest.pushAdd("mitig", pick.entry[1], e.dur ?? 1, src);
+          if (TRACE) lg(`　▸ 轉移傷害降低: ${pick.unit.nm} → ${dest.nm}(減傷${Math.round(pick.entry[1] * 100)}%)`);
+        }
+        continue;
+      }
+      // 批J: transferDebuff —— 把「我方(或指定來源側)群體當下實際持有的負面狀態」隨機挑
+      // e.n~e.nMax種「不同種類」(而非同種類的多個實例)整個搬到敵方(或指定去向側)隨機單位身上
+      // (雁行陣「轉移負面狀態: 將友軍群體隨機1-2種負面狀態轉移至隨機敵軍」)。與現有dispelUnit
+      // 共用同一套「什麼算負面狀態」分類(負值amp/mitig、mult<1的mods、負值statAdds、dot、
+      // stun/silence/disarm/chaos/healblock/fakeReport/ambush/huchen), 確保口徑一致不新開
+      // 一套分類標準。若來源側當下完全沒有負面狀態, 轉移0種(不無中生有); 若只有1種可轉移即使
+      // e.nMax要求2種也只轉移現有的那1種(轉移量=來源實際擁有量, 不硬湊到位)。
+      if (k === "transferDebuff") {
+        const fromPool = (e.from === "enemy" ? enemies : allies).filter(x => x.alive);
+        const toPool = (e.to === "enemy" ? enemies : allies).filter(x => x.alive);
+        const tokens = collectDebuffTokens(fromPool);
+        if (tokens.length && toPool.length) {
+          const kinds = [...new Set(tokens.map(x => x.kind))];
+          const wantN = e.nMax != null ? (e.n ?? 1) + Math.floor(rnd() * (e.nMax - (e.n ?? 1) + 1)) : (e.n ?? 1);
+          const chosenKinds = pickN(kinds, Math.min(wantN, kinds.length));
+          for (const kd of chosenKinds) {
+            const matches = tokens.filter(x => x.kind === kd);
+            const tok = matches[Math.floor(rnd() * matches.length)];
+            const dest = toPool[Math.floor(rnd() * toPool.length)];
+            tok.move(dest, e.dur ?? 1);
+            if (TRACE) lg(`　▸ 轉移負面狀態(${kd}): ${tok.unit.nm} → ${dest.nm}`);
+          }
+        }
         continue;
       }
       // 批52j: capture(捕獲, 暗箭難防) —— 已有則 altCoef 直傷; 否則 rate 捕獲(不可淨化)

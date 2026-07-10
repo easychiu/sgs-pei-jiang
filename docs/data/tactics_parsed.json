@@ -1617,7 +1617,13 @@
     "dur": 1,
     "n": 1,
     "dmgType": "phys",
-    "_note": "批25 R19: 原文「使其造成兵刃傷害降低9%→18%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。批29 B: who=enemy(泛用敵軍全體, 非鎖定該次攻擊者)是既有近似, 引擎guardFor觸發時的反擊目標(counterGuards攻擊者)與amp效果目標(who=enemy選標)是兩個獨立機制, 無法讓amp精確綁定「猛擊命中的同一人」, 保留既有全敵軍近似(高估範圍, 方向不變)。"
+    "_note": "批25 R19: 原文「使其造成兵刃傷害降低9%→18%」為單一傷害類型措辭, 補dmgType:\"phys\"(批24新增原語, 精確限定只對兵刃傷害生效, 不再誤及謀略傷害)。批29 B: who=enemy(泛用敵軍全體, 非鎖定該次攻擊者)是既有近似, 引擎guardFor觸發時的反擊目標(counterGuards攻擊者)與amp效果目標(who=enemy選標)是兩個獨立機制, 無法讓amp精確綁定「猛擊命中的同一人」, 保留既有全敵軍近似(高估範圍, 方向不變)——此為counter_target_binding族的獨立缺口, 與本批(transfer族)無關, 不在本批處理範圍, 誠實維持現狀。"
+   },
+   {
+    "k": "redirect",
+    "guardFor": "leader",
+    "share": 1.0,
+    "_note": "批J(禁近似令-transfer轉移族): 原文「隨後為我軍主將承擔此次普通攻擊」——k:\"redirect\"新增guardFor:\"leader\"模式(批J新增, 對稱既有counter.guardFor:\"leader\"守護式反擊, 但這裡是「代為承受」而非「代為反擊」)精確表達: 登記進allies[0].absorbGuards/absorb_guards, 由hit()在主將受普攻時把「這一下」攻擊的傷害100%(share:1.0)轉給自身承受(主將完全不受這次攻擊影響, 對應原文「承擔此次普通攻擊」=全額, 非部分分擔), 每回合限觸發1次(對應guardFor機制既有的節流慣例, 與effects[0]的counter.guardFor共用同一次guardFor觸發時機, 兩者互不干擾各自登記各自的清單)。取代批29 B遺留的「redirect無法精確表達單一目標單次代承, 保守不建模」空白——不會憑空產生/消滅兵力, 只是把同一份傷害從主將移到自身身上。"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -1625,7 +1631,6 @@
   "cat": "COMMAND",
   "src": "INNATE",
   "_note": "批23: redirect補normalOnly(僅普攻)+dur=1(僅此次, 非常駐), 修正過去把'單次代承'誤變成'全程恆定代承所有傷害'的高估。amp段已於前批補e.n=1(見批23 A1)。",
-  "_todo": "「隨後為我軍主將承擔此次普通攻擊」(自身代替主將承受這一次普攻傷害本身)未建模: 引擎現有 redirect 原語只能表達「守護者對全體我軍分擔一個比例的傷害」, 不支援「單一目標(僅主將)+單次(僅這次已被guardFor觸發的攻擊)」的精確傷害轉移, 與 counter.guardFor 是不同機制(guardFor只處理「代為反擊」不處理「代為承受」)。保守不再用 redirect 近似(舊版 redirect who:ally guard:self 会让自身对全體我軍恆定分擔傷害, 範圍與時機皆與原文「僅主將此次」不符, 高估更嚴重), 待未來新增「guardFor式單一目標傷害轉移」原語後補上。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -2211,12 +2216,13 @@
   "prep": 0,
   "effects": [
    {
-    "k": "mitig",
+    "k": "redirect",
     "who": "leader",
-    "val": 0.4,
+    "guard": "random_sub",
+    "share": 0.4,
     "dur": 2,
     "ifLeader": true,
-    "_note": "批C: 原_note(「2024-12-11更新版:戰鬥前2回合我軍副將受到的傷害降低5%->10%」)描述的是舊版本文機制(副將自身减傷), 與現行data/tactics.json定稿本文「戰鬥前2回合，如果自己為主將，則使隨機副將為自己分擔20%→40%傷害」完全不同(現行本文是主將把自己的傷害轉嫁給隨機副將, who=leader受益, 而非subs自身减傷)——屬本批核對時發現的「本文已更新但實作停留在舊版」錯位案例(誠實揭露於本batch回報)。修正: (1)val由0.1改為0.4(滿級40%, 舊值連自己所屬的舊機制都是錯的, 20%→40%本應取40%非10%); (2)who由subs改為leader(受益者是主將自己, 非副將群體); (3)新增ifLeader:true(原文明確「如果自己為主將」是生效的硬性前提, 非主將時完全不生效, 過去無條件套用給所有副將高估了非主將情境)。仍未精確: 「隨機副將為自己分擔」的轉嫁語意(副將應相應承擔本應由主將吸收的那部分傷害)未建模——redirect原語的guardian/guarded方向與本戰法相反(redirect是guardian替其餘友軍承擔, 這裡需要「主將的傷害轉嫁給隨機1名副將」, 方向與guard欄位既有的max_force/預設語意不符, 且只需保護『主將1人』而非『guardian以外全體』), 現用mitig(leader直接減傷40%, 無對應的副將增傷)近似, 不會憑空產生兵力, 較能接受的保守單邊近似(比照古之惡來『redirect無法精確表達單一目標單次代承, 保守不強行套用』同型決策)。"
+    "_note": "批J(禁近似令-transfer轉移族): 原文「戰鬥前2回合，如果自己為主將，則使隨機副將為自己分擔20%→40%傷害」——k:\"redirect\"新增guard:\"random_sub\"模式(批J新增, 見engine.js/sgz.py redirect分支)精確表達: guard(代承者)=隨機一位當下存活的非主將副將(若無存活副將則guard退回caster本身, 因who:\"leader\"時recipients=[caster], 而`a!==guard`判斷會使該recipient被排除——天然等同「找不到可轉嫁對象則不轉嫁」, 不無中生有, 非另尋他法硬湊轉嫁對象), who:\"leader\"(受益者=主將自己, 即caster本身, 因ifLeader:true已保證caster就是allies[0])+share:0.4(滿級40%)+dur:2(對應「戰鬥前2回合」)。取代批C遺留的mitig(leader直接減傷40%)單邊近似——原mitig版本只讓主將自己少受傷, 不會產生對應的副將增傷/實際承擔, 與原文「副將分擔」的轉嫁語意方向不符(是「主將沒事」而非「主將的傷害轉嫁給副將」); 現用redirect精確表達「這部分傷害從主將移到副將身上」的轉嫁語意, 副將確實會多損失兵力(不會憑空產生/憑空消失兵力, 只是把同一份傷害記到另一位單位頭上)。隨機挑選副將的時機: 比照既有guard:\"max_force\"既有慣例, 在效果套用當下(首次生效, 即戰鬥前2回合開始)決定一次, 之後隨guard_dur持續固定, 不逐回合/逐次攻擊重新抽選。"
    },
    {
     "k": "counter",
@@ -4518,10 +4524,10 @@
   "effects": [
    {
     "k": "redirect",
-    "who": "ally",
+    "who": "leader",
     "guard": "self",
     "share": 0.3,
-    "_note": "批23: mitig(who:leader,傷害移除)改用redirect(guard:self,share:0.3)——原文'為主將分擔30%傷害(分擔量視為兵力移除,不享受減傷加成)'本質是傷害轉嫁給施放者, 而非主將自身打折, redirect語意更貼切(直接把一部分傷害轉給guardian承受, 不經過mitig的減傷公式, 符合'不享受減傷加成'的原文限定)。既有限制: redirect無法只保護leader, 沿用guard:self近似保護全體我軍(既有慣例, 如千里馳援/古之惡來), 較原文'僅主將'更寬鬆(全隊都被分擔傷害, 而非只有主將)。"
+    "_note": "批23: mitig(who:leader,傷害移除)改用redirect(guard:self,share:0.3)——原文'為主將分擔30%傷害(分擔量視為兵力移除,不享受減傷加成)'本質是傷害轉嫁給施放者, 而非主將自身打折, redirect語意更貼切(直接把一部分傷害轉給guardian承受, 不經過mitig的減傷公式, 符合'不享受減傷加成'的原文限定)。批J(禁近似令-transfer轉移族): who由\"ally\"改為\"leader\"——redirect早已支援who:\"leader\"分流(批G, 肉身鐵壁precedent), 只是本戰法先前沿用guard:self對「全體我軍」套用同一share的舊近似(較原文'僅主將'寬鬆, 全隊都被分擔傷害)。改用who:\"leader\"後recipients只剩allies[0](主將), 精確對應'僅主將'; guard預設仍是caster(=本戰法持有者), 若持有者恰為主將本人(caster===allies[0]), 下方`a!==guard`判斷天然使該recipient被排除, 自動對應原文'(自身為主將時分擔效果無效)'的限定, 零額外欄位或程式碼變動即可精確表達, 純屬既有原語能力此前未完整套用。"
    },
    {
     "k": "critUp",
@@ -4903,11 +4909,15 @@
    {
     "k": "heal",
     "who": "self",
-    "coef": 0.06,
-    "dur": 99,
+    "ofDamage": 0.12,
     "scale": "command",
-    "_approx": "prob-ev",
-    "_note": "敵軍受治療時50%機率偷取其中12%轉移到自身,期望值折算0.12*0.5=0.06; 批28 A2: 補scale:\"command\"(原文「受統率影響」同時修飾機率(25%→50%)與轉移量(6%→12%)兩個分量, 機率分量已被prob-ev折算為固定值0.06無法再疊加縮放, 但轉移量分量本身仍隨統率縮放, 補scale反映這部分, 較過去完全不縮放更精確, 仍非完美(機率分量的統率縮放效果未捕捉))。"
+    "rate": 0.5,
+    "when": {
+     "on": "healed",
+     "who": "enemy"
+    },
+    "dur": 99,
+    "_note": "批J(禁近似令-transfer轉移族): 原文「敵軍受到治療時，有25%→50%機率(受統率影響)將其中6%→12%(受統率影響)轉移到自身」——沿用既有on:\"healed\"(批43新增, who:\"enemy\"方向早已支援)+e.ofDamage(批33新增, 讀opt.healAmt/heal_amt的分支已於批A(11筆高嚴重重建)補上)組合精確表達, 取代批28 A2遺留的prob-ev EV折算(0.5×0.12=0.06恆定套用, 完全脫鉤『敵軍這次到底有沒有真的受到治療』)。e.rate:0.5(對應25%→50%機率分量, 取滿級值, 與批24/28既有全庫「機率取滿級值」慣例一致)+e.ofDamage:0.12(對應6%→12%轉移比例分量, 取滿級值)+scale:\"command\"(「受統率影響」修飾轉移比例分量, 沿用批28 A2既有設定不變)。核對engine.js/sgz.py確認: 每當敵軍實際受到治療(healedFor/healed_for的actual>0才觸發)時, 50%機率使施放者獲得該次治療量12%(受統率scale縮放)作為自身治療; 敵軍自身仍保留原有治療(原文無『敵方治療量降低』的明確字樣, 保守取字面義不擅自臆測扣減對方, 與才辯機捷/竊幸乘寵一類『明確降低對方X%』句型不同)。與批43 B _note原先聲稱『引擎現無e.ofDamage的heal版本(如e.ofHeal讀opt.healAmt),需新增獨立欄位』不同——複核確認此讀取分支已於批A補上(見heal k-type分支`ofEventAmt = opt.dmg != null ? opt.dmg : opt.healAmt`一行/Python對應`of_event_amt = dmg if dmg is not None else heal_amt`), 批43 B當時的判斷已因後續批次補齊能力而過期, 本批複核後改寫此note。殘留(誠實揭露, 非本批範圍): 「機率分量(25%→50%)受統率影響」本身無法疊加縮放(e.rate為靜態值, 不支援scale縮放機率本身, 屬rate_self_dynamic族/D類曲線族相鄰的正交缺口, 與transfer原語本身無關), 現取滿級值0.5不做動態縮放, 與批28 A2既有取捨一致, 非本批新增偏差。"
    },
    {
     "k": "stat",
@@ -4947,7 +4957,7 @@
   "quality": "S",
   "cat": "COMMAND",
   "src": "INNATE",
-  "_note": "批43 B: 全庫兄弟遷移掃描候選——「自身受到治療時...可疊加99次」兩段(統率/智力)已用批43新增on:\"healed\"事件+add型stackKey疊層遷移完成(見effects[1]/[2]_note), 過去「無疊加計數器」限制已解決。「敵軍受到治療時...偷取其中12%轉移到自身」(effects[0], heal效果)維持既有prob-ev近似未動: healed事件本身已支援who:\"enemy\"廣播(能精確判定敵軍受治療事件), 但「偷取治療量的12%」需要「治療量比例」機制(對稱既有e.ofDamage傷害比例治療, 但讀的是opt.dmg——本次觸發傷害量, 而非本次觸發的治療量), 引擎現無e.ofDamage的heal版本(如e.ofHeal讀opt.healAmt), 需新增獨立欄位才能精確表達, 超出本批on:\"healed\"事件本身的範圍(本批只解決「事件觸發」缺口, 未解決「治療量比例轉移」這個獨立缺口), 維持prob-ev近似, 誠實揭露非stale。",
+  "_note": "批43 B: 全庫兄弟遷移掃描候選——「自身受到治療時...可疊加99次」兩段(統率/智力)已用批43新增on:\"healed\"事件+add型stackKey疊層遷移完成(見effects[1]/[2]_note), 過去「無疊加計數器」限制已解決。批J(禁近似令-transfer轉移族): 「敵軍受到治療時...偷取其中12%轉移到自身」(effects[0], heal效果)先前(批43 B)聲稱「需要e.ofDamage的heal版本(如e.ofHeal讀opt.healAmt),需新增獨立欄位」——複核engine.js/sgz.py確認此讀取分支已於批A(11筆高嚴重重建)補上(見heal k-type分支對opt.healAmt/heal_amt的讀取), 批43 B判斷已因後續批次補齊能力而過期(此note本身即R20_RESOLVED_KW『已因後續』的適用案例), 本批複核後改用既有on:healed+e.ofDamage組合精確落地(見effects[0]._note), 取代prob-ev近似。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -7101,21 +7111,22 @@
     "_note": "批19: 我方half; who無「敵我全體」單一選項, 拆兩條who:enemy/who:ally各+18%表達同一句"
    },
    {
-    "k": "healGiven",
+    "k": "heal",
     "who": "self",
-    "val": 0.26,
+    "ofDamage": 0.26,
+    "scale": "maxStat",
+    "when": {
+     "on": "healed",
+     "who": "enemy"
+    },
     "dur": 1,
-    "_approx": "轉移26%無transfer/steal原語(healBoost只加成目標自身受到的治療量, healGiven只加成施放者自己輸出的治療量, 兩者皆非『把敵方的治療量偷一部分變成自己的兵力』), 改用healGiven(self,+0.26)近似——self後續若有任何治療來源(自身戰法/隊友/兵書)其效果量+26%, 方向近似(自身受益)但機制完全不同(非直接偷取敵方治療值), 明確揭露為近似非精確建模"
+    "_note": "批J(禁近似令-transfer轉移族): 原文「將敵軍全體受到治療的26%（受自身最高屬性影響）轉移到自身」——k:\"heal\"+e.ofDamage+when:{on:\"healed\",who:\"enemy\"}組合(皆既有原語: on:healed批43新增, who:\"enemy\"方向早已支援; e.ofDamage批33新增, 讀opt.healAmt的分支批A(11筆高嚴重重建)已補上)已足以精確表達, 非需要新引擎機制。取代批19的healGiven(self,+0.26)近似(healGiven方向近似(自身受益)但機制是『放大自身未來收到的治療』, 與『偷取敵方本次治療量的一部分』完全不同機制)。核對engine.js/sgz.py確認: 每當任一敵軍實際受到治療(healedFor/healed_for的actual>0才觸發, 不會無中生有)時, 施放者獲得該次治療量26%(scale:\"maxStat\"縮放, 對應『受自身最高屬性影響』)作為自身治療; 敵軍自身仍保留其原有治療(本效果不減損敵方——原文用『轉移』一詞但無『敵方治療量降低』的明確字樣, 與竊幸乘寵『使其恢復量降低20%,自身恢復這部分』的明確扣減句型不同, 保守取字面義, 不擅自臆測扣減對方)。殘留(誠實揭露, 非本批範圍): on:healed是『每次治療事件獨立判定』的反應式(e.rate缺席時回退t.rate=0.5, 對每次敵方受治療事件各自50%擲骰), 與原文『發動機率為50%』字面描述的『整個戰法每回合一次性啟動』顆粒度不完全一致(per-event vs per-round的既有架構落差, 見engine_limitations.md本節), 但方向仍是『無治療事件則不觸發』, 符合不無中生有核心要求, 僅顆粒度與原文字面略有差異。"
    }
   ],
   "quality": "S",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_todo": "轉移26%治療量段仍以healGiven(self)近似(見上方effects內_approx), 非精確的跨陣營治療竊取; 若未來engine新增transfer/steal類原語可再精解。",
-  "_note": "批19: agy高信度查證補上完整數值(18%/26%/50%), 取代先前完全空白的effects[](rederive_b5遺留的_todo已解決18%治療提升段, 轉移26%段仍無精確原語, 以healGiven近似揭露)。scale『受自身最高屬性影響』(武力/智力/統率/魅力擇高)無單一屬性scale可精確對應, 保守不加scale(視為戰法等級固定值, 非戰鬥內浮動縮放)。",
-  "when": {
-   "dur": 1
-  },
+  "_note": "批J(禁近似令-transfer轉移族): 轉移26%治療量段已用既有on:\"healed\"+e.ofDamage+scale:\"maxStat\"組合精確落地(見effects[2]._note), 取代批19 healGiven近似。同時清除頂層set.when:{\"dur\":1}(批19遺留的無效欄位——\"dur\"不是roundOk/round_ok或hpOk/hp_ok認得的when鍵, 本身是no-op, 但其存在會使`!t.when`/`not t.get(\"when\")`為false, 阻擋onHealEffectTacs/on_heal_effect_tacs的戰法級註冊資格條件, 若不清除, 本批新增的on:healed反應式將完全無法被註冊、永遠不會觸發, 見engine.js/sgz.py Unit建構式對on_heal_effect_tacs的過濾條件`not t.when`)。範圍界定(避免誤讀為連帶修正): effects[0]/[1](18%healBoost雙段)本身的『受自身最高屬性影響』scale缺口維持批19既有的保守不加scale決策不變, 未在本批一併補上——healBoost這個k類型的引擎實作本身不消費e.scale欄位(只有heal/stat/amp/mitig等k類型的分支才讀取scale, 見apply_effects/applyEffects), 要讓healBoost也吃scale屬於k類型本身的能力擴充(較貼近scale_max_stat族或healBoost自身能力擴充的範圍), 不屬於本批transfer族(把已存在的效果實例搬移/依實際擁有量轉移)的任務範圍, 誠實維持現狀不擅自延伸。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -9961,34 +9972,42 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stat",
-    "who": "ally",
+    "k": "stealStat",
     "stat": "command",
-    "add": 10,
-    "dur": 1,
+    "amount": 10,
     "scale": "command",
-    "targetSel": "minCommand",
+    "who": "enemy",
+    "recipientSel": "minCommand",
+    "dur": 1,
     "everyRound": true,
     "rate": 0.333,
-    "_approx": "偷統率(組合表達): 原文「使我軍統率最低的單體偷取敵軍全體的部分統率」為狀態轉移(需引擎transfer原語, 見_todo), 現用「敵方 stat add負值 + 我方 stat add正值」同dur組合近似, 量對稱(雙方各自+10/-10point同dur)但非嚴格轉移(不是真的從敵方那份「挪」過來, 而是各自獨立套用增/減量相同的效果, 若中途一方效果被驅散/到期, 另一方不會連動)。targetSel:minCommand精確選中我軍統率最低單體(對應原文「統率最低的單體」)。rate:0.333取原機率公式(統率+570)/570在統率≈100代表值時的近似(≈0.333), 未按公式隨統率動態縮放(e.rate不支援scale)。scale:command近似原文「偷統率數值公式(統率+233)/233」的統率縮放語意(非精確同一條曲線, 借用引擎既有SCALE曲線近似)。批30 A: 補e.everyRound(新原語, 非heal效果的逐回合重擲通道)——本效果原本因command型coef=0, 只在prep套用一次, e.rate只被擲一次骰(等同『戰鬥開局判定一次』), 未貼合原文『每回合35%機率』的逐回合重新判定語意, 現改用everyRound通道每回合重新擲骰。"
+    "_note": "批J(禁近似令-transfer轉移族): 原文「使我軍統率最低單體偷取敵軍全體10點統率」——k:\"stealStat\"(批J新增原語)精確表達: 從每個存活敵軍實際扣除min(10×scale, 該敵軍當下有效統率), 不得扣至負值(不無中生有); 我軍統率最低單體(recipientSel:\"minCommand\")獲得的量=所有敵軍實際被扣除量之加總(而非固定按敵軍人數×10點灌入——若某敵軍統率已被其他效果削弱到低於10點, 該敵軍能貢獻的量就相應變少, 甚至為0)。取代批24 D3「敵方stat add負值+我方stat add正值」的雙向量對稱近似(該近似不論敵軍當下統率多寡都固定各扣/各加10點, 兩邊與victim實際狀態脫鉤, 若victim效果被驅散/到期另一邊也不會連動)。rate:0.333/scale:\"command\"的機率與縮放曲線常數沿用批24既有校準值(機制精確、scale曲線族屬D類, 豁免本禁近似令), 本批只修正「轉移量是否連動victim實際持有量」這個transfer族核心約束。"
    },
    {
-    "k": "stat",
-    "who": "enemy",
-    "stat": "command",
-    "add": -10,
+    "k": "transferMitig",
+    "from": "enemy",
+    "to": "ally",
     "dur": 1,
-    "scale": "command",
     "everyRound": true,
     "rate": 0.333,
-    "_approx": "偷統率(組合表達)的敵方對應段——與上方我方+10段同dur/同rate/同everyRound, 一併構成「偷取」的雙向量對稱近似(見上方我方段_approx完整說明), who:enemy預設全體敵軍(對應原文「敵軍全體」)。"
+    "_note": "批J: 原文「轉移傷害降低: 將敵軍隨機武將的傷害降低效果轉移至我軍隨機武將」——k:\"transferMitig\"(批J新增原語)精確表達: 掃描敵軍當下實際持有的正向mitig(傷害降低)buff實例, 若存在則整個搬移(從來源移除, 在我軍隨機一人身上以相同數值重建, dur改用本效果的dur:1, 對應原文「持續1回合」而非沿用來源剩餘時長)給我方隨機一人; 若敵軍當下無人持有這類buff, 本次判定不觸發(轉移0, 不無中生有, 不會無來源憑空生出一份mitig buff)。取代批19/批24遺留的完全空白(0%建模)缺口。"
+   },
+   {
+    "k": "transferDebuff",
+    "from": "ally",
+    "to": "enemy",
+    "n": 1,
+    "nMax": 2,
+    "dur": 1,
+    "everyRound": true,
+    "rate": 0.333,
+    "_note": "批J: 原文「轉移負面狀態: 將友軍群體隨機1-2種負面狀態轉移至隨機敵軍」——k:\"transferDebuff\"(批J新增原語)精確表達: 掃描我軍群體當下實際持有的負面狀態(分類口徑與既有dispel debuffs一致, 見collectDebuffTokens/collect_debuff_tokens), 隨機挑1~2種「不同種類」現存的負面狀態(n:1/nMax:2), 每種各自搬移(從持有者移除, 在隨機一名敵軍身上重建, dur改用本效果的dur:1)給隨機一名敵軍; 若我軍當下完全沒有負面狀態, 轉移0種; 若只有1種現存, 即使nMax要求2種也只轉移那1種(轉移量=來源實際擁有量, 不硬湊到位)。取代批19/批24遺留的完全空白(0%建模)缺口。"
    }
   ],
   "quality": "S",
   "cat": "FORMATION",
   "src": "INHERITANCE",
-  "_todo": "「轉移傷害降低」(把敵方已有的減傷效果轉移到我方)與「轉移負面狀態」(把我方群體的負面狀態轉移給敵方)兩者仍需要新的transfer類原語——具體命名: transferMitig(從敵方隨機一位「當前持有mitig>0 buff」的單位, 把該buff實例整個複製到我方隨機一位身上, 若敵方無人持有則不觸發)+transferDebuff(從我方群體隨機1-2位「當前持有負面狀態」的單位, 把該狀態實例整個移到敵方隨機單位身上, 原單位該狀態同時移除, 若我方無人持有負面狀態則不觸發)——兩者皆需要「buff/debuff實例內省(讀取某單位adds/mods/dots等內部狀態陣列, 判斷是否存在特定類型的效果物件並取得其具體數值)+移除該實例+複製到另一單位」的複合操作, 現有dispel(移除)/redirect(傷害轉嫁)/批24D3的「雙方各自套用對稱效果」近似皆非此語意(把某個已存在的效果實例從一方搬到另一方, 而非目前這幾種)。「偷統率」分支批24已用stat組合近似落地(見effects/_note), 但這兩個分支的語意更嚴格要求「must be the same instance that existed on the source」(如「敵方的減傷效果」需要先存在才能轉移, 我方沒有這個效果就不會發生轉移), 無法用「無條件疊加對稱效果」的方式近似(因為可能敵方根本沒有減傷效果可轉移, 强行疊加會是無中生有), 需engine.js/sgz.py層級擴充才能解決, 非corrections層可解。機率公式(統率+570)/570已記錄供未來實作參考(本次三選一中的偷統率分支近似取代表值rate:0.333, 另兩分支維持完全未建模)。",
-  "_note": "批24 D3: 用現有原語組合表達「偷統率」——過去(批19)完全empty effects, 僅在_note記錄查證所得的機率/數值公式供未來transfer原語使用。批24評估: 雖仍無專屬transfer原語, 但「偷取統率」本質是「敵方掉統率+我方漲統率」的量對稱效果, 可用兩條stat(add)效果組合近似表達(非嚴格轉移語意, 已用_approx誠實揭露差異)。「轉移傷害降低」與「轉移負面狀態」兩個分支仍完全無法用現有原語表達(需要「把已存在於A身上的某個具體效果/狀態實例搬到B身上」的原語, 與「獨立疊加兩個對稱效果」不同語意), 維持empty(即這兩分支仍是0%建模), 保留於_todo。批30 A: 兩條stat效果補e.everyRound, 取代批24遺留的「prep單次擲骰」近似(見效果_approx)。批A(11筆高嚴重重建)複核: 依user brief要求「雁行陣transfer=現有組合近似已揭露則確認完整」逐項核對——現有偷統率的stat組合近似與_todo揭露內容皆與定稿effectText(data/tactics.json)一致, 機率公式(統率+570)/570、偷統率公式(統率+233)/233皆已正確記錄。決策: 不在本批強行新建transfer原語——「must be the same instance that existed on the source」的嚴格要求(若敵方根本沒有減傷效果, 不該無中生有轉移)若做錯了比不做更糟(如密計誅逆先前heal瞎猜的前車之鑑), 且此二分支需要「buff/debuff實例內省(讀取某單位當前具體持有哪個效果物件)+移除+複製到另一單位」的複合操作, 工程量與風險評估後認定超出本批「11筆最小實作」範圍, 維持誠實空白。僅補強_todo措辭以符合§35規約(停損註記須點名具體缺失原語名稱, 供未來R20 alias掃描比對), 見下方_todo。",
+  "_note": "批J(禁近似令-transfer轉移族): 三分支皆已用新原語(stealStat/transferMitig/transferDebuff, 見engine.js/sgz.py同批新增)精確落地, 核心約束「轉移量=來源實際擁有量, 不無中生有」在三段皆已滿足(assert見sgz.py demo()新增測試)。取代批24 D3(偷統率用stat組合對稱近似)+批19(轉移減傷/轉移負面狀態完全空白)兩層舊近似/缺口, no_approx_inventory.json transfer族6筆之一, 全批唯一同時涵蓋三種轉移子類型(偷屬性/buff轉移/debuff轉移)的戰法。機率公式(統率+570)/570與偷統率公式(統率+233)/233皆延續批24/批30既有記錄, 屬D類(機制精確,scale曲線族/scaleDiv待實測)範圍, 非本批處理對象。",
   "troopLimit": [
    "BOW",
    "SIEGE"

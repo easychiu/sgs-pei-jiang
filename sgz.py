@@ -610,6 +610,14 @@ class Unit:
         # 與 hit() 內的觸發判斷。與 guardian(傷害轉移代承)是不同機制(guardian轉移傷害承受方,
         # counter_guards是「受擊者不變, 但由別人代為反擊攻擊者」), 兩者可並存不衝突。
         self.counter_guards = []
+        # 批J(禁近似令-transfer轉移族): absorb_guards —— redirect.guardFor:"leader" 的登記
+        # 清單, 對稱 counter_guards(守護式反擊) 但語意是「代為承受這一次普攻傷害本身」而非
+        # 「代為反擊」(古之惡來「...隨後為我軍主將承擔此次普通攻擊」)。與常駐 guardian(redirect
+        # 一般模式, %分擔每一下直到guard_dur到期)不同: 這是「僅此一次(已被guardFor鎖定觸發的
+        # 這次普攻)+可配比例(e["share"], 預設1.0=全額)」的單次轉移, 每個 absorb_guards 項每
+        # 回合最多觸發1次(hit_flags 節流, 同 counter_guards 慣例), 見 apply_effects 的
+        # redirect.guardFor 分支與 hit() 內對應判斷。
+        self.absorb_guards = []
         self.taunt_by = None                          # 嘲諷: 被嘲諷時強制普攻/單體戰法指向 taunt_by
         self.taunt_dur = 0                             # 嘲諷剩餘回合
         self.shield = None                            # 護盾: {amt, dur} 吸收固定量傷害, 先於兵力扣減
@@ -1087,18 +1095,47 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_a
         dmg -= absorb
         if dst.shield["amt"] <= 0:
             dst.shield = None
-    g = dst.guardian
     wr = wounded_rate(CUR_ROUND)  # 批18: 傷兵池 —— 本次受到的傷害按當前回合轉化率計入(準備階段 CUR_ROUND=0 用第1回合檔)
-    if g and g.alive and g is not dst and not (dst.guard_normal_only and not is_normal):  # normalOnly 援護: 戰法傷害(is_normal=False)不轉移
-        g_share = dmg * dst.guard_share
-        d_share = dmg * (1 - dst.guard_share)
-        g.troop -= g_share
-        g.wounded += g_share * wr
-        dst.troop -= d_share
-        dst.wounded += d_share * wr
-    else:
-        dst.troop -= dmg
-        dst.wounded += dmg * wr
+    # 批J(禁近似令-transfer轉移族): absorb_guards(單次全額代承, redirect.guardFor:"leader")
+    # —— 優先於下方常駐 guardian(%分擔每一下直到guard_dur到期)判斷: 只在普攻(is_normal)時,
+    # 找第一個「本回合(對該代承者而言)尚未觸發過」的登記項, 把「這一下」攻擊的傷害(依
+    # ag["share"], 預設1.0=全額)轉給該代承者, dst 只承受剩餘部分(share<1時); 找到就處理完
+    # 這一下的兵力轉移, 不再落入下方 guardian 常駐邏輯(兩者互斥擇一, 避免同一下傷害被兩套機制
+    # 各自折算一次, 造成傷害量憑空增減)。節流鍵沿用 counter_guards 慣例(掛在代承者自己的
+    # hit_flags上, 而非dst身上——「每個代承單位每回合最多代承1次」)。
+    absorbed = False
+    if is_normal and dst.alive:
+        for ag in dst.absorb_guards:
+            gu = ag["unit"]
+            if not gu.alive or gu is dst:
+                continue
+            flag_key = ("absorb_guard", id(ag))
+            if flag_key in gu.hit_flags:
+                continue
+            if random.random() < ag.get("prob", 1.0):
+                gu.hit_flags.add(flag_key)
+                a_share = ag.get("share", 1.0)
+                a_amt = dmg * a_share
+                d_amt = dmg * (1 - a_share)
+                gu.troop -= a_amt
+                gu.wounded += a_amt * wr
+                if d_amt > 0:
+                    dst.troop -= d_amt
+                    dst.wounded += d_amt * wr
+                absorbed = True
+                break
+    if not absorbed:
+        g = dst.guardian
+        if g and g.alive and g is not dst and not (dst.guard_normal_only and not is_normal):  # normalOnly 援護: 戰法傷害(is_normal=False)不轉移
+            g_share = dmg * dst.guard_share
+            d_share = dmg * (1 - dst.guard_share)
+            g.troop -= g_share
+            g.wounded += g_share * wr
+            dst.troop -= d_share
+            dst.wounded += d_share * wr
+        else:
+            dst.troop -= dmg
+            dst.wounded += dmg * wr
     if dst.settle:
         dst.settle["layers"] = min(dst.settle["max"], dst.settle["layers"] + 1)
     ls = src.addbonus("lifesteal")                    # 批8: 倒戈 —— 造成傷害時按比例回復自身兵力(以本次造成的傷害量 dmg 為基準), 上限 START_TROOP
@@ -1272,6 +1309,14 @@ def pick_choice(choices):
     return choices[-1]
 
 
+def not_ud(entry):
+    """批J(禁近似令-transfer轉移族): 從 dispel_unit() 內部提出成模組層級共用函式(原僅
+    dispel_unit 本地閉包), 供新增的 collect_debuff_tokens() 一併重用同一份「是否可被驅散/
+    轉移」判斷, 避免兩處各自維護一份 undispellable 判斷式而日後改動時彼此漂移。"""
+    flags = entry[4] if len(entry) > 4 else None
+    return not (flags and flags.get("undispellable"))
+
+
 def dispel_unit(u, what):
     """批16: dispel(驅散/淨化) —— 移除目標身上對應方向(buffs=正向增益/debuffs=負向減益)的條目,
     略過帶 undispellable 旗標(flags.undispellable, 見 push_add/push_mod/push_stat_add 呼叫端 ud_flags)
@@ -1280,10 +1325,6 @@ def dispel_unit(u, what):
     debuffs: amp(負值)/mitig(負值)/stat mult<1或add<0 + 控制欄位(stun/silence/disarm/chaos/dot/
     healblock/fakeReport/swap)。只挪動「數值型」adds/mods/stat_adds 依正負號分類; 控制欄位
     (debuffs專屬)直接歸零/清空。"""
-    def not_ud(entry):
-        flags = entry[4] if len(entry) > 4 else None
-        return not (flags and flags.get("undispellable"))
-
     def is_buff(a):                                    # 除 amp/mitig 外的 adds 種類一律視為buff
         return a[1] > 0 if a[0] in ("amp", "mitig") else True
 
@@ -1305,6 +1346,86 @@ def dispel_unit(u, what):
         u.fake_report_dur = 0
         u.ambush = 0
         # 批52j: captured 刻意不清除 —— 捕獲「無法被淨化」
+
+
+def collect_debuff_tokens(pool):
+    """批J(禁近似令-transfer轉移族): 對稱 engine.js collectDebuffTokens() —— 供 k=="transferDebuff"
+    使用, 掃描 pool(存活單位串列)內每個單位當下持有的「負面狀態」具體實例, 回傳 token 串列,
+    每個 token = {"kind":(供依種類分組挑選), "unit":(持有者), "move":(dest,dur)=>把這個實例
+    從unit搬到dest 的函式}。分類口徑刻意與既有 dispel_unit() 的 debuffs 分支完全一致(負值
+    amp/mitig、mult<1的mods、負值stat_adds、非undispellable的dot、stun/silence/disarm/chaos/
+    healblock/fakeReport/ambush/huchen, 且與dispel_unit同樣略過undispellable旗標的條目), 不
+    另立新標準, 確保「什麼算負面狀態」全庫只有一套定義。move() 內部同時完成「來源移除」與
+    「目的地重建」兩步, 避免呼叫端分兩步做時忘記其中一步、或順序錯置導致資料讀取到已移除的
+    實例。閉包用預設參數綁定當下迴圈變數(Python late-binding陷阱: 若不用預設參數, 迴圈內定義
+    的內層函式會全部指向迴圈結束後的最後一個u/a, 而非各自建立當下那一個)。"""
+    out = []
+    for u in pool:
+        for a in u.adds:
+            if a[0] in ("amp", "mitig") and a[1] < 0 and not_ud(a):
+                def _mv(dest, dur, u=u, a=a):
+                    u.adds.remove(a)
+                    dest.push_add(a[0], a[1], dur, a[3])
+                out.append({"kind": a[0], "unit": u, "move": _mv})
+        for m in u.mods:
+            if m[1] < 1 and not_ud(m):
+                def _mv(dest, dur, u=u, m=m):
+                    u.mods.remove(m)
+                    dest.push_mod(m[0], m[1], dur, m[3])
+                out.append({"kind": "mod:" + m[0], "unit": u, "move": _mv})
+        for s in u.stat_adds:
+            if s[1] < 0 and not_ud(s):
+                def _mv(dest, dur, u=u, s=s):
+                    u.stat_adds.remove(s)
+                    dest.push_stat_add(s[0], s[1], dur, s[3])
+                out.append({"kind": "stat:" + s[0], "unit": u, "move": _mv})
+        for d in u.dots:
+            if not (len(d) > 2 and d[2]):    # d[2]=undispellable旗標, 對稱dispel_unit保留undispellable dot的慣例
+                def _mv(dest, dur, u=u, d=d):
+                    u.dots.remove(d)
+                    dest.dots.append([d[0], dur, d[2] if len(d) > 2 else False, d[3] if len(d) > 3 else None])
+                out.append({"kind": "dot:" + (d[3] if len(d) > 3 and d[3] else "?"), "unit": u, "move": _mv})
+        if u.stun > 0:
+            def _mv(dest, dur, u=u):
+                u.stun = 0
+                dest.stun = max(dest.stun, (dur if dur is not None else 1) + 1)
+            out.append({"kind": "stun", "unit": u, "move": _mv})
+        if u.silence > 0:
+            def _mv(dest, dur, u=u):
+                u.silence = 0
+                dest.silence = max(dest.silence, (dur if dur is not None else 1) + 1)
+            out.append({"kind": "silence", "unit": u, "move": _mv})
+        if u.disarm > 0:
+            def _mv(dest, dur, u=u):
+                u.disarm = 0
+                dest.disarm = max(dest.disarm, (dur if dur is not None else 1) + 1)
+            out.append({"kind": "disarm", "unit": u, "move": _mv})
+        if u.chaos > 0:
+            def _mv(dest, dur, u=u):
+                u.chaos = 0
+                dest.chaos = max(dest.chaos, (dur if dur is not None else 1) + 1)
+            out.append({"kind": "chaos", "unit": u, "move": _mv})
+        if u.healblock > 0:
+            def _mv(dest, dur, u=u):
+                u.healblock = 0
+                dest.healblock = max(dest.healblock, (dur if dur is not None else 1) + 1)
+            out.append({"kind": "healblock", "unit": u, "move": _mv})
+        if getattr(u, "fake_report_dur", 0) > 0:
+            def _mv(dest, dur, u=u):
+                u.fake_report_dur = 0
+                dest.fake_report_dur = max(dest.fake_report_dur, (dur if dur is not None else 1) + 1)
+            out.append({"kind": "fakeReport", "unit": u, "move": _mv})
+        if u.ambush > 0:
+            def _mv(dest, dur, u=u):
+                u.ambush = 0
+                dest.ambush = max(dest.ambush, (dur if dur is not None else 1) + 1)
+            out.append({"kind": "ambush", "unit": u, "move": _mv})
+        if u.huchen:
+            def _mv(dest, dur, u=u):
+                dest.huchen = u.huchen
+                u.huchen = None
+            out.append({"kind": "huchen", "unit": u, "move": _mv})
+    return out
 
 
 def round_ok(t, r):                                    # 條件觸發(when): 回合是否符合戰法的發動窗口
@@ -2051,9 +2172,29 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                              "kind": t.get("kind", "intel")}
             continue
         if k == "redirect":                           # 傷害轉移: 代承者替其餘友軍吃 share
+            # 批J(禁近似令-transfer轉移族): e["guardFor"]=="leader" —— 「單次全額代承」模式
+            # (古之惡來「我軍主將即將受到普攻時...隨後為我軍主將承擔此次普通攻擊」), 對稱既有
+            # counter 的 guardFor:"leader"(守護式反擊), 但這裡是「代為承受」而非「代為反擊」。
+            # 不走下方常駐 guardian(%分擔每一下直到guard_dur到期)路徑, 改登記進
+            # allies[0].absorb_guards, 由 hit() 在主將受普攻時只轉移「這一下」的傷害(不影響
+            # 後續攻擊), 每回合限觸發1次(見 hit() 內 absorb_guards 節流)。與 counter_guards
+            # 是兩份獨立清單, 可並存。
+            if e.get("guardFor") == "leader":
+                if allies and allies[0].alive:
+                    allies[0].absorb_guards.append({"unit": caster, "share": e.get("share", 1.0),
+                                                     "prob": e.get("prob", 1.0)})
+                continue
             if e.get("guard") == "max_force":         # 代承者: 武力最高友軍 或 自己(預設)
                 guardian = max((a for a in allies if a.alive),
                                key=lambda a: a.eff("force"), default=caster)
+            elif e.get("guard") == "random_sub":
+                # 批J: 代承者=隨機一位「當下存活」的非主將副將(夢中弒臣「如果自己為主將，則使
+                # 隨機副將為自己分擔20%→40%傷害」), 與既有 max_force(取武力最高) 同層級但改
+                # 採均勻隨機。若無存活副將, guardian 落回 caster 本身——下方 `a is not guardian`
+                # 判斷會使 recipients(who=="leader"時=[caster], 因 caster 即 allies[0])被排除,
+                # 天然等同「找不到可轉嫁對象則不轉嫁」(不無中生有), 而非另尋他法硬湊轉嫁對象。
+                subs = [a for a in allies if a.alive and a is not allies[0]]
+                guardian = random.choice(subs) if subs else caster
             else:
                 guardian = caster
             # 批G: who 分流(leader/subs) —— 過去此處無條件對「除guardian外的全體allies」套用
@@ -2075,6 +2216,71 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     a.guardian, a.guard_share = guardian, e.get("share", 0.3)
                     a.guard_dur = e.get("dur", 99)    # 讀 e.dur(預設99=近似全程, 向後相容); 到期由 tick 清除
                     a.guard_normal_only = bool(e.get("normalOnly"))  # 只代承普攻(如 援助), 戰法傷害不轉移
+            continue
+        # 批J(禁近似令-transfer轉移族): stealStat —— 偷屬性原語(雁行陣「使我軍統率最低單體
+        # 偷取敵軍全體10點統率」)。核心約束: 不能無中生有——從每個victim實際扣除
+        # min(欲偷量, victim現有可扣量(=其當下effective值, 不得扣至負數)), 施放者/受益者只
+        # 獲得「所有victim實際被扣除量」的加總(而非固定填e["amount"], 若victim現有量不足10
+        # 點就只能偷到那麼多)。與既有 k=="stat" 的差異: k=="stat" 是無條件疊加, 不檢查/不連動
+        # 另一方; stealStat 是「一方扣多少, 另一方就恰好收多少」的成對操作, 且扣除量會先被
+        # victim現有值封頂。recipientSel(targetSel準則字串, 見TARGETSEL_KEY)從allies挑受益者,
+        # 省略時預設caster本身; 對稱既有srcSel/checkSrcSel(proxyNormal/proxyHit)呼叫慣例,
+        # 直接對raw allies呼叫pick_by_criterion不額外做captured過濾(與engine.js pickByCriterion
+        # 本身就不支援ally_pool參數一致, 維持雙引擎行為對稱)。
+        if k == "stealStat":
+            stat_field = e["stat"]
+            want_each = e.get("amount", 0) * (scale_of(caster, e["scale"], e.get("scaleDiv")) if e.get("scale") else 1.0)
+            recipient = pick_by_criterion(allies, e["recipientSel"]) if e.get("recipientSel") else caster
+            if recipient and recipient.alive and want_each > 0:
+                victim_pool = [x for x in (allies if e.get("who") == "ally" else enemies) if x.alive]
+                total = 0.0
+                for v in victim_pool:
+                    avail = max(0.0, v.eff(stat_field))
+                    actual = min(want_each, avail)
+                    if actual > 0:
+                        v.push_stat_add(stat_field, -actual, e.get("dur", 1), src)
+                        total += actual
+                if total > 0:
+                    recipient.push_stat_add(stat_field, total, e.get("dur", 1), src)
+            continue
+        # 批J: transferMitig —— 把「敵方(或指定來源側)當下實際持有的正向mitig(傷害降低)buff
+        # 實例」整個搬到我方(或指定去向側)隨機一人身上(雁行陣「轉移傷害降低: 將敵軍隨機武將的
+        # 傷害降低效果轉移至我軍隨機武將」)。若來源側當下沒有任何人持有這樣的buff, 不觸發(轉移
+        # 0, 不無中生有, 不得無來源憑空生出一份mitig buff給接收方)。轉移=移動(從來源陣列真的
+        # 移除該實例)而非複製, val照抄來源實例原值, dur改用e["dur"](對應原文「持續1回合」,
+        # 非沿用來源剩餘時長)。
+        if k == "transferMitig":
+            from_pool = [x for x in (allies if e.get("from") == "ally" else enemies) if x.alive]
+            to_pool = [x for x in (allies if e.get("to") == "ally" else enemies) if x.alive]
+            candidates = [(u, a) for u in from_pool for a in u.adds if a[0] == "mitig" and a[1] > 0]
+            if candidates and to_pool:
+                unit, entry = random.choice(candidates)
+                dest = random.choice(to_pool)
+                unit.adds.remove(entry)
+                dest.push_add("mitig", entry[1], e.get("dur", 1), src)
+            continue
+        # 批J: transferDebuff —— 把「我方(或指定來源側)群體當下實際持有的負面狀態」隨機挑
+        # e["n"]~e["nMax"]種「不同種類」(而非同種類的多個實例)整個搬到敵方(或指定去向側)隨機
+        # 單位身上(雁行陣「轉移負面狀態: 將友軍群體隨機1-2種負面狀態轉移至隨機敵軍」)。與現有
+        # dispel_unit 共用同一套「什麼算負面狀態」分類(負值amp/mitig、mult<1的mods、負值
+        # stat_adds、dot、stun/silence/disarm/chaos/healblock/fakeReport/ambush/huchen), 確保
+        # 口徑一致不新開一套分類標準。若來源側當下完全沒有負面狀態, 轉移0種(不無中生有); 若
+        # 只有1種可轉移即使e["nMax"]要求2種也只轉移現有的那1種(轉移量=來源實際擁有量, 不硬湊
+        # 到位)。
+        if k == "transferDebuff":
+            from_pool = [x for x in (enemies if e.get("from") == "enemy" else allies) if x.alive]
+            to_pool = [x for x in (enemies if e.get("to") == "enemy" else allies) if x.alive]
+            tokens = collect_debuff_tokens(from_pool)
+            if tokens and to_pool:
+                kinds = list({tok["kind"] for tok in tokens})
+                base_n = e.get("n", 1)
+                want_n = base_n + random.randint(0, e["nMax"] - base_n) if e.get("nMax") else base_n
+                chosen_kinds = random.sample(kinds, min(want_n, len(kinds)))
+                for kd in chosen_kinds:
+                    matches = [tok for tok in tokens if tok["kind"] == kd]
+                    tok = random.choice(matches)
+                    dest = random.choice(to_pool)
+                    tok["move"](dest, e.get("dur", 1))
             continue
         # 批52j: capture(捕獲) —— 暗箭難防獨立狀態
         # 已有捕獲 → altCoef 直傷該人; 否則 rate(可 scale) 捕獲敵單體(不可淨化/無法行動造成傷害/
@@ -7513,6 +7719,191 @@ def demo():
     assert 0 <= sim193["A勝率"] <= 1 and 0 <= sim193["B勝率"] <= 1, \
         f"193: 神機妙算持有者(諸葛亮)入隊完整fight()端到端300場應正常產生合法勝率, got A={sim193['A勝率']} B={sim193['B勝率']}"
     print(f"    [批I 193] 神機妙算 scaleCompare 消費端一致性(c_smart={c_smart193:.3f}>c_dumb={c_dumb193:.3f}) + 完整simulate()端到端300場無崩潰 驗證通過")
+
+    # ============================================================================
+    # 批J: 禁近似令-transfer轉移族 —— stealStat(偷屬性)/transferMitig(buff轉移)/
+    # transferDebuff(debuff轉移)三原語 + redirect新增guard:"random_sub"/guardFor:"leader"
+    # 兩擴充。核心驗收主題: 「轉移量=來源實際擁有量, 不無中生有」——來源沒有該狀態/該量,
+    # 轉移就該是0, 而非固定套用戰法表面數字。
+    # ============================================================================
+
+    # 194) stealStat —— 偷屬性核心約束「轉移量=來源實際擁有量,不無中生有」。用直接竄改
+    # command屬性模擬「victim統率已經很低」情境(eff()疊加stat_adds/mods皆為空的新建Unit,
+    # 故直接設u.command即可讓eff("command")≈該值): 統率貧乏的victim應只被扣到
+    # min(欲偷量,現有值)而非固定扣10點(不應扣至負值); 統率充裕的victim應被扣滿10點;
+    # recipient獲得的量應恰好等於「所有victim實際被扣除量之加總」, 而非固定n_victim×10
+    # (對稱雁行陣「使我軍統率最低單體偷取敵軍全體10點統率」)。
+    bj194_recipient = Unit(POOL["張飛"], "騎")
+    bj194_poor = Unit(POOL["諸葛亮"], "弓")
+    bj194_poor.command = 3.0  # 直接竄改基礎屬性, 模擬「當下有效統率極低」
+    bj194_rich = Unit(POOL["周瑜"], "弓")
+    bj194_before_poor = bj194_poor.eff("command")
+    bj194_before_rich = bj194_rich.eff("command")
+    assert bj194_before_poor < 10, "測試前置條件: 貧乏victim的有效統率應低於欲偷量10點"
+    bj194_before_recipient = bj194_recipient.eff("command")
+    bj194_tac = {"nameZh": "測試偷統率194", "effects": [
+        {"k": "stealStat", "stat": "command", "amount": 10, "who": "enemy",
+         "recipientSel": "minCommand", "dur": 1}]}
+    apply_effects(bj194_recipient, None, bj194_tac, [bj194_recipient], [bj194_poor, bj194_rich])
+    bj194_after_poor = bj194_poor.eff("command")
+    bj194_after_rich = bj194_rich.eff("command")
+    assert bj194_after_poor >= -1e-6, f"stealStat: 貧乏victim的統率不應被扣至負值(after={bj194_after_poor})"
+    assert abs((bj194_before_poor - bj194_after_poor) - bj194_before_poor) < 1e-6, \
+        f"stealStat: 貧乏victim應只被扣除min(10,現有值)=現有值本身, 實際扣除{bj194_before_poor - bj194_after_poor}"
+    assert abs((bj194_before_rich - bj194_after_rich) - 10) < 1e-6, \
+        f"stealStat: 統率充裕(遠大於10)的victim應被扣滿10點, 實際扣除{bj194_before_rich - bj194_after_rich}"
+    bj194_gained = bj194_recipient.eff("command") - bj194_before_recipient
+    bj194_expected = (bj194_before_poor - bj194_after_poor) + (bj194_before_rich - bj194_after_rich)
+    assert abs(bj194_gained - bj194_expected) < 1e-6, \
+        f"stealStat: recipient獲得量應恰好等於所有victim實際被扣除量之加總({bj194_expected:.2f}), 不是固定10×2人=20(實得{bj194_gained:.2f})"
+    assert bj194_expected < 20 - 1e-6, "測試前置條件: 本測試應能區分『固定20』vs『實際扣除量之和』兩種結果"
+    print("    [批J 194] stealStat: 偷屬性轉移量封頂於victim實際擁有量, recipient只收實際扣除量之和(不無中生有) 驗證通過")
+
+    # 195) transferMitig —— 若敵方(來源側)當下沒有人持有正向mitig(傷害降低)buff, 不應無中
+    # 生有轉移(dest不應憑空獲得減傷)。若敵方恰有一人持有, 應整個搬移(從來源移除, 在dest身上
+    # 以同數值重建), 而非「雙方各自套用」的舊近似。
+    bj195_dest = Unit(POOL["張飛"], "騎")
+    bj195_src_a = Unit(POOL["關羽"], "槍")  # 無mitig buff
+    bj195_src_b = Unit(POOL["劉備"], "槍")  # 無mitig buff
+    bj195_tac = {"nameZh": "測試轉移傷害降低195", "effects": [
+        {"k": "transferMitig", "from": "enemy", "to": "ally", "dur": 1}]}
+    apply_effects(bj195_dest, None, bj195_tac, [bj195_dest], [bj195_src_a, bj195_src_b])
+    assert bj195_dest.addbonus("mitig") == 0, \
+        "transferMitig: 敵方當下無人持有mitig buff時不應轉移(dest不應憑空獲得減傷)"
+    bj195b_dest = Unit(POOL["張飛"], "騎")
+    bj195b_src_has = Unit(POOL["關羽"], "槍")
+    bj195b_src_has.push_add("mitig", 0.25, 3, src="測試減傷來源")
+    bj195b_src_none = Unit(POOL["劉備"], "槍")
+    apply_effects(bj195b_dest, None, bj195_tac, [bj195b_dest], [bj195b_src_has, bj195b_src_none])
+    assert abs(bj195b_dest.addbonus("mitig") - 0.25) < 1e-9, \
+        f"transferMitig: 敵方持有mitig buff時應整個搬移到dest身上(相同數值0.25), 實得{bj195b_dest.addbonus('mitig')}"
+    assert bj195b_src_has.addbonus("mitig") == 0, \
+        "transferMitig: 來源應失去該buff(真正的搬移, 非複製——來源不應仍保留原buff)"
+    print("    [批J 195] transferMitig: 來源無mitig buff不轉移(不無中生有)/來源有則整個搬移(來源移除+目的地重建) 驗證通過")
+
+    # 196) transferDebuff —— 若我方(來源側)群體當下完全沒有負面狀態, 應轉移0種(不無中生有)。
+    # 若我方群體恰好只有1種現存負面狀態(如震懾), 即使nMax要求最多2種, 也只能轉移現有的那
+    # 1種(轉移量=來源實際擁有量, 不硬湊到位)。
+    bj196_a = Unit(POOL["關羽"], "槍")
+    bj196_b = Unit(POOL["劉備"], "槍")
+    bj196_dest = Unit(POOL["張飛"], "騎")
+    bj196_tac = {"nameZh": "測試轉移負面狀態196", "effects": [
+        {"k": "transferDebuff", "from": "ally", "to": "enemy", "n": 1, "nMax": 2, "dur": 1}]}
+    apply_effects(Unit(POOL["諸葛亮"], "弓"), None, bj196_tac, [bj196_a, bj196_b], [bj196_dest])
+    assert bj196_dest.stun == 0 and not bj196_dest.silence and not bj196_dest.disarm and not bj196_dest.chaos, \
+        "transferDebuff: 來源群體無任何負面狀態時應轉移0種(dest不應憑空獲得任何控制狀態)"
+    bj196b_a = Unit(POOL["關羽"], "槍")
+    bj196b_a.stun = 3
+    bj196b_b = Unit(POOL["劉備"], "槍")  # 無任何負面狀態
+    bj196b_dest = Unit(POOL["張飛"], "騎")
+    apply_effects(Unit(POOL["諸葛亮"], "弓"), None, bj196_tac, [bj196b_a, bj196b_b], [bj196b_dest])
+    assert bj196b_a.stun == 0, "transferDebuff: 來源應失去該狀態(真正的搬移, 非複製)"
+    assert bj196b_dest.stun > 0, "transferDebuff: dest應獲得被轉移的震懾狀態"
+    assert not bj196b_dest.silence and not bj196b_dest.disarm and not bj196b_dest.chaos, \
+        "transferDebuff: 我方只有1種現存負面狀態時, 即使nMax要求2種, 也不應憑空多轉移出第2種"
+    print("    [批J 196] transferDebuff: 來源無負面狀態不轉移(0種)/只有1種現存時即使nMax要求2種也不硬湊(不無中生有) 驗證通過")
+
+    # 197) redirect guard="random_sub" —— 夢中弒臣「如果自己為主將，則使隨機副將為自己分擔
+    # 20%→40%傷害」。若隊伍有存活副將, 主將(caster=allies[0])應把一部分傷害轉嫁給其中一位
+    # 副將(guardian=該副將, 非caster自己)。若隊伍只有主將一人(無副將可轉嫁), guardian應
+    # 退回caster本身, 而who="leader"時recipients=[caster]恰好等於guard本身, `a is not
+    # guardian`判斷會使其被排除——天然等同「找不到可轉嫁對象就不轉嫁」, 不應另尋他法硬湊。
+    bj197_leader = Unit(POOL["曹操"], "騎")
+    bj197_sub = Unit(POOL["典韋"], "騎")
+    bj197_tac = {"nameZh": "測試隨機副將197", "effects": [
+        {"k": "redirect", "who": "leader", "guard": "random_sub", "share": 0.4, "dur": 2}]}
+    apply_effects(bj197_leader, None, bj197_tac, [bj197_leader, bj197_sub], [])
+    assert bj197_leader.guardian is bj197_sub, \
+        f"redirect guard='random_sub': 有存活副將時, 主將的guardian應為該副將, 實得{bj197_leader.guardian}"
+    assert abs(bj197_leader.guard_share - 0.4) < 1e-9
+    bj197b_leader = Unit(POOL["曹操"], "騎")
+    apply_effects(bj197b_leader, None, bj197_tac, [bj197b_leader], [])
+    assert bj197b_leader.guardian is None, \
+        "redirect guard='random_sub': 無存活副將時不應轉嫁(guardian應保持None, 不無中生有另尋轉嫁對象)"
+    print("    [批J 197] redirect guard='random_sub': 有副將時隨機轉嫁給存活副將/無副將時不轉嫁(guardian維持None) 驗證通過")
+
+    # 198) redirect guardFor="leader"(absorbGuards, 單次全額代承) —— 古之惡來「...隨後為
+    # 我軍主將承擔此次普通攻擊」。主將受到「普通攻擊」時, 該次傷害應100%(share預設1.0)轉給
+    # 登記的代承者, 主將自身完全不受這次攻擊影響; 每回合最多觸發1次(第二次普攻不應再轉嫁);
+    # 且只在普攻(is_normal=True)時生效, 戰法傷害(is_normal=False)不應觸發(對稱既有
+    # counter_guards/guardFor慣例)。
+    bj198_leader = Unit(POOL["典韋"], "騎")
+    bj198_absorber = Unit(POOL["典韋"], "騎")
+    bj198_attacker = Unit(POOL["呂布"], "騎")
+    bj198_tac = {"nameZh": "測試單次全額代承198", "effects": [
+        {"k": "redirect", "guardFor": "leader", "share": 1.0}]}
+    apply_effects(bj198_absorber, None, bj198_tac, [bj198_leader, bj198_absorber], [bj198_attacker])
+    assert len(bj198_leader.absorb_guards) == 1 and bj198_leader.absorb_guards[0]["unit"] is bj198_absorber, \
+        "redirect guardFor='leader': 應把持有者登記進allies[0](主將)的absorb_guards清單"
+    bj198_leader_before = bj198_leader.troop
+    bj198_absorber_before = bj198_absorber.troop
+    hit(bj198_attacker, bj198_leader, 0.5, "phys", is_normal=True)
+    assert abs(bj198_leader.troop - bj198_leader_before) < 1e-6, \
+        f"redirect guardFor='leader': 普攻應100%轉嫁給代承者, 主將不應損兵(leader損失{bj198_leader_before - bj198_leader.troop:.1f})"
+    assert bj198_absorber.troop < bj198_absorber_before, \
+        "redirect guardFor='leader': 代承者應實際承受這次普攻的全部傷害(不會憑空消失兵力)"
+    bj198_leader_before2 = bj198_leader.troop
+    hit(bj198_attacker, bj198_leader, 0.5, "phys", is_normal=True)
+    assert bj198_leader_before2 - bj198_leader.troop > 1e-6, \
+        "redirect guardFor='leader': 同回合第二次普攻不應再被代承(每回合限觸發1次), 主將這次應自行承受傷害"
+    bj198c_leader = Unit(POOL["典韋"], "騎")
+    bj198c_absorber = Unit(POOL["典韋"], "騎")
+    bj198c_attacker = Unit(POOL["呂布"], "騎")
+    apply_effects(bj198c_absorber, None, bj198_tac, [bj198c_leader, bj198c_absorber], [bj198c_attacker])
+    bj198c_leader_before = bj198c_leader.troop
+    hit(bj198c_attacker, bj198c_leader, 0.5, "intel", is_normal=False)
+    assert bj198c_leader.troop < bj198c_leader_before, \
+        "redirect guardFor='leader': 戰法傷害(非普攻)不應觸發代承, 主將應自行承受"
+    print("    [批J 198] redirect guardFor='leader'(absorbGuards): 普攻100%單次全額代承/每回合限1次/非普攻不觸發 驗證通過")
+
+    # 199) real-data結構驗證——確認6筆戰法定稿(tactics_parsed.json經reparse_effects.py套用
+    # corrections後)的effects陣列確實帶有本批新原語/欄位, 而非只在合成測試戰法上驗證過
+    # (對稱既有181-193等批次「real-data」系列測試慣例)。
+    bj199_yhz = TACTICS["雁行陣"]
+    bj199_yhz_ks = [e.get("k") for e in bj199_yhz["effects"]]
+    assert bj199_yhz_ks == ["stealStat", "transferMitig", "transferDebuff"], \
+        f"雁行陣: real-data應含stealStat+transferMitig+transferDebuff三段(依序), 實得{bj199_yhz_ks}"
+    bj199_yhz_steal = bj199_yhz["effects"][0]
+    assert bj199_yhz_steal.get("recipientSel") == "minCommand" and bj199_yhz_steal.get("who") == "enemy"
+    bj199_mhjm = TACTICS["移花接木"]
+    assert not bj199_mhjm.get("when"), "移花接木: 頂層when應已清除(批19遺留的無效欄位, 阻擋on:healed註冊)"
+    bj199_mhjm_last = bj199_mhjm["effects"][-1]
+    assert bj199_mhjm_last.get("k") == "heal" and bj199_mhjm_last.get("ofDamage") == 0.26 \
+        and (bj199_mhjm_last.get("when") or {}).get("on") == "healed" \
+        and (bj199_mhjm_last.get("when") or {}).get("who") == "enemy", \
+        f"移花接木: real-data最後一段應為heal+ofDamage:0.26+on:healed,who:enemy, 實得{bj199_mhjm_last}"
+    bj199_qsjd = TACTICS["權僭九鼎"]
+    bj199_qsjd_first = bj199_qsjd["effects"][0]
+    assert bj199_qsjd_first.get("k") == "heal" and bj199_qsjd_first.get("ofDamage") == 0.12 \
+        and bj199_qsjd_first.get("rate") == 0.5 and (bj199_qsjd_first.get("when") or {}).get("who") == "enemy", \
+        f"權僭九鼎: real-data第一段應為heal+ofDamage:0.12+rate:0.5+on:healed,who:enemy, 實得{bj199_qsjd_first}"
+    bj199_mzsc = TACTICS["夢中弒臣"]
+    bj199_mzsc_first = bj199_mzsc["effects"][0]
+    assert bj199_mzsc_first.get("k") == "redirect" and bj199_mzsc_first.get("guard") == "random_sub" \
+        and abs(bj199_mzsc_first.get("share", 0) - 0.4) < 1e-9 and bj199_mzsc_first.get("who") == "leader", \
+        f"夢中弒臣: real-data第一段應為redirect+guard:random_sub+share:0.4+who:leader, 實得{bj199_mzsc_first}"
+    bj199_jsbw = TACTICS["校勝帷幄"]
+    bj199_jsbw_first = bj199_jsbw["effects"][0]
+    assert bj199_jsbw_first.get("k") == "redirect" and bj199_jsbw_first.get("who") == "leader", \
+        f"校勝帷幄: real-data第一段redirect應為who:leader(取代舊版who:ally近似), 實得{bj199_jsbw_first}"
+    bj199_gzel = TACTICS["古之惡來"]
+    bj199_gzel_ks = [e.get("k") for e in bj199_gzel["effects"]]
+    assert "redirect" in bj199_gzel_ks, f"古之惡來: real-data應新增redirect(guardFor:leader)效果段, 實得{bj199_gzel_ks}"
+    bj199_gzel_redirect = next(e for e in bj199_gzel["effects"] if e.get("k") == "redirect")
+    assert bj199_gzel_redirect.get("guardFor") == "leader" and abs(bj199_gzel_redirect.get("share", 0) - 1.0) < 1e-9
+    print("    [批J 199] 6筆transfer族戰法real-data結構驗證(stealStat/transferMitig/transferDebuff/"
+          "heal.ofDamage×2/redirect.guard=random_sub/redirect.who=leader/redirect.guardFor=leader) "
+          "皆已正確落地 驗證通過")
+
+    # 200) 端到端整合——6筆戰法個別以inhA掛在固定隊伍成員身上, 完整fight()/simulate()跑一輪
+    # 不應崩潰且應產生合法勝率(對稱既有181-193系列的end-to-end慣例)。
+    random.seed(20260710)
+    for _bj200_name in ("雁行陣", "移花接木", "權僭九鼎", "夢中弒臣", "校勝帷幄", "古之惡來"):
+        bj200_res = simulate(["張飛", "關羽", "劉備"], ["諸葛亮", "周瑜", "司馬懿"], n=200,
+                              inhA=[[_bj200_name], None, None])
+        assert 0 <= bj200_res["A勝率"] <= 1 and 0 <= bj200_res["B勝率"] <= 1, \
+            f"200({_bj200_name}): 完整simulate()端到端200場應正常產生合法勝率, got {bj200_res}"
+    print("    [批J 200] 6筆transfer族戰法端到端(inhA掛載+完整fight()/simulate()各200場) 皆無崩潰且產生合法勝率 驗證通過")
 
     print("self-check OK")
 
