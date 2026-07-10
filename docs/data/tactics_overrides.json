@@ -326,5 +326,30 @@
    "confidence": "high",
    "source": "批H0尾掃: agy查證(A級/李嚴傳承/45%/持續1回合); grok稱持續2回合與agy衝突, 按權威取agy, 2026-07-10"
   }
+ },
+ "放火": {
+  "effectText": "對敵軍單體施加灼燒狀態（傷害率35%→70%，受智力影響），持續3回合",
+  "confidence": "high",
+  "source": "user官方卡截圖2026-07-10(overrides自洽層, 使committed可重建)"
+ },
+ "壓制": {
+  "effectText": "使敵軍群體（2人）造成傷害降低7.5%→15%，持續2回合",
+  "confidence": "high",
+  "source": "user官方卡截圖2026-07-10(overrides自洽層, 使committed可重建)"
+ },
+ "刺傷": {
+  "effectText": "對敵軍單體施加潰逃狀態（傷害率35%→70%，受武力影響），持續3回合",
+  "confidence": "high",
+  "source": "user官方卡截圖2026-07-10(overrides自洽層, 使committed可重建)"
+ },
+ "橫掃": {
+  "effectText": "使自己獲得群攻狀態（傷害率20%→40%），持續1回合",
+  "confidence": "high",
+  "source": "user官方卡截圖2026-07-10(overrides自洽層, 使committed可重建)"
+ },
+ "毒氣": {
+  "effectText": "準備1回合，對敵軍單體造成謀略傷害（傷害率50%→100%）並施加中毒狀態，每回合持續造成傷害（傷害率25%→50%，受智力影響），持續2回合",
+  "confidence": "high",
+  "source": "user官方卡截圖2026-07-10(overrides自洽層, 使committed可重建)"
  }
 }
