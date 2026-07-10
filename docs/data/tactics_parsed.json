@@ -1117,7 +1117,8 @@
     "everyRound": true,
     "rate": 0.6,
     "targetSel": "minTroop",
-    "_note": "批30 A: 原文『每回合開始時,有30%→60%機率使我軍兵力最低武將受到傷害降低3%→6%,持續2回合』改用e.everyRound(新原語, 非heal效果的逐回合重擲通道)精確表達, 取代舊版prob-ev(機率×單體目標攤薄後當成全軍常駐減傷)近似。val改回原文滿級值0.06(6%), 每回合獨立擲骰rate=0.6(取滿級值), targetSel:minTroop精確選中我軍兵力最低單體(對應原文, 不再攤薄成全軍常駐)。仍未解決: 『可疊加』(push_add同源刷新非疊加, 見engine_limitations.md 6.7)、『受最高屬性影響』無對應scale(需『自身多屬性取最高』動態判斷, 見6.6節)未建模, 保守不縮放。"
+    "_note": "批I: 原文「有30%→60%機率(受最高屬性影響)使我軍兵力最低武將受到傷害降低3%→6%(受最高屬性影響)」——數值段(val:0.06)補scale:\"maxStat\"(批I新增原語)解決「受最高屬性影響」動態縮放。機率段(rate:0.6, 同句「受最高屬性影響」)仍是缺口: e.rate(效果級機率閘門)目前完全不支援任何屬性縮放(不論固定單屬性或最高屬性), 此為與scale_max_stat(縮放\"值\"的表達力)正交的另一個缺口(縮放\"機率擲骰\"的表達力), 不屬本批(scale/比較族)3原語任一者管轄範圍, 見戰法_todo誠實揭露, 待future batch評估。",
+    "scale": "maxStat"
    },
    {
     "k": "amp",
@@ -1127,7 +1128,8 @@
     "everyRound": true,
     "rate": 0.6,
     "targetSel": "maxTroop",
-    "_note": "批30 A: 同上mitig段的敵方對應句『30%→60%機率使敵軍兵力最高武將造成傷害降低3%→6%』改用e.everyRound精確表達逐回合重擲部分, val改回原文滿級值0.06。批C: 原_note稱『engine的targetSel只支援minTroop, 無maxTroop』——批45 C已新增targetSel:\"maxTroop\"(見engine_limitations.md第17節「已解決」標記, pick_by_criterion的TARGETSEL_MIN集合刻意不含maxTroop使其改用max()而非min()), 先前從未實際套用於本戰法。補上targetSel:\"maxTroop\"精確選中敵軍兵力最高單體, 取代舊版who:enemy全體套用的高估近似。"
+    "_note": "批I: 同上mitig段, 數值段(val:-0.06)補scale:\"maxStat\"解決敵軍段「受最高屬性影響」動態縮放。機率段(rate:0.6)受最高屬性影響部分同樣是e.rate缺乏屬性縮放支援的正交缺口, 見戰法_todo。",
+    "scale": "maxStat"
    },
    {
     "k": "immune",
@@ -1138,13 +1140,14 @@
     "dur": 1,
     "everyRound": true,
     "rate": 0.35,
-    "_note": "批C: 原文『自身每回合行動時，有17.5%→35%機率(受最高屬性影響)使我軍全體免疫禁療，每個目標獨立判定，持續1回合』——過去完全未建模(_todo稱『引擎無禁療免疫原語』)。經核對, immuneTo(批16, types可含\"healblock\")查詢方法is_immune_to/isImmuneTo自始即支援healblock(demo()/smoke test既有涵蓋, 見sgz.py:5499一帶「healblock」在既有測試清單內), 但施加healblock的k===\"healblock\"分支從未讀取此查詢(見sgz.py/engine.js該分支本次同步補上is_immune_to(\"healblock\")守衛)。現用e.immune(types:[\"healblock\"])+e.everyRound(逐回合重擲, 對應『每回合』)+rate:0.35(取滿級值)精確表達, dur:1對應『持續1回合』。『受最高屬性影響』(機率的動態縮放)無對應scale(需『自身多屬性取最高』動態判斷, 同mitig/amp段已知缺口, 見6.6節), 保守取滿級值不縮放, 已知會偏高估低統禦/低屬性持有者的實際觸發率。"
+    "_note": "批C: 原文『自身每回合行動時，有17.5%→35%機率(受最高屬性影響)使我軍全體免疫禁療，每個目標獨立判定，持續1回合』——過去完全未建模(_todo稱『引擎無禁療免疫原語』)。經核對, immuneTo(批16, types可含\"healblock\")查詢方法is_immune_to/isImmuneTo自始即支援healblock(demo()/smoke test既有涵蓋, 見sgz.py:5499一帶「healblock」在既有測試清單內), 但施加healblock的k===\"healblock\"分支從未讀取此查詢(見sgz.py/engine.js該分支本次同步補上is_immune_to(\"healblock\")守衛)。現用e.immune(types:[\"healblock\"])+e.everyRound(逐回合重擲, 對應『每回合』)+rate:0.35(取滿級值)精確表達, dur:1對應『持續1回合』。『受最高屬性影響』(機率的動態縮放)無對應scale(需『自身多屬性取最高』動態判斷, 同mitig/amp段已知缺口, 見6.6節), 保守取滿級值不縮放, 已知會偏高估低統禦/低屬性持有者的實際觸發率。",
+    "_note2": "批I: 原文「有17.5%→35%機率(受最高屬性影響)使我軍全體免疫禁療」——本段immune無獨立magnitude欄位(布林狀態授予, 非%數值), 「受最高屬性影響」完全落在機率(rate:0.35)上, 而非scale_max_stat族的magnitude縮放範圍——即使scale:\"maxStat\"已就位, 本段也無處可掛(沒有val可乘)。同mitig/amp段, 機率縮放本身是e.rate缺乏屬性縮放支援的正交缺口, 不屬本批3原語管轄, 見戰法_todo。"
    }
   ],
   "quality": "S",
   "cat": "COMMAND",
   "src": "INHERITANCE",
-  "_todo": "amp段『敵軍兵力最高武將』選標已用targetSel:maxTroop解決(批C, 見effects[1]._note); 我軍全體禁療免疫已用immune+healblock解決(批C, 見effects[2]._note, 含引擎微調)。仍未建模: (1)mitig/amp/immune三段皆聲稱『受最高屬性影響』(動態取自身武/智/統/速/魅四維最高一項當縮放依據), scale欄位僅支援固定單一屬性, 無法表達「取最高」語意(同工神/扶危定傾/武鋒陣等戰法共通的engine_limitations.md第12節鏡像缺口, 這裡是「本效果的機率/數值受自身最高屬性影響」而非「依目標當下狀態縮放」, 概念相關但非同一節); (2)mitig/amp『可疊加』(push_add/push_mod同src刷新非疊加, 見6.7節既有系統性限制)。",
+  "_todo": "批I複核: mitig/amp的「受最高屬性影響」數值段已用scale:\"maxStat\"解決(批I新增原語, 見各效果_note)。三段(mitig/amp/immune)各自機率段(數值見各效果_note)本身「受最高屬性影響」仍未建模: e.rate(效果級機率閘門, 批23 A4)目前不支援任何屬性縮放(不分固定單屬性或最高屬性), 是與scale_max_stat/scale_compare/if_target_has_any_or三者皆正交的第四種缺口(「機率本身受屬性縮放」), 不屬本批範圍, 待未來批次評估「e.rate配合scale/scaleDiv動態縮放」原語。「可疊加」(push_add/push_mod同源刷新非疊加)維持既有6.7節限制。",
   "troopLimit": [
    "BOW",
    "SIEGE"
@@ -3354,12 +3357,19 @@
     "dur": 99,
     "n": 2,
     "_note": "批C: 原文「該效果結束後...受到傷害提高1%」(採信本文首段「2023→10→11更新（增強）」的定稿版本1%固定值, 而非文末「原始版本」的2%→4%區間——本文慣例是版本清單第一段為現行定稿, 末段原始版本為歷史對照)——先前完全遺漏此「代價」半句(與上方amp「造成傷害+8%→16%」同一句「該效果結束後」的並列子句, 過去只建了收益面未建代價面)。mitig負值(val:-0.01)表達「受到傷害提高」(同批全庫既有負值mitig慣例, 如竭忠盡智val:-0.08), 與上方amp效果同組who:ally+e.n=2(對應同一批友軍群體), dur:99比照amp常駐慣例(「該效果結束後」語意上與amp的持續期一致, 皆為decay退場後的常駐狀態)。"
+   },
+   {
+    "k": "stat",
+    "who": "self",
+    "stat": "maxStat",
+    "add": 60,
+    "dur": 99,
+    "_note": "批I(禁近似令-scale/比較族): 原文「自身最高屬性提高30→60點」——過去完全未表達(需要「動態取自身四維最高一項」判斷, 見舊_todo)。e.stat==\"maxStat\"(批I新增原語, 見resolve_stat_field())於套用當下動態解析為施放者當下force/intel/command/speed四維最高的一項, 對該欄位做+60平加(滿級值), dur:99比照本戰法amp/mitig(-0.01)兩段既有「戰鬥中」常駐慣例。"
    }
   ],
   "quality": "S",
   "cat": "FORMATION",
   "src": "EVENT",
-  "_todo": "「自身最高屬性+30→60點」的自身屬性buff完全未表達(需要「動態取自身武/智/統/速/魅四維最高一項」的判斷, scale欄位僅支援固定單一屬性, 同扶危定傾/武鋒陣/剛柔並濟等戰法共通的engine_limitations.md第12節鏡像缺口)。批C: 衰減結束後「受到傷害+1%」代價段已補上(見effects[3], 取代舊_todo「未表達」的說法)。批23: 已補「造成傷害降低(decay)」段, mitig(受到傷害降低)因decay只作用於amp無法比照遞減, 維持flat近似(略高估後期回合減傷)。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -3564,7 +3574,8 @@
     "who": "ally",
     "val": 0.39,
     "dur": 1,
-    "_note2": "批35 C: 兄弟掃描 —— raw effectText「使我軍全體受到的傷害降低19.5→39%(受自身最高屬性影響)」, 「自身最高屬性」是「施放者四維中最高的一項」(動態選擇, 非固定單一屬性), 現行scale欄位只支援單一固定屬性(intel/force/command/speed/charm), 無法表達「取最高者」語意, 引擎需新增「maxStat」類原語才能精確建模。現況保守維持val:0.39固定不縮放, 記錄此結構性缺口待未來擴充(非曲線族350/375的問題, 是「scale來源本身」的表達力缺口)。"
+    "scale": "maxStat",
+    "_note": "批I(禁近似令-scale/比較族): 原文「使我軍全體受到的傷害降低19.5→39%(受自身最高屬性影響)」——scale=\"maxStat\"(批I新增原語, 見scale_of())動態取施放者當下四維(武/智/統/速)最高一項代入縮放曲線, 取代先前val:0.39固定不縮放的近似(舊_note2/engine_limitations.md第12/6.6節已記錄此鏡像缺口, 現已解決)。次段ifLeader top-up(effects[1], 42%-39%=3%差額)維持不變, 主將加成本身與「最高屬性」縮放是兩件獨立的事(前者是身份條件, 後者是數值縮放), 不互相取代。"
    },
    {
     "k": "mitig",
@@ -4019,7 +4030,11 @@
     "val": -0.2,
     "dur": 2,
     "_est": true,
-    "_approx": "批C: 原文「若自身武力較高，則會顯著降低目標造成的傷害」——(1)「顯著降低」無任何%數字錨點(本戰法effectText全文都無精確數值, 同勠力同心/摧鋒斷刃皆屬EVENT兌換戰法異常模糊描述的同類問題), val:-0.2純屬先前未揭露的猜測值, 本批補上_est/_approx誠實標註; (2)「若自身武力較高」(疑似「較目標武力高」的條件比較, 但原文未明說比較對象)完全未建模——engine現無「施放者屬性 vs 目標屬性」的動態比較判斷點(同才辯機捷「雙方武力之差」/威武並昭「雙方速度差」等戰法已揭露的「diff-based比較, scale僅支援單一固定屬性查表, 無法表達雙方差值或大小比較」同類結構性缺口), 現況為amp無條件套用(不論武力高低都給-20%, 較原文「條件式」寬鬆)。"
+    "ifStatCompare": {
+     "stat": "force",
+     "op": "gt"
+    },
+    "_note": "批I(禁近似令-scale/比較族): 原文「若自身武力較高，則會顯著降低目標造成的傷害」——條件比較段(「若自身武力較高」)已解決: 補ifStatCompare(批I新增原語, {stat:\"force\",op:\"gt\"}, vs預設\"caster\")精確表達「僅施放者武力高於目標時才生效」, 取代舊版amp無條件套用(不論武力高低都給-20%)的近似, 見stat_compare_ok()。殘留缺口: 「顯著降低」本身全文無任何%數字錨點(本戰法effectText全文皆無精確數值, 為EVENT兌換戰法常見的模糊描述問題), val:-0.2/coef:0.5(頂層)維持_est估計值不變, 待未來若有更精確文字版本再校準, 與本批3原語(scale_max_stat/scale_compare/if_target_has_any_or)無關, 誠實保留_est揭露。"
    }
   ],
   "quality": "S",
@@ -4027,7 +4042,7 @@
   "src": "EVENT",
   "hitsRepeat": true,
   "_note": "批12 ModeB: 原coef=0導致3次隨機打擊完全不造成傷害(明顯缺陷), 原文無明確傷害率數字, 取同類charge戰法中位數保守值coef=0.5/次(_est, 待未來更精確數值校準)+hitsRepeat:true(3次獨立抽樣可重複命中同一目標, 而非3人不重複群攻)。批D(R32): 全庫頂層欄位孤兒掃描發現hitsRepeat:true+n:3過去對type==\"charge\"完全是死欄位——do_normal_attack()/doNormalAttack()的charge分派(唯一負責觸發本戰法的程式碼路徑)過去只對do_normal_attack已選定的單一目標打一次, 從未讀取n/nMax/hitsRepeat(這3個欄位只在fight()主迴圈的type==\"active\"一般路徑才有讀取邏輯), 導致「發動三次隨機打擊」被靜默塌縮成一次, 整體傷害輸出被低估至1/3, 且此缺口先前從未被揭露(不同於虎痴/陷陣突襲的lockTarget兩筆, 那兩筆的_note/_todo早已自陳「不適用」)。本批已修復引擎本身(見engine_limitations.md新節): do_normal_attack()/doNormalAttack()的charge分支新增cnt=n(+nMax浮動)判定, cnt<=1維持原行為(零回歸), hitsRepeat:true時N次獨立選標(可重複命中同一目標), 否則走pick_targets群體(AoE)。資料欄位(n:3/hitsRepeat:true)本身數值正確, 無需修改, 純引擎端接線。",
-  "_todo": "批C: 「若自身武力較高」的條件比較完全未建模(見effects[0]._approx); 「顯著降低」的具體百分比本文從未給出, coef=0.5與amp val=-0.2皆為無文字錨點的估計值(本文本身描述過於模糊所致), 待本文若有更精確版本再校準。",
+  "_todo": "批I複核: 「若自身武力較高」條件比較已用ifStatCompare解決(見effects[0]._note)。「顯著降低」的具體百分比本文從未給出, coef=0.5與amp val=-0.2皆為無文字錨點的估計值(本文本身描述過於模糊所致), 待本文若有更精確版本再校準, 與比較族原語本身無關。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -4190,7 +4205,8 @@
     "when": {
      "parity": "odd"
     },
-    "_note": "批C: 原文「奇數回合使自身受到傷害降低12.5%→25%」——先前用「奇偶互斥引擎無法建條件分支, 近似為常駐(兩效果同時恆定生效)」的高估近似(比照聚石成金/箕形陣既有慣例)。經核對, 批23已新增e.when.parity(垂心萬物/武鋒陣皆已用此原語精確表達奇偶回合觸發, 見engine_limitations.md第24節), 本戰法type=passive(command/passive型戰法的heal_only常駐掃描通道支援非heal效果的e.when通用檢查, 含parity), 先前從未套用於本戰法(舊_diff寫戰法本身是passive, 但誤以為dur:99常駐近似是唯一選項, 未意識到when.parity可精確解決互斥問題)。改用when.parity:odd(僅奇數回合生效)+dur:1(每次觸發只蓋當下這一回合, 由heal_only通道逐回合重新判定, 對稱其他parity戰法慣例), 取代舊版「奇偶互斥, 近似為常駐雙效並存」的高估。"
+    "_note": "批I: 原文「奇數回合使自身受到傷害降低12.5%→25%(自身最高屬性影響)」——補scale:\"maxStat\"(批I新增原語)動態取施放者當下四維最高一項縮放,取代先前不縮放的近似(舊_todo)。",
+    "scale": "maxStat"
    },
    {
     "k": "stat",
@@ -4218,7 +4234,6 @@
   "quality": "S",
   "cat": "PASSIVE",
   "src": "INHERITANCE",
-  "_todo": "「受自身最高屬性影響」(mitig的減傷幅度依施放者四維最高一項動態縮放)無對應scale原語(同扶危定傾/武鋒陣/剛柔並濟等戰法共通的engine_limitations.md第12節鏡像缺口), 保守不縮放。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -4858,8 +4873,11 @@
     "who": "enemy",
     "dur": 1,
     "rate": 0.3,
-    "ifTargetHas": "disarm",
-    "_note": "批24 A: stale揭露清剿: 原_approx稱「引擎無法建條件觸發, 30%機率降級近似」, 現用批16 ifTargetHas(條件: 目標已有該狀態才生效)+批23 e.rate(機率判定)組合精確表達「若目標已處於繳械或計窮狀態則30%機率震懾」——ifTargetHas單值僅能擇一(取disarm, 同全庫『OR條件擇一近似』既有慣例), 計窮(silence)分支未覆蓋(較原文窄, 目標已計窮但未繳械時本效果不會生效, 已知近似)。"
+    "ifTargetHas": [
+     "disarm",
+     "silence"
+    ],
+    "_note": "批I(禁近似令-scale/比較族): 原文「若目標已處於繳械或計窮狀態則有20%→30%機率使目標處於震懾狀態」——過去ifTargetHas單值僅能擇一(取\"disarm\"=繳械, 計窮分支未覆蓋, 較原文窄)。改用ifTargetHas(批I新增陣列/OR語意)=[\"disarm\",\"silence\"](計窮/技窮對應silence, 見reparse_effects.py既有ctype對照慣例)精確表達「繳械或計窮任一」, 取代單值近似。"
    }
   ],
   "quality": "S",
@@ -4980,7 +4998,7 @@
     "dur": 5,
     "scale": "command",
     "_approx": "80%機率優先成為敵戰法目標的吸怪語意不建模, 僅保留主將受戰法傷害-30%(受統率), 前5回合",
-    "_note2": "批35 C: 兄弟掃描(狀態屬性曲線375族) —— 本效果帶scale但曲線族(350/375)未經實測樣本裁決, 現行沿用全域SCALE(除數350)預設, 曲線族未定(350/375待實測); 僅機鑑先識(警戒)有六點實測錨點佐證375(見calibration_anchors status_scale_375_20260704), 本效果不擅自套用375, 待未來實測樣本才裁決。"
+    "_note2": "批I(禁近似令-scale/比較族)盤點複核: no_approx_inventory.json 曾將本戰法列入scale_max_stat族, 但本文原句為「使該戰法對其造成的傷害降低15%→30%(受主將統率影響)」——「受主將統率影響」是單一固定屬性(command), 非「受最高屬性影響」, scale:\"command\"已是精確表達, 不需要新的maxStat原語, 確認為盤點誤分類(見inventory該筆approx_desc「減傷段scale受統率影響部分維持既有」字面已暗示無需改動)。本戰法真正的引擎缺口是「80%機率優先成為敵戰法目標」的吸怪語意, 屬force_attack_reverse族(taunt反向機制), 非本批(scale/比較族)範圍, 見上方_approx。"
    },
    {
     "k": "heal",
@@ -5493,15 +5511,34 @@
     "dur": 1,
     "rate": 0.35,
     "scale": "intel",
-    "_note": "批C: 原用prob-ev折算(35%×20%=7%恆定套用)——批23 A4的通用e.rate(任何k種類、含passive型戰法的effects段皆可套用前擲骰判定)較prob-ev折算更貼近原文「擲一次骰決定有無」的真實方差(同批傾國傾城/深藏若虛同類升級, 見引擎_e_rate/eRate通用閘門)。改用e.rate:0.35(取滿級機率值)+val:0.2(滿級值, 不再折半)。",
-    "_note2": "批35 C: 兄弟掃描(狀態屬性曲線375族) —— 本效果帶scale但曲線族(350/375)未經實測樣本裁決, 現行沿用全域SCALE(除數350)預設, 曲線族未定(350/375待實測); 僅機鑑先識(警戒)有六點實測錨點佐證375(見calibration_anchors status_scale_375_20260704), 本效果不擅自套用375, 待未來實測樣本才裁決。"
+    "_note": "批I(禁近似令-scale/比較族): 原文「有17.5%→35%機率(受智力影響)使自身1回合內受到傷害降低10%→20%(受智力影響,若自身行動時處於控制狀態,基礎值提升至17.5%→35%)」——重新核對句構: 「基礎值提升至17.5%→35%」緊接在「受到傷害降低10%→20%」之後, 修飾的是【減傷幅度】(這一段的基礎值)而非稍早的觸發機率(機率本身17.5%→35%全程不變)。拆成本段(自身不處於任何控制狀態時, val:0.2=20%滿級值)與下方topup段(自身處於控制狀態任一時,val:0.35=35%滿級值, 互斥全值而非delta疊加)。ifTargetHasNot(批I新增陣列/OR語意, 見target_has())=[\"stun\",\"silence\",\"disarm\",\"chaos\"]精確表達「未處於任一控制狀態」, 取代舊_todo的「無法表達OR邏輯, 保守取基礎機率不建模此加成」空白。兩段各自獨立擲同一個rate:0.35, 因gate本身是決定論式(基於當下狀態, 非隨機)只會有一段的dests非空(自身不可能同時處於控制與非控制), 故最終命中率在兩種狀態下皆為35%, 只是量級依狀態二選一, 精確對應原文語意, 非近似。",
+    "ifTargetHasNot": [
+     "stun",
+     "silence",
+     "disarm",
+     "chaos"
+    ]
+   },
+   {
+    "k": "mitig",
+    "who": "self",
+    "val": 0.35,
+    "dur": 1,
+    "rate": 0.35,
+    "scale": "intel",
+    "ifTargetHas": [
+     "stun",
+     "silence",
+     "disarm",
+     "chaos"
+    ],
+    "_note": "批I: 原文「若自身行動時處於控制狀態,基礎值提升至17.5%→35%」的條件topup段——ifTargetHas(批I新增陣列/OR語意)=[\"stun\",\"silence\",\"disarm\",\"chaos\"](震懾/計窮/繳械/混亂任一), 命中時直接採全值0.35(35%, 而非基礎0.2+delta),與上方base段(effects同陣列前一筆)互斥, 見該筆_note詳細推導。"
    }
   ],
   "quality": "S",
   "cat": "PASSIVE",
   "src": "EVENT",
   "_note": "批12 ModeD: 原mitig.val=0.2為機率clause的滿級值未折算(相當於100%必定觸發20%降傷, 高估), 改用prob-ev折算(35%×20%=7%)符合house convention。批C: 批23 A4已補上通用e.rate真機率判定(較prob-ev折算更精確保留方差), 改用e.rate:0.35+val:0.2取代prob-ev折算(見effects[1]._note)。",
-  "_todo": "「若自身行動時處於控制狀態(震懾/計窮/繳械/混亂任一), 基礎機率提升至17.5%→35%」未建模: target_has()/ifTargetHas只接受單一ctype字串, 無法表達「stun OR silence OR disarm OR chaos任一」的OR邏輯條件(需要新的「任一控制狀態」查詢, 或4個各自independent的ifTargetHas+rateLeader風格條件變體), 保守取基礎機率35%(非控制狀態下的低檔值)不建模此加成, 已誠實揭露。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -6461,8 +6498,13 @@
     "coef": 0.6,
     "kind": "phys",
     "n": 3,
-    "rate": 0.5,
-    "_note": "若目標處於控制狀態則該次兵刃攻擊更強(120%→240%, 即基礎180%上再加60%);引擎無法判斷目標是否處於控制狀態, 以50%機率近似模擬「部分目標中控」的期望增量"
+    "ifTargetHas": [
+     "stun",
+     "silence",
+     "disarm",
+     "chaos"
+    ],
+    "_note": "批I(禁近似令-scale/比較族): 原文「若目標處於控制狀態則該次兵刃攻擊更為強力」——過去以50%機率無條件觸發近似模擬「部分目標中控」的期望增量(見reparse_effects.py純regex抽取產物, 本correction首次顯式接管extraHits鍵)。改用ifTargetHas(批I新增陣列/OR語意, 見target_has())=[\"stun\",\"silence\",\"disarm\",\"chaos\"]精確表達「目標當下確實處於(任一)控制狀態」才觸發此段加成, 取代機率折算。n:3搭配主coef段「對全體敵軍」同範圍(團隊固定3人,pickTargets(foes,3)在只有3名敵人時必為全體, 無選標偏差風險)。"
    }
   ],
   "_note": "批H(禁近似令收尾): 舊版維持coef-fold近似(把會心EV折入coef)的理由已被批H新增的「active型戰法pre-coef會心套用」機制解除——現在critUp在主coef攻擊之前套用(見effects[0]._note與sgz.py/engine.js fight()主迴圈的pre-coef呼叫點), 主AoE本身吃真會心擲骰, coef還原基礎1.8, EV折算完全physically移除, 符合禁近似令鐵律1。這是本批唯一需要搭配引擎新機制(pre-coef會心套用)才能同時滿足「禁近似(移除coef-fold)」與「均值近似不變(主AoE仍吃會心)」的案例(左右開弓同機制處理)。",
@@ -6927,14 +6969,18 @@
     "_note": "批52: 主將時傷害率128%=基礎100%+28%"
    }
   ],
-  "_todo": "coef=1.28取「自身為主將時」的分支數值(基礎傷害率128%), 但原文明確此為條件分支(僅主將時適用), 非主將時應為基礎值100%——條件判斷(e.ifLeader可表達「僅主將時額外增益」但無法表達「主將/非主將兩個不同基礎值分支」, 需要類似三選一choices或ifLeader控制coef本身而非額外效果段)未建模, 統一按主將版取值(高估非主將持有者的傷害輸出, 批12/23已知悉此近似)。「並基於雙方智力差額外提高」的智力差加成機制亦完全未建模(需要雙方intel差值讀取並代入傷害公式, 現有scale機制只讀取單方屬性)。上述兩項與本批(批38, 聚焦跨單位事件廣播方向)無關, 維持既有揭露, 不因本次遷移而視為已解決。",
+  "_todo": "批I(禁近似令-scale/比較族)複核: 「並基於雙方智力差額外提高」已解決 —— 補t.scaleCompare(批I新增原語, {stat:\"intel\",div:350}), 在active_fired_for()/activeFiredFor()的主coef傷害段(見sgz.py/engine.js對應行)依施放者vs本次命中目標的智力差額外縮放本段傷害係數(diff=0時倍率1.0, 無額外加成), 取代舊版「智力差加成機制完全未建模」的空白, 見scale_compare_of()/scaleCompareOf()。coef=1.28僅主將分支, 非主將應為基礎值100%的問題(leader_dual_base_coef族,與本批scale_compare無關, 見no_approx_inventory.json該族分類)維持不變, 統一按主將版取值(高估非主將持有者的傷害輸出)——這是本戰法另一個獨立缺口, 不因本次scaleCompare落地而視為已解決, 誠實揭露待該族指定的未來批次處理。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
    "BOW",
    "SPEAR",
    "SIEGE"
-  ]
+  ],
+  "scaleCompare": {
+   "stat": "intel",
+   "div": 350
+  }
  },
  {
   "nameZh": "神機莫測",
@@ -6958,6 +7004,23 @@
     "n": 2,
     "rate": 0.35,
     "_approx": "批26: 原文「對自身外的敵我全體(5人)依次判定,若目標未混亂,有35%機率使其混亂」——原文判定範圍含敵我雙方全體(5人:除主段目標外的敵方2人+我方3人), 但chaos語意上只對敵人生效(混亂我方單位無意義, who只能是enemy), 故近似取「敵軍除主段目標外的其餘2人, 各自獨立35%機率」(e.n:2為敵方候選數上限, e.rate:0.35對整組套用同一次擲骰而非逐人獨立擲骰, 屬engine_limitations.md 6.2群體控制隨機選標近似的已知取捨——批23已支援的e.rate通用判定用於此處補上機率語意, 比先前完全100%必中的全體chaos更接近原文)。「若目標已混亂(友軍),解除負面狀態+主將時傷害提升12%」分支仍未建模, 見本戰法_todo;「若目標已混亂(敵軍),造成謀略傷害175%」分支批29 C已用extraHits+ifTargetHas落地(見本戰法extraHits[0])。"
+   },
+   {
+    "k": "amp",
+    "who": "ally",
+    "val": 0.12,
+    "dur": 2,
+    "scale": "intel",
+    "ifTargetHas": "chaos",
+    "ifLeader": true,
+    "_note": "批I複核: 原文「若目標已混亂(友軍),解除其所有負面狀態,若自身為主將時,使其造成的傷害提升12%(受智力影響),持續2回合」——經核對, ifTargetHas(單值\"chaos\", 批16既有原語)+ifLeader(批26既有原語)皆已存在, 過去只是未組合套用到本戰法(舊_todo誤判為需要「dispel支援條件判斷」的新機制, 但本效果是amp非dispel, 用既有ifTargetHas作為\"who:ally\"目標過濾即可, 非no_approx_inventory.json歸類的if_target_has_any_or族OR邏輯問題, 該族真正的array/OR需求由本批scale/比較族其他4筆(深藏若虛/百步穿楊/橫掃千軍+本戰法dispel段)落地)。放在dispel效果之前(順序關鍵): dispel(what:debuffs)會清空目標u.chaos欄位(見dispel_unit()), 若本效果排在dispel之後, ifTargetHas=\"chaos\"檢查會因chaos已被清除而全數落空, 現排在dispel前確保檢查的是「解除前」的混亂狀態, 精確對應原文因果順序(先確認已混亂, 才解除+加成)。ifLeader確保「自身為主將時」條件, scale:\"intel\"對應「受智力影響」。"
+   },
+   {
+    "k": "dispel",
+    "who": "ally",
+    "what": "debuffs",
+    "ifTargetHas": "chaos",
+    "_note": "批I複核: 原文「若目標已混亂(友軍),解除其所有負面狀態」——dispel(既有原語,批16)本身透過apply_effects()共用的dests過濾管線(ifTargetHas在k派發【之前】已篩過dests, dispel_unit()對dests內每個u執行, 見sgz.py/engine.js apply_effects()/applyEffects()結構), 天然就支援「只對已有該狀態的目標」生效, 過去只是未在本戰法資料掛上ifTargetHas=\"chaos\"(舊_todo誤判此為「dispel完全無條件判斷能力, 需引擎新增」的結構性缺口, 實際上dispel與其餘k原語共用同一套已存在的ifTargetHas過濾機制, 純屬資料層未接線)。放在上方amp之後執行(順序見amp效果_note)。"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -6965,7 +7028,6 @@
   "cat": "ACTIVE",
   "src": "INNATE",
   "_note": "批12 ModeF: 原文明確為「混亂(攻擊和戰法無差別選擇目標)」而非全鎖定, 原資料用stun近似(部分已有_approx/_note誠實標註近似性質), 改用新增的chaos原語精確表達。批26: 拆成e.n:1必中主段+e.n:2/e.rate:0.35獨立機率段(比照批23 e.rate通用判定, 見effects各自_note/_approx); 舊版頂層coef=1.75/kind=intel/n=3是把「若目標已混亂,造成謀略傷害175%」條件分支近似成無條件對3名敵軍造成傷害, 與原文「僅已混亂目標才觸發」語意不符且會被R11/R16一類規則盯上, 批26一併歸零改用_todo誠實揭露此傷害分支未建模。批29 C: 該傷害分支現已用extraHits+ifTargetHas:\"chaos\"精確落地(見effects[0]/extraHits[0]._note)——extraHits先於chaos效果套用執行, ifTargetHas檢查的是本回合前既有的混亂狀態, 精確對應原文「已混亂」語意, 不會誤判本回合才施加的新混亂。友軍分支(解除負面狀態+條件式增傷)仍是結構性缺口(dispel無條件判斷欄位, 且extraHits只支援傷害類結算), 見_todo。",
-  "_todo": "R12: 原文「對自身外的敵我全體依次判定...友軍已混亂時，解除其負面狀態(自身為主將時,使其造成的傷害提升12%)」(dispel+條件式增傷分支)仍未建模。現有dispel原語是立即無條件套用(sgz.py k==\"dispel\"分支, 無prob/條件判斷欄位), 無法表達「僅在目標當下已處於chaos狀態時才觸發解除」這種以目標既有狀態為前提的條件式dispel, 且「依序判斷敵我全體各自狀態並分支」的邏輯本身也超出現有when/targetSel的表達範圍(友軍分支需要「已混亂→解除+主將時加傷」, 與extraHits的「傷害段」性質不同, dispel不是傷害類k, extraHits機制只支援hit()傷害結算, 無法承載dispel/stat這類非傷害效果的條件式套用)。「若目標已混亂(敵軍),對其造成謀略傷害(傷害率175%)」分支批29 C已用extraHits+ifTargetHas:\"chaos\"落地(見本戰法extraHits[0])。剩餘的友軍分支(解除負面狀態+主將時傷害提升12%)維持未建模, 誠實揭露避免誤以為已處理。",
   "extraHits": [
    {
     "coef": 1.75,
@@ -7096,8 +7158,11 @@
    {
     "coef": 1.2,
     "kind": "intel",
-    "rate": 0.5,
-    "_note": "若自身智力高於目標則額外造成一次謀略傷害(120%), 引擎無法比較施法者與目標智力高低, 以50%機率近似"
+    "_note": "批I(禁近似令-scale/比較族): 原文「若自身智力高於目標則額外對其造成謀略傷害」——過去以50%機率近似(引擎無法比較施法者與目標智力高低)。改用ifStatCompare(批I新增原語, {stat:\"intel\",op:\"gt\"}, vs預設\"caster\")精確表達「僅施放者智力高於目標時才觸發」, 取代機率折算, 見stat_compare_ok()。",
+    "ifStatCompare": {
+     "stat": "intel",
+     "op": "gt"
+    }
    }
   ],
   "_note": "批13: 補when.rounds限定奇數回合(1/3/5/7)才觸發主段傷害(原本每回合都可能觸發, 缺回合窗口限定), 並補extraHits「自身智力高於目標」額外段(120%, EV近似50%機率, 引擎無法比較雙方即時智力高低); 原effects的amp(-0.9)已移除(誤用amp表達傷害, 現改用coef正確表達傷害, 見set.coef=0.9/kind=intel/n=2)。",
@@ -7569,7 +7634,9 @@
     "when": {
      "parity": "odd"
     },
-    "_note": "批23 R13: 補e.n=1(原文「奇數回合...對敵軍單體...降低武力」, 過去無e.n套用到全體敵軍, 高估覆蓋人數)。批37 B(停損重審): 補everyRound+when.parity:odd——每奇數回合重新套用(dur 2跨到下一個奇數回合前, 等效持續刷新, 精確對應原文「奇數回合...降低武力32→64點, 持續2回合」), 取代舊的prep一次性套用(只蓋第1-2回合)。批32停損理由「engine無法表達回合奇偶交替」已過期: when.parity自批16就位, everyRound逐回合通道自批30就位, passive coef dispatch自批32讀roundOk。"
+    "_note": "批23 R13: 補e.n=1(原文「奇數回合...對敵軍單體...降低武力」, 過去無e.n套用到全體敵軍, 高估覆蓋人數)。批37 B(停損重審): 補everyRound+when.parity:odd——每奇數回合重新套用(dur 2跨到下一個奇數回合前, 等效持續刷新, 精確對應原文「奇數回合...降低武力32→64點, 持續2回合」), 取代舊的prep一次性套用(只蓋第1-2回合)。批32停損理由「engine無法表達回合奇偶交替」已過期: when.parity自批16就位, everyRound逐回合通道自批30就位, passive coef dispatch自批32讀roundOk。 || 批I複核: 原文「自身為主將時,降低屬性效果受自身對應屬性影響」——本效果(降武力)對應屬性=force。經核對engine.js/sgz.py, scaleIfLeader(批52c新增, 就是為了此戰法而建, 見sgz.py _scale_ok_for_e()註解「義膽雄心主將時降屬性效果受自身對應屬性影響等」)已存在但從未實際套用到本戰法資料——這不是no_approx_inventory.json歸類的scale_max_stat(取四維最高者)問題, 而是「已有原語只是未接線」的資料層缺口(如同義膽雄心/神機莫測等案例), 現補scale:\"force\"+scaleIfLeader:true精確表達「僅主將時, 此debuff數值受自身武力縮放」,非主將時完全不縮放(維持基礎值-64), 與原文語意精確吻合。",
+    "scale": "force",
+    "scaleIfLeader": true
    },
    {
     "k": "dot",
@@ -7595,14 +7662,16 @@
     "when": {
      "parity": "even"
     },
-    "_note": "批37 B(停損重審): 補everyRound+when.parity:even——每偶數回合重新套用智力debuff(dur 2持續刷新), 與奇數回合武力debuff精確互斥交替(舊「同時常駐套用」近似已重建)。批23 R13: e.n=2對齊原文「敵軍群體2人」。"
+    "_note": "批37 B(停損重審): 補everyRound+when.parity:even——每偶數回合重新套用智力debuff(dur 2持續刷新), 與奇數回合武力debuff精確互斥交替(舊「同時常駐套用」近似已重建)。批23 R13: e.n=2對齊原文「敵軍群體2人」。 || 批I複核: 同上force debuff段, 本效果(降智力)對應屬性=intel, 補scale:\"intel\"+scaleIfLeader:true(既有原語scaleIfLeader批52c, 為本戰法而建但先前未套用)。",
+    "scale": "intel",
+    "scaleIfLeader": true
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
   "src": "INNATE",
-  "_note": "批37 B(停損決策過期重審): 批32停損理由「engine無法表達回合奇偶交替條件」已因後續批次補齊能力而過期(when.parity批16/everyRound批30/passive coef dispatch讀roundOk批32), 本批全面重建為精確互斥交替。殘餘缺口: 「自身為主將時，降低屬性效果受自身對應屬性影響」的主將條件式scale未建模(scale欄位無條件式變體, ifLeader只能閘門整個效果無法只閘門scale部分), 維持不縮放, 誠實揭露。",
+  "_note": "批37 B(停損決策過期重審): 批32停損理由「engine無法表達回合奇偶交替條件」已因後續批次補齊能力而過期(when.parity批16/everyRound批30/passive coef dispatch讀roundOk批32), 本批全面重建為精確互斥交替。殘餘缺口: 「自身為主將時，降低屬性效果受自身對應屬性影響」的主將條件式scale未建模(scale欄位無條件式變體, ifLeader只能閘門整個效果無法只閘門scale部分), 維持不縮放, 誠實揭露。 || 批I(禁近似令-scale/比較族)複核: 「自身為主將時,降低屬性效果受自身對應屬性影響」——經核對, scaleIfLeader(批52c)已存在且明確是為本戰法而建, 現補到force/intel兩段debuff效果(見effects[0]/[2]._note),非no_approx_inventory.json歸類的scale_max_stat(取四維最高者)問題, 而是「原語已建、資料未接線」的既有缺口, 用既有primitives解決, 不需新maxStat機制。",
   "when": {
    "parity": "odd"
   },
@@ -7649,7 +7718,12 @@
     "k": "healblock",
     "who": "enemy",
     "dur": 2,
-    "_approx": "條件「敵軍魅力低於我軍主將」才禁療，無條件機制近似為必定禁療"
+    "ifStatCompare": {
+     "stat": "charm",
+     "op": "gt",
+     "vs": "leader"
+    },
+    "_note": "批I(禁近似令-scale/比較族): 原文「並使敵軍魅力低於我軍主將的武將陷入禁療狀態」——過去無條件套用給全體敵軍(近似為必定禁療, 魅力比較未建模)。補ifStatCompare(批I新增原語, {stat:\"charm\",op:\"gt\",vs:\"leader\"})精確表達「僅魅力低於我軍主將的敵軍才禁療」, vs:\"leader\"比較的是【我軍隊伍主將】(allies[0])的魅力而非施放者自身(聚石成金可能由非主將的副將攜帶施放), 精確對應原文「我軍主將」字面, 見stat_compare_ok()。"
    }
   ],
   "_src": " +整批重解(15原語)",
@@ -10711,7 +10785,7 @@
   "quality": "S",
   "cat": "PASSIVE",
   "src": "INNATE",
-  "_todo": "兩項引擎限制缺口(詳見 engine_limitations.md 第12/13節): (1)「普通攻擊傷害提高40%→80%，受目標損失兵力影響」的縮放基準是「目標」的已損失兵力比例(動態、逐次攻擊前才知道), 現有scale機制只支援施放者(caster)自身固定屬性縮放(scale_of(caster,...)), 無「依目標當下狀態縮放」的原語, 現固定取滿級值0.8(近似目標接近死亡時的漲幅上限, 可能高估早期回合的實際加成); (2)「鎖定敵方兵力最低單體」是把每回合普通攻擊的目標選擇鎖定成兵力最低者, 但 targetSel/lockTarget 都只在戰法coef段/effects段生效(sgz.py apply_effects 與main coef段的targetSel判斷式), 完全不影響 pick_target/pick_target_chaos (普攻走的路徑)——普攻仍是原有的隨機選敵, 未被鎖定到兵力最低者, 這是本戰法的核心機制完全未建模的缺口, 現況等同「一般隨機普攻+固定80%增傷+35-70%禁療」的近似(遺漏了普攻應集火兵力最低目標的部分, 可能低估對殘血目標的斬殺效率)。",
+  "_todo": "批I(禁近似令-scale/比較族)複核: no_approx_inventory.json將本戰法列入scale_max_stat族(design_note原文自陳「技術上屬於『依目標狀態縮放』的鏡像變體而非『取施放者最高屬性』,但同屬scale表達力擴充需求,一併列此族」)。核對本文「普通攻擊傷害提高40%→80%(受目標損失兵力影響)」——縮放基準是【目標】已損失兵力比例(逐次攻擊前才知道的動態值), 與批I的scale:\"maxStat\"(取【施放者】四維最高一項)是完全不同的兩個維度(施放者固定四維 vs 目標動態戰鬥狀態),確認為盤點誤分類, 不套用maxStat(套用亦無意義, 本效果根本不讀取施放者任何屬性)。真正所屬缺口是engine_limitations.md第12節既有記錄的「依目標當下狀態縮放無對應scale原語」, 非本批3原語(maxStat/statCompare/ifTargetHas-OR)任一管轄範圍, 維持val:0.8固定不縮放的既有近似, 誠實揭露, 待該節指定的未來批次解決。「鎖定敵方兵力最低單體」(第13節缺口)維持不變。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -11392,14 +11466,15 @@
     "val": -1.0,
     "dur": 1,
     "n": 2,
-    "_note": "批23: 補主效果「對敵軍群體(2人)施加虛弱(無法造成傷害)狀態,持續1回合」——過去effects=[]完全空白(0分主因, 只有coef=1.88承載「若目標已虛弱則造成188%猛擊」的條件分支)。amp val=-1.0精確歸零目標當回合傷害(虛弱慣例, 見克敵制勝/威謀靡亢/臨戰先登同款做法); e.n=2對齊原文「敵軍群體2人」。",
-    "sameTargets": true
+    "_note": "批23: 補主效果「對敵軍群體(2人)施加虛弱(無法造成傷害)狀態,持續1回合」——過去effects=[]完全空白(0分主因, 只有coef=1.88承載「若目標已虛弱則造成188%猛擊」的條件分支)。amp val=-1.0精確歸零目標當回合傷害(虛弱慣例, 見克敵制勝/威謀靡亢/臨戰先登同款做法); e.n=2對齊原文「敵軍群體2人」。 || 批I(禁近似令-scale/比較族): 補ifTargetHasNot=\"weak\"(批I新增ctype, 見target_has()「u.addbonus('amp')<=-1」判斷)——避免對已處於虛弱狀態的目標重複套用虛弱debuff(原文「如果目標已處於虛弱狀態則改為造成一次猛擊」暗示虛弱狀態不應被同一效果重複刷新)。coef(188%猛擊)與本debuff段的完整互斥仍未解決: 需要「本段判定的同一批目標」與「coef段」精確對齊(extraHits.sameTargets尚未支援, 目前sameTargets只在effects[]內生效)才能讓188%猛擊只打【已虛弱的那些目標】, 屬另一個獨立的引擎擴充需求(非ifTargetHas array/OR本身,而是extraHits與effects段的目標對齊機制), 不在本批(scale_max_stat/scale_compare/if_target_has_any_or)3原語範圍內, 見戰法_todo誠實揭露, 待未來批次評估。",
+    "sameTargets": true,
+    "ifTargetHasNot": "weak"
    }
   ],
   "quality": "A",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_todo": "虛弱debuff與coef猛擊本應互斥的條件分支無法用現有ifTargetHas表達(amp狀態不在targetHas可偵測清單內), 需引擎新增「偵測amp處於-1(虛弱)狀態」的targetHas支援才能精確互斥, 暫維持兩者同時觸發的高估近似。",
+  "_todo": "批I複核: 虛弱debuff避免重複套用已用ifTargetHasNot=\"weak\"(批I新增ctype)解決(見effects[0]._note)。coef(188%猛擊)與debuff段的完整互斥(僅對已虛弱目標補一次188%猛擊, 而非無條件套用)仍未解決: 需要extraHits.sameTargets(目前尚未支援, sameTargets只在effects[]內生效)把188%猛擊段與本debuff段的目標選定對齊, 才能精確表達「同一批目標, 已虛弱者猛擊/未虛弱者debuff」的互斥語意, 屬獨立於本批3原語的引擎擴充需求(目標對齊機制, 非ifTargetHas array/OR或scale本身), 現況維持coef(188%)無條件套用給本次選定的n=2目標的既有高估近似, 誠實揭露待未來批次解決。",
   "_note": "批23: 主效果(虛弱debuff)與coef(已虛弱時的188%猛擊)兩者本應互斥(原文「如果目標已處於虛弱狀態則改為造成一次猛擊」), 但引擎缺乏「偵測amp(-1)虛弱狀態」的ifTargetHas支援(ifTargetHas只認stun/silence/disarm/chaos/insight/dot, 不含amp), 故無法用ifTargetHas精確排他; 現況為兩者同時無條件套用(每次發動都會虛弱目標2人+對目標造成188%傷害), 較原文更強(高估), 但至少不再是完全空白的0分狀態。 | 批45 A: 補e['sameTargets']=True——原文效果段以「其/使其」回指主coef段命中的同一批敵軍群體, 過去coef段(pick_targets)與本效果段(who=enemy+e.n, 各自獨立pick_targets)只有1/3機率同組, 現沿用main_hit_tgts確保精確命中同一批目標(見engine_limitations.md/R29)。",
   "troopLimit": []
  },

@@ -108,10 +108,74 @@ def SCALE(v):
 
 
 def scale_of(caster, scale, scale_div=None):
-    """批35: scale_div(可選) —— 效果級 e["scaleDiv"] 透傳, 預設350(SCALE 向後相容)。"""
+    """批35: scale_div(可選) —— 效果級 e["scaleDiv"] 透傳, 預設350(SCALE 向後相容)。
+    批I(禁近似令-scale/比較族): scale=="maxStat" —— 動態取施放者當下四維(force/intel/
+    command/speed, 不含魅力)中最高一項代入SCALE_G, 取代「受自身最高屬性影響」的固定取值
+    近似(扶危定傾/剛柔並濟/整軍經武等, 見engine_limitations.md第12/6.6節鏡像缺口)。零新增
+    呼叫點: 全庫既有sv_val/sv_mult/sv_add/locked_scale_of一律透過此函式讀取scale倍率,
+    scale欄位本身早已是KNOWN_EFFECT_FIELDS全域已知欄位, 這裡只是多一個合法字串值,
+    prep鎖定沿用locked_scale_of既有委派(批35 lockedScaleOf慣例, 無需另外修改)。"""
     if not scale:
         return 1.0
+    if scale == "maxStat":
+        return SCALE_G(max(caster.eff(s) for s in ("force", "intel", "command", "speed")), scale_div)
     return SCALE_G(caster.charm, scale_div) if scale == "charm" else SCALE_G(caster.eff(scale), scale_div)
+
+
+def resolve_stat_field(u, stat):
+    """批I(禁近似令-scale/比較族): e["stat"]=="maxStat" —— 動態解析為 u 當下四維(force/
+    intel/command/speed)最高的一項欄位名, 供 k=="stat" 效果動態選定要加成哪個屬性(形一陣
+    「自身最高屬性+30→60點」)。與 scale=="maxStat"(見 scale_of)共用「四維中最高一項」
+    語意, 但消費端不同: 這裡回傳屬性欄位名字串(供 push_stat_add/push_mod 指定要動的欄位),
+    scale_of 回傳的是縮放倍數(乘在別的值上), 兩者是同一個「取最高」判斷的兩種消費形態。"""
+    if stat != "maxStat":
+        return stat
+    return max(("force", "intel", "command", "speed"), key=lambda s: u.eff(s))
+
+
+def stat_compare_ok(ref, target, allies, spec):
+    """批I(禁近似令-scale/比較族): ifStatCompare —— 比較「參照方」(caster自身或我軍主將)
+    vs「目標」同一屬性的大小, 決定效果/extraHits段是否生效(布林gate, 對稱ifTargetHas但
+    比較的是「屬性大小」而非「狀態有無」)。spec: {stat, op("gt"/"gte"/"lt"/"lte", 預設
+    "gt"), vs("caster"預設/"leader")}。op 語意固定為「參照方 op 目標」方向(如op="gt"即
+    「參照方該屬性較高」), 三筆真實案例(摧鋒斷刃「自身武力較高」/竊幸乘寵「自身智力高於
+    目標」/聚石成金「敵軍魅力低於我軍主將」)恰好都是op="gt", 只是vs不同(前二者vs自身
+    caster, 後者vs我軍主將leader), 驗證此形狀已是最小通用形, 不需要更多op/vs組合。"""
+    if not spec or not target:
+        return False
+    stat = spec.get("stat", "force")
+    op = spec.get("op", "gt")
+    vs = spec.get("vs", "caster")
+    ref_u = allies[0] if (vs == "leader" and allies) else ref
+    if not ref_u:
+        return False
+    rv = ref_u.charm if stat == "charm" else ref_u.eff(stat)
+    tv = target.charm if stat == "charm" else target.eff(stat)
+    if op == "gt":
+        return rv > tv
+    if op == "gte":
+        return rv >= tv
+    if op == "lt":
+        return rv < tv
+    if op == "lte":
+        return rv <= tv
+    return False
+
+
+def scale_compare_of(caster, target, spec):
+    """批I(禁近似令-scale/比較族): scaleCompare —— 施放者vs目標同一屬性「差值」代入縮放
+    曲線, 對稱scale_of(單方固定屬性)但讀取雙方差值(神機妙算「並基於雙方智力差額外提高」)。
+    spec: {stat(預設"intel"), div(選填, 預設350, 沿用SCALE_G同斜率慣例)}。diff=0(雙方
+    持平)時倍率=1.0(無額外加成), 與原文「額外提高」的直覺語意吻合(施放者該屬性比目標高
+    才有正向加成, 反之為負)。無實測錨點校準div, 沿用SCALE_G預設除數350, 待未來戰報校準
+    (同全域SCALE的350除數一樣是可調校準旋鈕, 非最終定案)。"""
+    if not spec or not target:
+        return 1.0
+    stat = spec.get("stat", "intel")
+    div = spec.get("div") or 350
+    cv = caster.charm if stat == "charm" else caster.eff(stat)
+    tv = target.charm if stat == "charm" else target.eff(stat)
+    return max(0.0, 1 + (cv - tv) / div)
 
 
 def cap_val_of(v, cap_val):
@@ -1130,9 +1194,20 @@ def target_has(u, ctype):
     dot: dots 陣列非空(=正在持續掉血); 控制類(stun/silence/disarm/chaos/insight): 對應欄位>0。
     批52d: huchen/虎嗔 —— 將門虎女負面狀態。
     批52g: 具名狀態(水攻/沙暴/灼燒…) —— dots[3] 名稱匹配, 或 ctype==該名。
-    批52j: capture/捕獲。"""
+    批52j: capture/捕獲。
+    批I(禁近似令-scale/比較族): ctype 可為陣列(list/tuple) —— OR語意, 只要命中其中任一
+    單一ctype即算符合(深藏若虛「震懾/計窮/繳械/混亂任一」/百步穿楊「若目標處於控制狀態」/
+    橫掃千軍「繳械或計窮」), 遞迴呼叫自身逐一比對, 取代過去「只能擇一硬編」的近似。呼叫端
+    ifTargetHasNot 沿用同一函式再取反(見 apply_effects/applyEffects 既有 `not target_has(...)`
+    寫法), De Morgan's律自動給出正確的「皆非」語意(NOT(A或B) = NOT A 且 NOT B), 不需要
+    對 ifTargetHasNot 額外處理陣列語意。
+    weak/虛弱: 新增ctype, 偵測「amp總和<=-1」(無法造成傷害的虛弱狀態, 挫志怒襲等戰法用
+    amp val:-1.0表達, 虛弱本身不是獨立狀態變數, 需彙總u.addbonus("amp")才能判斷, 對稱
+    既有extra/群攻用addbonus查詢的慣例)。"""
     if not u:
         return False
+    if isinstance(ctype, (list, tuple)):
+        return any(target_has(u, c) for c in ctype)
     if ctype == "dot":
         return len(u.dots) > 0
     if ctype in ("huchen", "虎嗔"):
@@ -1141,6 +1216,8 @@ def target_has(u, ctype):
         return getattr(u, "captured", 0) > 0
     if ctype in ("stun", "silence", "disarm", "chaos", "insight"):
         return getattr(u, ctype) > 0
+    if ctype in ("weak", "虛弱", "weakened"):
+        return u.addbonus("amp") <= -1.0
     # 批C: 群攻(extra, 普通攻擊時對目標同部隊其他武將造成傷害)狀態查詢——引弦力戰「若已處於
     # 群攻狀態，則提高武力」需要判斷持有者自身是否已有群攻加成, 過去target_has完全不認得
     # "extra"/群攻這個ctype(只能落到最後的dot具名比對, 恆假)。用addbonus("extra")>0判斷
@@ -1448,6 +1525,12 @@ def fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit, on_deal=None):
         # 批A: who=="mainTargetAlly" 時已在上方針對tgt本身提前判斷過(見該分支註解), 這裡跳過。
         if eh.get("ifTargetHas") and who != "mainTargetAlly":
             dests = [v for v in dests if target_has(v, eh["ifTargetHas"])]
+        # 批I(禁近似令-scale/比較族): eh["ifStatCompare"] —— extraHits 段結算前檢查, 只對
+        # 「參照方(攻擊者atk自身或其隊伍主將)vs目標」屬性比較成立的目標結算此段傷害(竊幸乘寵
+        # 「若自身智力高於目標則額外造成一次謀略傷害」), 對稱effects段的e["ifStatCompare"]
+        # (見apply_effects), 共用stat_compare_ok()。
+        if eh.get("ifStatCompare"):
+            dests = [v for v in dests if stat_compare_ok(atk, v, allies_of(atk), eh["ifStatCompare"])]
         # 批31 B: ifSameTargetIsLeader —— extraHits 段結算前檢查, 只對「(主coef段隨機選定的)
         # 目標剛好就是敵方隊伍固定位置的主將(foes[0])」時才結算此段傷害, 精確表達原文「若目標
         # (普攻/主傷段隨機選定的對象)為敵軍主將，額外造成傷害」這種條件分支(對比批16的
@@ -2173,6 +2256,12 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # ifTargetHasNot="chaos"精確表達「僅未混亂的目標才施加混亂」, 對稱engine.js同名欄位。
         if e.get("ifTargetHasNot"):
             dests = [u for u in dests if not target_has(u, e["ifTargetHasNot"])]
+        # 批I(禁近似令-scale/比較族): ifStatCompare —— 比較「參照方(施放者/我軍主將)vs目標」
+        # 同一屬性大小, 只對比較成立的目標生效(摧鋒斷刃「自身武力較高」/聚石成金「敵軍魅力
+        # 低於我軍主將」), 對稱ifTargetHas/ifTargetHasNot但比較的是「屬性大小」而非「狀態
+        # 有無」, 見stat_compare_ok()。
+        if e.get("ifStatCompare"):
+            dests = [u for u in dests if stat_compare_ok(caster, u, allies, e["ifStatCompare"])]
         # 批52j: 友軍側效果不套用到被捕獲者(無法被友方選中)
         if who not in ("enemy", "enemyLeader", "eventTarget") and who != "enemy":
             dests = [u for u in dests if not getattr(u, "captured", 0)]
@@ -2408,10 +2497,14 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     caster.exploit_global[ekey] = g
             elif k == "stat":                         # 裝備平加(add)與乘算(mult)擇一; add 為戰報所示「裝備獨立平加階段」
                 ms = e.get("maxStack")
+                # 批I: e["stat"]=="maxStat" —— 動態解析為u當下四維最高一項的欄位名(形一陣
+                # 「自身最高屬性+30→60點」), 見resolve_stat_field()。既有固定屬性字串(force/
+                # intel/command/speed)原樣通過, 零回歸。
+                stat_field = resolve_stat_field(u, e["stat"])
                 if e.get("add") is not None:
-                    u.push_stat_add(e["stat"], sv_add(e["add"]), e["dur"], src, ud_flags, max_stack=ms)
+                    u.push_stat_add(stat_field, sv_add(e["add"]), e["dur"], src, ud_flags, max_stack=ms)
                 else:
-                    u.push_mod(e["stat"], sv_mult(e.get("mult", 1.0)), e["dur"], src, ud_flags, max_stack=ms)
+                    u.push_mod(stat_field, sv_mult(e.get("mult", 1.0)), e["dur"], src, ud_flags, max_stack=ms)
             elif k == "huchen":                       # 批52d: 虎嗔(將門虎女) —— 負面狀態, 可被 dispel debuffs 清除
                 # base=初始結算傷害率(滿級0.20), per=每次受傷疊加(0.30), maxHits=3,
                 # left=持續回合(+1 tick 補償→「下一回合」結算), ampOnSettle=結算時施放者兵刃+8%
@@ -3016,8 +3109,14 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                     if t.get("nMax"):
                         cnt = t["n"] + random.randint(0, t["nMax"] - t["n"])
                     vs = pick_targets(foes_of(holder), cnt)
+                    # 批I(禁近似令-scale/比較族): t["scaleCompare"] —— 本段傷害係數依「施放者vs
+                    # 本次命中目標」同一屬性的差值額外縮放(神機妙算「並基於雙方智力差額外提高」),
+                    # 對稱效果級e.scale但讀取雙方差值而非施放者單一固定值, 見scale_compare_of()。
+                    # 逐目標各自計算(群體多目標時, 每個目標各自的差值可能不同), 無此欄位則行為
+                    # 完全不變(向後相容)。
                     for v in vs:
-                        hit(holder, v, t["coef"], t["kind"], False, on_hit, dealt_damage, is_active=True)  # 批31 A: 本段傷害本身即「主動戰法發動觸發的反應式傷害」, 供同戰法/其他戰法的e.activeOnly amp判定
+                        c = t["coef"] * scale_compare_of(holder, v, t["scaleCompare"]) if t.get("scaleCompare") else t["coef"]
+                        hit(holder, v, c, t["kind"], False, on_hit, dealt_damage, is_active=True)  # 批31 A: 本段傷害本身即「主動戰法發動觸發的反應式傷害」, 供同戰法/其他戰法的e.activeOnly amp判定
                     if len(vs) == 1:
                         main_hit_tgt = vs[0]
                 if t.get("extraHits"):
@@ -7139,6 +7238,281 @@ def demo():
     assert abs(gain_boost_180 - gain_plain_180 * 1.3) < 0.1, \
         f"180: lifestealGiven=0.3應使倒戈回復量提升至無加成版本的1.3倍, plain={gain_plain_180:.1f} boosted={gain_boost_180:.1f} expect≈{gain_plain_180*1.3:.1f}"
     print(f"    [批G 180] lifestealGiven(長慮「攻心效果+30%」精確落地): plain={gain_plain_180:.1f} boosted(+30%)={gain_boost_180:.1f} 驗證通過")
+
+    # =========================================================================
+    # 批I: 禁近似令-scale/比較族 —— scale:"maxStat" / ifStatCompare+scaleCompare /
+    # ifTargetHas 陣列(OR)+weak(虛弱)ctype 三原語 + 17筆真實資料遷移驗證
+    # =========================================================================
+
+    # 181) scale_of/scaleOf maxStat —— 動態取施放者四維(force/intel/command/speed)最高一項
+    u181 = Unit(POOL["呂布"], "騎")
+    u181.push_mod("force", 999, 9)  # 拉高武力確保是四維最高
+    maxv181 = max(u181.eff(s) for s in ("force", "intel", "command", "speed"))
+    assert maxv181 == u181.eff("force"), "測試前置條件: 181武力應為四維最高"
+    assert abs(scale_of(u181, "maxStat") - SCALE_G(maxv181, 350)) < 1e-9, \
+        "scale_of(scale='maxStat') 應等於施放者四維最高值代入SCALE_G(除數350預設)"
+    u181b = Unit(POOL["諸葛亮"], "弓")
+    u181b.push_mod("intel", 5, 9)  # 進一步拉高智力確保是四維最高
+    maxv181b = max(u181b.eff(s) for s in ("force", "intel", "command", "speed"))
+    assert maxv181b == u181b.eff("intel"), "測試前置條件: 181b智力應為四維最高"
+    assert abs(scale_of(u181b, "maxStat") - SCALE_G(maxv181b, 350)) < 1e-9, \
+        "scale_of(scale='maxStat') 應動態跟隨施放者當下哪一維最高, 非固定鎖某一屬性(換人换成智力最高應改用智力)"
+    print("    [批I 181] scale_of/scaleOf maxStat(施放者四維最高一項動態縮放, 扶危定傾/剛柔並濟/整軍經武) 驗證通過")
+
+    # 182) resolve_stat_field/resolveStatField —— k=="stat"效果 e["stat"]=="maxStat" 動態解析加成欄位
+    u182 = Unit(POOL["呂布"], "騎")
+    bf182, bi182 = u182.eff("force"), u182.eff("intel")
+    assert bf182 > bi182, "測試前置條件: 呂布武力應高於智力"
+    tac182 = {"nameZh": "測試182最高屬性buff", "effects": [{"k": "stat", "who": "self", "stat": "maxStat", "add": 60, "dur": 9}]}
+    apply_effects(u182, None, tac182, [u182], [], no_heal=True, skip_when_effects=True)
+    assert abs(u182.eff("force") - (bf182 + 60)) < 1e-6, "e.stat=='maxStat' 應把+60加到當下最高的一項(呂布=武力)"
+    assert abs(u182.eff("intel") - bi182) < 1e-6, "e.stat=='maxStat' 不應誤加到非最高的屬性(智力應不變)"
+    u182b = Unit(POOL["諸葛亮"], "弓")
+    bf182b, bi182b = u182b.eff("force"), u182b.eff("intel")
+    assert bi182b > bf182b, "測試前置條件: 諸葛亮智力應高於武力"
+    apply_effects(u182b, None, tac182, [u182b], [], no_heal=True, skip_when_effects=True)
+    assert abs(u182b.eff("intel") - (bi182b + 60)) < 1e-6, "e.stat=='maxStat' 對諸葛亮應動態改加到智力(其四維最高項)"
+    assert abs(u182b.eff("force") - bf182b) < 1e-6, "e.stat=='maxStat' 不應誤加到武力(非諸葛亮的最高項)"
+    print("    [批I 182] resolve_stat_field/resolveStatField(e.stat=='maxStat'動態解析欄位, 形一陣) 驗證通過")
+
+    # 183) stat_compare_ok/statCompareOk —— ifStatCompare比較族原語(vs="caster"預設/vs="leader")
+    leader183 = Unit(POOL["呂布"], "騎")     # 高武力, 我軍主將
+    sub183 = Unit(POOL["諸葛亮"], "弓")       # 低武力, 副將(刻意用低武力角色當ref傳入, 驗證vs="leader"確實忽略ref本身)
+    target183 = Unit(POOL["張飛"], "騎")      # 武力介於兩者之間
+    assert leader183.eff("force") > target183.eff("force") > sub183.eff("force"), \
+        "測試前置條件: 183武力順序應為 leader183 > target183 > sub183"
+    allies183 = [leader183, sub183]
+    assert stat_compare_ok(leader183, target183, allies183, {"stat": "force", "op": "gt"}) is True, \
+        "stat_compare_ok: op='gt'預設vs='caster', 施放者(leader183)武力高於目標時應為True(摧鋒斷刃/竊幸乘寵案例)"
+    assert stat_compare_ok(sub183, target183, allies183, {"stat": "force", "op": "gt"}) is False, \
+        "stat_compare_ok: 施放者(sub183)武力低於目標時應為False"
+    assert stat_compare_ok(sub183, target183, allies183, {"stat": "force", "op": "gt", "vs": "leader"}) is True, \
+        "stat_compare_ok: vs='leader'應改比較allies[0](leader183, 高武力)而非傳入的ref本身(sub183, 低武力), 精確對應聚石成金「我軍主將」語意"
+    assert stat_compare_ok(leader183, sub183, allies183, {"stat": "force", "op": "lt"}) is False, \
+        "stat_compare_ok: op='lt'方向性驗證(leader183武力不低於sub183, 應為False)"
+    print("    [批I 183] stat_compare_ok/statCompareOk(ifStatCompare比較族原語, 摧鋒斷刃/竊幸乘寵/聚石成金) 驗證通過")
+
+    # 184) scale_compare_of/scaleCompareOf —— scaleCompare雙方差值縮放曲線(神機妙算)
+    caster184 = Unit(POOL["諸葛亮"], "弓")
+    target184 = Unit(POOL["張飛"], "騎")
+    diff184 = caster184.eff("intel") - target184.eff("intel")
+    expect184 = max(0.0, 1 + diff184 / 350)
+    got184 = scale_compare_of(caster184, target184, {"stat": "intel", "div": 350})
+    assert abs(got184 - expect184) < 1e-9, "scale_compare_of 應等於1+(caster.intel-target.intel)/div"
+    assert abs(scale_compare_of(caster184, caster184, {"stat": "intel"}) - 1.0) < 1e-9, \
+        "scale_compare_of: 雙方同一單位(diff=0)應倍率=1.0, 無額外加成(神機妙算「額外提高」語意基準)"
+    assert scale_compare_of(caster184, None, {"stat": "intel"}) == 1.0, "scale_compare_of: target為None時應安全回傳1.0(無額外縮放), 不應拋例外"
+    print("    [批I 184] scale_compare_of/scaleCompareOf(scaleCompare雙方差值縮放, 神機妙算) 驗證通過")
+
+    # 185) target_has/targetHas 陣列(OR語意) + weak(虛弱)ctype
+    u185 = Unit(POOL["張飛"], "騎")
+    u185.chaos = 1
+    assert target_has(u185, ["stun", "silence", "disarm", "chaos"]) is True, \
+        "target_has 陣列應OR語意: 命中chaos應為True(深藏若虛/百步穿楊案例)"
+    assert target_has(u185, ["stun", "silence", "disarm"]) is False, \
+        "target_has 陣列OR: 未命中清單內任何一項應為False"
+    u185b = Unit(POOL["張飛"], "騎")
+    u185b.disarm = 1
+    assert target_has(u185b, ["disarm", "silence"]) is True, "橫掃千軍案例: 繳械應命中['disarm','silence']"
+    u185w = Unit(POOL["張飛"], "騎")
+    u185w.push_add("amp", -1.0, 9, "測試虛弱185")
+    assert target_has(u185w, "weak") is True, "amp總和=-1.0應判定為weak(虛弱, 挫志怒襲案例)"
+    u185n = Unit(POOL["張飛"], "騎")
+    u185n.push_add("amp", -0.5, 9, "測試非虛弱185")
+    assert target_has(u185n, "weak") is False, "amp總和=-0.5(未達-1)不應判定為weak"
+    print("    [批I 185] target_has/targetHas 陣列/OR語意(深藏若虛/百步穿楊/橫掃千軍) + weak虛弱ctype(挫志怒襲) 驗證通過")
+
+    # 186) 真實資料: 摧鋒斷刃(ifStatCompare gate on amp) —— 施放者武力較高才降低目標傷害輸出
+    cf_tac = TACTICS["摧鋒斷刃"]
+    cf_amp_e = next(e for e in cf_tac["effects"] if e.get("k") == "amp")
+    assert cf_amp_e.get("ifStatCompare") == {"stat": "force", "op": "gt"}, "摧鋒斷刃: amp效果應帶ifStatCompare={stat:force,op:gt}"
+    cf_caster_strong = Unit(POOL["呂布"], "騎")
+    cf_target_weak = Unit(POOL["諸葛亮"], "弓")
+    assert cf_caster_strong.eff("force") > cf_target_weak.eff("force"), "測試前置條件: 呂布武力應高於諸葛亮"
+    apply_effects(cf_caster_strong, cf_target_weak, cf_tac, [cf_caster_strong], [cf_target_weak], no_heal=True, skip_when_effects=True)
+    assert any(a[0] == "amp" for a in cf_target_weak.adds), "摧鋒斷刃: 施放者武力較高時, 目標應被套用amp(降低其傷害輸出)"
+    cf_caster_weak = Unit(POOL["諸葛亮"], "弓")
+    cf_target_strong = Unit(POOL["呂布"], "騎")
+    apply_effects(cf_caster_weak, cf_target_strong, cf_tac, [cf_caster_weak], [cf_target_strong], no_heal=True, skip_when_effects=True)
+    assert not any(a[0] == "amp" for a in cf_target_strong.adds), "摧鋒斷刃: 施放者武力較低時, 不應套用amp(ifStatCompare gate應阻擋)"
+    print("    [批I 186] 摧鋒斷刃 real-data ifStatCompare(自身武力較高才降傷) 驗證通過")
+
+    # 187) 真實資料: 聚石成金(ifStatCompare vs="leader") —— 敵軍魅力低於「我軍主將」(非施放者自身)才禁療
+    jsc_tac = TACTICS["聚石成金"]
+    jsc_hb_e = next(e for e in jsc_tac["effects"] if e.get("k") == "healblock")
+    assert jsc_hb_e.get("ifStatCompare") == {"stat": "charm", "op": "gt", "vs": "leader"}, \
+        "聚石成金: healblock效果應帶ifStatCompare={stat:charm,op:gt,vs:leader}"
+    jsc_leader = Unit(POOL["張飛"], "騎")
+    jsc_sub = Unit(POOL["諸葛亮"], "弓")       # 施放者本人(非主將), 刻意設極低魅力驗證vs="leader"確實不比較施放者自身
+    jsc_leader.charm = 200
+    jsc_sub.charm = 1
+    jsc_allies = [jsc_leader, jsc_sub]
+    jsc_enemy_low = Unit(POOL["關羽"], "騎")
+    jsc_enemy_low.charm = 100     # 低於主將(200) → 應禁療
+    jsc_enemy_high = Unit(POOL["趙雲"], "騎")
+    jsc_enemy_high.charm = 250    # 高於主將(200) → 不應禁療
+    apply_effects(jsc_sub, None, jsc_tac, jsc_allies, [jsc_enemy_low, jsc_enemy_high], no_heal=True, skip_when_effects=True)
+    assert jsc_enemy_low.healblock > 0, \
+        "聚石成金: 敵軍魅力(100)低於我軍主將(200)應被禁療, 即使施放者是副將(魅力僅1, 若誤用施放者自身比較會判定錯誤)"
+    assert jsc_enemy_high.healblock == 0, "聚石成金: 敵軍魅力(250)高於我軍主將(200)不應被禁療"
+    print("    [批I 187] 聚石成金 real-data ifStatCompare(vs='leader', 比較我軍主將而非施放者自身) 驗證通過")
+
+    # 188) 真實資料: 深藏若虛(base/topup mitig互斥) —— 自身無/有控制狀態時分別採用不同段的滿級值
+    sczx_tac = TACTICS["深藏若虛"]
+    sczx_mitigs = [e for e in sczx_tac["effects"] if e.get("k") == "mitig"]
+    assert len(sczx_mitigs) == 2, f"深藏若虛: 應有base+topup兩段mitig, got {len(sczx_mitigs)}"
+    # 本地複本強制rate=1.0(隔離驗證ifTargetHas/ifTargetHasNot互斥邏輯本身, e.rate機制另有批23 A4既有測試涵蓋)
+    sczx_forced = {"nameZh": "深藏若虛測試", "effects": [dict(e, rate=1.0) for e in sczx_mitigs]}
+    sczx_clean = Unit(POOL["張飛"], "騎")
+    apply_effects(sczx_clean, None, sczx_forced, [sczx_clean], [], no_heal=True, skip_when_effects=True)
+    clean_mitig = [a for a in sczx_clean.adds if a[0] == "mitig"]
+    assert len(clean_mitig) == 1, f"深藏若虛(無控制狀態): 應恰好一段mitig生效(base段, 互斥), got {len(clean_mitig)}"
+    assert abs(clean_mitig[0][1] - 0.2 * scale_of(sczx_clean, "intel")) < 1e-6, "深藏若虛(無控制狀態): 應套用base段(20%×智力縮放)"
+    sczx_chaotic = Unit(POOL["張飛"], "騎")
+    sczx_chaotic.chaos = 2
+    apply_effects(sczx_chaotic, None, sczx_forced, [sczx_chaotic], [], no_heal=True, skip_when_effects=True)
+    chaotic_mitig = [a for a in sczx_chaotic.adds if a[0] == "mitig"]
+    assert len(chaotic_mitig) == 1, f"深藏若虛(混亂狀態): 應恰好一段mitig生效(topup段, 互斥), got {len(chaotic_mitig)}"
+    assert abs(chaotic_mitig[0][1] - 0.35 * scale_of(sczx_chaotic, "intel")) < 1e-6, \
+        "深藏若虛(混亂狀態): 應套用topup段全值35%(而非base 20%+delta疊加), 受智力縮放"
+    print("    [批I 188] 深藏若虛 real-data ifTargetHasNot/ifTargetHas互斥(控制狀態任一觸發topup) 驗證通過")
+
+    # 189) 真實資料: 百步穿楊(extraHits ifTargetHas陣列) + 竊幸乘寵(extraHits ifStatCompare)
+    bbc_tac = TACTICS["百步穿楊"]
+    bbc_eh_e = bbc_tac["extraHits"][0]
+    assert bbc_eh_e.get("ifTargetHas") == ["stun", "silence", "disarm", "chaos"], "百步穿楊: extraHits應帶ifTargetHas陣列(控制狀態任一)"
+    bbc_atk = Unit(POOL["黃忠"], "弓")
+    bbc_target_ctrl = Unit(POOL["張飛"], "騎")
+    bbc_target_ctrl.disarm = 2
+    bbc_target_clean = Unit(POOL["趙雲"], "騎")
+    before_ctrl189, before_clean189 = bbc_target_ctrl.troop, bbc_target_clean.troop
+    fire_extra_hits(bbc_atk, {"nameZh": "百步穿楊", "extraHits": bbc_tac["extraHits"]}, None,
+                     lambda u: [bbc_atk], lambda u: [bbc_target_ctrl, bbc_target_clean], None, None)
+    assert bbc_target_ctrl.troop < before_ctrl189, "百步穿楊: 已處於控制狀態(繳械)的目標應被extraHits額外命中(ifTargetHas陣列OR語意)"
+    assert bbc_target_clean.troop == before_clean189, "百步穿楊: 未處於任何控制狀態的目標不應被此extraHits段命中"
+
+    qxcc_tac = TACTICS["竊幸乘寵"]
+    qxcc_eh_e = qxcc_tac["extraHits"][0]
+    assert qxcc_eh_e.get("ifStatCompare") == {"stat": "intel", "op": "gt"}, "竊幸乘寵: extraHits應帶ifStatCompare={stat:intel,op:gt}"
+    qxcc_atk_smart = Unit(POOL["諸葛亮"], "弓")
+    qxcc_target_dumb = Unit(POOL["張飛"], "騎")
+    assert qxcc_atk_smart.eff("intel") > qxcc_target_dumb.eff("intel"), "測試前置條件: 諸葛亮智力應高於張飛"
+    before_dumb189 = qxcc_target_dumb.troop
+    fire_extra_hits(qxcc_atk_smart, {"nameZh": "竊幸乘寵", "extraHits": qxcc_tac["extraHits"]}, qxcc_target_dumb,
+                     lambda u: [qxcc_atk_smart], lambda u: [qxcc_target_dumb], None, None)
+    assert qxcc_target_dumb.troop < before_dumb189, "竊幸乘寵: 施放者智力高於目標時, extraHits應觸發(ifStatCompare gate通過)"
+    qxcc_atk_dumb = Unit(POOL["張飛"], "騎")
+    qxcc_target_smart = Unit(POOL["諸葛亮"], "弓")
+    before_smart189 = qxcc_target_smart.troop
+    fire_extra_hits(qxcc_atk_dumb, {"nameZh": "竊幸乘寵", "extraHits": qxcc_tac["extraHits"]}, qxcc_target_smart,
+                     lambda u: [qxcc_atk_dumb], lambda u: [qxcc_target_smart], None, None)
+    assert qxcc_target_smart.troop == before_smart189, "竊幸乘寵: 施放者智力低於目標時, extraHits不應觸發(ifStatCompare gate應阻擋)"
+    print("    [批I 189] 百步穿楊 extraHits ifTargetHas陣列 + 竊幸乘寵 extraHits ifStatCompare(real-data) 驗證通過")
+
+    # 190) 真實資料: 橫掃千軍(effects ifTargetHas陣列, 計窮/繳械任一) + 挫志怒襲(ifTargetHasNot="weak")
+    hszj_tac = TACTICS["橫掃千軍"]
+    hszj_stun_e = next(e for e in hszj_tac["effects"] if e.get("k") == "stun")
+    assert hszj_stun_e.get("ifTargetHas") == ["disarm", "silence"], "橫掃千軍: stun效果應帶ifTargetHas=['disarm','silence']"
+    hszj_caster = Unit(POOL["關羽"], "騎")
+    hszj_target_silenced = Unit(POOL["張飛"], "騎")
+    hszj_target_silenced.silence = 2
+    hszj_target_clean = Unit(POOL["趙雲"], "騎")
+    hszj_forced = {"nameZh": "橫掃千軍測試", "effects": [dict(hszj_stun_e, rate=1.0)]}
+    apply_effects(hszj_caster, None, hszj_forced, [hszj_caster], [hszj_target_silenced, hszj_target_clean], no_heal=True, skip_when_effects=True)
+    assert hszj_target_silenced.stun > 0, "橫掃千軍: 已計窮(silence)的目標應被震懾(ifTargetHas陣列涵蓋silence)"
+    assert hszj_target_clean.stun == 0, "橫掃千軍: 未處於繳械/計窮的目標不應被震懾"
+
+    zj_tac = TACTICS["挫志怒襲"]
+    zj_amp_e = next(e for e in zj_tac["effects"] if e.get("k") == "amp")
+    assert zj_amp_e.get("ifTargetHasNot") == "weak", "挫志怒襲: amp虛弱debuff應帶ifTargetHasNot='weak'"
+    zj_caster = Unit(POOL["曹彰"], "騎") if POOL.get("曹彰") else Unit(POOL["張飛"], "騎")
+    zj_fresh_target = Unit(POOL["關羽"], "騎")
+    zj_weak_target = Unit(POOL["趙雲"], "騎")
+    zj_weak_target.push_add("amp", -1.0, 9, "測試已虛弱190")
+    # amp效果帶既有e["sameTargets"]=True(批45 A), dests完全依main_hit_tgts(過濾存活)決定, 未傳入
+    # 時會落空(向後相容, 見125/126號測試precedent)——這裡直接呼叫apply_effects(非完整fight()主
+    # 迴圈), 須顯式傳入main_hit_tgts=[本次群體]才能讓sameTargets正確沿用, 對稱st125既有呼叫慣例。
+    apply_effects(zj_caster, None, zj_tac, [zj_caster], [zj_fresh_target, zj_weak_target], no_heal=True,
+                  skip_when_effects=True, main_hit_tgts=[zj_fresh_target, zj_weak_target])
+    assert any(a[0] == "amp" for a in zj_fresh_target.adds), "挫志怒襲: 未虛弱目標應被套用虛弱debuff(amp)"
+    weak_amp_count190 = len([a for a in zj_weak_target.adds if a[0] == "amp"])
+    assert weak_amp_count190 == 1, \
+        f"挫志怒襲: 已虛弱目標不應被重複套用虛弱debuff(ifTargetHasNot='weak'應排除新增), 應維持原有1筆amp, got {weak_amp_count190}"
+    print("    [批I 190] 橫掃千軍 ifTargetHas陣列 + 挫志怒襲 ifTargetHasNot='weak'(real-data) 驗證通過")
+
+    # 191) 真實資料: 義膽雄心(scaleIfLeader既有原語接線, 非新maxStat) —— 主將時debuff受自身對應
+    # 屬性縮放, 非主將時維持基礎值不縮放
+    ydxx_tac = TACTICS["義膽雄心"]
+    ydxx_force_e = next(e for e in ydxx_tac["effects"] if e.get("stat") == "force")
+    assert ydxx_force_e.get("scale") == "force" and ydxx_force_e.get("scaleIfLeader") is True, \
+        "義膽雄心: force debuff效果應帶scale='force'+scaleIfLeader=true(既有scaleIfLeader原語, 批52c)"
+    ydxx_intel_e = next(e for e in ydxx_tac["effects"] if e.get("stat") == "intel")
+    assert ydxx_intel_e.get("scale") == "intel" and ydxx_intel_e.get("scaleIfLeader") is True, \
+        "義膽雄心: intel debuff效果應帶scale='intel'+scaleIfLeader=true"
+    # 本地複本移除everyRound/when(批37 B既有機制, 只在heal_only常駐通道生效, 與本批scale/
+    # scaleIfLeader無關, 見測試84 precedent)+rate(避免額外擲骰干擾), 隔離驗證本批實際修改的
+    # scale/scaleIfLeader部分, 用直接apply_effects()呼叫(非heal_only通道)即可精確測到。
+    ydxx_force_isolated = {k: v for k, v in ydxx_force_e.items() if k not in ("everyRound", "when", "rate")}
+    ydxx_leader = Unit(POOL["姜維"], "騎")
+    ydxx_tgt_a = Unit(POOL["張飛"], "騎")
+    apply_effects(ydxx_leader, None, {"nameZh": "義膽雄心測試-主將", "effects": [ydxx_force_isolated]},
+                  [ydxx_leader], [ydxx_tgt_a], no_heal=True, skip_when_effects=True)
+    force_debuff_leader = next(a for a in ydxx_tgt_a.stat_adds if a[0] == "force")
+    expect_leader191 = -64 * scale_of(ydxx_leader, "force")
+    assert abs(force_debuff_leader[1] - expect_leader191) < 1e-6, \
+        f"義膽雄心(主將施放): force debuff應為-64×scale_of(caster,'force')={expect_leader191:.2f}, got {force_debuff_leader[1]:.2f}"
+    ydxx_sub = Unit(POOL["姜維"], "騎")
+    ydxx_tgt_b = Unit(POOL["張飛"], "騎")
+    apply_effects(ydxx_sub, None, {"nameZh": "義膽雄心測試-副將", "effects": [ydxx_force_isolated]},
+                  [Unit(POOL["劉備"], "騎"), ydxx_sub], [ydxx_tgt_b], no_heal=True, skip_when_effects=True)
+    force_debuff_sub = next(a for a in ydxx_tgt_b.stat_adds if a[0] == "force")
+    assert abs(force_debuff_sub[1] - (-64)) < 1e-6, \
+        f"義膽雄心(非主將施放): force debuff應維持基礎值-64(scaleIfLeader應阻擋縮放), got {force_debuff_sub[1]:.2f}"
+    print("    [批I 191] 義膽雄心 real-data scaleIfLeader(既有原語接線, 主將時受自身對應屬性縮放) 驗證通過")
+
+    # 192) 真實資料: 神機莫測(既有ifTargetHas單值+ifLeader接線, 非新array原語) —— 友軍已混亂時,
+    # 主將施放者應先偵測到混亂狀態給予+12%傷害, dispel再解除混亂+其餘負面狀態(執行順序關鍵)
+    sjmc_tac = TACTICS["神機莫測"]
+    sjmc_new_amp = next(e for e in sjmc_tac["effects"] if e.get("k") == "amp")
+    sjmc_new_dispel = next(e for e in sjmc_tac["effects"] if e.get("k") == "dispel")
+    assert sjmc_new_amp.get("ifTargetHas") == "chaos" and sjmc_new_amp.get("ifLeader") is True, \
+        "神機莫測: amp傷害提升效果應帶ifTargetHas='chaos'+ifLeader=true"
+    assert sjmc_new_dispel.get("ifTargetHas") == "chaos", "神機莫測: dispel解除負面狀態應帶ifTargetHas='chaos'"
+    assert sjmc_tac["effects"].index(sjmc_new_amp) < sjmc_tac["effects"].index(sjmc_new_dispel), \
+        "神機莫測: amp(檢查混亂中)必須排在dispel(清除混亂)之前, 否則dispel會先清空chaos欄位導致amp的ifTargetHas='chaos'檢查全數落空"
+    sjmc_leader_caster = Unit(POOL["張飛"], "騎")
+    sjmc_ally_chaotic = Unit(POOL["關羽"], "騎")
+    sjmc_ally_chaotic.chaos = 2
+    sjmc_ally_chaotic.push_add("mitig", -0.1, 3, "測試附帶減益192")
+    sjmc_allies = [sjmc_leader_caster, sjmc_ally_chaotic]
+    apply_effects(sjmc_leader_caster, None, sjmc_tac, sjmc_allies,
+                  [Unit(POOL["黃忠"], "弓"), Unit(POOL["趙雲"], "騎")], no_heal=True, skip_when_effects=True)
+    assert any(a[0] == "amp" and a[1] > 0 for a in sjmc_ally_chaotic.adds), \
+        "神機莫測: 施放者為主將時, 已混亂的友軍應獲得傷害提升(amp+12%, 在dispel清除混亂前已檢測到混亂狀態)"
+    assert sjmc_ally_chaotic.chaos == 0, "神機莫測: dispel應解除已混亂友軍的混亂狀態(執行順序在amp判斷之後)"
+    assert not any(a[0] == "mitig" and a[1] < 0 for a in sjmc_ally_chaotic.adds), \
+        "神機莫測: dispel(debuffs)應一併清除其他負面狀態(測試預先掛的減益mitig應被清除)"
+    print("    [批I 192] 神機莫測 real-data ifTargetHas(單值'chaos')+ifLeader既有原語接線(amp先於dispel執行順序) 驗證通過")
+
+    # 193) 端到端整合: 神機妙算 t.scaleCompare 在真實 fight()/simulate() 全流程下不崩潰,
+    # 且比照既有105/106測試harness慣例重演active_fired_for()同款coef*scaleCompare算式,
+    # 驗證智力較高的施放者應算出較高的縮放係數與傷害(scale_compare_of本身181/184已獨立驗證,
+    # 這裡驗證消費端"真實tactics資料的coef/kind與該公式組合"整體一致)。
+    sjmr_tac = TACTICS["神機妙算"]
+    assert sjmr_tac.get("scaleCompare") == {"stat": "intel", "div": 350}, "神機妙算: 應帶頂層scaleCompare={stat:intel,div:350}"
+    sjmr_holder_smart = Unit(POOL["諸葛亮"], "弓")
+    sjmr_holder_dumb = Unit(POOL["張飛"], "騎")
+    sjmr_target = Unit(POOL["趙雲"], "騎")
+    assert sjmr_holder_smart.eff("intel") > sjmr_holder_dumb.eff("intel"), "測試前置條件: 諸葛亮智力應高於張飛"
+    c_smart193 = sjmr_tac["coef"] * scale_compare_of(sjmr_holder_smart, sjmr_target, sjmr_tac["scaleCompare"])
+    c_dumb193 = sjmr_tac["coef"] * scale_compare_of(sjmr_holder_dumb, sjmr_target, sjmr_tac["scaleCompare"])
+    assert c_smart193 > c_dumb193, \
+        f"神機妙算scaleCompare: 智力較高的施放者應算出較高的縮放後傷害係數(c_smart={c_smart193:.3f} vs c_dumb={c_dumb193:.3f})"
+    random.seed(20260710)
+    sim193 = simulate(["諸葛亮", "劉備", "趙雲"], ["張飛", "關羽", "黃忠"], n=300)
+    assert 0 <= sim193["A勝率"] <= 1 and 0 <= sim193["B勝率"] <= 1, \
+        f"193: 神機妙算持有者(諸葛亮)入隊完整fight()端到端300場應正常產生合法勝率, got A={sim193['A勝率']} B={sim193['B勝率']}"
+    print(f"    [批I 193] 神機妙算 scaleCompare 消費端一致性(c_smart={c_smart193:.3f}>c_dumb={c_dumb193:.3f}) + 完整simulate()端到端300場無崩潰 驗證通過")
 
     print("self-check OK")
 

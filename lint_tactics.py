@@ -616,6 +616,13 @@ KNOWN_EFFECT_FIELDS = {
     "ifGender",  # 批52: 效果級「施放者性別須匹配Male/Female(或中文男/女)」條件閘門
     "scaleIfSub", "scaleIfLeader",  # 批52/52c: 「僅副將/主將身份時才套用e.scale縮放」旗標,
     # heal與非heal效果(如義膽雄心)各自有一份實作但欄位語意/名稱相同
+    "ifStatCompare",  # 批I(禁近似令-scale/比較族): 比較「參照方(施放者/我軍主將)vs目標」同一
+    # 屬性大小, 決定效果段是否生效(布林gate, 對稱ifTargetHas但比較的是「屬性大小」而非「狀態
+    # 有無」), 見sgz.py/engine.js stat_compare_ok()/statCompareOk()。跨所有k種類通用(k派發
+    # 之前的共用前置檢查段), 且同一欄位名稱也用於extraHits段(eh.ifStatCompare, 見
+    # fire_extra_hits()/fireExtraHits()), 對稱kindByStat/ifTargetHasNot兩種context皆有對應
+    # 讀取邏輯的既有慣例, 摧鋒斷刃(vs預設"caster")/竊幸乘寵(extraHits段)/聚石成金(vs:"leader")
+    # 首次落地, engine_limitations.md本批新節。
 }
 PER_KIND_FIELDS = {
     "amp": {"val", "dmgType", "normalOnly", "activeOnly", "chargeOnly",
@@ -1742,6 +1749,46 @@ ENGINE_CAPABILITY_ALIASES = {
     "已有該狀態": "ifTargetHas(批16新增, 效果/extraHits級條件欄位, 只對「已具備該狀態」的目標"
                 "生效/結算, 見 engine.js targetHas()/ifTargetHas 過濾)",
     "既有狀態": "ifTargetHas(同上)",
+    "任一控制狀態": "ifTargetHas 支援陣列(批I新增, 禁近似令-scale/比較族)——OR語意, 目標命中陣列"
+                "內任一單一狀態即算符合(震懾/計窮/繳械/混亂等), 見 sgz.py/engine.js target_has()/"
+                "targetHas() 對 list/Array 輸入的遞迴OR判斷, ifTargetHasNot 沿用同一函式取反"
+                "(De Morgan's律自動給出正確的「皆非」語意)。深藏若虛/百步穿楊/橫掃千軍首次落地。"
+                "「ifTargetHas只能擇一/單值」這類措辭是陣列支援落地前的舊近似說明, 落地後應改寫"
+                "並補上陣列值。",
+    "繳械或計窮": "ifTargetHas 支援陣列(同上, 橫掃千軍原文用字)",
+    "虛弱狀態": "target_has()/targetHas() 新增 weak/虛弱 ctype(批I新增, 見「u.addbonus('amp')<=-1」"
+                "判斷, 對稱既有extra/群攻用addbonus查詢的慣例), 可作 ifTargetHas/ifTargetHasNot 的"
+                "值使用(挫志怒襲「已處於虛弱狀態」)。「引擎無法偵測amp(-1)虛弱狀態」這類措辭是"
+                "weak ctype落地前的舊近似說明, 落地後應改寫並補上 ifTargetHasNot:\"weak\"。",
+    "受自身最高屬性影響": "scale:\"maxStat\"(批I新增, 禁近似令-scale/比較族)——動態取施放者當下"
+                "四維(force/intel/command/speed, 不含魅力)最高一項代入SCALE_G, 見 sgz.py/engine.js"
+                " scale_of()/scaleOf() 對 scale===\"maxStat\" 的特判分支, 零新增呼叫點(全庫既有"
+                "svVal/svMult/svAdd/lockedScaleOf 一律透過scale_of()讀取)。扶危定傾/剛柔並濟/"
+                "整軍經武首次落地。「scale只支援固定單一屬性, 無法表達取最高者」這類措辭是"
+                "maxStat落地前的舊近似說明, 落地後應改寫並補上 scale:\"maxStat\"。",
+    "受最高屬性影響": "scale:\"maxStat\"(同上)",
+    "自身最高屬性": "e.stat===\"maxStat\"(批I新增, k===\"stat\"效果動態解析為施放者當下四維最高"
+                "一項的欄位名, 見 sgz.py resolve_stat_field()/engine.js resolveStatField(); 與"
+                "scale===\"maxStat\"共用「四維中最高一項」判斷但消費端不同(一個回傳倍數, 一個回傳"
+                "欄位名)。形一陣首次落地。",
+    "取最高一項": "scale:\"maxStat\" 或 e.stat===\"maxStat\"(同上兩則, 依語境擇一: 縮放倍數用"
+                "scale, 屬性欄位選擇用e.stat)",
+    "武力較高": "ifStatCompare(批I新增, 禁近似令-scale/比較族)——比較「參照方(施放者/我軍主將)"
+                "vs目標」同一屬性大小, 決定效果/extraHits段是否生效, 見 sgz.py stat_compare_ok()/"
+                "engine.js statCompareOk()。摧鋒斷刃「若自身武力較高」首次落地。「引擎無法比較"
+                "施放者與目標屬性高低」這類措辭是ifStatCompare落地前的舊近似說明, 落地後應改寫"
+                "並補上 ifStatCompare。",
+    "智力高於": "ifStatCompare(同上; 竊幸乘寵「若自身智力高於目標」)",
+    "魅力低於": "ifStatCompare(同上; vs:\"leader\"變體, 比較目標vs我軍隊伍主將而非施放者自身,"
+                "聚石成金「敵軍魅力低於我軍主將」)",
+    "雙方智力差": "scaleCompare(批I新增, 禁近似令-scale/比較族)——施放者vs目標同一屬性「差值」"
+                "代入縮放曲線(對稱scale_of單方固定屬性, 但讀取雙方差值), 見 sgz.py"
+                " scale_compare_of()/engine.js scaleCompareOf()。神機妙算「並基於雙方智力差額外"
+                "提高」首次落地(掛在頂層t.scaleCompare, 於active_fired_for()/activeFiredFor()"
+                "主coef傷害段消費)。「智力差加成機制完全未建模,現有scale機制只讀取單方屬性」"
+                "這類措辭是scaleCompare落地前的舊近似說明, 落地後應改寫並補上 t.scaleCompare。",
+    "雙方武力之差": "scaleCompare(同上模式; 若該筆已因文本修正/查證而確認本文無此描述, 應視為"
+                "stale交叉引用移除, 非仍待落地, 見才辯機捷批I複核個案)",
     "奇偶交替": "when.parity(批16新增, 戰法級t.when與效果級e.when皆支援 parity:\"odd\"/\"even\","
                 "見 roundOk()/round_ok(); passive/command 的 coef 傷害段擲骰自批32起亦讀 roundOk;"
                 "配合批30 everyRound 可表達「奇數回合效果A/偶數回合效果B」互斥交替(義膽雄心批37重建"
@@ -3028,7 +3075,10 @@ PER_SHAPE_TOP_FIELDS = {
     # (已建但未讀, 見Unit.__init__/healed_for()註解), 若未來有戰法宣告頂層
     # when:{"on":"healed"} 會是比單一欄位孤兒更嚴重的「整戰法死亡」, 全庫核對目前無此案例
     # (見lint_tactics.py R32 selftest對此的陰性樣例覆蓋)。
-    "reactive:activeFired": set(),
+    # 批I(禁近似令-scale/比較族): active_fired_for()/activeFiredFor() 新增讀取頂層
+    # t["scaleCompare"](僅本函式的主coef傷害段, 神機妙算「並基於雙方智力差額外提高」), 依
+    # 施放者vs本次命中目標的屬性差值額外縮放coef, 見scale_compare_of()/scaleCompareOf()。
+    "reactive:activeFired": {"scaleCompare"},
     "reactive:healed": set(),
     "reactive:controlled": set(),
 }

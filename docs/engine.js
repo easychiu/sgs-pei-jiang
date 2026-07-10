@@ -26,7 +26,56 @@
   const SCALE = v => SCALE_G(v, 350);
   const SCALE_CLAMP = 1.5;                            // amp/mitig 縮放後上限保護: |val| <= 1.5
   // 批35: scaleOf 第三參數 scaleDiv(可選) —— 效果級 e.scaleDiv 透傳, 預設350(SCALE 向後相容)。
-  const scaleOf = (caster, scale, scaleDiv) => scale === "charm" ? SCALE_G(caster.charm, scaleDiv) : (scale ? SCALE_G(caster.eff(scale), scaleDiv) : 1);
+  // 批I(禁近似令-scale/比較族): scale==="maxStat" —— 動態取施放者當下四維(force/intel/
+  // command/speed, 不含魅力)中最高一項代入SCALE_G, 取代「受自身最高屬性影響」的固定取值
+  // 近似(扶危定傾/剛柔並濟/整軍經武等, 見engine_limitations.md第12/6.6節鏡像缺口)。零新增
+  // 呼叫點: 全庫既有svVal/svMult/svAdd/lockedScaleOf一律透過此函式讀取scale倍率, scale
+  // 欄位本身早已是全域已知欄位, 只是多一個合法字串值, prep鎖定沿用lockedScaleOf既有委派。
+  const scaleOf = (caster, scale, scaleDiv) => {
+    if (!scale) return 1;
+    if (scale === "maxStat") return SCALE_G(Math.max(caster.eff("force"), caster.eff("intel"), caster.eff("command"), caster.eff("speed")), scaleDiv);
+    return scale === "charm" ? SCALE_G(caster.charm, scaleDiv) : SCALE_G(caster.eff(scale), scaleDiv);
+  };
+  // 批I: e.stat==="maxStat" —— 動態解析為 u 當下四維最高的一項欄位名, 供 k==="stat" 效果
+  // 動態選定要加成哪個屬性(形一陣「自身最高屬性+30→60點」)。與 scale==="maxStat"(見上)
+  // 共用「四維中最高一項」語意, 但消費端不同(這裡回傳屬性欄位名字串, 上面回傳縮放倍數)。
+  const resolveStatField = (u, stat) => {
+    if (stat !== "maxStat") return stat;
+    const stats4 = ["force", "intel", "command", "speed"];
+    return stats4.reduce((best, s) => (u.eff(s) > u.eff(best) ? s : best), stats4[0]);
+  };
+  // 批I: ifStatCompare —— 比較「參照方」(caster自身或我軍主將)vs「目標」同一屬性的大小,
+  // 決定效果/extraHits段是否生效(布林gate, 對稱ifTargetHas但比較的是「屬性大小」而非
+  // 「狀態有無」)。spec: {stat, op("gt"/"gte"/"lt"/"lte", 預設"gt"), vs("caster"預設/
+  // "leader")}。op 語意固定為「參照方 op 目標」方向。見 sgz.py statCompareOk 同名對稱函式
+  // 詳細註解(三筆真實案例驗證此形狀已是最小通用形)。
+  const statCompareOk = (ref, target, allies, spec) => {
+    if (!spec || !target) return false;
+    const stat = spec.stat || "force";
+    const op = spec.op || "gt";
+    const vs = spec.vs || "caster";
+    const refU = (vs === "leader" && allies && allies.length) ? allies[0] : ref;
+    if (!refU) return false;
+    const rv = stat === "charm" ? refU.charm : refU.eff(stat);
+    const tv = stat === "charm" ? target.charm : target.eff(stat);
+    if (op === "gt") return rv > tv;
+    if (op === "gte") return rv >= tv;
+    if (op === "lt") return rv < tv;
+    if (op === "lte") return rv <= tv;
+    return false;
+  };
+  // 批I: scaleCompare —— 施放者vs目標同一屬性「差值」代入縮放曲線, 對稱scaleOf(單方固定
+  // 屬性)但讀取雙方差值(神機妙算「並基於雙方智力差額外提高」)。spec: {stat(預設"intel"),
+  // div(選填, 預設350)}。diff=0時倍率=1.0(無額外加成)。見 sgz.py scaleCompareOf 同名對稱
+  // 函式詳細註解。
+  const scaleCompareOf = (caster, target, spec) => {
+    if (!spec || !target) return 1;
+    const stat = spec.stat || "intel";
+    const div = spec.div || 350;
+    const cv = stat === "charm" ? caster.charm : caster.eff(stat);
+    const tv = stat === "charm" ? target.charm : target.eff(stat);
+    return Math.max(0, 1 + (cv - tv) / div);
+  };
   // 批35: capValOf(v, capVal) —— 效果級可選欄位 e.capVal(值上限), 縮放後 clamp。慣例「狀態效果
   // 上限=基礎值×2」(錨點: 機鑑先識 40%→80% cap)不自動套用(每個效果的「基礎值」需自行定義,
   // 無法在此泛化推得), 逐效果顯式標 e.capVal(如機鑑先識 val:0.4 → capVal:0.8)。未標則不 clamp
@@ -834,10 +883,18 @@
   }
   function targetHas(u, type) {
     if (!u) return false;
+    // 批I(禁近似令-scale/比較族): type 可為陣列 —— OR語意, 只要命中其中任一單一type即算
+    // 符合(深藏若虛「震懾/計窮/繳械/混亂任一」/百步穿楊/橫掃千軍), 遞迴呼叫自身逐一比對。
+    // 呼叫端 ifTargetHasNot 沿用同一函式再取反, De Morgan's律自動給出正確的「皆非」語意,
+    // 不需要對 ifTargetHasNot 額外處理陣列語意。
+    if (Array.isArray(type)) return type.some(t => targetHas(u, t));
     if (type === "dot") return u.dots.length > 0;
     if (type === "huchen" || type === "虎嗔") return !!u.huchen;
     if (type === "capture" || type === "捕獲" || type === "captured") return (u.captured || 0) > 0;
     if (type === "stun" || type === "silence" || type === "disarm" || type === "chaos" || type === "insight") return u[type] > 0;
+    // 批I: weak/虛弱 —— 偵測「amp總和<=-1」(無法造成傷害的虛弱狀態, 挫志怒襲等戰法用amp
+    // val:-1.0表達), 對稱既有extra/群攻用addbonus查詢的慣例。
+    if (type === "weak" || type === "虛弱" || type === "weakened") return u.addbonus("amp") <= -1;
     // 批C: 群攻(extra)狀態查詢——對稱sgz.py target_has同名分支, 見其詳細註解(引弦力戰「若已
     // 處於群攻狀態」需要判斷持有者自身是否已有extra加成)。
     if (type === "extra" || type === "群攻") return u.addbonus("extra") > 0;
@@ -1089,6 +1146,11 @@
       // 目標本身)提前判斷過(見該分支註解), 這裡跳過(避免對 dests=tgt的隊友 誤重複套用同一個
       // 條件, 那些隊友身上通常沒有該狀態, 會被錯誤過濾掉)。
       if (eh.ifTargetHas && eh.who !== "mainTargetAlly") dests = dests.filter(v => targetHas(v, eh.ifTargetHas));
+      // 批I(禁近似令-scale/比較族): eh.ifStatCompare —— extraHits 段結算前檢查, 只對
+      // 「參照方(攻擊者atk自身或其隊伍主將)vs目標」屬性比較成立的目標結算此段傷害(竊幸乘寵
+      // 「若自身智力高於目標則額外造成一次謀略傷害」), 對稱effects段的e.ifStatCompare
+      // (見applyEffects), 共用statCompareOk()。
+      if (eh.ifStatCompare) dests = dests.filter(v => statCompareOk(atk, v, alliesOf(atk), eh.ifStatCompare));
       // 批31 B: ifSameTargetIsLeader —— extraHits 段結算前檢查, 只對「(主coef段隨機選定的)
       // 目標剛好就是敵方隊伍固定位置的主將(foes[0])」時才結算此段傷害, 精確表達原文「若目標
       // (普攻/主傷段隨機選定的對象)為敵軍主將，額外造成傷害」這種條件分支。取代舊有EV折算
@@ -1733,6 +1795,11 @@
       // 目標重複刷新chaos(雖然dur:1的重複刷新本身無害, 但精確表達原文"否則"的互斥語意仍
       // 優於放任兩分支都生效)。
       if (e.ifTargetHasNot) dests = dests.filter(u => !targetHas(u, e.ifTargetHasNot));
+      // 批I(禁近似令-scale/比較族): ifStatCompare —— 比較「參照方(施放者/我軍主將)vs目標」
+      // 同一屬性大小, 只對比較成立的目標生效(摧鋒斷刃「自身武力較高」/聚石成金「敵軍魅力
+      // 低於我軍主將」), 對稱ifTargetHas/ifTargetHasNot但比較的是「屬性大小」而非「狀態
+      // 有無」, 見statCompareOk()。
+      if (e.ifStatCompare) dests = dests.filter(u => statCompareOk(caster, u, allies, e.ifStatCompare));
       // 批52g: whoNames —— 只對武將名在名單內的目標(黃巾副將含 SP)
       if (e.whoNames) {
         const wn = Array.isArray(e.whoNames) ? e.whoNames : [e.whoNames];
@@ -1944,7 +2011,7 @@
             caster.exploitGlobal.set(e, g);
           }
         }
-        else if (k === "stat") { const ms = e.maxStack; if (e.add != null) u.pushStatAdd(e.stat, svAdd(e.add), e.dur, src, udFlags, ms); else u.pushMod(e.stat, svMult(e.mult ?? 1), e.dur, src, udFlags, ms); }  // 裝備平加(add)與乘算(mult)擇一; 批52 maxStack
+        else if (k === "stat") { const ms = e.maxStack; const statField = resolveStatField(u, e.stat); if (e.add != null) u.pushStatAdd(statField, svAdd(e.add), e.dur, src, udFlags, ms); else u.pushMod(statField, svMult(e.mult ?? 1), e.dur, src, udFlags, ms); }  // 裝備平加(add)與乘算(mult)擇一; 批52 maxStack; 批I: e.stat==="maxStat"動態解析(resolveStatField)
         // 批23 A3: dot 結算優先讀 e.kind(戰法整體是兵刃 t.kind="phys", 但灼燒/水攻類 dot 段
         // 依原文「受智力影響」應走謀略傷害類型, 過去誤用 t.kind 導致傷害類型錯位, 如天降火雨
         // 兵刃戰法掛的灼燒本應是 intel 類, 若戰法整體改記 kind="phys" 會連帶把 dot 也算成
@@ -2416,7 +2483,14 @@
           if (t.coef) {
             const cnt = t.nMax ? (t.n + Math.floor(rnd() * (t.nMax - t.n + 1))) : t.n;
             const vs = pickTargets(foesOf(holder), cnt);
-            for (const v of vs) hit(holder, v, t.coef, t.kind, false, onHit, dealtDamage, true);  // 批31 A: 本段傷害本身即「主動戰法發動觸發的反應式傷害」, isActive=true供同戰法/其他戰法的e.activeOnly amp判定
+            // 批I(禁近似令-scale/比較族): t.scaleCompare —— 本段傷害係數依「施放者vs本次命中
+            // 目標」同一屬性的差值額外縮放(神機妙算「並基於雙方智力差額外提高」), 對稱效果級
+            // e.scale但讀取雙方差值而非施放者單一固定值, 見scaleCompareOf()。逐目標各自計算,
+            // 無此欄位則行為完全不變(向後相容)。
+            for (const v of vs) {
+              const c = t.scaleCompare ? t.coef * scaleCompareOf(holder, v, t.scaleCompare) : t.coef;
+              hit(holder, v, c, t.kind, false, onHit, dealtDamage, true);  // 批31 A: 本段傷害本身即「主動戰法發動觸發的反應式傷害」, isActive=true供同戰法/其他戰法的e.activeOnly amp判定
+            }
             if (vs.length === 1) mainHitTgt = vs[0];
           }
           if (t.extraHits) fireExtraHits(holder, t, mainHitTgt, alliesOf, foesOf, onHit, dealtDamage);
