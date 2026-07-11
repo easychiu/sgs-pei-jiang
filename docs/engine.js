@@ -910,7 +910,8 @@
       base *= (1 + critBonus);
       if (TRACE) lg(`　▸ ${src.nm} 觸發${kind === "phys" ? "會心" : "奇謀"}, ${kind === "phys" ? "兵刃" : "謀略"}傷害提升${(critBonus * 100).toFixed(2)}%`);
     }
-    base *= 0.96 + rnd() * 0.08;   // 隨機帶 0.96~1.04(對稱): rnd()*0.08 涵蓋 [0,0.08), 起點0.96 → 上限0.96+0.08=1.04
+    // 傷害不浮動(user權威規則2026-07-11): 同條件傷害為定值, 移除舊±4%隨機帶
+    // (早期存疑保留, 現經user確認遊戲傷害數字不浮動)。會心仍是離散擲骰(上方), 非連續浮動。
     return Math.max(0, base);
   }
   function hit(src, dst, coef, kind, isNormal, onEvent, onDeal, isActive, isCharge) {  // 批31 A: isActive(可選, 尾端新增, 向後相容既有全部呼叫點)—— 傳入本次傷害是否為主動戰法所致; 批40 B: isCharge(可選, 對稱isActive)—— 傳入本次傷害是否為突擊戰法所致
@@ -1302,6 +1303,60 @@
     }
     return best;
   }
+  // 批B(filter-then-pick修正): 目標資格gate統一判定 —— 對稱 sgz.py _target_gate_ok/
+  // _has_target_gate/_gate_pool 模組層級註解。ifTargetHas/ifTargetHasNot/ifStatCompare/
+  // ifTargetHpAbove/ifTargetHpBelow/ifSelfStatCompare/ifTargetIsRank/ifTargetIsRankNot/
+  // whoNames 這些效果級欄位共同的性質: 是否命中「純粹取決於候選單位u自身當下狀態/屬性」,
+  // 與u是否被隨機選中無關(選前選後獨立評估必得到同一個布林值)。過去 applyEffects/
+  // fireExtraHits 的 who==="enemy"/"ally" 隨機選標分支一律「先 pickTargets 隨機挑n個,
+  // 挑完才用這些gate過濾」——若隨機挑中不合格目標, 過濾後dests變空/縮水, 明明池中另有合格
+  // 目標卻白白錯過(隔離實測橫掃千軍案例: 對1個已計窮+1個乾淨的敵組, 應100%命中計窮目標,
+  // 舊實作只29/50命中, 見批B交接文件)。正解: 有這類gate時應「先過濾出合格池, 再從合格池
+  // pickTargets」(filter-then-pick)。不含 sameTargets/ifSameTargetIsLeader——這兩者語意是
+  // 「事後檢查這次隨機結果是否恰好是某個特定對象」, 本質上就是要在挑選動作發生後才能判斷
+  // (等同於「抽到大獎的機率」, pre-filter會把機率語意錯改成必中), 不適用本原語。
+  const TARGET_GATE_KEYS = ["ifTargetHas", "ifTargetHasNot", "ifStatCompare", "ifTargetHpAbove",
+    "ifTargetHpBelow", "ifSelfStatCompare", "ifTargetIsRank", "ifTargetIsRankNot", "whoNames"];
+  function hasTargetGate(e) {
+    return TARGET_GATE_KEYS.some(k => e[k] != null);
+  }
+  // ifTargetIsRank/ifTargetIsRankNot 用: spec.stat -> 準則名。原為 applyEffects 內部區域
+  // 變數, 批B抽到頂層供 targetGateOk 與既有選後過濾共用同一份邏輯(對稱 sgz.py _rank_key)。
+  function rankKeyOf(spec) {
+    return spec.stat === "intel" ? "maxIntel" : "maxForce";
+  }
+  function targetGateOk(u, e, ref, allies, enemies) {
+    if (e.ifTargetHas && !targetHas(u, e.ifTargetHas)) return false;
+    if (e.ifTargetHasNot && targetHas(u, e.ifTargetHasNot)) return false;
+    if (e.ifStatCompare && !statCompareOk(ref, u, allies, e.ifStatCompare)) return false;
+    if (e.ifTargetHpAbove != null && !(u.hpPct > e.ifTargetHpAbove)) return false;
+    if (e.ifTargetHpBelow != null && !(u.hpPct < e.ifTargetHpBelow)) return false;
+    if (e.ifSelfStatCompare) {
+      const spec = e.ifSelfStatCompare, opFn = {
+        gt: (a, b) => a > b, gte: (a, b) => a >= b, lt: (a, b) => a < b, lte: (a, b) => a <= b,
+      }[spec.op || "gt"];
+      if (!opFn(u.eff(spec.statA), u.eff(spec.statB))) return false;
+    }
+    if (e.ifTargetIsRank) {
+      const champ = pickByCriterion(enemies, rankKeyOf(e.ifTargetIsRank));
+      if (u !== champ) return false;
+    }
+    if (e.ifTargetIsRankNot) {
+      const specs = Array.isArray(e.ifTargetIsRankNot) ? e.ifTargetIsRankNot : [e.ifTargetIsRankNot];
+      const champs = specs.map(s => pickByCriterion(enemies, rankKeyOf(s)));
+      if (champs.includes(u)) return false;
+    }
+    if (e.whoNames) {
+      const wn = Array.isArray(e.whoNames) ? e.whoNames : [e.whoNames];
+      if (!(u.g && wn.includes(u.g.name))) return false;
+    }
+    return true;
+  }
+  // filter-then-pick: 若e帶任何目標資格gate, 回傳過濾後的合格候選池(供pickTargets隨機挑選
+  // 前使用); 無gate則原樣回傳pool(不新增array, 維持原隨機行為零改動)。
+  function gatePool(pool, e, ref, allies, enemies) {
+    return hasTargetGate(e) ? pool.filter(u => targetGateOk(u, e, ref, allies, enemies)) : pool;
+  }
   // 批12 ModeG: lockTarget —— 戰法首次發動時透過 pickTarget 正常選標, 之後每次發動重用同一目標
   // (以戰法物件本身為鍵存進 caster.lockedTargets), 而非每次重新隨機選。若鎖定目標已陣亡: 依 brief
   // 保守決策(來源文字未說明死亡後是否重新鎖定), 視為「本次發動找不到有效目標」回傳 null, 不重新選
@@ -1483,7 +1538,14 @@
       else if (eh.who === "sameTarget") dests = tgt && tgt.alive ? [tgt] : [];        // 沿用主段已選定的(單體)目標
       else if (eh.who === "enemyLeader") { const fl = foesOf(u)[0]; dests = (fl && fl.alive) ? [fl] : []; }  // 固定打敵方主將(index 0)
       else if (cnt <= 1 && tgt && tgt.alive && !eh.who) dests = [tgt];   // 未指定 who 且單體: 沿用主段目標(向後相容預設行為)
-      else dests = pickTargets(foesOf(u), cnt);
+      else {
+        // 批B: filter-then-pick(對稱 applyEffects 同名修正, 見 gatePool 頂層註解) —— eh帶
+        // ifTargetHas/ifStatCompare等資格gate時, 先過濾foesOf(u)成合格池再pickTargets, 避免
+        // 「隨機挑中不合格目標, 過濾後dests落空」(百步穿楊 extraHits ifTargetHas陣列案例:
+        // 對1個已控制+1個乾淨的敵組, 應100%命中控制中的目標)。
+        const fo = foesOf(u);
+        dests = pickTargets(gatePool(fo, eh, atk, alliesOf(atk), fo), cnt);
+      }
       if (mainTargetAllyAtk) atk = mainTargetAllyAtk;    // 覆寫本段攻擊者為 tgt 本身(見上方who==="mainTargetAlly"分支)
       // 批16: ifTargetHas —— extraHits 段結算前檢查, 只對「已有該狀態」的目標結算此段傷害。
       // 批A: who==="mainTargetAlly" 時 ifTargetHas/ifTargetHasNot 已在上方針對 tgt(main段
@@ -2423,6 +2485,11 @@
       // coef段確實命中>=2人群體時才會生效)。
       else if (e.sameTargets) dests = (opt.mainHitTgts || []).filter(x => x.alive);
       else if (who === "enemy") {
+        // 批B(filter-then-pick修正): e帶ifTargetHas/ifTargetHasNot/ifStatCompare等目標
+        // 資格gate時, 先把enemies過濾成合格池, 下方CTRL_K/hasEN隨機選標分支才從合格池
+        // pickTargets(而非「先隨機挑、挑完才用gate過濾」——見gatePool頂層註解)。無gate的
+        // 效果enemyPool與enemies是同一份array, 完全維持原隨機行為不變。
+        const enemyPool = gatePool(enemies, e, caster, allies, enemies);
         if (CTRL_K) {                                 // 群體控制(n>1 或有 nMax)隨機挑不重複目標; 單體優先鎖定 tgt
           // 批26: CTRL類效果優先讀 e.n/e.nMax(效果自身欄位), 無則fallback到t.n/t.nMax(戰法
           // 頂層, 舊行為, 向後相容)。原本CTRL_K只認頂層n/nMax, 導致同一戰法內「多段各自不同
@@ -2431,10 +2498,10 @@
           const n = hasEN ? e.n : (t.n || 1);
           const nMax = hasEN ? e.nMax : t.nMax;
           const cnt = nMax ? n + Math.floor(rnd() * (nMax - n + 1)) : n;
-          dests = cnt <= 1 ? (tgt && tgt.alive ? [tgt] : pickTargets(enemies, 1)) : pickTargets(enemies, cnt);
+          dests = cnt <= 1 ? (tgt && tgt.alive ? [tgt] : pickTargets(enemyPool, 1)) : pickTargets(enemyPool, cnt);
         } else if (hasEN) {                            // 批23 A1: 非CTRL效果讀 e.n/e.nMax
           const cnt = e.nMax ? e.n + Math.floor(rnd() * (e.nMax - e.n + 1)) : e.n;
-          dests = cnt <= 1 ? (tgt && tgt.alive ? [tgt] : pickTargets(enemies, 1)) : pickTargets(enemies, cnt);
+          dests = cnt <= 1 ? (tgt && tgt.alive ? [tgt] : pickTargets(enemyPool, 1)) : pickTargets(enemyPool, cnt);
           // 批45 A: 若本效果本身是「首次」命中群體(cnt>1)的來源(無 coef 段可沿用時, 如誘敵深入
           // coef=0, dot+amp 兩個效果皆為 effects 陣列內的同層 sibling), 就地更新 opt.mainHitTgts,
           // 讓本戰法內排在後面、帶 e.sameTargets 的效果可以沿用「前一個效果實際命中的那一批
@@ -2444,8 +2511,9 @@
         } else dests = enemies.filter(x => x.alive);
       }
       else if (hasEN) {                                 // 批23 A1: who="ally"(含預設) 非CTRL效果讀 e.n/e.nMax(如「我軍2人」「自己及友軍單體」)
+        const allyPool = gatePool(allies, e, caster, allies, enemies);  // 批B: filter-then-pick(見gatePool頂層註解)
         const cnt = e.nMax ? e.n + Math.floor(rnd() * (e.nMax - e.n + 1)) : e.n;
-        dests = cnt <= 1 ? (tgt && tgt.alive && allies.includes(tgt) ? [tgt] : pickTargets(allies, 1)) : pickTargets(allies, cnt);
+        dests = cnt <= 1 ? (tgt && tgt.alive && allies.includes(tgt) ? [tgt] : pickTargets(allyPool, 1)) : pickTargets(allyPool, cnt);
       }
       else dests = allies.filter(a => a.alive);
       // 批16: ifTargetHas —— 效果段條件, 只對「已有該狀態」的目標生效; 選目標後過濾(不影響選目標邏輯本身)
@@ -2485,8 +2553,8 @@
       // 分三支」: 混亂分支 ifTargetIsRank(武力最高) / 計窮分支 ifTargetIsRank(智力最高) /
       // 否則分支 ifTargetIsRankNot([武力最高,智力最高])(兩者皆不是才生效)。用既有
       // pickByCriterion(enemies, 準則)找出當下真正的排名冠軍, 與 dests 內每個目標比對是否
-      // 為同一人(嚴格 unit 物件相等, 因排名冠軍全隊唯一)。
-      const rankKeyOf = spec => (spec.stat === "intel" ? "maxIntel" : "maxForce");
+      // 為同一人(嚴格 unit 物件相等, 因排名冠軍全隊唯一)。rankKeyOf 批B已抽到頂層(供
+      // targetGateOk共用, 見其定義處), 這裡不再重複定義。
       if (e.ifTargetIsRank) {
         const champ = pickByCriterion(enemies, rankKeyOf(e.ifTargetIsRank));
         dests = dests.filter(u => u === champ);

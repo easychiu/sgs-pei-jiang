@@ -1223,7 +1223,8 @@ def damage(src, dst, coef, kind, src_troop=None, is_normal=None, is_active=None,
     if crit_rate > 0 and random.random() < crit_rate:
         crit_bonus = 1.0 + src.addbonus("critDmgUp", kind, is_normal, is_active, is_charge)
         base *= (1 + crit_bonus)
-    base *= random.uniform(0.96, 1.04)
+    # 傷害不浮動(user權威規則2026-07-11): 同條件傷害為定值, 移除舊±4%隨機帶
+    # (早期存疑保留, 現經user確認遊戲傷害數字不浮動)。會心仍是離散擲骰(上方), 非連續浮動。
     return max(0, base)
 
 
@@ -1731,6 +1732,80 @@ def pick_by_criterion(units, sel, ally_pool=False):
     return (min if sel in TARGETSEL_MIN else max)(live, key=key_fn)
 
 
+# 批B(filter-then-pick修正): 目標資格gate統一判定 —— ifTargetHas/ifTargetHasNot/
+# ifStatCompare/ifTargetHpAbove/ifTargetHpBelow/ifSelfStatCompare/ifTargetIsRank/
+# ifTargetIsRankNot/whoNames 這些效果級欄位共同的性質: 是否命中「純粹取決於候選單位u
+# 自身當下狀態/屬性」, 與u是否被隨機選中無關(選前選後獨立評估必得到同一個布林值)。
+# 過去 apply_effects/fire_extra_hits 的 who=="enemy"/"ally" 隨機選標分支一律「先
+# pick_targets 隨機挑n個, 挑完才用這些gate過濾」——若隨機挑中不合格目標, 過濾後dests
+# 變空/縮水, 明明池中另有合格目標卻白白錯過(隔離實測橫掃千軍案例: 對1個已計窮+1個乾淨
+# 的敵組, 應100%命中計窮目標, 舊實作只29/50命中, 見批B交接文件)。正解: 有這類gate時
+# 應「先過濾出合格池, 再從合格池 pick_targets」(filter-then-pick), 使命中率不再受
+# 「隨機挑選過程本身」拖累。不含 sameTargets/ifSameTargetIsLeader——這兩者語意是「事後
+# 檢查這次隨機結果是否恰好是某個特定對象」, 本質上就是要在挑選動作發生後才能判斷(等同於
+# 「抽到大獎的機率」, pre-filter會把機率語意錯改成必中), 不適用本原語, 維持現狀事後判斷。
+_TARGET_GATE_KEYS = ("ifTargetHas", "ifTargetHasNot", "ifStatCompare", "ifTargetHpAbove",
+                     "ifTargetHpBelow", "ifSelfStatCompare", "ifTargetIsRank", "ifTargetIsRankNot",
+                     "whoNames")
+
+
+def _has_target_gate(e):
+    """效果e是否帶有任何「可預先判定」的目標資格gate(見上方模組註解)。無gate的效果應
+    完全維持原隨機行為不變(呼叫端據此決定要不要多花一次list生成, 避免無謂配置)。"""
+    return any(e.get(k) is not None for k in _TARGET_GATE_KEYS)
+
+
+def _rank_key(spec):
+    """ifTargetIsRank/ifTargetIsRankNot 用: spec.stat -> TARGETSEL_KEY 準則名(依既有
+    maxIntel/maxForce準則家族, 對稱engine.js rankKeyOf)。原為apply_effects內部巢狀函式,
+    批B抽到模組層級供_target_gate_ok與既有選後過濾共用同一份邏輯(不重複維護兩份)。"""
+    return "maxIntel" if spec.get("stat") == "intel" else "maxForce"
+
+
+def _target_gate_ok(u, e, ref, allies, enemies):
+    """單一候選目標u是否通過效果e宣告的全部靜態資格gate(見_TARGET_GATE_KEYS)。ref: 比較
+    基準方(apply_effects的caster, 或fire_extra_hits的atk代理出手者)。allies/enemies:
+    當下完整雙方名單(ifStatCompare vs="leader"/ifTargetIsRank 準則查詢皆讀完整名單,
+    不受pool是否已被其他條件縮小影響, 與既有選後過濾行為完全一致)。"""
+    if e.get("ifTargetHas") and not target_has(u, e["ifTargetHas"]):
+        return False
+    if e.get("ifTargetHasNot") and target_has(u, e["ifTargetHasNot"]):
+        return False
+    if e.get("ifStatCompare") and not stat_compare_ok(ref, u, allies, e["ifStatCompare"]):
+        return False
+    if e.get("ifTargetHpAbove") is not None and not (u.hp_pct > e["ifTargetHpAbove"]):
+        return False
+    if e.get("ifTargetHpBelow") is not None and not (u.hp_pct < e["ifTargetHpBelow"]):
+        return False
+    if e.get("ifSelfStatCompare"):
+        _sc = e["ifSelfStatCompare"]
+        _op_fns = {"gt": lambda a, b: a > b, "gte": lambda a, b: a >= b,
+                   "lt": lambda a, b: a < b, "lte": lambda a, b: a <= b}
+        _opf = _op_fns.get(_sc.get("op", "gt"), _op_fns["gt"])
+        if not _opf(u.eff(_sc["statA"]), u.eff(_sc["statB"])):
+            return False
+    if e.get("ifTargetIsRank"):
+        _champ = pick_by_criterion(enemies, _rank_key(e["ifTargetIsRank"]))
+        if u is not _champ:
+            return False
+    if e.get("ifTargetIsRankNot"):
+        _specs = e["ifTargetIsRankNot"] if isinstance(e["ifTargetIsRankNot"], list) else [e["ifTargetIsRankNot"]]
+        _champs = [pick_by_criterion(enemies, _rank_key(s)) for s in _specs]
+        if u in _champs:
+            return False
+    if e.get("whoNames"):
+        _wn = set(e["whoNames"] if isinstance(e["whoNames"], list) else [e["whoNames"]])
+        if not (u.g and u.g.name in _wn):
+            return False
+    return True
+
+
+def _gate_pool(pool, e, ref, allies, enemies):
+    """filter-then-pick: 若e帶任何目標資格gate, 回傳過濾後的合格候選池(供pick_targets
+    隨機挑選前使用); 無gate則原樣回傳pool(不新增list, 維持原隨機行為零改動)。"""
+    return [u for u in pool if _target_gate_ok(u, e, ref, allies, enemies)] if _has_target_gate(e) else pool
+
+
 def pick_target_chaos(u, allies, foes):
     """批12 ModeF: 混亂(chaos)單體選標 —— 普攻/單體主動戰法目標選擇改為「敵我不分」: 從友軍+敵軍
     (排除自己)中隨機挑一個存活目標, 而非只從敵方挑。非混亂狀態時退回一般 pick_target(含嘲諷判定)。
@@ -1853,7 +1928,12 @@ def fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit, on_deal=None):
         elif cnt <= 1 and tgt and tgt.alive and not who:
             dests = [tgt]                                    # 未指定who且單體: 沿用主段目標(向後相容預設行為)
         else:
-            dests = pick_targets(foes_of(u), cnt)
+            # 批B: filter-then-pick(對稱apply_effects同名修正, 見_gate_pool模組層級註解) ——
+            # eh帶ifTargetHas/ifStatCompare等資格gate時, 先過濾foes_of(u)成合格池再pick_targets,
+            # 避免「隨機挑中不合格目標, 過濾後dests落空」(百步穿楊 extraHits ifTargetHas陣列
+            # 案例: 對1個已控制+1個乾淨的敵組, 應100%命中控制中的目標)。
+            _fo = foes_of(u)
+            dests = pick_targets(_gate_pool(_fo, eh, atk, allies_of(atk), _fo), cnt)
         if main_target_ally_atk is not None:
             atk = main_target_ally_atk                       # 覆寫本段攻擊者為 tgt 本身
         # 批16: ifTargetHas —— extraHits 段結算前檢查, 只對「已有該狀態」的目標結算此段傷害。
@@ -2866,6 +2946,11 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         elif e.get("sameTargets"):
             dests = [x for x in (main_hit_tgts or []) if x.alive]
         elif who == "enemy":
+            # 批B(filter-then-pick修正): e帶ifTargetHas/ifTargetHasNot/ifStatCompare等目標
+            # 資格gate時, 先把enemies過濾成合格池, 下方ctrl_k/has_en隨機選標分支才從合格池
+            # pick_targets(而非「先隨機挑、挑完才用gate過濾」——見_gate_pool模組層級註解)。
+            # 無gate的效果enemy_pool與enemies是同一份list, 完全維持原隨機行為不變。
+            enemy_pool = _gate_pool(enemies, e, caster, allies, enemies)
             if ctrl_k:                                # 群體控制隨機挑不重複目標; 單體優先鎖定 tgt
                 # 批26: CTRL類效果優先讀 e["n"]/e["nMax"](效果自身欄位), 無則 fallback 到
                 # t["n"]/t["nMax"](戰法頂層, 舊行為, 向後相容)。原本 ctrl_k 只認頂層 n/nMax,
@@ -2882,16 +2967,16 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     n_max = t.get("nMax")
                 cnt = n + random.randint(0, n_max - n) if n_max else n
                 if cnt <= 1:
-                    dests = [tgt] if tgt and tgt.alive else pick_targets(enemies, 1)
+                    dests = [tgt] if tgt and tgt.alive else pick_targets(enemy_pool, 1)
                 else:
-                    dests = pick_targets(enemies, cnt)
+                    dests = pick_targets(enemy_pool, cnt)
             elif has_en:                               # 批23 A1: 非CTRL效果讀 e["n"]/e["nMax"]
                 n = e["n"]
                 cnt = n + random.randint(0, e["nMax"] - n) if e.get("nMax") else n
                 if cnt <= 1:
-                    dests = [tgt] if tgt and tgt.alive else pick_targets(enemies, 1)
+                    dests = [tgt] if tgt and tgt.alive else pick_targets(enemy_pool, 1)
                 else:
-                    dests = pick_targets(enemies, cnt)
+                    dests = pick_targets(enemy_pool, cnt)
                 # 批45 A: 若本效果本身是「首次」命中群體(cnt>1)的來源(無 coef 段可沿用時, 如
                 # 誘敵深入 coef=0, dot+amp 兩個效果皆為 effects[] 內的同層 sibling), 就地更新
                 # main_hit_tgts, 讓本戰法內排在後面、帶 e["sameTargets"] 的效果可以沿用「前一個
@@ -2902,12 +2987,14 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             else:
                 dests = [x for x in enemies if x.alive]
         elif has_en:                                   # 批23 A1: who="ally"(含預設) 非CTRL效果讀 e["n"]/e["nMax"](如「我軍2人」「自己及友軍單體」)
+            # 批B(filter-then-pick修正): 對稱上方enemy_pool(見_gate_pool模組層級註解)。
+            ally_pool = _gate_pool(allies, e, caster, allies, enemies)
             n = e["n"]
             cnt = n + random.randint(0, e["nMax"] - n) if e.get("nMax") else n
             if cnt <= 1:
-                dests = [tgt] if (tgt and tgt.alive and tgt in allies) else pick_targets(allies, 1)
+                dests = [tgt] if (tgt and tgt.alive and tgt in allies) else pick_targets(ally_pool, 1)
             else:
-                dests = pick_targets(allies, cnt)
+                dests = pick_targets(ally_pool, cnt)
         else:
             dests = [a for a in allies if a.alive]
         # 批16: ifTargetHas —— 效果段條件, 只對「已有該狀態」的目標生效; 選目標後過濾(不影響選目標邏輯本身)
@@ -2939,9 +3026,8 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             _opf = _op_fns.get(_sc.get("op", "gt"), _op_fns["gt"])
             dests = [u for u in dests if _opf(u.eff(_sc["statA"]), u.eff(_sc["statB"]))]
         # 禁近似令-批K: ifTargetIsRank/ifTargetIsRankNot(target_rank_branch族) —— 對稱
-        # engine.js 同名分支(閉月「依目標恰好是不是武力/智力最高分三支」)。
-        def _rank_key(spec):
-            return "maxIntel" if spec.get("stat") == "intel" else "maxForce"
+        # engine.js 同名分支(閉月「依目標恰好是不是武力/智力最高分三支」)。_rank_key 批B
+        # 已抽到模組層級(供_target_gate_ok共用, 見其定義處), 這裡不再重複巢狀定義。
         if e.get("ifTargetIsRank"):
             _champ = pick_by_criterion(enemies, _rank_key(e["ifTargetIsRank"]))
             dests = [u for u in dests if u is _champ]
@@ -8818,6 +8904,67 @@ def demo():
         f"批L端到端(三戰法同場共存): 完整simulate()150場應正常產生合法勝率, got {bl209_res_all}"
     print("    [批L 209] 一身是膽/先登死士/才辯機捷 端到端(各自掛載200場+三者同場共存150場,"
           "完整fight()/simulate()) 皆無崩潰且產生合法勝率 驗證通過")
+
+    # 210) 傷害不浮動(user權威規則2026-07-11) —— 確認damage()已移除舊±4%隨機帶(原
+    # random.uniform(0.96,1.04), sgz.py曾在此處/engine.js base*=0.96+rnd()*0.08), 同單位
+    # 同攻擊(相同src/dst/coef/kind等全部輸入)重複結算應為完全相同的定值。用無critUp的乾淨
+    # 單位繞過會心(critRate=0時damage()內部完全不呼叫random.random(), 全程零隨機源, 定值
+    # 是數學必然而非機率巧合)。210b: 會心(critUp>0時)刻意保留為離散二元事件(觸發/未觸發恰好
+    # 收斂成2種定值, 且比值精確為crit_mult+1=2.0), 佐證「移除的是連續隨機帶, 不是移除會心
+    # 本身」, 與user規則「傷害數字不會浮動(會心離散擲骰除外)」精確對應。
+    det_src = Unit(POOL["呂布"], "騎")
+    det_dst = Unit(POOL["張飛"], "盾")
+    assert det_src.addbonus("critUp", "phys") == 0, \
+        "測試前置條件: 210determinism測試單位不應帶critUp(否則會心離散擲骰會干擾定值比較)"
+    dmg_samples_210 = [damage(det_src, det_dst, 1.0, "phys") for _ in range(30)]
+    assert len(set(dmg_samples_210)) == 1, \
+        f"傷害不浮動: 同單位同攻擊(critRate=0繞過會心)重複結算30次應為完全相同定值, 實得{set(dmg_samples_210)}"
+    crit_src_210 = Unit(POOL["呂布"], "騎")
+    crit_src_210.push_add("critUp", 0.5, 9, "測試210b會心離散")
+    random.seed(20260711)
+    dmg_samples_210b = [damage(crit_src_210, Unit(POOL["張飛"], "盾"), 1.0, "phys") for _ in range(200)]
+    uniq_210b = sorted(set(round(v, 6) for v in dmg_samples_210b))
+    assert len(uniq_210b) == 2, \
+        f"會心應是離散二元事件(未觸發/觸發恰好2種定值), 非連續浮動, 實得{len(uniq_210b)}種相異值: {uniq_210b}"
+    assert abs(uniq_210b[1] / uniq_210b[0] - 2.0) < 1e-6, \
+        f"觸發會心的傷害應恰為未觸發的2倍(crit_mult=1.0基準, 官方戰報實測+100%), 實得比值{uniq_210b[1] / uniq_210b[0]:.6f}"
+    print(f"    [批A 210] 傷害不浮動: damage()移除±4%隨機帶後同輸入30次結算精確相等(定值={dmg_samples_210[0]:.4f}), "
+          f"會心維持離散二元(未觸發{uniq_210b[0]:.4f}/觸發{uniq_210b[1]:.4f}=2.0倍) 驗證通過")
+
+    # 211) 批B: filter-then-pick跨種子驗證 —— 橫掃千軍(震懾ifTargetHas=[繳械,計窮])對
+    # 「1個已計窮+N個乾淨」敵組, 修正前係「先pick_targets隨機挑, 挑完才用ifTargetHas過濾」,
+    # 隔離實測只約29/50命中(隨機挑中不合格目標就白白落空); 修正後應50/50精確命中合格目標、
+    # 0/50誤中不合格目標。刻意不沿用hszj_tac頂層t["n"]=3(那樣2/4人池會因len(pool)<=cnt提前
+    # 短路成「回傳全池」, 反而測不到隨機挑選環節), 改用190號測試既有的最小forced寫法(無頂層
+    # n, 逼t.get("n") or 1恆等於1)確保每次真的走一次pick_targets(pool,1)隨機抽樣, 對N=1(2人池,
+    # 對稱190號測試)與N=3(4人池, 更大候選池的加強版)各跑6組不同種子起點×50次, 排除單一種子
+    # 偶然過關的可能。
+    hszj_tac_211 = TACTICS["橫掃千軍"]
+    hszj_stun_e_211 = next(e for e in hszj_tac_211["effects"] if e.get("k") == "stun")
+
+    def _hszj_trial_211(seed, n_clean):
+        random.seed(seed)
+        caster = Unit(POOL["關羽"], "騎")
+        silenced = Unit(POOL["張飛"], "騎")
+        silenced.silence = 2
+        cleans = [Unit(POOL[nm], "騎") for nm in (["趙雲", "曹操", "劉備"][:n_clean])]
+        forced = {"nameZh": "橫掃千軍測試211", "effects": [dict(hszj_stun_e_211, rate=1.0)]}
+        apply_effects(caster, None, forced, [caster], [silenced] + cleans, no_heal=True, skip_when_effects=True)
+        return silenced.stun > 0, any(c.stun > 0 for c in cleans)
+
+    for n_clean_211 in (1, 3):                          # 1: 2人池(對稱190號測試); 3: 4人池加強版
+        for seed_base_211 in range(6):                  # 跨6組不同種子起點, 排除單一種子偶然過關
+            results_211 = [_hszj_trial_211(seed_base_211 * 10_000_019 + i, n_clean_211) for i in range(50)]
+            hit_eligible_211 = sum(1 for s, _c in results_211 if s)
+            hit_ineligible_211 = sum(1 for _s, c in results_211 if c)
+            assert hit_eligible_211 == 50, \
+                (f"橫掃千軍filter-then-pick(n_clean={n_clean_211}, seed_base={seed_base_211}): "
+                 f"已計窮目標應50/50命中震懾, 實得{hit_eligible_211}/50")
+            assert hit_ineligible_211 == 0, \
+                (f"橫掃千軍filter-then-pick(n_clean={n_clean_211}, seed_base={seed_base_211}): "
+                 f"乾淨目標應0/50誤中震懾, 實得{hit_ineligible_211}/50")
+    print("    [批B 211] 橫掃千軍filter-then-pick跨種子(2人池×6種子+4人池×6種子, 各50次) "
+          "50/50精確命中合格目標+0/50誤中不合格目標 驗證通過")
 
     print("self-check OK")
 
