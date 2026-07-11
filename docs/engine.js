@@ -787,13 +787,15 @@
     // decayDurations 就會立刻扣1」的自我參照場景, 與外部施加的debuff/buff時序不同, 不補償會
     // 讓 cd=1 完全失效, 故此欄位維持既有 +1 寫法, 不在本次移除範圍內)。
     //
-    // 時序一致化(2026-07 批次) A.1: stack.stackPer==="round"(預設值, 向後相容) 的逐回合遞增,
-    // 比照本方法(decayDurations)掛點——從舊「fight() 回合迴圈頂端、全體單位同時 +1 層」
-    // (全局回合cadence)移到這裡(該單位自己行動後), 每個自己的行動輪 +1 層, 與
-    // stackPer==="cast"(applyStackCast(), 發動時)/"attack"(dealtDamage(), 命中時)兩種既有
-    // 自參照模式並列一致。
-    decayDurations() {
+    // 時序徹底一致化批: stack.stackPer==="round" 的逐回合遞增已移出本方法, 改到 tickStack()
+    // (行動前呼叫, 見其定義與 fight() 主迴圈呼叫點) —— 前批(時序一致化)曾將此遞增掛在
+    // decayDurations()(該單位行動後), 對局歸因發現這使爬坡比「行動前遞增」晚1輪(長驅直入
+    // -7.6pp, 見交接文件), 不符合「行動前檢查」規則。本方法自此batch起只負責「持續回合數-1、
+    // 歸零則清除」與hitFlags/tacCd等行動後才該結算的狀態, 不再相關stack遞增。
+    tickStack() {
       if (this.stack && (this.stack.stackPer || "round") === "round") this.stack.n = Math.min(this.stack.max, this.stack.n + 1);
+    }
+    decayDurations() {
       this.dots = this.dots.filter(d => --d[1] > 0);
       if (this.regens.length) this.regens = this.regens.filter(rg => --rg[1] > 0);
       this.mods = this.mods.filter(m => --m[2] > 0);
@@ -839,11 +841,14 @@
         this.tacCd = next;
       }
     }
-    // 時序重構(2026-07)後保留: dotSettle()+decayDurations() 的合併捷徑, 供「模擬該單位自己
-    // 完整一輪(掉血+持續遞減)」的既有測試/呼叫端沿用(fight() 主迴圈本身已改為分開呼叫, 不再
-    // 呼叫 tick(), 見該處 dotSettle→死亡檢查→行動→decayDurations 新時序)。
+    // 時序重構(2026-07)後保留: dotSettle()+tickStack()+decayDurations() 的合併捷徑, 供「模擬
+    // 該單位自己完整一輪(掉血+疊層遞增+持續遞減)」的既有測試/呼叫端沿用(fight() 主迴圈本身
+    // 已改為分開呼叫, 不再呼叫 tick(), 見該處 dotSettle→死亡檢查→tickStack→
+    // applyOwnTurnEffects→行動→decayDurations 新時序)。時序徹底一致化批: 補上 tickStack()
+    // (本批新增), 維持本捷徑方法與真實fight()主迴圈時序一致。
     tick() {
       this.dotSettle();
+      this.tickStack();
       this.decayDurations();
     }
   }
@@ -1542,8 +1547,9 @@
       && agentSrcs[0] != null && agentSrcs.every(s => s === agentSrcs[0]);
     for (const eh of t.extraHits) {
       if (rnd() >= (eh.rate ?? 1)) continue;
-      // 批52续: eh.when 回合窗口
-      if (eh.when && !roundOk({ when: eh.when }, CUR_R)) continue;
+      // 批52续: eh.when 回合窗口。時序徹底一致化批: 改用u(持有者)自己ownRound, 取代全局CUR_R
+      // (單一持有者自參照進程, 非團隊廣播)。
+      if (eh.when && !roundOk({ when: eh.when }, u.ownRound)) continue;
       // 批44 A: eh.ifLeaderIs —— extraHits 段級「隊伍主將(allies[0])的武將名須匹配指定值」
       // 條件閘門, 對稱 applyEffects() 的 e.ifLeaderIs(見其詳細註解)。用於白毦兵等「若XX統領,
       // 主段傷害更高」家族的 base(頂層coef, 無條件)+top-up(extraHits段, sameTarget+
@@ -1733,7 +1739,8 @@
             // 再比對, 零風險放寬(不影響ally/otherAlly/enemy三組的既有嚴格比對)。
             const eWho = e.when.who === "self" ? undefined : e.when.who;
             if ((eWho || undefined) !== wantWho) continue;
-            if (!roundOk({ when: e.when }, CUR_R)) continue;
+            // 時序徹底一致化批: 改用holder(反應式效果持有者)自己ownRound, 取代全局CUR_R。
+            if (!roundOk({ when: e.when }, holder.ownRound)) continue;
             if (holder.hitFlags.has(e)) continue;   // 同回合每單位每效果最多觸發1次(防無限鏈), 沿用 onHit/dealtDamage 共用的 hitFlags 慣例
             const evRate = e.rate ?? t.rate ?? 1;
             if (rnd() >= evRate) continue;
@@ -1788,7 +1795,8 @@
       for (const t of u.selfReactEffectTacs) {
         for (const e of t.effects) {
           if (!onValues(e).includes(onName)) continue;
-          if (!roundOk({ when: e.when }, CUR_R)) continue;
+          // 時序徹底一致化批: 改用u(自身反應式持有者)自己ownRound, 取代全局CUR_R。
+          if (!roundOk({ when: e.when }, u.ownRound)) continue;
           applyEffects(u, null, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, allies, foes, { reactive: true });
         }
       }
@@ -1825,7 +1833,8 @@
           const who = e.when.who;
           if (who === "self" && holder !== victim) continue;
           if (who === "enemy") continue;
-          if (!roundOk({ when: e.when }, CUR_R)) continue;
+          // 時序徹底一致化批: 改用holder自己ownRound, 取代全局CUR_R。
+          if (!roundOk({ when: e.when }, holder.ownRound)) continue;
           if (e.ifLeaderIs) {
             const names = Array.isArray(e.ifLeaderIs) ? e.ifLeaderIs : [e.ifLeaderIs];
             if (!(team[0] === holder && holder.g && names.includes(holder.g.name))) continue;
@@ -1886,7 +1895,11 @@
       // 治療」語意(不再放行everyRound, 對稱opt.ownTurn文件註解)——everyRound非heal效果改由
       // 下面 opt.ownTurn 閘門專屬處理(該持有者自己行動輪cadence, 而非全局回合)。
       if (opt.healOnly && k !== "heal") continue;
-      if (opt.ownTurn && !e.everyRound) continue;  // ownTurn 通道只放行 everyRound 效果(見函式頂端註解)
+      // 時序徹底一致化批: ownTurn/broadcastOnly 依 e.broadcast 旗標互斥分流 —— 帶broadcast的
+      // everyRound效果(相一全局round-start, 如高櫓連營)只在broadcastOnly===true通道放行; 其餘
+      // (絕大多數)everyRound效果(相二逐單位own_round)只在ownTurn===true通道放行。
+      if (opt.ownTurn && !(e.everyRound && !e.broadcast)) continue;
+      if (opt.broadcastOnly && !(e.everyRound && e.broadcast)) continue;
       // 批18: e.when 泛化(非 heal 種類) —— heal 早已支援效果級 when(見下方 k==="heal" 分支的
       // opt.healOnly 閘門), 但其餘效果種類(amp/settle/stat/…)過去若帶 e.when 而母戰法無 t.when,
       // 會在 prep 階段(opt.skipWhenEffects=true 時, 見 fight() 呼叫端)被無聲當成「無 when 的常駐
@@ -2018,11 +2031,15 @@
       // 「回合」對持有者自身的漸進/計數機制=該持有者自己的行動輪。opt.healOnly===true(現
       // 嚴格heal-only, 見上方頂端閘門)與 opt.ownTurn===true 為互斥的兩種呼叫模式, 不會同時
       // 為真時走到此分支處理同一效果(opt.healOnly===true 時 k!=="heal" 已在頂端被擋下)。
+      //
+      // 時序徹底一致化批: opt.broadcastOnly===true 時(e.broadcast標記的相一全局round-start
+      // 廣播, 如高櫓連營), 改用全局CUR_R(user權威規則的唯一例外), 不隨caster own_round個別
+      // 結算。與ownTurn互斥(廣播類效果只由broadcastOnly通道呼叫, 見上方頂端閘門e.broadcast分流)。
       if (e.everyRound && k !== "heal") {
         // 批35 B: block 的「準備階段鎖定」scale 值已在函式最頂端(所有 continue 閘門之前)
         // 算定, 此處不需重複呼叫 lockedScaleOf(見上方新增的閘門與其註解)。
-        if (!(opt.healOnly || opt.ownTurn)) continue;
-        const roundBasis = opt.ownTurn ? caster.ownRound : CUR_R;
+        if (!(opt.healOnly || opt.ownTurn || opt.broadcastOnly)) continue;
+        const roundBasis = opt.broadcastOnly ? CUR_R : caster.ownRound;
         const hw = e.when || t.when;
         if (hw) {
           if (!roundOk({ when: hw }, roundBasis)) continue;
@@ -2062,16 +2079,17 @@
         // 通用檢查: 任何非heal/非everyRound效果只要帶 e.when, 就先驗證當前回合是否落在窗口
         // 內, 不符合則跳過該效果段。
         //
-        // 時序一致化(2026-07 批次) A.2: k==="settle"(密計誅逆等猛毒式閾值爆發) 或帶
-        // e.coefFromStack(絕地反擊等自身疊層驅動爆發, dynamic_coef_from_counter族) 的
-        // e.when 一次性視窗註冊屬「持有者(caster, 即施放此效果的單位)自身進程」, 「第N回合」
-        // 改用 caster.ownRound(該持有者自己第N個行動輪)為基準, 取代全局CUR_R。此分支為通用
-        // 防禦閘門(不論呼叫路徑為何皆會核對), 實際註冊入口見 fight() 主迴圈新增的
-        // applyOwnTurnEffects() 內專屬settle/coefFromStack一次性視窗掃描(該處已用
-        // caster.ownRound 預篩+whenFired去重, 這裡的核對是二次防禦, 語意需一致)。其餘
-        // when-gated 非heal/非everyRound效果(如工神/橫戈躍馬等team-wide buff)不受影響, 仍用
-        // 全局CUR_R(團隊級回合窗, 見交接文件時序重構節B類清單, 待user確認)。
-        const roundBasis2 = (k === "settle" || e.coefFromStack) ? caster.ownRound : CUR_R;
+        // 時序一致化(2026-07 批次) A.2, 時序徹底一致化批(最終定案): k==="settle"(密計誅逆等
+        // 猛毒式閾值爆發)/e.coefFromStack(絕地反擊等自身疊層驅動爆發)/以及其餘所有when-gated
+        // 非heal/非everyRound效果(工神/橫戈躍馬/武鋒陣/士別三日/用武通神等團隊buff與自參照
+        // 戰法)的 e.when 一次性視窗註冊, 一律屬「持有者(caster)自身進程」, 「第N回合」改用
+        // caster.ownRound(該持有者自己第N個行動輪)為基準, 取代全局CUR_R —— user最終裁決:
+        // 除e.broadcast(相一: 持有者每回合對他人廣播施加新狀態層, 如高櫓連營, 極少數實例)外,
+        // 一律相二逐單位own_round(含團隊buff如陷陣營/金丹秘術類, 各受益者自己回合結算, 戰報
+        // 實證見交接文件)。此分支為通用防禦閘門(不論呼叫路徑為何皆會核對), 實際註冊入口見
+        // fight() 主迴圈 applyOwnTurnEffects() 內專屬一次性視窗掃描(該處已用caster.ownRound
+        // 預篩+whenFired去重, 這裡的核對是二次防禦, 語意需一致)。
+        const roundBasis2 = e.broadcast ? CUR_R : caster.ownRound;
         if (!roundOk({ when: e.when }, roundBasis2)) continue;
       }
       if (k === "heal") {
@@ -2103,15 +2121,20 @@
         //   以上都通過後, 若 e.rate 缺席才擲 t.rate 骰(rate<1 時只有部分回合真正治療, 而非
         //   年年必中)。
         if (opt.healOnly) {
+          // 時序徹底一致化批(戰報實證: 左慈金丹秘術/夏侯惇陷陣營): 改用caster(=呼叫端的u,
+          // 即持有者自己)ownRound為基準, 取代全局CUR_R —— healOnly現改於fight()主迴圈逐單位
+          // 處理輪到u時呼叫(u自己行動輪, 行動前), 取代舊「回合迴圈頂端全體單位批次」通道,
+          // 使「戰鬥前N回合我軍全體休整/回血」類團隊buff在各受益單位(=持有者)自己的行動輪
+          // 結算, 與戰報實測時序一致(相二逐單位)。
           const hw = e.when || t.when;
           if (hw) {
-            if (!roundOk({ when: hw }, CUR_R)) continue;
+            if (!roundOk({ when: hw }, caster.ownRound)) continue;
             if (hw.rounds) {                              // 明確列出的特定回合: 每個列出的回合各觸發一次(回合特定去重鍵, 而非整場只觸發一次)
               if (!caster.healRoundsFired) caster.healRoundsFired = new Map();  // Map<effect物件, Set<已觸發的回合數>>, 惰性建立(僅 rounds 型 heal 需要)
               let seen = caster.healRoundsFired.get(e);
               if (!seen) { seen = new Set(); caster.healRoundsFired.set(e, seen); }
-              if (seen.has(CUR_R)) continue;
-              seen.add(CUR_R);
+              if (seen.has(caster.ownRound)) continue;
+              seen.add(caster.ownRound);
             }
             // from/until(範圍視窗): 不去重, 窗內每回合都可能治療(休整類戰法本意如此, 如金丹秘術/詐降/魚鱗陣)
           } else if (e.once) {
@@ -3190,12 +3213,15 @@
     const CAT_LABEL = { PASSIVE: "被動", FORMATION: "陣法", TROOP: "兵種", COMMAND: "指揮" };
     const catOf = t => CAT_ORDER.includes(t.cat) ? t.cat : "COMMAND";
     const applyPassives = opt => {                  // 被動/陣法/兵種/指揮(依序) + 兵書/裝備/緣分
+      // 時序徹底一致化批: opt.broadcastOnly(可選) —— 相一全局round-start廣播通道(e.broadcast
+      // 標記的極少數實例, 如高櫓連營), 於fight()主迴圈回合頂端、任何單位行動前呼叫, 對稱既有
+      // opt.healOnly(現已改移入applyOwnTurnEffects逐單位通道, 見其定義)。
       for (const cat of CAT_ORDER)
         for (const u of [...A, ...B]) {
           if (!u.alive) continue;
           for (const t of u.tactics)            // 同將多個同類: 戰法格順序(陣列順序)決定先後
             if ((t.type === "passive" || t.type === "command") && catOf(t) === cat) {
-              if (t.when && !opt.healOnly) continue;  // 條件觸發(when): 不在準備階段套用, 改由回合迴圈的 applyWhenTactics 在符合回合時套用
+              if (t.when && !(opt.healOnly || opt.broadcastOnly)) continue;  // 條件觸發(when): 不在準備階段套用, 改由回合迴圈的 applyWhenTactics 在符合回合時套用
               if (TRACE && opt.prep) lg(`【${u.side}】${u.nm}〔${CAT_LABEL[cat]}〕${t.nameZh}`);
               applyEffects(u, null, t, alliesOf(u), foesOf(u), opt);
             }
@@ -3205,33 +3231,94 @@
         if (u.bs.length) { if (TRACE && opt.prep) lg(`【${u.side}】${u.nm}〔兵書〕`); applyEffects(u, null, pt(u.bs), alliesOf(u), foesOf(u), opt); }
         if (u.eq.length) { if (TRACE && opt.prep) lg(`【${u.side}】${u.nm}〔裝備〕`); applyEffects(u, null, pt(u.eq), alliesOf(u), foesOf(u), opt); }
       }
-      for (const [team, bds] of [[A, bondsA], [B, bondsB]])
+      for (const [team, bds] of [[A, bondsA], [B, bondsB]])         // 緣分: 隊伍級(無everyRound/broadcast效果, broadcastOnly無需傳遞)
         if (team.length) for (const bd of bds) {
           if (TRACE && opt.prep) lg(`【${team[0].side}】〔緣分〕${bd.name}`);
           applyEffects(team[0], null, pt(bd.effects), team, foesOf(team[0]), opt);
         }
     };
-    // 時序一致化(2026-07 批次) A.2+A.3: 「該持有者自己的行動輪」cadence 掃描 —— 取代舊「全局
-    // 回合」cadence, 於 fight() 主迴圈逐單位處理輪到 u 時呼叫(見下方回合迴圈, 呼叫點在
-    // dotSettle() 之後、settleTick() 之前)。統一處理兩類機制(皆以 caster(=u).ownRound 為
-    // 「第N回合」的比較基準, 取代CUR_R):
+    // 時序一致化(2026-07 批次) A.2+A.3, 時序徹底一致化批(最終定案): 「該持有者自己的行動輪」
+    // cadence 掃描 —— 取代舊「全局回合」cadence, 於 fight() 主迴圈逐單位處理輪到 u 時呼叫(見
+    // 下方回合迴圈, 呼叫點在 dotSettle() 之後、settleTick() 之前, 即「行動前檢查」)。本批起
+    // 統一收斂**所有**團隊/自參照回合窗機制(除e.broadcast相一全局廣播外, user最終裁決「其餘
+    // 一律相二逐單位own_round」), 取代舊「回合迴圈頂端全體單位批次檢查」(healOnly常駐治療/
+    // t.when窗口首次開啟套用/裝備delayedEq回合窗/e.when泛化非heal 四條channel皆已移除, 邏輯
+    // 併入此處):
     //   (1) A.3 everyRound(如機鑑先識「每回合21%→42%機率獲得1次警戒」): 逐 u.tactics/u.bs/
     //       u.eq 呼叫 applyEffects(..., {ownTurn:true}), 由該函式內部閘門只放行帶
-    //       e.everyRound 的效果並依 ownRound 判定視窗/rate(見 applyEffects everyRound 分支)。
-    //   (2) A.2 settle/coefFromStack 的 e.when 一次性視窗註冊(如密計誅逆settle第6回合/
-    //       絕地反擊dot第5回合): 沿用舊「e.when 泛化」全局頂端掃描的同一套邏輯(whenFired
-    //       去重+one-shot套用), 只是預篩的回合基準改為 u.ownRound, 且範圍限定u自己的tactics
-    //       (該持有者自己是這些戰法的擁有者/施放者)。
+    //       e.everyRound 且非e.broadcast的效果並依 ownRound 判定視窗/rate。
+    //   (2) healOnly(戰報實證: 左慈金丹秘術/夏侯惇陷陣營「戰鬥前N回合我軍全體...」團隊buff
+    //       之回血/急救觸發, 在各受益單位(=持有者)自己行動輪結算, 非全局round-start): 逐
+    //       u.tactics/u.bs/u.eq 呼叫 applyEffects(..., {healOnly:true}), roundOk內部已改用
+    //       caster(=u).ownRound(見applyEffects k==="heal"分支)。
+    //   (3) 頂層t.when窗口(passive/command, 非on反應式, 如陷陣營/工神/士別三日等): 窗口首次
+    //       開啟時套用一次(dot/amp/stat/settle等非heal效果), 改用u.ownRound判定。
+    //   (4) 裝備效果級回合窗(delayedEq, 如應變/反間/明略): 改用u.ownRound。
+    //   (5) e.when 泛化(非heal/非everyRound/非broadcast, 含settle/coefFromStack/工神/橫戈躍馬/
+    //       武鋒陣等team-wide buff與士別三日/用武通神/竊幸乘寵等自參照戰法): 統一改用u.ownRound
+    //       (user最終裁決: 除相一廣播外一律own_round, 不再區分settle/coefFromStack與其餘
+    //       team-wide buff——過去「其餘when-gated效果待user確認」的B類清單已裁決完畢)。
     const applyOwnTurnEffects = (u) => {
       for (const t of u.tactics) {
         if (t.type === "passive" || t.type === "command") applyEffects(u, null, t, alliesOf(u), foesOf(u), { ownTurn: true });
       }
       if (u.bs.length) applyEffects(u, null, pt(u.bs), alliesOf(u), foesOf(u), { ownTurn: true });
       if (u.eq.length) applyEffects(u, null, pt(u.eq), alliesOf(u), foesOf(u), { ownTurn: true });
+
+      // (2) healOnly: 逐回合治療(含兵書/裝備), 改於u自己行動輪(行動前)呼叫, 取代舊「回合
+      // 迴圈頂端applyPassives({healOnly:true})全體批次」通道。
       for (const t of u.tactics) {
-        if (!(t.type === "passive" || t.type === "command") || t.when) continue;  // 母戰法有 t.when 的走既有 t.when 掃描(團隊級回合窗, 不在本次改動範圍)
+        if (t.type === "passive" || t.type === "command") applyEffects(u, null, t, alliesOf(u), foesOf(u), { healOnly: true });
+      }
+      if (u.bs.length) applyEffects(u, null, pt(u.bs), alliesOf(u), foesOf(u), { healOnly: true });
+      if (u.eq.length) applyEffects(u, null, pt(u.eq), alliesOf(u), foesOf(u), { healOnly: true });
+
+      // (3) 頂層t.when窗口(passive/command, 非on): 窗口首次開啟時套用一次非傷害效果。改用
+      // u.ownRound(取代舊全局rnd), 於u自己行動輪(行動前)檢查。原「回合迴圈頂端全體單位批次
+      // 檢查」通道已移除。
+      for (const t of u.tactics) {
+        if ((t.type === "passive" || t.type === "command") && t.when && !t.when.on
+            && roundOk(t, u.ownRound) && !u.whenFired.has(t)) {
+          const w = t.when;
+          // 批16: hpPct —— when.hpBelow(一次性, 首次跨越即觸發)/when.hpAbove(持續窗, 不去重)
+          if (w.hpBelow != null || w.hpAbove != null) {
+            if (!hpOk(t, u)) continue;
+            if (w.hpBelow != null) {
+              if (u.hpBelowFired.has(t)) continue;
+              u.hpBelowFired.add(t);
+            }
+            if (rnd() >= (t.rate ?? 1)) continue;
+            applyEffects(u, null, t, alliesOf(u), foesOf(u), { noHeal: true });
+            if (w.hpBelow != null) u.whenFired.add(t);
+            continue;
+          }
+          u.whenFired.add(t);
+          if (rnd() >= (t.rate ?? 1)) continue;
+          // 批15: noHeal:true —— heal 效果改由上面 healOnly 通道統一處理, 避免不同去重鍵
+          // (t vs e)各自判定造成同一視窗開啟的回合heal被套用兩次(雙倍治療)。
+          applyEffects(u, null, t, alliesOf(u), foesOf(u), { noHeal: true });
+        }
+      }
+
+      // (4) 裝備效果級回合窗(delayedEq) —— 與t.when窗口同一時點(u自己行動輪, 行動前)檢查,
+      // 改用u.ownRound(取代舊全局rnd)。
+      if (u.delayedEq && u.delayedEq.length) {
+        for (const e of u.delayedEq) {
+          if (!roundOk({ when: e.when }, u.ownRound) || u.whenFired.has(e)) continue;
+          u.whenFired.add(e);
+          if (e.rate != null && rnd() >= e.rate) continue;
+          applyEffects(u, null, { effects: [e], kind: "phys", n: e.n || 1, nMax: e.nMax || 0 }, alliesOf(u), foesOf(u), { rateChecked: true });
+        }
+      }
+
+      // (5) e.when 泛化(非heal/非everyRound/非broadcast, 含settle/coefFromStack與其餘所有
+      // team-wide/自參照回合窗效果): 掃描「母戰法無t.when」的passive/command戰法, 找出其中
+      // 帶e.when的效果, 視窗開啟時一次性套用(from/until範圍視窗不去重, 讓窗內每回合都能重新
+      // 套用, 同heal慣例)。改用u.ownRound(取代舊全局rnd)。
+      for (const t of u.tactics) {
+        if (!(t.type === "passive" || t.type === "command") || t.when) continue;  // 母戰法有 t.when 的走上面(3)t.when掃描
         for (const e of t.effects) {
-          if (!(e.k === "settle" || e.coefFromStack) || !e.when) continue;
+          if (e.k === "heal" || e.everyRound || e.broadcast || !e.when) continue;  // heal(上面(2)已處理)/everyRound(ownTurn:true已處理)/broadcast(相一, round-start通道處理)不進這裡
           if (u.whenFired.has(e)) continue;
           if (!roundOk({ when: e.when }, u.ownRound)) continue;
           if (e.when.rounds) u.whenFired.add(e);  // rounds(明確列出的特定回合): 一次性去重(同 delayedEq/heal 慣例)
@@ -3286,7 +3373,8 @@
           // 表達(如 長健/青囊書: 首回合內受傷才會回血, 而非全程)。roundOk() 對「無 rounds/from/
           // until/parity/every」的戰法一律回傳 true(見其實作), 故此檢查對絕大多數既有 when.on
           // 戰法(只帶 on, 無回合欄位)是無副作用的 no-op, 只在新資料明確加上回合窗口時才生效。
-          if (!roundOk(t0, CUR_R)) continue;
+          // 時序徹底一致化批: 改用holder(反應式戰法持有者)自己ownRound, 取代全局CUR_R。
+          if (!roundOk(t0, holder.ownRound)) continue;
           if (holder.hitFlags.has(t0)) continue;             // 同回合每單位每戰法最多觸發1次(防無限鏈), 鍵用t0(戰法原始物件)不受choices合成視圖影響
           // 批C: t.rateLeader —— 主將時採用較高觸發率(對稱既有active型戰法頂層rateLeader分派,
           // 見fight()主迴圈「批52续: t.rateLeader」段; 淵然難測發現此欄位雖已存在於資料但從未
@@ -3327,7 +3415,8 @@
             if (e.when.on === "attacked" && !isNormal) continue;
             if (!dmgTypeOk(e.when.dmgType)) continue;  // 批39 C: 效果級when.dmgType過濾
             if (!dmgAboveOk(e.when)) continue;
-            if (!roundOk({ when: e.when }, CUR_R)) continue;
+            // 時序徹底一致化批: 改用holder自己ownRound, 取代全局CUR_R。
+            if (!roundOk({ when: e.when }, holder.ownRound)) continue;
             if (holder.hitFlags.has(e)) continue;
             // 禁近似令-批K: e.once(反應式on:damaged/on:dealtDamage/on:activeFired/on:healed
             // 皆共用此效果級迴圈) —— hitFlags只提供「同回合節流」(見holder.hitFlags每回合
@@ -3350,7 +3439,8 @@
           if (wantWho === "otherAlly" && !otherAllyOk()) continue;
           if (e.when.on === "attacked" && !isNormal) continue;
           if (!dmgTypeOk(e.when.dmgType)) continue;  // 批39 C: 裝備效果級when.dmgType過濾
-          if (!roundOk({ when: e.when }, CUR_R)) continue;
+          // 時序徹底一致化批: 改用holder自己ownRound, 取代全局CUR_R。
+          if (!roundOk({ when: e.when }, holder.ownRound)) continue;
           if (holder.hitFlags.has(e)) continue;
           const evRate = e.rate ?? 1;
           if (rnd() >= evRate) continue;
@@ -3364,7 +3454,8 @@
           if (wantWho === "otherAlly" && !otherAllyOk()) continue;
           if (e.when.on === "attacked" && !isNormal) continue;
           if (!dmgTypeOk(e.when.dmgType)) continue;  // 批39 C: 兵書效果級when.dmgType過濾
-          if (!roundOk({ when: e.when }, CUR_R)) continue;
+          // 時序徹底一致化批: 改用holder自己ownRound, 取代全局CUR_R。
+          if (!roundOk({ when: e.when }, holder.ownRound)) continue;
           if (holder.hitFlags.has(e)) continue;
           const evRate = e.rate ?? 1;
           if (rnd() >= evRate) continue;
@@ -3414,7 +3505,8 @@
           if (!dmgAboveOk(t.when)) continue;
           if (!casterIsLeaderOk(t.when)) continue;
           if (t.when.normalOnly && !isNormal) continue; // 批37 B: when.normalOnly —— 限「普通攻擊」造成的傷害才觸發(如奮突「普通攻擊之後」; dmgType:"phys" 無法區分普攻與兵刃戰法傷害, 需獨立旗標)
-          if (!roundOk(t, CUR_R)) continue;
+          // 時序徹底一致化批: 改用holder自己ownRound, 取代全局CUR_R。
+          if (!roundOk(t, holder.ownRound)) continue;
           if (holder.hitFlags.has(t)) continue;        // 同回合每單位每戰法最多觸發1次(防無限鏈), 與 onHit 共用同一 hitFlags(不同方向的觸發各自用不同t/e鍵, 不會互相誤判)
           if (rnd() >= t.rate) continue;
           holder.hitFlags.add(t);
@@ -3441,7 +3533,8 @@
             if (!dmgAboveOk(e.when)) continue;
             if (!casterIsLeaderOk(e.when)) continue;
             if (e.when.normalOnly && !isNormal) continue; // 批37 B: when.normalOnly(效果級) —— 同上, 限普攻傷害觸發
-            if (!roundOk({ when: e.when }, CUR_R)) continue;
+            // 時序徹底一致化批: 改用holder自己ownRound, 取代全局CUR_R。
+            if (!roundOk({ when: e.when }, holder.ownRound)) continue;
             // 批52e: everyHit/maxStack —— 每次造成傷害可同回合多次(文武雙全); 預設每效果每回合1次
             const multi = !!(e.everyHit || e.maxStack);
             if (!multi && holder.hitFlags.has(e)) continue;
@@ -3465,7 +3558,8 @@
           if (!dmgAboveOk(ew)) continue;
           if (!casterIsLeaderOk(ew)) continue;
           if (ew.normalOnly && !isNormal) continue;
-          if (!roundOk({ when: ew }, CUR_R)) continue;
+          // 時序徹底一致化批: 改用holder自己ownRound, 取代全局CUR_R。
+          if (!roundOk({ when: ew }, holder.ownRound)) continue;
           if (holder.hitFlags.has(e)) continue;
           const evRate = e.rate ?? 1;
           if (rnd() >= evRate) continue;
@@ -3498,7 +3592,8 @@
         for (const t of holder.activeFiredTacs) {      // 戰法級: 整個戰法都是「(自身/我軍/敵軍)成功發動主動戰法時」反應式(如士爭先赴/十二奇策/神機妙算)
           if (!whoOk(t.when)) continue;
           if (!casterIsLeaderOk(t.when)) continue;
-          if (!roundOk(t, CUR_R)) continue;
+          // 時序徹底一致化批: 改用holder自己ownRound, 取代全局CUR_R。
+          if (!roundOk(t, holder.ownRound)) continue;
           if (holder.hitFlags.has(t)) continue;        // 同回合每單位每戰法最多觸發1次(防無限鏈), 與 onHit/dealtDamage 共用同一 hitFlags
           if (rnd() >= t.rate) continue;
           holder.hitFlags.add(t);
@@ -3526,7 +3621,8 @@
             if (!e.when || e.when.on !== "activeFired") continue;
             if (!whoOk(e.when)) continue;
             if (!casterIsLeaderOk(e.when)) continue;
-            if (!roundOk({ when: e.when }, CUR_R)) continue;
+            // 時序徹底一致化批: 改用holder自己ownRound, 取代全局CUR_R。
+            if (!roundOk({ when: e.when }, holder.ownRound)) continue;
             if (holder.hitFlags.has(e)) continue;
             const evRate = e.rate ?? t.rate ?? 1;
             if (rnd() >= evRate) continue;
@@ -3540,7 +3636,8 @@
         for (const e of holder.activeFiredBs) {
           if (!whoOk(e.when)) continue;
           if (!casterIsLeaderOk(e.when)) continue;
-          if (!roundOk({ when: e.when }, CUR_R)) continue;
+          // 時序徹底一致化批: 改用holder自己ownRound, 取代全局CUR_R。
+          if (!roundOk({ when: e.when }, holder.ownRound)) continue;
           if (holder.hitFlags.has(e)) continue;
           const evRate = e.rate ?? 1;
           if (rnd() >= evRate) continue;
@@ -3592,82 +3689,16 @@
       // 的回合窗口計數, 與蓄威層數charge.n本身跨回合累積不同, 這個計數器只管「這一回合已觸發
       // 過幾次消耗鏈」, 每回合開始重置)。
       for (const u of [...A, ...B]) if (u.alive) u.chargeConsumedThisRound = 0;
-      applyPassives({ healOnly: true });
-      for (const u of [...A, ...B]) {                 // 條件觸發(when.rounds/from/until): 窗口首次開啟時套用一次非傷害效果(dot/amp/…); when.on 為反應式, 不走此處
-        if (!u.alive) continue;
-        for (const t of u.tactics)
-          if ((t.type === "passive" || t.type === "command") && t.when && !t.when.on && roundOk(t, r) && !u.whenFired.has(t)) {
-            // 批16: hpPct —— when.hpBelow(一次性, 首次跨越即觸發, 用whenFired/hpBelowFired去重)
-            // / when.hpAbove(持續窗, 不去重, 每回合條件成立都可能觸發, 故不進whenFired)。
-            if (t.when.hpBelow != null || t.when.hpAbove != null) {
-              if (!hpOk(t, u)) continue;
-              if (t.when.hpBelow != null) { if (u.hpBelowFired.has(t)) continue; u.hpBelowFired.add(t); }
-              // 批23 A5: 補 t.rate 判定(此路徑過去從不讀 t.rate, 機率戰法被當成必發)。hpAbove
-              // 是持續窗(每回合都可能重新判定), 未中不消耗 whenFired(仍可下回合再擲); hpBelow
-              // 是一次性(見上方 hpBelowFired 去重), 未中同樣不消耗 whenFired/hpBelowFired 之外
-              // 的額外狀態(hpBelowFired 已在觸發判定前標記, 維持既有「首次跨越」語意不變)。
-              if (rnd() >= (t.rate ?? 1)) { if (TRACE) lg(`【${u.side}】${u.nm}（第${r}回合條件）【${t.nameZh}】未發動`); continue; }
-              // hpAbove: 不加入 whenFired(持續窗, 允許之後回合再次觸發), 直接套用後 continue 到下個戰法
-              if (TRACE) lg(`【${u.side}】${u.nm}（第${r}回合兵力${t.when.hpBelow != null ? "低於" : "高於"}${Math.round((t.when.hpBelow ?? t.when.hpAbove) * 100)}%）發動【${t.nameZh}】`);
-              applyEffects(u, null, t, alliesOf(u), foesOf(u), { noHeal: true });
-              if (t.when.hpBelow != null) u.whenFired.add(t);  // hpBelow 一次性: 同時標記 whenFired 供其他路徑(如未來擴充)一致查詢
-              continue;
-            }
-            // 批23 A5: 此路徑過去從不讀 t.rate —— 機率戰法(如盛氣凌敵 rate=1 不受影響, 但
-            // 火神英風/鷹視狼顧一類 rate<1 的 when-gated 條目)一律當成必發, 高估命中率。
-            // 主動/指揮/被動的「coef 傷害段」自有獨立擲骰(見下方主迴圈 fire=rnd()<t0.rate,
-            // 已正確套用), 此處是「非coef、window開啟時一次性套用的 effects 段」, 需要補上
-            // 同一份 t.rate 判定, 貼合原文機率語意(如「N%機率使目標...」)。未中同樣消耗
-            // whenFired(此路徑本就是一次性視窗, 見函式頂端註解, 未中不重試, 與原「必發」相比
-            // 現在只是「有機率完全不觸發」, 貼合原文機率語意)。
-            u.whenFired.add(t);
-            if (rnd() >= (t.rate ?? 1)) { if (TRACE) lg(`【${u.side}】${u.nm}（第${r}回合條件）【${t.nameZh}】未發動`); continue; }
-            if (TRACE) lg(`【${u.side}】${u.nm}（第${r}回合條件）發動【${t.nameZh}】`);
-            // 批15: noHeal:true —— heal 效果改由上面 applyPassives({healOnly:true}) 統一處理
-            // (它自己會檢查 t.when/roundOk, 見 applyEffects 內 opt.healOnly 分支), 避免此處與
-            // healOnly 常駐通道用不同的去重鍵(t vs e)各自判定, 造成同一 when 視窗開啟的回合
-            // heal 被套用兩次(雙倍治療)。
-            applyEffects(u, null, t, alliesOf(u), foesOf(u), { noHeal: true });
-          }
-      }
-      // 批8: 裝備效果級回合窗(delayedEq) —— 與戰法 when 窗口同一時點檢查; 效果物件本身(非戰法)
-      // 存進 whenFired 去重(一次性), 帶 rate 的額外擲骰(如赳螑 50%機率), 沒中不算已觸發、下次
-      // 符合視窗的回合(若 when.rounds 只列單一回合則不會再有機會; from/until 型窗口每回合僅嘗試一次
-      // 因為 whenFired 一觸發即封, 若未中也封—— 資料上 rate 型窗口皆為 rounds:[單一回合], 符合設計)。
-      for (const u of [...A, ...B]) {
-        if (!u.alive || !u.delayedEq.length) continue;
-        for (const e of u.delayedEq) {
-          if (!roundOk({ when: e.when }, r) || u.whenFired.has(e)) continue;
-          u.whenFired.add(e);
-          const lbl = `〔特技·${e._eqNm || "?"}〕`;
-          if (e.rate != null && rnd() >= e.rate) { if (TRACE) lg(`【${u.side}】${u.nm}${lbl}（第${r}回合條件）未發動`); continue; }
-          if (TRACE) lg(`【${u.side}】${u.nm}${lbl}（第${r}回合）發動`);
-          applyEffects(u, null, { effects: [e], kind: "phys", n: e.n || 1, nMax: e.nMax || 0 }, alliesOf(u), foesOf(u), { noHeal: false, rateChecked: true });  // n/nMax傳遞: 群體控制(赳螑 敵軍群體2~3)按效果宣告選目標數; 批23 A4: 上一行已擲過 e.rate, 避免重複擲骰
-        }
-      }
-      // 批18: e.when 泛化(非 heal 種類) —— 與上面 delayedEq 同一時點、同慣例: 掃描「母戰法無
-      // t.when」的 passive/command 戰法, 找出其中帶 e.when 的非 heal 效果(prep 階段已被
-      // skipWhenEffects 跳過, 這裡才是它們真正套用的時機點), 視窗開啟時一次性套用(whenFired
-      // 以效果物件本身去重, 同 delayedEq/heal e.when.rounds 慣例)。heal 種類不進這裡(它有自己
-      // 獨立的 opt.healOnly 常駐通道與去重機制, 見 applyEffects 內 k==="heal" 分支)。
-      // 時序一致化(2026-07 批次) A.2: k==="settle"(密計誅逆) 或帶 e.coefFromStack(絕地反擊)
-      // 者亦不進這裡 —— 兩者的「第N回合」屬持有者(caster)自身進程, 已改到 fight() 主迴圈逐
-      // 單位處理時、用 caster.ownRound 為基準的專屬掃描(見下方 applyOwnTurnEffects() 定義與
-      // 其呼叫點), 不再走這條全局回合cadence的頂端掃描。
-      for (const u of [...A, ...B]) {
-        if (!u.alive) continue;
-        for (const t of u.tactics) {
-          if (!(t.type === "passive" || t.type === "command") || t.when) continue;  // 母戰法有 t.when 的已由上面 t.when 掃描處理, 這裡只處理母戰法無 when 的情形
-          for (const e of t.effects) {
-            if (e.k === "heal" || e.k === "settle" || e.coefFromStack || !e.when) continue;
-            if (!roundOk({ when: e.when }, r) || u.whenFired.has(e)) continue;
-            if (e.when.rounds) u.whenFired.add(e);  // rounds(明確列出的特定回合): 一次性去重(同 delayedEq)
-            // from/until(範圍視窗): 不加入 whenFired, 讓視窗內每回合都能重新套用(同 heal 的 from/until 慣例)
-            if (TRACE) lg(`【${u.side}】${u.nm}（第${r}回合條件）〔${t.nameZh}〕效果段生效`);
-            applyEffects(u, null, { effects: [e], kind: t.kind || "phys", n: t.n || 1, nMax: t.nMax || 0, nameZh: t.nameZh }, alliesOf(u), foesOf(u), { noHeal: true });
-          }
-        }
-      }
+      // 時序徹底一致化批(最終定案): 舊「回合迴圈頂端、全體單位批次檢查」四條channel(healOnly
+      // 常駐治療/t.when窗口首次開啟套用/裝備delayedEq回合窗/e.when泛化非heal)已全數移除, 邏輯
+      // 併入 applyOwnTurnEffects(u)(見其定義), 於回合迴圈下方逐單位處理輪到u時、u自己行動前
+      // 呼叫, 改用u.ownRound為基準(取代全局r/CUR_R) —— user最終裁決: 除e.broadcast(相一:
+      // 持有者每回合對他人廣播施加新狀態層, SP周瑜長焰/SP袁紹高櫓連營等極少數實例)外, 一律
+      // 相二逐單位own_round(含團隊buff如陷陣營/工神/金丹秘術, 各受益單位=持有者自己行動輪
+      // 結算, 戰報實證見交接文件)。
+      // 相一全局round-start廣播(e.broadcast標記): 回合開頭、任何單位行動前, 全體批次用全局
+      // CUR_R處理, 不隨個別持有者own_round結算(user權威規則的唯一例外)。
+      applyPassives({ broadcastOnly: true });
       // 行動順序: 先攻(first)優先於速度; 同速平手隨機(先打亂再穩定排序, 修 A 隊固定先手偏差)
       // 批18: 遇襲(ambush, 先攻的反面/遲緩) —— 三檔 effFirst: 只有先攻→最先(1); 先攻+遇襲同時
       // 存在→抵消, 視為普通(0, 按速度排); 只有遇襲→排最後(-1, 遇襲者之間仍按速度排)。
@@ -3688,6 +3719,12 @@
         // 自己的DoT(取代舊「回合末全體同時tick()」), 取代處見下方 decayDurations()。
         u.dotSettle();
         if (!u.alive) continue;  // DoT致死: 死亡不行動(也不再decayDurations, 已死無意義)
+        // 時序徹底一致化批(本批新增): stack.stackPer==="round"(如長驅直入)的逐回合遞增, 移到
+        // 這裡(u自己行動前, dotSettle之後、applyOwnTurnEffects之前) —— 取代前批(時序一致化)
+        // 誤放decayDurations()(行動後)的做法。對局歸因發現「行動後遞增」使爬坡比「行動前遞增」
+        // 晚1輪(長驅直入-7.6pp, 見交接文件), 不符合user權威規則「回合開始、行動前就會檢查」,
+        // 故拆出獨立方法tickStack()移到行動前, 使u這回合行動時已吃到當回合的疊層值。
+        u.tickStack();
         // 時序一致化(2026-07 批次) A.2+A.3: u 作為「持有者」的兩類自身進程機制, 於u自己行動
         // 前結算(比照dotSettle掛點, 與DoT/settle爆發同屬「先結算才行動」語意) ——
         // applyOwnTurnEffects(u): u 作為施放者/擁有者身分(everyRound重擲+settle/coefFromStack
@@ -3735,15 +3772,23 @@
           // ——base視窗(第2/4回合)不論是否主將皆用基礎coef, 只有透過whenLeader開的額外視窗
           // (第6回合)才切換成不同的coefWhenLeader值)。
           let firedViaLeaderWindow = false;
+          // 時序徹底一致化批(最終定案): 頂層t.when/whenLeader回合窗改用u(施放者)自己的ownRound
+          // 為基準(取代全局r) —— user最終裁決「除相一廣播外一律相二逐單位」, 這條main主迴圈
+          // coef/choices/extraHits派發路徑(如燕人咆哮/竊幸乘寵/用武通神/盛氣凌敵/以寡敵眾/
+          // 兵無常勢/義膽雄心/鷹視狼顧等頂層t.when戰法的真正傷害輸出)過去只用非heal effects
+          // 泛化通道核對到when(見applyOwnTurnEffects), 但main coef本身的fire判定仍讀全局r,
+          // 是本批需一併修正的殘留缺口。目前全庫唯一帶t.when且需維持全局CUR_R的相一廣播實例
+          // (高櫓連營/江天長焰)皆無頂層t.when(when:null), 故此處統一改ownRound不影響它們
+          // (不涉及, 零回歸)。
           const whenOk = (tt) => {
             if (tt.when && tt.when.on) return false;
-            if (roundOk(tt, r)) return true;
-            if (isLeader && tt.whenLeader && roundOk({ when: tt.whenLeader }, r)) { firedViaLeaderWindow = true; return true; }
+            if (roundOk(tt, u.ownRound)) return true;
+            if (isLeader && tt.whenLeader && roundOk({ when: tt.whenLeader }, u.ownRound)) { firedViaLeaderWindow = true; return true; }
             if (!tt.when && !tt.whenLeader) return true;
             return false;
           };
           const hasProxy = (t0.effects || []).some(e => e.k === "proxyNormal" || e.k === "proxyHit");
-          if (t0.type === "active" && (t0.coef || t0.effects.length || (t0.choices && t0.choices.length) || (t0.extraHits && t0.extraHits.length)) && !(t0.prep && r === 1) && whenOk(t0) && !onCd) fire = rnd() < baseRate + u.addbonusFor("rateup", t0);  // rateup: 提高自身主動戰法發動機率(如白眉); addbonusFor 依 t.prep/t.native 篩選 prepOnly/nativeOnly 修飾的加成(批7: 太平道法)
+          if (t0.type === "active" && (t0.coef || t0.effects.length || (t0.choices && t0.choices.length) || (t0.extraHits && t0.extraHits.length)) && !(t0.prep && u.ownRound === 1) && whenOk(t0) && !onCd) fire = rnd() < baseRate + u.addbonusFor("rateup", t0);  // rateup: 提高自身主動戰法發動機率(如白眉); addbonusFor 依 t.prep/t.native 篩選 prepOnly/nativeOnly 修飾的加成(批7: 太平道法)
           else if ((t0.type === "command" || t0.type === "passive") && (t0.coef || (t0.choices && t0.choices.length) || (t0.extraHits && t0.extraHits.length) || hasProxy) && !(t0.when && t0.when.on) && whenOk(t0) && !onCd) fire = rnd() < baseRate;  // 指揮/被動: 每回合以資料 rate 擲骰; 批52续: whenLeader + extraHits 亦可觸發; 批52i: proxyNormal
           // 批52g: ammo —— 主將每回合補箭, 耗盡不發射(高櫓連營)
           if (fire && t0.ammo != null && t0.nameZh) {

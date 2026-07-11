@@ -655,6 +655,14 @@ KNOWN_EFFECT_FIELDS = {
     # 見上方別名「依自身持有增益狀態數動態調整」條目(目前資料尚未實際使用)。
     "eitherK",  # 批K7: 陣列, 本次觸發隨機擇一k值頂替e.k本身(於k分派之前處理, 跨所有k種類通用),
     # 溯江搖櫓首次落地, 見上方別名「狀態擇一觸發」條目。
+    "broadcast",  # 時序徹底一致化批: 跨所有k種類通用旗標, 搭配everyRound標記「相一: 持有者
+    # 每回合對他人(敵/我)廣播施加新狀態層」的極少數實例(user權威裁決: SP周瑜江天長焰/SP袁紹
+    # 高櫓連營同類, 對稱「大多數效果=相二逐單位own_round」的預設值)。broadcast=true時,
+    # apply_effects()/applyEffects()的everyRound分支改用全局CUR_ROUND/CUR_R為回合基準且由
+    # fight()主迴圈回合頂端apply_passives(broadcast_only=True)/applyPassives({broadcastOnly:true})
+    # (任何單位行動前, 全體批次)呼叫, 不進逐單位own_round的apply_own_turn_effects()/
+    # applyOwnTurnEffects()通道(該通道明確排除e.broadcast的effects, 見其函式定義)。目前全庫
+    # 僅高櫓連營2個effects段使用(amp/disarm, 見tactic_corrections.json「高櫓連營」條目)。
 }
 PER_KIND_FIELDS = {
     "amp": {"val", "dmgType", "normalOnly", "activeOnly", "chargeOnly",

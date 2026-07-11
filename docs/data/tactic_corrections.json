@@ -2953,12 +2953,24 @@
   },
   "盛氣凌敵": {
    "set": {
-    "when": {
-     "until": 2
-    }
+    "when": null
    },
-   "_evidence": "source: 「戰鬥開始後前2回合」= only rounds 1-2. Without a when:{until:2} window, this command-type disarm roll (rate 0.9) fires every round (1-8) per engine's per-round command rate-gate, a clear overshoot vs the source's 2-round-only window. Confirmed convention via 火神英風 which uses identical when:{until:2} pattern for the same '前2回合' phrasing.",
-   "_diff": "when: 'undefined' -> '{\"until\": 2}'",
+   "effects": [
+    {
+     "k": "disarm",
+     "who": "enemy",
+     "n": 2,
+     "dur": 2,
+     "everyRound": true,
+     "broadcast": true,
+     "when": {
+      "until": 2
+     },
+     "_note": "時序徹底一致化批: 本文「戰鬥開始後前2回合，使敵軍群體(2人)每回合都有45%→90%機率陷入繳械」——who=enemy控制(繳械/disarm) + 每回合 + 持有者對他人群體廣播 = 相一。前批用頂層t.when:{until:2}+base效果級disarm(走apply_own_turn_effects的t.when視窗通道, 在持有者自己行動輪施加, 排最後時繳械會在回合末才上, 敵軍該回合已普攻完才被繳械=違反user規則)。本批改為效果級everyRound:true+broadcast:true+when:{until:2}(回合視窗保留在效果上), 頂層set.when改null清除, 走apply_passives(broadcast_only=True)回合開頭統一施加, 使被繳械的敵軍在其普攻前就失效。n:2對應本文「群體(2人)」, dur:2維持前批既有值(僅改施加時點, 不動持續/機率, 避免引入正交的數值變動)。"
+    }
+   ],
+   "_evidence": "source: 「戰鬥開始後前2回合」= only rounds 1-2. Broadcast round-start disarm to enemy group. Confirmed convention via 火神英風 which uses identical when:{until:2} pattern for the same '前2回合' phrasing.",
+   "_diff": "時序徹底一致化批: 頂層when:{until:2}(前批)→效果級everyRound+broadcast+when:{until:2}(相一broadcast, 回合開頭施加繳械給敵軍群體, 不隨持有者出手順序)",
    "_bucket": "rederive_b5"
   },
   "淵然難測": {
@@ -4549,8 +4561,9 @@
      "recipientSel": "minCommand",
      "dur": 1,
      "everyRound": true,
+     "broadcast": true,
      "rate": 0.333,
-     "_note": "批J(禁近似令-transfer轉移族): 原文「使我軍統率最低單體偷取敵軍全體10點統率」——k:\"stealStat\"(批J新增原語)精確表達: 從每個存活敵軍實際扣除min(10×scale, 該敵軍當下有效統率), 不得扣至負值(不無中生有); 我軍統率最低單體(recipientSel:\"minCommand\")獲得的量=所有敵軍實際被扣除量之加總(而非固定按敵軍人數×10點灌入——若某敵軍統率已被其他效果削弱到低於10點, 該敵軍能貢獻的量就相應變少, 甚至為0)。取代批24 D3「敵方stat add負值+我方stat add正值」的雙向量對稱近似(該近似不論敵軍當下統率多寡都固定各扣/各加10點, 兩邊與victim實際狀態脫鉤, 若victim效果被驅散/到期另一邊也不會連動)。rate:0.333/scale:\"command\"的機率與縮放曲線常數沿用批24既有校準值(機制精確、scale曲線族屬D類, 豁免本禁近似令), 本批只修正「轉移量是否連動victim實際持有量」這個transfer族核心約束。"
+     "_note": "時序徹底一致化批: 本文「每回合...偷取敵軍全體統率(轉移給我軍)」——who=enemy + 每回合 + 持有者對他人(敵軍全體)廣播偷取/削弱 = 相一(回合開頭統一施加, 使被偷統率的敵軍在其行動前就已被削弱、獲得統率的我軍在其行動前就已增益, 不隨陣法持有者出手順序), 補broadcast:true。同陣法另兩段transferMitig/transferDebuff同屬「每回合35%獨立判定執行」的持有者對他人狀態操作, 一併相一。 | 批J(禁近似令-transfer轉移族): 原文「使我軍統率最低單體偷取敵軍全體10點統率」——k:\"stealStat\"(批J新增原語)精確表達: 從每個存活敵軍實際扣除min(10×scale, 該敵軍當下有效統率), 不得扣至負值(不無中生有); 我軍統率最低單體(recipientSel:\"minCommand\")獲得的量=所有敵軍實際被扣除量之加總(而非固定按敵軍人數×10點灌入——若某敵軍統率已被其他效果削弱到低於10點, 該敵軍能貢獻的量就相應變少, 甚至為0)。取代批24 D3「敵方stat add負值+我方stat add正值」的雙向量對稱近似(該近似不論敵軍當下統率多寡都固定各扣/各加10點, 兩邊與victim實際狀態脫鉤, 若victim效果被驅散/到期另一邊也不會連動)。rate:0.333/scale:\"command\"的機率與縮放曲線常數沿用批24既有校準值(機制精確、scale曲線族屬D類, 豁免本禁近似令), 本批只修正「轉移量是否連動victim實際持有量」這個transfer族核心約束。"
     },
     {
      "k": "transferMitig",
@@ -4558,8 +4571,9 @@
      "to": "ally",
      "dur": 1,
      "everyRound": true,
+     "broadcast": true,
      "rate": 0.333,
-     "_note": "批J: 原文「轉移傷害降低: 將敵軍隨機武將的傷害降低效果轉移至我軍隨機武將」——k:\"transferMitig\"(批J新增原語)精確表達: 掃描敵軍當下實際持有的正向mitig(傷害降低)buff實例, 若存在則整個搬移(從來源移除, 在我軍隨機一人身上以相同數值重建, dur改用本效果的dur:1, 對應原文「持續1回合」而非沿用來源剩餘時長)給我方隨機一人; 若敵軍當下無人持有這類buff, 本次判定不觸發(轉移0, 不無中生有, 不會無來源憑空生出一份mitig buff)。取代批19/批24遺留的完全空白(0%建模)缺口。"
+     "_note": "時序徹底一致化批: 每回合持有者對他人狀態操作(把敵軍傷害降低效果搬給我軍) = 相一(回合開頭施加, 使獲得mitig的我軍在其行動前就有、被奪走的敵軍在其行動前就無), 補broadcast:true。 | 批J: 原文「轉移傷害降低: 將敵軍隨機武將的傷害降低效果轉移至我軍隨機武將」——k:\"transferMitig\"(批J新增原語)精確表達: 掃描敵軍當下實際持有的正向mitig(傷害降低)buff實例, 若存在則整個搬移(從來源移除, 在我軍隨機一人身上以相同數值重建, dur改用本效果的dur:1, 對應原文「持續1回合」而非沿用來源剩餘時長)給我方隨機一人; 若敵軍當下無人持有這類buff, 本次判定不觸發(轉移0, 不無中生有, 不會無來源憑空生出一份mitig buff)。取代批19/批24遺留的完全空白(0%建模)缺口。"
     },
     {
      "k": "transferDebuff",
@@ -4569,8 +4583,9 @@
      "nMax": 2,
      "dur": 1,
      "everyRound": true,
+     "broadcast": true,
      "rate": 0.333,
-     "_note": "批J: 原文「轉移負面狀態: 將友軍群體隨機1-2種負面狀態轉移至隨機敵軍」——k:\"transferDebuff\"(批J新增原語)精確表達: 掃描我軍群體當下實際持有的負面狀態(分類口徑與既有dispel debuffs一致, 見collectDebuffTokens/collect_debuff_tokens), 隨機挑1~2種「不同種類」現存的負面狀態(n:1/nMax:2), 每種各自搬移(從持有者移除, 在隨機一名敵軍身上重建, dur改用本效果的dur:1)給隨機一名敵軍; 若我軍當下完全沒有負面狀態, 轉移0種; 若只有1種現存, 即使nMax要求2種也只轉移那1種(轉移量=來源實際擁有量, 不硬湊到位)。取代批19/批24遺留的完全空白(0%建模)缺口。"
+     "_note": "時序徹底一致化批: 每回合持有者對他人狀態操作(把我軍負面狀態搬給敵軍) = 相一(回合開頭施加, 使卸除debuff的我軍在其行動前就無、被轉嫁的敵軍在其行動前就有), 補broadcast:true。 | 批J: 原文「轉移負面狀態: 將友軍群體隨機1-2種負面狀態轉移至隨機敵軍」——k:\"transferDebuff\"(批J新增原語)精確表達: 掃描我軍群體當下實際持有的負面狀態(分類口徑與既有dispel debuffs一致, 見collectDebuffTokens/collect_debuff_tokens), 隨機挑1~2種「不同種類」現存的負面狀態(n:1/nMax:2), 每種各自搬移(從持有者移除, 在隨機一名敵軍身上重建, dur改用本效果的dur:1)給隨機一名敵軍; 若我軍當下完全沒有負面狀態, 轉移0種; 若只有1種現存, 即使nMax要求2種也只轉移那1種(轉移量=來源實際擁有量, 不硬湊到位)。取代批19/批24遺留的完全空白(0%建模)缺口。"
     }
    ],
    "_evidence": "戰鬥中，每回合有35%機率（受統率影響，計算公式為：(統率+570)/570，效果機率獨立判定）獨立判定執行以下三種效果：1.轉移傷害降低 2.轉移負面狀態 3.偷取統率（10點，公式(統率+233)/233）",
@@ -5909,7 +5924,8 @@
      "rate": 0.15,
      "ifLeader": true,
      "everyRound": true,
-     "_note": "批30 A: 原文「自身為主將時，每回合有15%(部隊每多一名蠻族武將額外提高15%)機率使全體蠻族造成傷害提高15%…持續1回合」改用e.everyRound(新原語)精確表達「每回合重新判定」, 取代批26遺留的「開局擲一次骰決定整場有無buff」近似(見批26_approx歷史說明)。dur改為1(對應『持續1回合』, 逐回合重擲=每次判定各自1回合效期)。ifLeader與everyRound可並存(ifLeader先判斷施放者是否為主將, 通過後才進入everyRound的rate擲骰, 兩個閘門各自獨立、皆逐回合重新檢查)。仍未解決: (1)「部隊每多一名蠻族武將額外提高15%」發動機率隨隊伍構成疊加未建模(取基礎15%, engine無「依隊伍構成動態調整rate」判斷點); (2)「受自身損失兵力影響，最多80%」的val動態縮放未建模(scale機制只支援施放者固定屬性, 不支援施放者損失兵力比例縮放, 同12節「依目標當下狀態縮放」缺口的鏡像案例); 取升滿值15%(非最多80%)近似。who=ally(全體蠻族的簡化, 引擎無按陣營篩選我方單位的who選項, 見已知限制)。"
+     "broadcast": true,
+     "_note": "批30 A: 原文「自身為主將時，每回合有15%(部隊每多一名蠻族武將額外提高15%)機率使全體蠻族造成傷害提高15%…持續1回合」改用e.everyRound(新原語)精確表達「每回合重新判定」, 取代批26遺留的「開局擲一次骰決定整場有無buff」近似(見批26_approx歷史說明)。時序徹底一致化批: 本文「每回合...使全體蠻族造成傷害提高」——who=ally群體(全體蠻族)增傷 + 每回合 + 持有者(主將)廣播 = 相一(回合開頭統一施加, 使受buff的蠻族在其攻擊前就吃到增傷, 不隨持有者出手順序), 補broadcast:true。ifLeader與broadcast可並存(broadcast_only通道亦會逐效果檢查ifLeader)。dur改為1(對應『持續1回合』, 逐回合重擲=每次判定各自1回合效期)。ifLeader與everyRound可並存(ifLeader先判斷施放者是否為主將, 通過後才進入everyRound的rate擲骰, 兩個閘門各自獨立、皆逐回合重新檢查)。仍未解決: (1)「部隊每多一名蠻族武將額外提高15%」發動機率隨隊伍構成疊加未建模(取基礎15%, engine無「依隊伍構成動態調整rate」判斷點); (2)「受自身損失兵力影響，最多80%」的val動態縮放未建模(scale機制只支援施放者固定屬性, 不支援施放者損失兵力比例縮放, 同12節「依目標當下狀態縮放」缺口的鏡像案例); 取升滿值15%(非最多80%)近似。who=ally(全體蠻族的簡化, 引擎無按陣營篩選我方單位的who選項, 見已知限制)。"
     }
    ],
    "_evidence": "自身為主將時，每回合有15%(部隊每多一名蠻族武將額外提高15%)機率使全體蠻族造成傷害提高15%…持續1回合",
@@ -6165,8 +6181,9 @@
      "who": "enemy",
      "dur": 1,
      "everyRound": true,
+     "broadcast": true,
      "rate": 0.12,
-     "_note": "批30 A: 原文『每回合開始有6%→12%機率(受統帥影響)威懾敵軍全體』改用e.everyRound(新原語, 非heal效果的逐回合重擲通道)精確表達, 取代舊版prob-ev(command型戰法的非choices effects只在prep套用一次, 開場單次判定近似整場~1次期望)近似。rate改回原文滿級值0.12(12%), 每回合獨立擲骰。仍未解決: 『受統帥影響』無對應scale(command效果的機率縮放非val縮放, 現有原語無此機制)、『威懾次數』疊層計數(供coef段傷害公式依威懾次數放大)未建模, 維持既有近似。"
+     "_note": "批30 A: 原文『每回合開始有6%→12%機率(受統帥影響)威懾敵軍全體』改用e.everyRound(新原語, 非heal效果的逐回合重擲通道)精確表達, 取代舊版prob-ev(command型戰法的非choices effects只在prep套用一次, 開場單次判定近似整場~1次期望)近似。rate改回原文滿級值0.12(12%), 每回合獨立擲骰。仍未解決: 『受統帥影響』無對應scale(command效果的機率縮放非val縮放, 現有原語無此機制)、『威懾次數』疊層計數(供coef段傷害公式依威懾次數放大)未建模, 維持既有近似。時序徹底一致化批: 本文「每回合開始有機率威懾敵軍全體」——「每回合開始」+ who=enemy控制(silence/威懾) = 相一(回合開頭統一施加, 使被威懾的敵軍在其行動前就失效, 不隨持有者出手順序), 補broadcast:true。"
     },
     {
      "k": "silence",
@@ -6727,9 +6744,10 @@
      "val": 0.06,
      "dur": 2,
      "everyRound": true,
+     "broadcast": true,
      "rate": 0.6,
      "targetSel": "minTroop",
-     "_note": "批I: 原文「有30%→60%機率(受最高屬性影響)使我軍兵力最低武將受到傷害降低3%→6%(受最高屬性影響)」——數值段(val:0.06)補scale:\"maxStat\"(批I新增原語)解決「受最高屬性影響」動態縮放。機率段(rate:0.6, 同句「受最高屬性影響」)仍是缺口: e.rate(效果級機率閘門)目前完全不支援任何屬性縮放(不論固定單屬性或最高屬性), 此為與scale_max_stat(縮放\"值\"的表達力)正交的另一個缺口(縮放\"機率擲骰\"的表達力), 不屬本批(scale/比較族)3原語任一者管轄範圍, 見戰法_todo誠實揭露, 待future batch評估。",
+     "_note": "批I: 原文「有30%→60%機率(受最高屬性影響)使我軍兵力最低武將受到傷害降低3%→6%(受最高屬性影響)」——數值段(val:0.06)補scale:\"maxStat\"(批I新增原語)解決「受最高屬性影響」動態縮放。機率段(rate:0.6, 同句「受最高屬性影響」)仍是缺口: e.rate(效果級機率閘門)目前完全不支援任何屬性縮放(不論固定單屬性或最高屬性), 此為與scale_max_stat(縮放\"值\"的表達力)正交的另一個缺口(縮放\"機率擲骰\"的表達力), 不屬本批(scale/比較族)3原語任一者管轄範圍, 見戰法_todo誠實揭露, 待future batch評估。時序徹底一致化批: 本文「每回合開始時...使我軍兵力最低武將受到傷害降低」——「每回合開始時」明確=相一(回合開頭統一施加, 不隨持有者出手順序), 補broadcast:true走apply_passives(broadcast_only=True)。與同戰法immune段的「自身每回合行動時」(相二own_turn)本文措辭刻意二分, 佐證相一/相二判準。",
      "scale": "maxStat"
     },
     {
@@ -6738,9 +6756,10 @@
      "val": -0.06,
      "dur": 2,
      "everyRound": true,
+     "broadcast": true,
      "rate": 0.6,
      "targetSel": "maxTroop",
-     "_note": "批I: 同上mitig段, 數值段(val:-0.06)補scale:\"maxStat\"解決敵軍段「受最高屬性影響」動態縮放。機率段(rate:0.6)受最高屬性影響部分同樣是e.rate缺乏屬性縮放支援的正交缺口, 見戰法_todo。",
+     "_note": "批I: 同上mitig段, 數值段(val:-0.06)補scale:\"maxStat\"解決敵軍段「受最高屬性影響」動態縮放。機率段(rate:0.6)受最高屬性影響部分同樣是e.rate缺乏屬性縮放支援的正交缺口, 見戰法_todo。時序徹底一致化批: 本文「每回合開始時...使敵軍兵力最高武將造成傷害降低」——「每回合開始時」+ who=enemy減益 = 相一(回合開頭統一施加), 補broadcast:true。",
      "scale": "maxStat"
     },
     {
@@ -6752,7 +6771,7 @@
      "dur": 1,
      "everyRound": true,
      "rate": 0.35,
-     "_note": "批C: 原文『自身每回合行動時，有17.5%→35%機率(受最高屬性影響)使我軍全體免疫禁療，每個目標獨立判定，持續1回合』——過去完全未建模(_todo稱『引擎無禁療免疫原語』)。經核對, immuneTo(批16, types可含\"healblock\")查詢方法is_immune_to/isImmuneTo自始即支援healblock(demo()/smoke test既有涵蓋, 見sgz.py:5499一帶「healblock」在既有測試清單內), 但施加healblock的k===\"healblock\"分支從未讀取此查詢(見sgz.py/engine.js該分支本次同步補上is_immune_to(\"healblock\")守衛)。現用e.immune(types:[\"healblock\"])+e.everyRound(逐回合重擲, 對應『每回合』)+rate:0.35(取滿級值)精確表達, dur:1對應『持續1回合』。『受最高屬性影響』(機率的動態縮放)無對應scale(需『自身多屬性取最高』動態判斷, 同mitig/amp段已知缺口, 見6.6節), 保守取滿級值不縮放, 已知會偏高估低統禦/低屬性持有者的實際觸發率。",
+     "_note": "批C: 原文『自身每回合行動時，有17.5%→35%機率(受最高屬性影響)使我軍全體免疫禁療，每個目標獨立判定，持續1回合』——過去完全未建模(_todo稱『引擎無禁療免疫原語』)。時序徹底一致化批: 本效果本文明確為「自身每回合行動時」(持有者自己的行動輪), 判為相二(own_turn), 維持不加broadcast——與同戰法mitig/amp段的「每回合開始時」(相一)本文措辭刻意二分。經核對, immuneTo(批16, types可含\"healblock\")查詢方法is_immune_to/isImmuneTo自始即支援healblock(demo()/smoke test既有涵蓋, 見sgz.py:5499一帶「healblock」在既有測試清單內), 但施加healblock的k===\"healblock\"分支從未讀取此查詢(見sgz.py/engine.js該分支本次同步補上is_immune_to(\"healblock\")守衛)。現用e.immune(types:[\"healblock\"])+e.everyRound(逐回合重擲, 對應『每回合』)+rate:0.35(取滿級值)精確表達, dur:1對應『持續1回合』。『受最高屬性影響』(機率的動態縮放)無對應scale(需『自身多屬性取最高』動態判斷, 同mitig/amp段已知缺口, 見6.6節), 保守取滿級值不縮放, 已知會偏高估低統禦/低屬性持有者的實際觸發率。",
      "_note2": "批I: 原文「有17.5%→35%機率(受最高屬性影響)使我軍全體免疫禁療」——本段immune無獨立magnitude欄位(布林狀態授予, 非%數值), 「受最高屬性影響」完全落在機率(rate:0.35)上, 而非scale_max_stat族的magnitude縮放範圍——即使scale:\"maxStat\"已就位, 本段也無處可掛(沒有val可乘)。同mitig/amp段, 機率縮放本身是e.rate缺乏屬性縮放支援的正交缺口, 不屬本批3原語管轄, 見戰法_todo。"
     }
    ],
@@ -6792,7 +6811,10 @@
      "dur": 99,
      "scale": "intel",
      "dmgType": "intel",
-     "_note": "批25 R19: 原文「使敵軍全體受到謀略傷害提高2%→4%」為單一傷害類型措辭, 補dmgType:\"intel\"(批24新增原語, 精確限定只對謀略傷害生效, 不再誤及兵刃傷害)。",
+     "everyRound": true,
+     "broadcast": true,
+     "rate": 1,
+     "_note": "批25 R19: 原文「使敵軍全體受到謀略傷害提高2%→4%」為單一傷害類型措辭, 補dmgType:\"intel\"(批24新增原語, 精確限定只對謀略傷害生效, 不再誤及兵刃傷害)。時序徹底一致化批(user親口舉的相一主例): 本文「戰鬥中每回合使敵軍全體受到謀略傷害提高2%→4%(可疊加)」= SP周瑜每回合對敵施加長焰, user權威裁決=相一(回合開始不論出手順序先施加, 使排在SP周瑜之後行動的敵軍/在SP周瑜之後攻擊該敵的我軍皆吃到當回合已上好的易傷)。補everyRound:true+broadcast:true, 改走apply_passives(broadcast_only=True)回合開頭統一施加(同高櫓連營), 取代舊「每次command成功發動即疊1層」(走命令輪詢, 在SP周瑜自己行動輪才施加——SP周瑜排最後時長焰會在回合末才上, 違反user規則)。rate為1: 本文「每回合使敵軍全體受到易傷」為UNCONDITIONAL(不受下句「25%→50%機率造成謀略傷害」的rate閘門節制), 顯式設e.rate為1避免everyRound通道誤繼承戰法頂層rate(值0.5, 屬coef傷害段的機率)——這也順帶修正舊模型把無條件易傷錯誤鎖在coef機率後的缺口。",
      "_note2": "批35 C: 兄弟掃描(狀態屬性曲線375族) —— 本效果帶scale但曲線族(350/375)未經實測樣本裁決, 現行沿用全域SCALE(除數350)預設, 曲線族未定(350/375待實測); 僅機鑑先識(警戒)有六點實測錨點佐證375(見calibration_anchors status_scale_375_20260704), 本效果不擅自套用375, 待未來實測樣本才裁決。",
      "stackKey": true,
      "perStack": 0.04
@@ -6801,6 +6823,7 @@
    "_evidence": "頂層coef的目標選取(pickTargets)才受n影響, 原文'對隨機敵軍單體造成謀略傷害'明確單體非群體3人; stack掛在enemy身上會誤增敵軍自身傷害輸出(amp()讀取holder自身stack, 方向相反的bug), 故移除",
    "_diff": "n:3→n:1修正頂層coef傷害段的目標數bug(原本每回合對3名敵軍各146%謀略傷害, 應為隨機1人); 移除stack(who:enemy)誤用(方向相反, 會讓敵軍自己疊層打我方更痛), 僅保留amp單次滿值+4%",
    "_bucket": "rederive_b2+4",
+   "_broadcast_note": "時序徹底一致化批: 江天長焰是user親口舉的相一(broadcast round-start)主例。前批誤標broadcast:無(走一般command-fire在SP周瑜行動輪施加), 本批修正為broadcast:true(見effects[0]._note)。相一=持有者每回合對他人(敵軍)廣播施加新狀態層, 於回合開頭統一施加, 不隨SP周瑜出手順序。",
    "_conflict_note": "b2 vs b4衝突: b2抓到n:3→1的真實bug(b4完全沒發現)但其stack(per:0.04)重寫沒有修正stack掛enemy的方向錯誤(與b4指出的bug相同,只是換了per值,語意仍錯); b4只處理stack移除(方向正確)但沒發現n的bug。合併採用兩者修正(n:1 + 移除stack)。",
    "_todo": "批17核對: 除已知的「可疊加」遺失外, 原文另有數項rate/targetSel條件式調整——(1)「每有1名敵軍處於灼燒或水攻狀態(即dot),提升2%→4%機率」: 需要在頂層rate擲骰之前依「敵軍dot數量」動態調整rate, 現行rate為單一擲骰前靜態值(ratePerTarget/rateStatusBonus雖存在但那是逐目標擲骰模式, 非本戰法「先調整全域rate再統一擲骰」的語意, 不適用), 維持基礎機率近似。批C: (2)「自身為主將時,基礎機率提升至35%→70%」已用t.rateLeader(批52续, 見set.rateLeader)解決, 取代先前的完全未建模。 批28 A2: (3)「自身為主將時...該次謀略傷害將鎖定敵軍兵力最低武將」的targetSel選標仍是「僅主將身份時」的條件式選標切換(現行頂層coef段對隨機敵軍單體無條件生效, 非主將時也一樣是隨機, 未區分主將/非主將的選標差異)——現有targetSel欄位是戰法級靜態設定, 無法表達「僅主將身份時才啟用targetSel:minTroop, 非主將時維持隨機」的條件式選標, 非rateLeader可涵蓋範圍(rateLeader只解決機率數值本身, 不解決選標邏輯切換), 維持現狀近似(全程隨機選敵, 略高估非主將情形的精確打擊能力, 也略低估主將情形的精確打擊能力)。",
    "_note": " || 批K(A): amp單次滿值改k:\"amp\"+e.stackKey(既有per-target疊層原語, 批A)精確表達「可疊加(每回合+2%→4%,理論無上限)」的敵方逐回合疊加debuff, 省略maxStacks(=無上限, 對應「理論無上限」), 取代單次固定值的近似。本戰法為每回合擲骰的command/passive型, 每次成功發動即疊1層, 天然對應「每回合疊加」語意, 無需額外everyRound旗標。"
@@ -7989,20 +8012,23 @@
      "val": 0.06,
      "dur": 2,
      "everyRound": true,
+     "broadcast": true,
      "rate": 0.5,
      "n": 1,
-     "_note": "使其(同兵刃傷害段命中的敵軍單體)受到傷害提高3%→6%(可疊加2次), 單體, 補e.n=1(批B, R13)"
+     "_note": "使其(同兵刃傷害段命中的敵軍單體)受到傷害提高3%→6%(可疊加2次), 單體, 補e.n=1(批B, R13)。時序徹底一致化批: 本文『每回合發射2次...並有機率使其受到傷害提高』屬user權威裁決『相一: 持有者每回合對他人(敵軍)廣播施加新狀態層』的實例(與SP周瑜江天長焰/SP袁紹箭樓機制同階段), 補e.broadcast=true旗標, 於fight()主迴圈回合開頭(任何單位行動前, 全體批次)用全局CUR_ROUND結算, 不隨own_round個別化——本文『X→own_round/全局』: 每回合施放者對敵軍施加易傷疊層/繳械, 廣播對象是他人(敵軍), 判為全局round-start(相一), 非own_round(相二)。"
     },
     {
      "k": "disarm",
      "who": "enemy",
      "dur": 2,
      "everyRound": true,
-     "rate": 0.75
+     "broadcast": true,
+     "rate": 0.75,
+     "_note": "時序徹底一致化批: 同上amp效果, e.broadcast=true(相一全局round-start, 用全局CUR_ROUND, 不用own_round)。"
     }
    ],
    "_evidence": "填裝10次; 主將時每回合填裝1次",
-   "_note": "批52g user確認: 只有主將標籤才補箭矢(ammoReloadLeader) | 批B(R13): amp效果(受傷提高3%→6%)補e.n=1——本文「對敵軍單體造成兵刃傷害...並有50%機率使其受到傷害提高3%→6%」的「其」字回指同一句剛命中的敵軍單體, 過去缺e.n時套用到全體(系統性高估覆蓋人數, 見批23 A1), 現精確限定單體。 | 批B(R3): 「有50%機率(受武力影響)額外發射1次」已用頂層n=2/nMax=3表達(cnt = n +randint(0, nMax-n) = 2+randint(0,1), 均勻50/50對應本文2或3次發射), 但nMax的randint是均勻擲骰, 無scale掛勾, 未做本文「受武力影響」的精確縮放(現以固定50%近似, 非0%或武力越高機率越高的曲線), 已誠實揭露此近似缺口(rate=1本身代表戰法戰鬥開始後每回合固定嘗試發射, 與此50%額外發射機率是兩個不同層級, 非完全未建)。",
+   "_note": "批52g user確認: 只有主將標籤才補箭矢(ammoReloadLeader) | 批B(R13): amp效果(受傷提高3%→6%)補e.n=1——本文「對敵軍單體造成兵刃傷害...並有50%機率使其受到傷害提高3%→6%」的「其」字回指同一句剛命中的敵軍單體, 過去缺e.n時套用到全體(系統性高估覆蓋人數, 見批23 A1), 現精確限定單體。 | 批B(R3): 「有50%機率(受武力影響)額外發射1次」已用頂層n=2/nMax=3表達(cnt = n +randint(0, nMax-n) = 2+randint(0,1), 均勻50/50對應本文2或3次發射), 但nMax的randint是均勻擲骰, 無scale掛勾, 未做本文「受武力影響」的精確縮放(現以固定50%近似, 非0%或武力越高機率越高的曲線), 已誠實揭露此近似缺口(rate=1本身代表戰法戰鬥開始後每回合固定嘗試發射, 與此50%額外發射機率是兩個不同層級, 非完全未建)。 | 時序徹底一致化批: e.broadcast=true標記(見effects._note)。",
    "_todo": "「填裝10次(耗盡後失效)」的彈藥計數器機制、「自身為主將時每回合額外填裝1次」、「受傷+6%可疊加2次」的疊層機制均無對應原語, 未編碼(較原文寬鬆/高估, 因為引擎版本沒有彈藥耗盡就失效的限制, 也沒有疊層上限)。",
    "_bucket": "batch52g",
    "effectText": "填裝10次; 主將時每回合填裝1次"
