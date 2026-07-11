@@ -55,32 +55,42 @@
     "add": 40
    },
    {
-    "k": "stack",
-    "who": "self",
-    "per": 0.07,
-    "max": 7,
-    "_approx": "stack-cap",
-    "_note": "3.5%→7%會心,每次免疫控制後有機率(20%→40%)獲得一層,最多7層;引擎無事件觸發式疊層,以stack原語per=0.07/max=7近似(未對疊層機率做折算,略高估)。批H複核(會心真擲骰化批次, 全庫掃補遺——lint R34新增後掃出本筆先前遺漏, no_approx_inventory.json未收錄本筆): engine.js/sgz.py已新增真crit機制(k:\"critUp\", 見damage()/apply_effects)取代全庫14筆EV折算, 但critUp目前只支援靜態值(透過push_add疊加), 不支援像stack那樣的動態per-target/per-self疊層讀取(amp()讀this.stack.per*this.stack.n做動態計算, 但crit判定的addbonus(\"critUp\",...)目前只讀adds陣列的靜態疊加值, 未讀取stack物件本身)——需要engine新增「stack驅動critUp」的消費端(比照amp()對this.stack的既有處理, 為crit判定新增對稱讀取)才能精確表達本戰法「每次免疫控制後疊1層3.5%→7%會心, 最多7層」的語意, 屬於crit_system_primitive已解決的「機率有沒有真擲骰」之外的另一個正交缺口(「機率本身是否支援stack/decay等動態來源」, 與符命自立同類缺口), 非本批範圍。維持現行stack(per=0.07,max=7)驅動amp的既有近似(把「會心」機率近似成常駐傷害加成代理值)不變, 未升級為critUp。",
-    "_todo": "批41 B(R27初掃): 原文「自身為主將時，基礎觸發機率提升至35%→70%」——ifLeader(批26新增)只支援布林條件閘門, 無法表達「主將時機率從20%→40%提升到35%→70%」這種依身份縮放機率數值的複合語意(同仁德載世R24precedent/engine_limitations.md第9節同類缺口); 且本效果本身已是「未對疊層機率做折算」的近似(見_note, 每次免疫控制視為必定+1層), 主將加成的機率縮放在此近似之上更難疊加表達, 現維持不建模主將加成, 已誠實揭露待未來若新增身份縮放機率原語再升級。"
-   },
-   {
     "k": "insight",
     "who": "self",
     "dur": 99
+   },
+   {
+    "k": "critUp",
+    "who": "self",
+    "dmgType": "phys",
+    "stackKey": true,
+    "perStack": 0.07,
+    "maxStacks": 7,
+    "dur": 99,
+    "rate": 0.4,
+    "rateLeader": 0.7,
+    "when": {
+     "on": [
+      "dmgThreshold",
+      "ctrlImmune"
+     ]
+    },
+    "_note": "批L(禁近似令-最後3筆深水區): 原「stack(per=0.07,max=7)驅動amp」的舊代理值(把「會心」機率折算成常駐傷害加成, 且未對疊層機率本身做折算, 見批H複核既有揭露)全面拆除, 改建三子機制精確組合: (a)累積傷害閾值——新增unit.dmgAccum(全戰鬥單調遞增的自身受傷累計量, 與可被治療消耗的wounded池是不同計數器)+bumpDmgAccum()偵測每跨越一次「最大兵力7%(=700)」門檻即回傳跨越格數; (b)免疫格擋事件——stun/silence/disarm/chaos/ambush的immune(insight或isImmuneTo攔下)分支過去只log不觸發任何鉤子, 現補上fireSelfReactive(u,\"ctrlImmune\",1); (c)兩事件共用同一組stackKey疊層(critUp+e.stackKey, 對稱既有逆鱗precedent, engine_limitations.md批51節)——新增onValues(e)把when.on正規化成陣列, 讓dmgThreshold/ctrlImmune兩個事件名指向同一個效果物件(疊層計數以id(e)為鍵), 精確達成「兩種觸發來源合計最多7次」而非各自獨立疊到7次(合計14次)的錯誤語意。rate:0.4(20%→40%取滿級)+rateLeader:0.7(35%→70%取滿級, 主將時)——rateLeader原語(批52續已存在於引擎)先前批41 R27初掃評估時尚未存在(當時_todo稱「ifLeader二元閘門無法表達機率縮放」), 現用之解決此stale缺口, 不再維持不建模主將加成。perStack:0.07(3.5%→7%取滿級)+maxStacks:7+dmgType:\"phys\"(會心=兵刃暴擊, 對稱批H既有dmgType路由慣例)。"
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
   "src": "INNATE",
-  "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正",
+  "_note": "批12 ModeA: 原文為\"點\"(flat)非\"%\", stat.mult→stat.add修正(stat/insight兩效果不動)。批L: 見effects[2]._note(critUp+雙事件stackKey重建)。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
    "BOW",
    "SPEAR",
    "SIEGE"
-  ]
+  ],
+  "_todo": "批L殘留(誠實揭露, 非本批可解): 「受會心機率影響」——20%→40%基礎觸發機率本身應再受caster當下已累積的會心/兵刃暴擊機率總值加成放大, 但scale原語讀取的是caster.eff(武力/智力/統率/速度等基礎屬性), 不是「已累積的critUp加成總值」這種由本戰法自己動態疊加產生的衍生量, 無法表達「機率被自己另一項機率加成自我參照式放大」, 與西涼鐵騎「會心機率受速度影響」同族未解決缺口(engine_limitations.md第42節8筆TROOP家族表格)。現觸發機率不建模此加成維度, 直接取20%→40%/35%→70%兩檔滿級值(rate:0.4/rateLeader:0.7)。「主將觸發7次後新增『七進七出』全新機制」——本文僅命名此機制之名稱, 完全未描述其具體規則/數值/持續時間等任何操作性內容(無傷害/治療/控制/屬性等描述可供對照), 屬於本文資料本身的資訊缺口(而非引擎表達力缺口, 無從判斷「架構上是否可能」, 因為根本不知道要表達什麼), 禁止臆造行為內容, 待未來若查得官方戰報/說明書等權威來源補齊操作定義才可評估建模, 現完全不建模。"
  },
  {
   "nameZh": "一騎當千",
@@ -817,28 +827,63 @@
   "prep": 0,
   "effects": [
    {
-    "k": "stat",
-    "who": "enemy",
-    "stat": "command",
-    "add": -9,
-    "dur": 2,
-    "_approx": "prob-ev",
-    "_note": "受擊時30%-60%機率(取45%均值)偷取攻擊者10.5-21點統率或降其1.5%-3%發動率,兩分支擇一觸發;engine無偷取/降發動率原語,以enemy統率debuff近似其中一分支並用EV折算(21×0.45≈9.5,取整9),原資料誤把效果套用在ally自身導致方向完全相反"
-   },
-   {
     "k": "immune",
     "who": "ally",
     "types": [
      "ambush"
     ],
     "dur": 99,
-    "_note": "原文「戰鬥中，我軍全體免疫遇襲狀態」先前完全未建模(僅建了受擊觸發偷統率debuff那半段)。批16新增的immuneTo(單項控制免疫)原語精確對應(types:[\"ambush\"], 不像insight會連帶誤免震懾/計窮/繳械/混亂等其餘控制), dur=99(常駐, 全戰鬥生效, 對照amp(self)常駐慣例)。批21補上, 原entry只有偷統率debuff那段, 完全遺漏免疫遇襲。"
+    "_note": "原文「戰鬥中，我軍全體免疫遇襲狀態」先前完全未建模(僅建了受擊觸發偷統率debuff那半段)。批16新增的immuneTo(單項控制免疫)原語精確對應(types:[\"ambush\"], 不像insight會連帶誤免震懾/計窮/繳械/混亂等其餘控制), dur=99(常駐, 全戰鬥生效, 對照amp(self)常駐慣例)。批21補上, 原entry只有偷統率debuff那段, 完全遺漏免疫遇襲。批L未動。"
+   },
+   {
+    "k": "stealStat",
+    "victimIsTgt": true,
+    "stat": "command",
+    "amount": 21,
+    "dur": 2,
+    "rate": 0.6,
+    "maxStack": 4,
+    "maxStackIfLeaderIs": {
+     "who": "麴義",
+     "max": 5
+    },
+    "ifStatCompare": {
+     "stat": "hpPct",
+     "op": "lt",
+     "vs": "caster"
+    },
+    "when": {
+     "on": "damaged"
+    },
+    "_note": "批L(禁近似令-最後3筆深水區): 原「enemy統率debuff近似其中一分支+EV折算」的舊代理值(21×0.45≈9.5, 且方向誤植成ally自身, 完全非反應式)全面拆除, 改建真雙分支反應。原文「若兵力百分比低於攻擊者則偷取其10.5→21點統率」——真反應式(when.on:\"damaged\", 受任意傷害觸發, 非限普攻)+e.victimIsTgt(批L新增, 精確鎖定本次反應式事件的攻擊者本人, 對稱既有who===\"eventTarget\"精確選標精神, 但stealStat有自己的targeting早退路徑不經過通用dests/who pipeline, 故另立此欄位)+e.ifStatCompare(stat:\"hpPct\", op:\"lt\", vs:\"caster\"——批L為statCompareOk新增的hpPct比較維度, 精確表達「自身兵力%低於攻擊者兵力%」跨單位血量比較)。rate:0.6(30%→60%取滿級, 兩分支各自獨立擲骰同一機率值, 由ifStatCompare互斥的兩個分支自然構成「單一機率決定觸發與否, 觸發後依血量條件分流」的等價語意, 不需要共享單一擲骰結果)。amount:21(10.5→21取滿級)+maxStack:4/maxStackIfLeaderIs:{who:\"麴義\",max:5}(批L新增resolveMaxStack覆寫式讀取, 對稱既有coefLeader/rateLeader「基礎值+主將時替代值」家族, 但套用維度是maxStack這個「封頂」整數, 無法像coef/rate那樣用base+topup相加表達, 改用「條件成立則整個替換上限值」)。stealStat本身「一方扣多少另一方收多少, 不無中生有」的核心約束不變, maxStack封頂時雙方(受害者/受益者)都不記帳(僅刷新既有疊層dur), 避免phantom steal。"
+   },
+   {
+    "k": "rateup",
+    "who": "enemy",
+    "n": 1,
+    "val": -0.03,
+    "dur": 2,
+    "rate": 0.6,
+    "maxStack": 4,
+    "maxStackIfLeaderIs": {
+     "who": "麴義",
+     "max": 5
+    },
+    "ifStatCompare": {
+     "stat": "hpPct",
+     "op": "gte",
+     "vs": "caster"
+    },
+    "when": {
+     "on": "damaged"
+    },
+    "_note": "批L: 原文「否則降低其1.5%→3%主動戰法發動率」(若兵力百分比不低於攻擊者的互斥分支)——沿用既有k===\"rateup\"原語(val用負值表達「降低」, addbonusFor(\"rateup\",t0)在fight()主迴圈對任意來源的rateup adds一視同仁加總, 負值天然表達debuff方向, 不需要新增獨立的「降低發動率」debuff類型, 批K收官筆記原先評估「新debuff類型」現複核後確認可直接複用既有rateup)。who:\"enemy\"+n:1(批23 A1既有e.n原語)使dests在反應式派發context下精確解析成tgt(本次事件的攻擊者, 見engine.js/sgz.py dests resolution「who===enemy且cnt<=1時優先鎖定tgt」既有邏輯, 非新增)。val:-0.03(1.5%→3%取滿級)+ifStatCompare(stat:\"hpPct\",op:\"gte\",vs:\"caster\", 與stealStat段op:\"lt\"互斥, 恰好覆蓋若/否則兩種情形)。maxStack/maxStackIfLeaderIs同stealStat段(見其_note)。"
    }
   ],
   "quality": "S",
   "cat": "TROOP",
   "src": "INHERITANCE",
-  "_todo": "批44 A複核: 「若麴義統領，則可疊加5次」(較無條件版本的最多疊加4次多1次上限)的特定武將條件加成仍未建模。批44新增的ifLeaderIs原語可以精確表達「持有者=麴義時」的條件閘門本身(engine.js/sgz.py applyEffects/fireExtraHits皆已支援), 但本效果(effects[0])是prob-ev近似的單一debuff段(見其_note: 「以enemy統率debuff近似其中一分支並用EV折算」), 從未真正實作「可疊加N次」的疊層語意(疊層需要k===\"stack\"或exploitLayers等既有疊層原語, 本效果兩者皆未使用)——ifLeaderIs閘門本身無法生成「疊加上限」這個概念不存在的東西可加成, 麴義條件缺口的根因是「疊層機制本身缺失」而非「條件判斷缺失」, 屬engine_limitations.md第6.7節「可疊加/最多疊加N次」既有缺口的子情形, ifLeaderIs新增未解決此類。保守維持無條件版本4次上限(僅存在於原文, 非本效果實際建模值)近似, 待未來若替本效果補齊真正的疊層原語, 才能進一步用ifLeaderIs疊加麴義條件上限。",
+  "_todo": "批L殘留(誠實揭露, 非本批可解): 「受攜帶者統率影響」——30%→60%基礎觸發機率本身應受攜帶者統率加成放大(統率越高, 反應式觸發機率越接近60%上限), 但現行on:\"damaged\"反應式派發(onHitEffectTacs/on_hit_effect_tacs)的觸發率判定是獨立於applyEffects()通用e.rate/e.rateLeader/e.scale閘門之外的另一套簡化擲骰(evRate = e.rate ?? t.rate ?? 1, 只認靜態值, 未讀scale), 無法對這個「反應式事件本身是否觸發」的機率套用scale縮放, 與一身是膽「受會心機率影響」/西涼鐵騎「會心機率受速度影響」同族缺口(engine_limitations.md第42節)。現觸發機率不建模此加成維度, 直接取30%→60%滿級值(rate:0.6), 已誠實揭露, 待未來若補齊「反應式觸發率可受scale縮放」原語再升級。",
   "troopLimit": [
    "BOW"
   ]
@@ -3596,24 +3641,31 @@
    {
     "k": "amp",
     "who": "self",
-    "val": 0.15,
+    "val": 0.9,
     "dur": 99,
-    "_approx": "scope-est",
-    "_note": "原文90%僅限灼燒/水攻/中毒等dot類傷害加成,非全面增傷;引擎amp無dot專屬範圍欄位,以dot傷害通常占總輸出比例粗略折算下修,維持_est"
+    "dmgFromStatus": [
+     "灼燒",
+     "水攻",
+     "中毒",
+     "潰逃",
+     "沙暴",
+     "叛逃"
+    ],
+    "_note": "批L(禁近似令-最後3筆深水區): 原「val=0.15(dot傷害占總輸出比例粗略折算下修)」的舊代理值全面拆除, 改用e.dmgFromStatus(批L新增, 僅k===\"amp\"支援)精確限定「只對這6種具名dot狀態造成的傷害生效」——跨戰法橫切(這6狀態由caster身上任何戰法/兵書/裝備施加時都算, 非本效果專屬某一段固定coef)。機制: k===\"dot\"效果套用時(applyEffects呼叫damage()的呼叫點)把resolveDotName(e,t)解析出的具名狀態一併傳入damage()新增的dotStatus參數, 一路穿透到src.amp(...)→addbonus(\"amp\",...,dotStatus), 只在dotStatus命中f.dmgFromStatus清單時才計入這條amp加成(未帶dmgFromStatus的既有全部amp條目不受影響, 一般傷害路徑dotStatus恆為undefined, 帶dmgFromStatus限定的條目在該路徑天然不生效, 不會誤及非dot傷害)。val:0.9——原文「傷害提升90%」為固定值(非45%→90%的等級區間, 見本效果_evidence括號內「注: 傷害與治療量提升比例均為固定值, 此戰法本身無『受X影響』描述」的明文澄清, 舊版_evidence的「45%→90%」措辭已過期, 本次一併訂正), 取全額0.9非折算值。殘留(誠實揭露, 非本批範圍): 才辯機捷本身的amp/dmgFromStatus機制已精確對應本文語意, 但全庫目前僅5筆dot效果(水淹七軍/興雲布雨系/飛沙走石系/天降火雨系等, 見engine.js DOT_NAME_BY_TACTIC表)已正確解析出「水攻/沙暴/灼燒」三種狀態名, 「中毒/叛逃」兩種原本全庫無任何dot效果解析出這兩個名稱(43筆既有dot效果皆未帶e.name/dotName, 且DOT_NAME_BY_TACTIC表無中毒/叛逃對應項, resolveDotName會回傳null)——本批額外補上毒氣(e.name:\"中毒\", 其_evidence本文明文「施加中毒狀態」)+獅子奮迅(e.name:\"叛逃\", 其_evidence本文明文「陷入2回合叛逃狀態」)兩筆的具名標籤(見各自corrections條目), 使6種狀態中已有5種在全庫至少有1筆可命中的來源, 「潰逃」本已有錦帆軍1筆既有標籤(批52g)。此範圍擴充僅新增資料標籤(不改動任何既有效果的結算數值/行為), 與才辯機捷本身的機制精確性是兩件事(才辯機捷讀取的是「當下確實發生的具名dot傷害」, 至於全庫還有哪些戰法的dot尚未貼上正確標籤, 屬於dot_name_tagging資料完整性的獨立議題, 非本戰法/本次amp原語的缺陷)。"
    },
    {
     "k": "healGiven",
     "who": "self",
     "val": 0.3,
     "dur": 99,
-    "_note": "批17: 原文「休整、急救的恢復量提升30%」是「自身施放的治療效果量修飾」語意, 批16新增healGiven原語(施放的治療×(1+val))精確對應此語意(先前heal原語因語意錯位(直接治療非修飾)已於批9移除, 導致此條款完全遺漏), 取升滿值0.3"
+    "_note": "批17: 原文「休整、急救的恢復量提升30%」是「自身施放的治療效果量修飾」語意, 批16新增healGiven原語(施放的治療×(1+val))精確對應此語意(先前heal原語因語意錯位(直接治療非修飾)已於批9移除, 導致此條款完全遺漏), 取升滿值0.3。批L未動。"
    }
   ],
   "_src": " +整批重解(15原語)",
   "quality": "S",
   "cat": "PASSIVE",
   "src": "INNATE",
-  "_note": "批17: 新增healGiven(批16原語)精確落地先前_todo的「治療效果量+30%」缺口(舊_todo: 'heal原語僅支援直接治療非修飾其他治療,已移除誤用的heal效果'——現用healGiven解決,不再是_todo)。",
+  "_note": "批17: 新增healGiven(批16原語)精確落地先前_todo的「治療效果量+30%」缺口(舊_todo: 'heal原語僅支援直接治療非修飾其他治療,已移除誤用的heal效果'——現用healGiven解決,不再是_todo)。批L: 見effects[0]._note(dmgFromStatus跨戰法橫切限定範圍重建)。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -6272,7 +6324,9 @@
     "dur": 2,
     "scale": "force",
     "rate": 0.5,
-    "pierce": true
+    "pierce": true,
+    "name": "叛逃",
+    "_note": "批L(禁近似令-最後3筆深水區, 才辯機捷跨戰法橫切amp支援): 補e.name:\"叛逃\"(本文明文「陷入2回合叛逃狀態」)——過去resolveDotName()對本效果無e.name/dotName亦不在DOT_NAME_BY_TACTIC表內, 恆解析為null。純新增資料標籤, 不改動coef/dur/scale/rate/pierce等既有結算數值(全庫核對: 目前無其餘戰法用ifTargetHas/ifTargetHasNot查詢\"叛逃\"字面值, 純新增不影響任何既有戰法行為)。"
    },
    {
     "k": "rateup",
@@ -6286,7 +6340,6 @@
   "cat": "ACTIVE",
   "src": "INNATE",
   "nMax": 3,
-  "_todo": "叛逃狀態的「無視防禦」(傷害計算跳過減傷/防禦加成)未建模: dot原語走一般傷害計算管線(受目標mitig/減傷效果影響), 與原文「無視防禦」的直接扣血語意不同, 現行dot會被目標的減傷buff影響而低於原文預期傷害量。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",
@@ -6294,7 +6347,7 @@
    "SPEAR",
    "SIEGE"
   ],
-  "_note": " || 批K(A): prob-ev拆回真rate:0.5+coef:1.02(50%機率×102%), 並補e.pierce=true(engine_wiring_gaps_misc族, 新原語forcePierce)精確表達「無視防禦」——強制此dot段完全無視目標mitig, 取代舊近似完全省略此語意。"
+  "_note": " || 批K(A): prob-ev拆回真rate:0.5+coef:1.02(50%機率×102%), 並補e.pierce=true(engine_wiring_gaps_misc族, 新原語forcePierce)精確表達「無視防禦」——強制此dot段完全無視目標mitig, 取代舊近似完全省略此語意。 || 批L: 清除上方stale _todo(曾稱「無視防禦未建模」, 但批K的e.pierce=true早已解決此缺口, 見同一entry的批K _note——_todo與_note描述矛盾, 屬_todo未同步清除的既有遺留, 本次順手訂正, 非本批新增行為); 另見effects[0]._note(補name標籤供才辯機捷跨戰法橫切amp辨識)。"
  },
  {
   "nameZh": "獨行赴鬥",
@@ -13296,13 +13349,15 @@
     "coef": 0.5,
     "dur": 2,
     "scale": "intel",
-    "n": 1
+    "n": 1,
+    "name": "中毒",
+    "_note": "批L: 補e.name:\"中毒\"(本文明文「施加中毒狀態」)——過去resolveDotName()對本效果無e.name/dotName亦不在engine.js DOT_NAME_BY_TACTIC表內, 恆解析為null, 使ifTargetHas/countNamedStatuses等既有具名狀態消費端與才辯機捷(禁近似令-最後3筆深水區批L)新增的e.dmgFromStatus跨戰法橫切amp過濾皆無法辨識本效果為「中毒」。純新增資料標籤, 不改動coef/dur/scale等既有結算數值(全庫核對: 目前無其餘戰法用ifTargetHas/ifTargetHasNot查詢\"中毒\"字面值, 純新增不影響任何既有戰法行為)。"
    }
   ],
   "quality": "B",
   "cat": "ACTIVE",
   "src": "INHERITANCE",
-  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=dot] 缺 e['n'], 原文目標為「單體」, 補 e['n']=1。批H1(2026-07-10, user官方卡截圖權威確認): 舊_evidence中毒段(50%→100%,1回合)數值與官方卡不符——官方卡顯示50%→100%其實是「準備1回合後的主段謀略直傷」(對應頂層coef=1, 現行頂層coef/rate/kind/n已與官方卡主段相符, 不需調整), 中毒DoT本身另外是25%→50%/持續2回合(較舊版數值低且持續更長); 已修正effects[0]的dot係數/持續為官方卡中毒段數值(coef 1→0.5, dur 1→2); 同步set.prep=1補上官方卡「準備1回合」語意(舊版prep=0遺漏此條件)。",
+  "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=dot] 缺 e['n'], 原文目標為「單體」, 補 e['n']=1。批H1(2026-07-10, user官方卡截圖權威確認): 舊_evidence中毒段(50%→100%,1回合)數值與官方卡不符——官方卡顯示50%→100%其實是「準備1回合後的主段謀略直傷」(對應頂層coef=1, 現行頂層coef/rate/kind/n已與官方卡主段相符, 不需調整), 中毒DoT本身另外是25%→50%/持續2回合(較舊版數值低且持續更長); 已修正effects[0]的dot係數/持續為官方卡中毒段數值(coef 1→0.5, dur 1→2); 同步set.prep=1補上官方卡「準備1回合」語意(舊版prep=0遺漏此條件)。批L: 見effects[0]._note(補name標籤)。",
   "troopLimit": [
    "CAVALRY",
    "SHIELD",

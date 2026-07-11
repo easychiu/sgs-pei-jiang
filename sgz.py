@@ -149,8 +149,12 @@ def stat_compare_ok(ref, target, allies, spec):
     ref_u = allies[0] if (vs == "leader" and allies) else ref
     if not ref_u:
         return False
-    rv = ref_u.charm if stat == "charm" else ref_u.eff(stat)
-    tv = target.charm if stat == "charm" else target.eff(stat)
+    # 禁近似令-批L: stat=="hpPct" —— 比較雙方「兵力百分比」(troop/START_TROOP)而非傳統四維
+    # 屬性, 供先登死士「若兵力百分比低於攻擊者」這類跨單位血量比較(對稱既有when["hpBelow"]/
+    # hpAbove只認caster自身, 這裡是ref/target雙方各自讀u.hp_pct, 走既有ifStatCompare的op/vs
+    # 骨架, 零新增比較邏輯, 只新增一種可讀的stat名稱), 對稱engine.js同名分支。
+    rv = ref_u.charm if stat == "charm" else (ref_u.hp_pct if stat == "hpPct" else ref_u.eff(stat))
+    tv = target.charm if stat == "charm" else (target.hp_pct if stat == "hpPct" else target.eff(stat))
     if op == "gt":
         return rv > tv
     if op == "gte":
@@ -795,10 +799,23 @@ class Unit:
         self.on_ctrl_effect_tacs = [t for t in self.tactics
                                     if not t.get("when") and t["type"] in ("passive", "command", "active")
                                     and any((e.get("when") or {}).get("on") == "controlled" for e in t.get("effects", []))]
+        # 禁近似令-批L: on:"dmgThreshold"(自身累計受傷達門檻)/on:"ctrlImmune"(自身免疫控制事件)
+        # —— 對稱engine.js selfReactEffectTacs註解。一身是膽「每次免疫控制狀態後或每次累計受
+        # 最大兵力7%傷害後...」需要的兩個新反應式事件, 純自身視角(不做ally/enemy跨隊廣播,
+        # 見fire_self_reactive()), 用單一預篩list涵蓋兩者, on_values(e)把e["when"]["on"]
+        # 正規化成list(單一效果可同時掛兩個事件名, 共用同一份stackKey疊層計數)。
+        self.self_react_effect_tacs = [t for t in self.tactics
+                                       if not t.get("when") and t["type"] in ("passive", "command", "active")
+                                       and any(v in ("dmgThreshold", "ctrlImmune") for e in t.get("effects", []) for v in on_values(e))]
         self.locked_targets = {}                       # 批12 ModeG: lockTarget:true 戰法的鎖定目標, 鍵=id(戰法dict)(dict不可雜湊, 用id())
         # 批16: 原語擴充包 —— 新增狀態欄位(現有資料無新欄位, 皆維持0/{}/set()預設值, 行為零變化)
         self.atk_count = {}                            # everyN: 自身普攻次數計數器, 鍵=id(戰法dict)
         self.immune = []                               # immuneTo: [type, dur] 陣列(單項控制免疫, 對比 insight 全免)
+        # 禁近似令-批L: dmg_accum —— 自身累計受傷計數器(全戰鬥單調遞增, 不因治療/傷兵池消耗
+        # 而回退, 與self.wounded[可被治療消耗的池]是不同語意的兩個獨立計數), 對稱engine.js
+        # 同名欄位。一身是膽「每次累計受最大兵力7%傷害後」需要跨事件持續累加再偵測門檻跨越
+        # 次數, 見bump_dmg_accum()。
+        self.dmg_accum = 0.0
         self.hp_below_fired = set()                    # hpPct: when.hpBelow(一次性, 首次跨越即觸發) 已觸發的戰法, 用 id(t) 去重
         self.fake_report_dur = 0                       # fakeReport(偽報): 剩餘回合數, >0 時指揮/被動 coef 擲骰段與 on_hit 反應式觸發受抑制
 
@@ -869,7 +886,7 @@ class Unit:
             v += self.stack.get("statPerVal", 0) * self.stack["n"]
         return v
 
-    def addbonus(self, kind, dmg_type=None, is_normal=None, is_active=None, is_charge=None):
+    def addbonus(self, kind, dmg_type=None, is_normal=None, is_active=None, is_charge=None, dot_status=None):
         """批24 D2: dmg_type(可選) —— 只加總「該條目未宣告 dmgType, 或宣告的 dmgType 與呼叫端
         指定的 dmg_type 相符」的項目, 供 amp/mitig 依「兵刃/謀略」傷害類型過濾(見 damage() 呼叫端)。
         省略時完全維持原行為(不分類型全部加總), 向後相容全庫既有未帶 dmgType 的 amp/mitig 資料。
@@ -905,6 +922,11 @@ class Unit:
                 continue
             if flags and flags.get("chargeOnly") and is_charge is not True:
                 continue
+            # 禁近似令-批L: dmgFromStatus(僅amp) —— 帶此限定的條目只在本次傷害是「dot結算且
+            # 其具名狀態在清單內」(dot_status命中flags["dmgFromStatus"])時才計入, 一般傷害
+            # 路徑(dot_status未傳/None)一律跳過這類條目, 見才辯機捷。
+            if flags and flags.get("dmgFromStatus") and not (dot_status and dot_status in flags["dmgFromStatus"]):
+                continue
             s += v
         return s
 
@@ -929,8 +951,8 @@ class Unit:
             s += a[1]
         return s
 
-    def amp(self, dmg_type=None, is_normal=None, is_active=None, is_charge=None):      # 總增傷 = 一般+疊加層+衰減; 批24 D2: dmg_type過濾amp部分(stack/decay無此概念,全額計入); 批28 B3: is_normal過濾normalOnly標記的amp(僅普攻生效); 批31 A: is_active過濾activeOnly標記的amp(僅主動戰法傷害生效); 批40 B: is_charge過濾chargeOnly標記的amp(僅突擊戰法傷害生效)
-        a = self.addbonus("amp", dmg_type, is_normal, is_active, is_charge)
+    def amp(self, dmg_type=None, is_normal=None, is_active=None, is_charge=None, dot_status=None):      # 總增傷 = 一般+疊加層+衰減; 批24 D2: dmg_type過濾amp部分(stack/decay無此概念,全額計入); 批28 B3: is_normal過濾normalOnly標記的amp(僅普攻生效); 批31 A: is_active過濾activeOnly標記的amp(僅主動戰法傷害生效); 批40 B: is_charge過濾chargeOnly標記的amp(僅突擊戰法傷害生效); 禁近似令-批L: dot_status過濾dmgFromStatus標記的amp(僅限定狀態的dot傷害生效, 才辯機捷)
+        a = self.addbonus("amp", dmg_type, is_normal, is_active, is_charge, dot_status)
         if self.stack:
             a += self.stack["per"] * self.stack["n"]
         if self.decay:
@@ -1018,6 +1040,7 @@ class Unit:
         for dmg, *_ in self.dots:                      # 持續傷害結算(dots[2]為undispellable旗標, 不影響結算量)
             self.troop -= dmg
             self.wounded += dmg * wounded_rate(CUR_ROUND)  # 批18: dot 掉血同樣按當前回合轉化率計入傷兵池
+            fire_self_reactive(self, "dmgThreshold", bump_dmg_accum(self, dmg))  # 禁近似令-批L: 一身是膽累積傷害門檻
         self.dots = [[d, l - 1] + rest for d, l, *rest in self.dots if l - 1 > 0]
         # 禁近似令-批K: regens(engine_wiring_gaps_misc族, 對稱engine.js同名分支) —— 對稱上方
         # dots掉血, 逐回合按登記金額治療(受傷兵池/START_TROOP上限雙重夾住, 沿用heal效果既有
@@ -1061,6 +1084,7 @@ class Unit:
             for q in self.deferred_dmg:
                 self.troop -= q["amt"]
                 self.wounded += q["amt"] * wounded_rate(CUR_ROUND)
+                fire_self_reactive(self, "dmgThreshold", bump_dmg_accum(self, q["amt"]))  # 禁近似令-批L
                 q["left"] -= 1
                 if q["left"] > 0:
                     remain.append(q)
@@ -1115,7 +1139,7 @@ DMG_B = 1.44
 DMG_FLOOR = 0.9
 
 
-def damage(src, dst, coef, kind, src_troop=None, is_normal=None, is_active=None, is_charge=None, force_pierce=False):
+def damage(src, dst, coef, kind, src_troop=None, is_normal=None, is_active=None, is_charge=None, force_pierce=False, dot_status=None):
     troop = src.troop if src_troop is None else src_troop  # 結算傷害用施毒當下定格兵力
     atk = src.eff("intel") if kind == "intel" else src.eff("force")
     deff = dst.eff("intel") if kind == "intel" else dst.eff("command")
@@ -1143,7 +1167,7 @@ def damage(src, dst, coef, kind, src_troop=None, is_normal=None, is_active=None,
     # 批52j: 捕獲狀態無法造成傷害
     if getattr(src, "captured", 0) > 0:
         return 0.0
-    total_amp = src.amp(kind, is_normal, is_active, is_charge)
+    total_amp = src.amp(kind, is_normal, is_active, is_charge, dot_status)  # 禁近似令-批L: dot_status(可選, 尾端新增, 向後相容既有全部呼叫點)—— 供k=="dot"分支傳入該次dot的具名狀態(才辯機捷 e["dmgFromStatus"] 過濾用)
     base *= 0.0 if total_amp <= -1 else 1 + max(-0.9, total_amp)  # 增傷(疊加/衰減/敵方減益)
     # 禁近似令-批K: force_pierce —— dot 效果級 e["pierce"]==True 專用(見 apply_effects
     # k=="dot"分支), 強制本次結算完全無視 dst 的 mitig, 對稱 engine.js 同名參數註解
@@ -1252,9 +1276,11 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_a
                 d_amt = dmg * (1 - a_share)
                 gu.troop -= a_amt
                 gu.wounded += a_amt * wr
+                fire_self_reactive(gu, "dmgThreshold", bump_dmg_accum(gu, a_amt))  # 禁近似令-批L: 一身是膽累積傷害門檻
                 if d_amt > 0:
                     dst.troop -= d_amt
                     dst.wounded += d_amt * wr
+                    fire_self_reactive(dst, "dmgThreshold", bump_dmg_accum(dst, d_amt))  # 禁近似令-批L
                 absorbed = True
                 break
     if not absorbed:
@@ -1264,11 +1290,14 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_a
             d_share = dmg * (1 - dst.guard_share)
             g.troop -= g_share
             g.wounded += g_share * wr
+            fire_self_reactive(g, "dmgThreshold", bump_dmg_accum(g, g_share))  # 禁近似令-批L
             dst.troop -= d_share
             dst.wounded += d_share * wr
+            fire_self_reactive(dst, "dmgThreshold", bump_dmg_accum(dst, d_share))  # 禁近似令-批L
         else:
             dst.troop -= dmg
             dst.wounded += dmg * wr
+            fire_self_reactive(dst, "dmgThreshold", bump_dmg_accum(dst, dmg))  # 禁近似令-批L
     # 禁近似令-批K: on_kill_grants(engine_wiring_gaps_misc族, 對稱engine.js同名分支) ——
     # 「這一下」把dst由存活打至陣亡(was_alive且現在troop<=0)時, 消費src身上登記的擊殺獎勵
     # 清單(見k=="pierce"+e["onKill"]註冊端), 取代虎痴「破陣需擊敗鎖定目標才獲得, 約後半場
@@ -1289,6 +1318,7 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_a
             share_amt = dmg * dst.dmg_share["pct"]
             buddy.troop -= share_amt
             buddy.wounded += share_amt * wr
+            fire_self_reactive(buddy, "dmgThreshold", bump_dmg_accum(buddy, share_amt))  # 禁近似令-批L
     if dst.settle:
         dst.settle["layers"] = min(dst.settle["max"], dst.settle["layers"] + 1)
     ls = src.addbonus("lifesteal")                    # 批8: 倒戈 —— 造成傷害時按比例回復自身兵力(以本次造成的傷害量 dmg 為基準), 上限 START_TROOP
@@ -1328,6 +1358,7 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_a
         cd = dmg * c["ofDamage"] if c.get("ofDamage") is not None else damage(dst, src, c["coef"], ck)
         src.troop -= cd
         src.wounded += cd * wounded_rate(CUR_ROUND)
+        fire_self_reactive(src, "dmgThreshold", bump_dmg_accum(src, cd))  # 禁近似令-批L
         # 批52e/f: 反擊也是「造成傷害」—— 帶文武雙全等 dealtDamage 疊層應計入;
         # 抵禦/虛弱等使實際傷害歸零時仍算「打出這一擊」(與 hit 主段 on_deal 語意一致)
         if on_deal and dst.alive:
@@ -1352,6 +1383,7 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_a
                 gd = damage(gu, src, g["coef"], gk)
                 src.troop -= gd
                 src.wounded += gd * wounded_rate(CUR_ROUND)
+                fire_self_reactive(src, "dmgThreshold", bump_dmg_accum(src, gd))  # 禁近似令-批L
                 # 批52f: 守護反擊同反擊——零傷仍觸發 dealtDamage(文武等)
                 if on_deal and gu.alive:
                     on_deal(gu, src, False, gk, gd)
@@ -1398,6 +1430,7 @@ def settle_huchen(u, early=False):
         dmg = damage(caster, u, coef, h.get("kind", "phys"))
         u.troop -= dmg
         u.wounded += dmg * wounded_rate(CUR_ROUND)
+        fire_self_reactive(u, "dmgThreshold", bump_dmg_accum(u, dmg))  # 禁近似令-批L
     if early and u.alive:
         u.stun = max(u.stun, 2)                        # 1 回合震懾(+1 tick 補償)
     if caster and caster.alive:
@@ -2002,6 +2035,75 @@ def do_normal_attack(u, allies, enemies, on_hit=None, on_deal=None, active_fired
     return tgt
 
 
+def on_values(e):
+    """禁近似令-批L: 對稱engine.js onValues(e) —— 把e["when"]["on"]正規化成list(單一字串包成
+    單元素list, 本已是list則原樣回傳, 無on回傳空list)。對稱既有e["ifLeaderIs"]/e["eitherK"]/
+    e["statOptions"]「單值或陣列皆可」慣例, 讓單一效果可同時掛兩個(或以上)反應式事件名共用
+    同一份stackKey疊層計數(見fire_self_reactive/self_react_effect_tacs), 一身是膽「每次免疫
+    控制狀態後**或**每次累計受傷達門檻後」需要dmgThreshold/ctrlImmune兩個事件共用同一組
+    「最多觸發7次」封頂, 若各自獨立掛兩個效果物件, k=="critUp"+e["stackKey"]的疊層計數器
+    以效果物件本身(id(e))為鍵, 兩個不同物件會各自疊到7層(合計最多14層), 與本文「最多觸發
+    7次」不符。只新增on值可為list的正規化, 不改動既有任何只認字串on值的既有比對式。"""
+    on = (e or {}).get("when", {}).get("on") if e else None
+    if on is None:
+        return []
+    return on if isinstance(on, list) else [on]
+
+
+def bump_dmg_accum(u, amt):
+    """禁近似令-批L: 對稱engine.js bumpDmgAccum(u, amt) —— 累計u自身因傷害(含代承/反擊/dot/
+    延遲結算等一切途徑)實際扣減的兵力量, 偵測本次增量是否使累計值跨越新的「最大兵力7%」門檻
+    (可能一次跨越多格, 如單次巨量傷害), 回傳新跨越的格數(0=未跨越)。呼叫端(hit()/tick()/
+    settle_huchen()/fight()主迴圈settle結算)在各自「這個單位的troop因傷害而減少」的既有分支
+    旁, 與self.wounded更新並列呼叫, 涵蓋範圍與wounded完全對稱。"""
+    if not u or not u.alive or not (amt > 0):
+        return 0
+    thr = START_TROOP * 0.07
+    before = u.dmg_accum or 0.0
+    u.dmg_accum = before + amt
+    return int(u.dmg_accum // thr) - int(before // thr)
+
+
+def fire_self_reactive(u, on_name, times):
+    """禁近似令-批L: 對稱engine.js fireSelfReactive(u, onName, times) —— on:"dmgThreshold"/
+    on:"ctrlImmune"專用的自身反應式派發(純自身視角, 不做跨隊broadcast——現無資料需要"ally"/
+    "enemy"監聽這兩個新事件)。times: 本次事件應觸發幾次獨立判定(dmgThreshold單次巨量傷害
+    可能一次跨越多格門檻, 每格各自獨立擲骰; ctrlImmune恆為1)。每次呼叫用「合成單效果戰法」
+    重新呼叫apply_effects, 沿用其既有e["rate"]/e["rateLeader"]擲骰+k=="critUp"+e["stackKey"]
+    疊層consumption, 不另造一套機率/疊層邏輯。"""
+    if not u or not u.alive or not (times and times > 0) or not u.self_react_effect_tacs:
+        return
+    allies = (_FIGHT_CTX.get("allies_of") and _FIGHT_CTX["allies_of"](u)) or [u]
+    foes = (_FIGHT_CTX.get("foes_of") and _FIGHT_CTX["foes_of"](u)) or []
+    for _ in range(times):
+        for t in u.self_react_effect_tacs:
+            for e in t.get("effects", []):
+                if on_name not in on_values(e):
+                    continue
+                if not round_ok({"when": e.get("when")}, CUR_ROUND):
+                    continue
+                apply_effects(u, None, {"effects": [e], "kind": t.get("kind", "phys"), "nameZh": t.get("nameZh")},
+                              allies, foes, reactive=True)
+
+
+def resolve_max_stack(caster, e, allies):
+    """禁近似令-批L: 對稱engine.js resolveMaxStack(caster, e, allies) —— 對稱既有coefLeader/
+    rateLeader(基礎值+主將時改用替代值)家族, 但套用維度是maxStack(疊層上限本身, 一個「封頂」
+    整數, 不像coef/rate是可累加的數值, 無法用base+topup相加手法表達「條件式提高上限」), 改用
+    「符合條件則整個替換成另一個上限值」的覆寫式讀取。先登死士「可疊加4次;若麴義統領,則可
+    疊加5次」——e["maxStackIfLeaderIs"]={"who":"麴義"或list(OR), "max":5}於施放者(caster)恰為
+    隊伍主將(allies[0] is caster)且武將名匹配時, 用max覆蓋e["maxStack"](4)。未帶
+    e["maxStackIfLeaderIs"]或條件不成立時原樣回傳e["maxStack"](向後相容既有全部stealStat/
+    rateup資料)。"""
+    ms = e.get("maxStack")
+    mli = e.get("maxStackIfLeaderIs")
+    if mli:
+        names = mli["who"] if isinstance(mli["who"], list) else [mli["who"]]
+        if allies and allies[0] is caster and caster.g and caster.g.name in names:
+            ms = mli["max"]
+    return ms
+
+
 def fire_controlled(victim, kind, dur, allies, enemies):
     """批52h: 控制施加事件 —— 友軍中 stun/silence/disarm/chaos 後廣播。
     機鑑先識: SP荀彧主將、戰鬥前2回合、速度比持有者慢的友軍、75%把同控制反彈給敵軍隨機單體、
@@ -2525,16 +2627,46 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             want_each = e.get("amount", 0) * (scale_of(caster, e["scale"], e.get("scaleDiv")) if e.get("scale") else 1.0)
             recipient = pick_by_criterion(allies, e["recipientSel"]) if e.get("recipientSel") else caster
             if recipient and recipient.alive and want_each > 0:
-                victim_pool = [x for x in (allies if e.get("who") == "ally" else enemies) if x.alive]
+                # 禁近似令-批L: e["victimIsTgt"] —— 受害者精確鎖定「本次反應式事件的另一方」
+                # (tgt, 本函式第2參數, 於on_hit()反應式呼叫時=攻擊者src), 對稱既有
+                # who=="eventTarget"精確選標精神但走stealStat自己的early-return targeting
+                # (在通用dests/who解析區塊之前就continue掉), 不能複用evt_target(那是給
+                # victim/dst本身用的)。先登死士「偷取其[攻擊者]10.5→21點統率」需要精確鎖定
+                # 攻擊者本人, 而非既有victim_pool(enemies全體)。
+                victim_pool = [tgt] if (e.get("victimIsTgt") and tgt and tgt.alive) else \
+                    ([] if e.get("victimIsTgt") else [x for x in (allies if e.get("who") == "ally" else enemies) if x.alive])
+                # 禁近似令-批L: e["ifStatCompare"] —— stealStat有自己的targeting早退路徑(不
+                # 經過通用dests區塊的既有ifStatCompare過濾), 故在此局部重新套用同一個
+                # stat_compare_ok()比較(ref=caster, target=victim逐一比對)。先登死士「若兵力
+                # 百分比低於攻擊者」= stat:"hpPct",op:"lt"。
+                if e.get("ifStatCompare"):
+                    victim_pool = [v for v in victim_pool if stat_compare_ok(caster, v, allies, e["ifStatCompare"])]
+                # 禁近似令-批L: resolve_max_stack —— 「可疊加4次;若麴義統領則可疊加5次」。
+                ms = resolve_max_stack(caster, e, allies)
+                # 禁近似令-批L: maxStack封頂時「雙方都不記帳」——先檢查受益者這一側是否已達
+                # 上限, 若已封頂則整次偷取視為no-op(僅刷新雙方既有同src疊層的dur, 不再產生新
+                # 的扣/收記錄), 避免「受害者被扣但受益者因push_stat_add內部封頂靜默no-op收
+                # 不到」的無中生有bug(對稱engine.js同名段落)。
+                if ms is not None:
+                    already = sum(1 for a in recipient.stat_adds if a[0] == stat_field and a[3] == src)
+                    if already >= ms:
+                        for a in recipient.stat_adds:
+                            if a[0] == stat_field and a[3] == src:
+                                a[2] = max(a[2], e.get("dur", 1))
+                        for v in victim_pool:
+                            for a in v.stat_adds:
+                                if a[0] == stat_field and a[3] == src:
+                                    a[2] = max(a[2], e.get("dur", 1))
+                        continue
                 total = 0.0
                 for v in victim_pool:
                     avail = max(0.0, v.eff(stat_field))
                     actual = min(want_each, avail)
                     if actual > 0:
-                        v.push_stat_add(stat_field, -actual, e.get("dur", 1), src)
+                        v.push_stat_add(stat_field, -actual, e.get("dur", 1), src, max_stack=ms)
                         total += actual
                 if total > 0:
-                    recipient.push_stat_add(stat_field, total, e.get("dur", 1), src)
+                    recipient.push_stat_add(stat_field, total, e.get("dur", 1), src, max_stack=ms)
             continue
         # 批J: transferMitig —— 把「敵方(或指定來源側)當下實際持有的正向mitig(傷害降低)buff
         # 實例」整個搬到我方(或指定去向側)隨機一人身上(雁行陣「轉移傷害降低: 將敵軍隨機武將的
@@ -2881,8 +3013,15 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         charge_only = bool(e.get("chargeOnly")) if k == "amp" else False  # 批40 B: 對稱activeOnly, 僅amp支援(一鼓作氣/藏刀)
         if_leader_topup = bool(e.get("ifLeader")) if k in crit_kinds else False  # 批41 B: 見下方dt_src註解
         if_leader_is_topup = bool(e.get("ifLeaderIs")) if k in crit_kinds else False  # 批44 A: 同if_leader_topup, 見下方dt_src註解
-        ud_flags = {"undispellable": bool(e.get("undispellable")), "dmgType": dmg_type, "normalOnly": normal_only, "activeOnly": active_only, "chargeOnly": charge_only} \
-            if (e.get("undispellable") or dmg_type or normal_only or active_only or charge_only) else None
+        # 禁近似令-批L: e["dmgFromStatus"](list, 僅k=="amp") —— 才辯機捷「自身施加的灼燒、
+        # 水攻、中毒、潰逃、沙暴、叛逃狀態造成的傷害提升90%」跨戰法橫切限定範圍(這6種具名dot
+        # 狀態由任何戰法施加時都算, 非本效果專屬某一段固定coef)。damage()結算dot傷害時(k=="dot"
+        # 分支呼叫damage()的呼叫點)會傳入該次dot實際解析出的具名狀態(resolve_dot_name, 與
+        # u.dots[3]同一份值), addbonus("amp",...)新增dot_status參數比對: 帶dmg_from_status的
+        # amp條目只在dot_status命中清單內才計入, 未帶此欄位的既有全部amp條目不受影響。
+        dmg_from_status = e.get("dmgFromStatus") if k == "amp" else None
+        ud_flags = {"undispellable": bool(e.get("undispellable")), "dmgType": dmg_type, "normalOnly": normal_only, "activeOnly": active_only, "chargeOnly": charge_only, "dmgFromStatus": dmg_from_status} \
+            if (e.get("undispellable") or dmg_type or normal_only or active_only or charge_only or dmg_from_status) else None
         # dmgType 存在時, src 附加類型尾碼區分 dedup key(同一戰法內若有兩條不同 dmgType 的
         # amp/mitig, 如暫避其鋒「智力最高者減兵刃傷害」+「武力最高者減謀略傷害」, 兩者若共用
         # 同一個 src 會被 push_add 的「同kind+同src刷新」去重機制互相蓋掉, 見 rateup 既有
@@ -2905,6 +3044,8 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             dt_src = (dt_src or src) + ":activeOnly"
         if charge_only and src:
             dt_src = (dt_src or src) + ":chargeOnly"
+        if dmg_from_status and src:
+            dt_src = (dt_src or src) + ":dmgFromStatus"  # 禁近似令-批L: 避免與同戰法內其餘amp段共用dt_src互相覆蓋(才辯機捷目前只有單一amp段, 此尾碼為未來多段並存預留)
         if if_leader_topup and src:
             dt_src = (dt_src or src) + ":ifLeader"
         # 批44 A: ifLeaderIs top-up 尾碼 —— 同批41 B if_leader_topup的理由(避免base段+差額段
@@ -2927,7 +3068,15 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 if max_stacks is None or already < max_stacks:
                     layers = already + 1
                     u.amp_layers[ekey] = layers
-                    per_stack = e.get("perStack", sv_val(e["val"]))
+                    # 禁近似令-批L修復: 原 e.get("perStack", sv_val(e["val"])) 在Python下即使
+                    # "perStack"鍵存在也會「先」求值預設引數(.get()的第二引數不像JS的??會短路,
+                    # 一律先執行), 導致e["val"]在只帶perStack不帶val的資料(如一身是膽critUp+
+                    # stackKey)上必定KeyError——對稱engine.js `e.perStack ?? svVal(e.val)`(??
+                    # 才會真正短路, 且JS存取不存在屬性回傳undefined不拋錯, 兩引擎原本行為不對稱,
+                    # 此為sgz.py單邊潛伏bug, 非本批新增, 本批因critUp+stackKey首次出現「只給
+                    # perStack不給val」的資料組合而現形, 一併修復)。改用「先查鍵是否存在」避免
+                    # 無條件求值 e["val"]。
+                    per_stack = e["perStack"] if "perStack" in e else sv_val(e.get("val", 0))
                     total_val = per_stack * layers
                     u.push_add("amp", total_val, e["dur"], dt_src, ud_flags)
                     # 禁近似令-批K: e["stackId"](dynamic_coef_from_counter族) —— 對稱 engine.js
@@ -2960,7 +3109,15 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 if max_stacks is None or already < max_stacks:
                     layers = already + 1
                     u.amp_layers[ekey] = layers
-                    per_stack = e.get("perStack", sv_val(e["val"]))
+                    # 禁近似令-批L修復: 原 e.get("perStack", sv_val(e["val"])) 在Python下即使
+                    # "perStack"鍵存在也會「先」求值預設引數(.get()的第二引數不像JS的??會短路,
+                    # 一律先執行), 導致e["val"]在只帶perStack不帶val的資料(如一身是膽critUp+
+                    # stackKey)上必定KeyError——對稱engine.js `e.perStack ?? svVal(e.val)`(??
+                    # 才會真正短路, 且JS存取不存在屬性回傳undefined不拋錯, 兩引擎原本行為不對稱,
+                    # 此為sgz.py單邊潛伏bug, 非本批新增, 本批因critUp+stackKey首次出現「只給
+                    # perStack不給val」的資料組合而現形, 一併修復)。改用「先查鍵是否存在」避免
+                    # 無條件求值 e["val"]。
+                    per_stack = e["perStack"] if "perStack" in e else sv_val(e.get("val", 0))
                     total_val = per_stack * layers
                     u.push_add("mitig", total_val, e["dur"], dt_src, ud_flags)
                     if e.get("stackId"):
@@ -2990,7 +3147,15 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 if max_stacks is None or already < max_stacks:
                     layers = already + 1
                     u.crit_layers[ekey] = layers
-                    per_stack = e.get("perStack", sv_val(e["val"]))
+                    # 禁近似令-批L修復: 原 e.get("perStack", sv_val(e["val"])) 在Python下即使
+                    # "perStack"鍵存在也會「先」求值預設引數(.get()的第二引數不像JS的??會短路,
+                    # 一律先執行), 導致e["val"]在只帶perStack不帶val的資料(如一身是膽critUp+
+                    # stackKey)上必定KeyError——對稱engine.js `e.perStack ?? svVal(e.val)`(??
+                    # 才會真正短路, 且JS存取不存在屬性回傳undefined不拋錯, 兩引擎原本行為不對稱,
+                    # 此為sgz.py單邊潛伏bug, 非本批新增, 本批因critUp+stackKey首次出現「只給
+                    # perStack不給val」的資料組合而現形, 一併修復)。改用「先查鍵是否存在」避免
+                    # 無條件求值 e["val"]。
+                    per_stack = e["perStack"] if "perStack" in e else sv_val(e.get("val", 0))
                     total_val = per_stack * layers
                     u.push_add("critUp", total_val, e["dur"], dt_src, ud_flags)
                 # 已達max_stacks: 這個目標已無法再疊, 不做任何push_add(累計值維持不變)。
@@ -3005,24 +3170,34 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     u.stun = max(u.stun, e["dur"] + 1)
                     if not no_ctrl_reflect:
                         fire_controlled(u, "stun", e.get("dur", 1), allies, enemies)
+                else:
+                    fire_self_reactive(u, "ctrlImmune", 1)  # 禁近似令-批L: 免疫格擋觸發ctrlImmune事件(一身是膽)
             elif k == "silence":
                 if not u.insight and not u.is_immune_to("silence"):
                     u.silence = max(u.silence, e["dur"] + 1)
                     if not no_ctrl_reflect:
                         fire_controlled(u, "silence", e.get("dur", 1), allies, enemies)
+                else:
+                    fire_self_reactive(u, "ctrlImmune", 1)  # 禁近似令-批L
             elif k == "disarm":
                 if not u.insight and not u.is_immune_to("disarm"):
                     u.disarm = max(u.disarm, e["dur"] + 1)
                     if not no_ctrl_reflect:
                         fire_controlled(u, "disarm", e.get("dur", 1), allies, enemies)
+                else:
+                    fire_self_reactive(u, "ctrlImmune", 1)  # 禁近似令-批L
             elif k == "chaos":                        # 批12 ModeF: 混亂(敵我不分), 同 insight 免疫規則
                 if not u.insight and not u.is_immune_to("chaos"):
                     u.chaos = max(u.chaos, e.get("dur", 1) + 1)
                     if not no_ctrl_reflect:
                         fire_controlled(u, "chaos", e.get("dur", 1), allies, enemies)
+                else:
+                    fire_self_reactive(u, "ctrlImmune", 1)  # 禁近似令-批L
             elif k == "ambush":                        # 批18: 遇襲(先攻的反面/遲緩) —— 不鎖行動, 只影響排序; insight/immuneTo可免
                 if not u.insight and not u.is_immune_to("ambush"):
                     u.ambush = max(u.ambush, e.get("dur", 1) + 1)
+                else:
+                    fire_self_reactive(u, "ctrlImmune", 1)  # 禁近似令-批L
             elif k == "insight":                      # 洞察: 免疫控制, 施加時同時解除既有控制
                 u.insight = max(u.insight, e.get("dur", 1) + 1)
                 u.stun = u.silence = u.disarm = u.chaos = u.ambush = 0
@@ -3148,10 +3323,15 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 # 禁近似令-批K: e["pierce"]==True —— 對稱 engine.js 同名分支, 強制本段dot
                 # 傷害完全無視目標mitig(獅子奮迅「叛逃狀態...無視防禦」)。
                 # 批52g: dots[3]=具名狀態(水攻/沙暴…), 供五雷 rateStatusBonus / target_has
+                # 禁近似令-批L: _dot_status_name 只解析一次, 同時餵給 damage()(供 e["dmgFromStatus"]
+                # 過濾, 才辯機捷)與 dots[3](既有具名狀態標籤, 供 target_has/rate_status_bonus 等
+                # 既有消費端), 確保兩處讀到的是同一份名稱, 對稱 engine.js 同名分支。
+                _dot_status_name = resolve_dot_name(e, t) or None
                 u.dots.append([damage(caster, u, _dot_coef,
                                       e.get("kind") or t.get("kind", "intel"),
-                                      force_pierce=bool(e.get("pierce"))), e["dur"],
-                               bool(e.get("undispellable")), resolve_dot_name(e, t) or None])
+                                      force_pierce=bool(e.get("pierce")),
+                                      dot_status=_dot_status_name), e["dur"],
+                               bool(e.get("undispellable")), _dot_status_name])
             elif k == "extra":                        # 連擊/追擊: 普攻後追加普攻的預算
                 u.push_add("extra", e["val"], e["dur"], src)
             elif k == "splash":                        # 禁近似令-批K: splash_aoe_primitive族, 對稱 engine.js 同名分支
@@ -3305,7 +3485,11 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 # key 尾碼區分, 讓語意不同的兩條並存, 但同語意(同flags組合)的仍正常刷新不疊加。
                 r_src = (src + ":" + "".join(k2 for k2 in ("prepOnly", "nativeOnly", "inheritedOnly") if rflags.get(k2))) \
                     if (src and rflags) else src
-                u.push_add("rateup", rv, e["dur"], r_src, rflags)
+                # 禁近似令-批L: e["maxStack"]/e["maxStackIfLeaderIs"](可疊加N次) —— 先登死士
+                # 「降低其1.5%→3%主動戰法發動率,可疊加4次(若麴義統領則5次)」, val用負值表達
+                # 「降低」(addbonus_for("rateup",...)在fight()主迴圈對任意來源的rateup adds
+                # 一視同仁加總, 負值天然表達debuff方向, 無需另立新k)。
+                u.push_add("rateup", rv, e["dur"], r_src, rflags, max_stack=resolve_max_stack(caster, e, allies))
             elif k == "chargeup":                      # 提高(自身或對象)突擊戰法發動機率; 排除 proc=True 特技偽戰法見突擊擲骰處註解
                 # chargeup 同樣支援 scale(未有實測前與 rateup 共用 RATE_SCALE_C, 假設同曲線, 見上方常數註解)
                 cv = e["val"] * rate_scale_of(caster, e["scale"], e.get("scaleDiv")) if e.get("scale") else e["val"]
@@ -4162,6 +4346,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                                 s["kind"], s["snap"])
                     v.troop -= sd
                     v.wounded += sd * wounded_rate(CUR_ROUND)
+                    fire_self_reactive(v, "dmgThreshold", bump_dmg_accum(v, sd))  # 禁近似令-批L
                 u.settle = None
             else:
                 s["left"] -= 1
@@ -6491,18 +6676,21 @@ def demo():
     assert any(a[0] == "splash" for a in xb108_caster_dot.adds), "象兵: 自身有灼燒狀態時, 群攻(splash)應觸發"
     assert xb108_caster_dot.chaos > 0, "象兵: 自身有灼燒狀態時, 混亂(chaos)應觸發"
 
-    # 109) R26統領揭露一致性(真實資料抽驗, 批44更新): 批39 B新補_todo的5筆(丹陽兵/白毦兵/
-    # 白馬義從/先登死士/藤甲兵, 其中藤甲兵是lint R26新掃出、非任務原定4筆之一), 批44起「若XX
-    # 統領」條件應「有ifLeaderIs落地 或 有_todo文字揭露」二擇一皆算合格(R26豁免規則同步放寬,
-    # 見lint_tactics.py)——丹陽兵/白毦兵已用ifLeaderIs精確落地(_todo清空), 其餘3筆仍維持
-    # _todo文字揭露(缺口非ifLeaderIs可解, 見各自_todo說明)。
+    # 109) R26統領揭露一致性(真實資料抽驗, 批44更新, 批L再更新): 批39 B新補_todo的5筆(丹陽兵/
+    # 白毦兵/白馬義從/先登死士/藤甲兵, 其中藤甲兵是lint R26新掃出、非任務原定4筆之一), 批44起
+    # 「若XX統領」條件應「有ifLeaderIs落地 或 有_todo文字揭露」二擇一皆算合格(R26豁免規則同步
+    # 放寬, 見lint_tactics.py)——丹陽兵/白毦兵已用ifLeaderIs精確落地(_todo清空), 其餘3筆仍維持
+    # _todo文字揭露(缺口非ifLeaderIs可解, 見各自_todo說明)。批L: 先登死士「若麴義統領則可疊加
+    # 5次」現已用maxStackIfLeaderIs(批L新原語, 對稱ifLeaderIs但套用維度是maxStack)精確落地
+    # (_todo已改為「受攜帶者統率影響」殘留揭露, 不再提及「統領」二字), has_ili109同步承認
+    # maxStackIfLeaderIs(對稱lint_tactics.py _has_leader_bonus的同款更新, 見該處註解)。
     for nm109 in ("丹陽兵", "白毦兵", "白馬義從", "先登死士", "藤甲兵"):
         tac109 = TACTICS[nm109]
         todo109 = tac109.get("_todo", "") or ""
-        has_ili109 = any(e.get("ifLeaderIs") for e in tac109.get("effects", []) or []) or \
+        has_ili109 = any(e.get("ifLeaderIs") or e.get("maxStackIfLeaderIs") for e in tac109.get("effects", []) or []) or \
                      any(eh.get("ifLeaderIs") for eh in tac109.get("extraHits", []) or [])
         assert has_ili109 or "統領" in todo109, \
-            f"{nm109} 應「有ifLeaderIs落地」或「含統領條件的_todo揭露」二擇一(批39 B/R26, 批44放寬)"
+            f"{nm109} 應「有ifLeaderIs/maxStackIfLeaderIs落地」或「含統領條件的_todo揭露」二擇一(批39 B/R26, 批44放寬, 批L再放寬)"
 
     # 110) onHit dmgType 過濾(剛勇無前真實資料): 原文「受到兵刃傷害後」限定, when.dmgType應為
     # "phys"。用 inherit=["剛勇無前"] 走真實 Unit 建構(正確填 on_hit_tacs), 搭配與正式 on_hit()
@@ -8405,6 +8593,231 @@ def demo():
         assert 0 <= bj200_res["A勝率"] <= 1 and 0 <= bj200_res["B勝率"] <= 1, \
             f"200({_bj200_name}): 完整simulate()端到端200場應正常產生合法勝率, got {bj200_res}"
     print("    [批J 200] 6筆transfer族戰法端到端(inhA掛載+完整fight()/simulate()各200場) 皆無崩潰且產生合法勝率 驗證通過")
+
+    # =====================================================================
+    # 禁近似令-批L: 最後3筆深水區(一身是膽/先登死士/才辯機捷) —— 每項新機制皆補assert
+    # =====================================================================
+
+    # 201) bump_dmg_accum(累積傷害門檻算術): 純算術驗證跨越門檻格數計算正確
+    # (THRESHOLD = START_TROOP×7% = 700), 不涉隨機。
+    bl201_u = Unit(POOL["張飛"], "盾")
+    assert bump_dmg_accum(bl201_u, 300) == 0 and abs(bl201_u.dmg_accum - 300) < 1e-9, \
+        "bump_dmg_accum: 300<700, 不應跨越門檻, dmg_accum應為300"
+    assert bump_dmg_accum(bl201_u, 450) == 1 and abs(bl201_u.dmg_accum - 750) < 1e-9, \
+        "bump_dmg_accum: 300+450=750, 應跨越第1個700門檻(floor(750/700)-floor(300/700)=1-0=1)"
+    assert bump_dmg_accum(bl201_u, 2000) == 2, \
+        "bump_dmg_accum: 750+2000=2750, floor(2750/700)=3, floor(750/700)=1, 應跨越2格門檻"
+    assert bump_dmg_accum(bl201_u, 0) == 0 and bump_dmg_accum(bl201_u, -5) == 0, \
+        "bump_dmg_accum: amt<=0時不應累積也不應跨越門檻"
+    bl201_u.troop = 0
+    assert bump_dmg_accum(bl201_u, 1000) == 0, "bump_dmg_accum: 陣亡單位(troop<=0)不應繼續累積"
+    print("    [批L 201] bump_dmg_accum累積傷害門檻算術(700=10000兵×7%為一格, 單次巨量傷害可跨越"
+          "多格) 驗證通過")
+
+    # 202) 一身是膽: critUp效果應同時掛dmgThreshold+ctrlImmune兩個事件名(on_values(e)正規化),
+    # 且共用同一組stackKey疊層——兩事件來源合計最多7層, 而非各自獨立疊到7層(合計14層)。
+    bl_ysb_tac = TACTICS["一身是膽"]
+    bl_ysb_crit_e = next(e for e in bl_ysb_tac["effects"] if e["k"] == "critUp")
+    assert set(on_values(bl_ysb_crit_e)) == {"dmgThreshold", "ctrlImmune"}, \
+        f"一身是膽: critUp效果應同時掛dmgThreshold+ctrlImmune兩個事件名, 實得{bl_ysb_crit_e.get('when')}"
+    assert bl_ysb_crit_e.get("maxStacks") == 7 and abs(bl_ysb_crit_e.get("perStack", 0) - 0.07) < 1e-9 \
+        and bl_ysb_crit_e.get("dmgType") == "phys", \
+        f"一身是膽: critUp應為maxStacks:7/perStack:0.07/dmgType:phys, 實得{bl_ysb_crit_e}"
+    bl202_u = Unit(POOL["張飛"], "盾", inherit=["一身是膽"])
+    bl202_allies, bl202_enemies = [bl202_u], [Unit(POOL["關羽"], "騎")]
+    _FIGHT_CTX["allies_of"] = lambda u: bl202_allies if u in bl202_allies else bl202_enemies
+    _FIGHT_CTX["foes_of"] = lambda u: bl202_enemies if u in bl202_allies else bl202_allies
+    random.seed(2026071101)
+    for _ in range(60):  # rate=0.4, 60次機會遠超期望疊滿所需(~17.5次), 統計上必定疊滿7層
+        fire_self_reactive(bl202_u, "dmgThreshold", 1)
+    layers_after_dmg = (bl202_u.crit_layers or {}).get(id(bl_ysb_crit_e), 0)
+    assert layers_after_dmg == 7, \
+        f"一身是膽: 60次dmgThreshold機會(rate=0.4)應統計上必定疊滿maxStacks=7, 實得{layers_after_dmg}"
+    for _ in range(20):
+        fire_self_reactive(bl202_u, "ctrlImmune", 1)
+    layers_after_both = (bl202_u.crit_layers or {}).get(id(bl_ysb_crit_e), 0)
+    assert layers_after_both == 7, \
+        ("一身是膽: dmgThreshold已疊滿7層後, ctrlImmune不應再疊加(共用同一組計數器, 合計上限7, "
+         f"而非各自7層合計14層), 實得{layers_after_both}")
+    assert abs(bl202_u.addbonus("critUp", "phys") - 7 * 0.07) < 1e-9, \
+        "一身是膽: 疊滿7層後累計會心加成應為7×7%=49%"
+    print("    [批L 202] 一身是膽 dmgThreshold+ctrlImmune共用單一critUp+stackKey疊層(合計上限7,"
+          "非各自7層) 驗證通過")
+
+    # 203) 一身是膽: ctrlImmune真實接線驗證(非直接呼叫fire_self_reactive, 而是真的走
+    # stun/silence/disarm/chaos/ambush的immune分支)。先套用一身是膽本身(取得insight),
+    # 再讓敵方嘗試施加stun, 確認(a)stun被insight擋下(u.stun未被設置)(b)免疫格擋事件確實
+    # 被觸發(重複嘗試多次後crit_layers應疊滿, 統計上排除運氣, 證明immune分支→
+    # fire_self_reactive的接線正確, 非僅fire_self_reactive本身可獨立運作)。
+    bl203_u = Unit(POOL["張飛"], "盾", inherit=["一身是膽"])
+    apply_effects(bl203_u, None, TACTICS["一身是膽"], [bl203_u], [], )  # prep套用stat+insight(critUp帶when.on, prep階段自動跳過)
+    assert bl203_u.insight > 0, "一身是膽: 套用後應獲得insight(全免疫控制)"
+    bl203_attacker = Unit(POOL["關羽"], "騎")
+    _FIGHT_CTX["allies_of"] = lambda u: [bl203_attacker] if u is bl203_attacker else [bl203_u]
+    _FIGHT_CTX["foes_of"] = lambda u: [bl203_u] if u is bl203_attacker else [bl203_attacker]
+    random.seed(2026071102)
+    for _ in range(60):
+        apply_effects(bl203_attacker, None,
+                      {"effects": [{"k": "stun", "who": "enemy", "dur": 1}], "nameZh": "批L測試控制"},
+                      [bl203_attacker], [bl203_u], rate_checked=True)
+    assert bl203_u.stun == 0, "一身是膽: insight應完全擋下stun, u.stun應維持0"
+    bl203_layers = (bl203_u.crit_layers or {}).get(id(bl_ysb_crit_e), 0)
+    assert bl203_layers == 7, \
+        (f"一身是膽: 60次stun嘗試皆被insight擋下, 應各自觸發ctrlImmune事件並統計上疊滿7層"
+         f"(驗證apply_effects的k==stun/silence/disarm/chaos/ambush immune分支確實呼叫了"
+         f"fire_self_reactive, 而非僅fire_self_reactive函式本身正確但未被真正接線), 實得{bl203_layers}")
+    print("    [批L 203] 一身是膽 ctrlImmune真實接線(stun/silence/disarm/chaos/ambush的immune"
+          "分支→fire_self_reactive, 非僅獨立函式) 驗證通過")
+
+    # 204) 一身是膽: rateLeader(主將35%→70% vs 非主將20%→40%, 皆取滿級)——經驗機率應收斂至
+    # 對應檔位, 且用重置crit_layers的方式隔離「每次獨立判定觸發機率」與「疊層封頂」兩件事。
+    bl204_leader = Unit(POOL["張飛"], "盾", inherit=["一身是膽"])
+    bl204_sub = Unit(POOL["關羽"], "騎", inherit=["一身是膽"])
+    bl204_allies = [bl204_leader, bl204_sub]           # index0=主將
+    _FIGHT_CTX["allies_of"] = lambda u: bl204_allies
+    _FIGHT_CTX["foes_of"] = lambda u: []
+    random.seed(2026071103)
+    n204, hits_leader, hits_sub = 4000, 0, 0
+    for _ in range(n204):
+        bl204_leader.crit_layers = {}
+        fire_self_reactive(bl204_leader, "ctrlImmune", 1)
+        if (bl204_leader.crit_layers or {}).get(id(bl_ysb_crit_e), 0) == 1:
+            hits_leader += 1
+        bl204_sub.crit_layers = {}
+        fire_self_reactive(bl204_sub, "ctrlImmune", 1)
+        if (bl204_sub.crit_layers or {}).get(id(bl_ysb_crit_e), 0) == 1:
+            hits_sub += 1
+    rate_leader_emp, rate_sub_emp = hits_leader / n204, hits_sub / n204
+    assert abs(rate_leader_emp - 0.7) < 0.03, \
+        f"一身是膽(主將): 觸發率經驗值應收斂至rateLeader=0.7, 實測{rate_leader_emp}"
+    assert abs(rate_sub_emp - 0.4) < 0.03, \
+        f"一身是膽(副將): 觸發率經驗值應收斂至基礎rate=0.4(非主將不吃rateLeader), 實測{rate_sub_emp}"
+    print(f"    [批L 204] 一身是膽 rateLeader經驗機率(主將{rate_leader_emp:.3f}≈0.7 / "
+          f"副將{rate_sub_emp:.3f}≈0.4) 驗證通過")
+
+    # 205) 先登死士: 雙分支反應資料結構 + real-data斷言(stealStat/rateup各自的
+    # victimIsTgt/ifStatCompare/maxStack/maxStackIfLeaderIs欄位)。
+    bl_xds_tac = TACTICS["先登死士"]
+    bl_xds_steal_e = next(e for e in bl_xds_tac["effects"] if e["k"] == "stealStat")
+    bl_xds_rateup_e = next(e for e in bl_xds_tac["effects"] if e["k"] == "rateup")
+    assert bl_xds_steal_e.get("victimIsTgt") is True and bl_xds_steal_e.get("amount") == 21 \
+        and bl_xds_steal_e.get("ifStatCompare") == {"stat": "hpPct", "op": "lt", "vs": "caster"} \
+        and bl_xds_steal_e.get("maxStack") == 4 \
+        and bl_xds_steal_e.get("maxStackIfLeaderIs") == {"who": "麴義", "max": 5}, \
+        f"先登死士: stealStat段real-data結構不符預期, 實得{bl_xds_steal_e}"
+    assert bl_xds_rateup_e.get("n") == 1 and abs(bl_xds_rateup_e.get("val", 0) - (-0.03)) < 1e-9 \
+        and bl_xds_rateup_e.get("ifStatCompare") == {"stat": "hpPct", "op": "gte", "vs": "caster"} \
+        and bl_xds_rateup_e.get("maxStackIfLeaderIs") == {"who": "麴義", "max": 5}, \
+        f"先登死士: rateup段real-data結構不符預期, 實得{bl_xds_rateup_e}"
+    print("    [批L 205] 先登死士 real-data雙分支(stealStat.victimIsTgt+ifStatCompare/"
+          "rateup.n+ifStatCompare)+麴義maxStackIfLeaderIs欄位 驗證通過")
+
+    # 206) 先登死士 端到端(rate_checked繞過0.6擲骰, 專注驗證分支互斥+targeting正確性):
+    # 受害者(持有者)兵力%低於攻擊者時, 應精確從攻擊者身上偷統率(而非誤及敵軍全體或方向錯誤),
+    # 且不應同時觸發rateup分支(ifStatCompare op互斥lt/gte, 兩者恰好覆蓋若/否則兩種情形)。
+    bl206_holder = Unit(POOL["張飛"], "弓")
+    bl206_holder.troop = 3000                          # 低兵力% < 攻擊者
+    bl206_attacker = Unit(POOL["關羽"], "騎")
+    bl206_attacker.troop = 9000                         # 高兵力%
+    bl206_bystander = Unit(POOL["曹操"], "騎")           # 非攻擊者的敵軍第三人, 驗證不應被誤及
+    bl206_allies, bl206_enemies = [bl206_holder], [bl206_attacker, bl206_bystander]
+    before_cmd_attacker = bl206_attacker.eff("command")
+    before_cmd_bystander = bl206_bystander.eff("command")
+    apply_effects(bl206_holder, bl206_attacker, {"effects": [bl_xds_steal_e], "kind": "phys", "nameZh": "先登死士"},
+                  bl206_allies, bl206_enemies, reactive=True, rate_checked=True)
+    apply_effects(bl206_holder, bl206_attacker, {"effects": [bl_xds_rateup_e], "kind": "phys", "nameZh": "先登死士"},
+                  bl206_allies, bl206_enemies, reactive=True, rate_checked=True)
+    assert bl206_attacker.eff("command") < before_cmd_attacker - 15, \
+        (f"先登死士: 受害者兵力%低於攻擊者時應精確偷取攻擊者(tgt)統率(≈21點), "
+         f"before={before_cmd_attacker}, after={bl206_attacker.eff('command')}")
+    assert abs(bl206_bystander.eff("command") - before_cmd_bystander) < 1e-6, \
+        "先登死士: victimIsTgt應精確鎖定攻擊者本人, 不應誤及敵軍第三人(旁觀者)"
+    assert not any(a[0] == "rateup" for a in bl206_attacker.adds), \
+        "先登死士: 受害者兵力%低於攻擊者時應只觸發stealStat分支(ifStatCompare op=lt), 不應同時觸發rateup分支(op=gte互斥)"
+    assert any(a[0] == "command" for a in bl206_holder.stat_adds), \
+        "先登死士: 偷到的統率應加到持有者(受益者, stealStat預設recipient=caster)身上"
+    # 互斥情境反轉: 受害者兵力%不低於(>=)攻擊者 —— 應改觸發rateup(降低攻擊者發動率), 不觸發偷屬性
+    bl206b_holder = Unit(POOL["張飛"], "弓")
+    bl206b_holder.troop = 9500
+    bl206b_attacker = Unit(POOL["關羽"], "騎")
+    bl206b_attacker.troop = 5000
+    apply_effects(bl206b_holder, bl206b_attacker, {"effects": [bl_xds_steal_e], "kind": "phys", "nameZh": "先登死士"},
+                  [bl206b_holder], [bl206b_attacker], reactive=True, rate_checked=True)
+    apply_effects(bl206b_holder, bl206b_attacker, {"effects": [bl_xds_rateup_e], "kind": "phys", "nameZh": "先登死士"},
+                  [bl206b_holder], [bl206b_attacker], reactive=True, rate_checked=True)
+    assert not any(a[0] == "command" for a in bl206b_holder.stat_adds), \
+        "先登死士: 受害者兵力%不低於攻擊者時(互斥反向情境), 不應觸發stealStat偷屬性分支"
+    assert any(a[0] == "rateup" and a[1] < 0 for a in bl206b_attacker.adds), \
+        "先登死士: 受害者兵力%不低於攻擊者時, 應觸發rateup分支對攻擊者施加負值(降低發動率)debuff"
+    print("    [批L 206] 先登死士 端到端雙分支互斥(兵力%比較決定stealStat或rateup擇一觸發)+"
+          "victimIsTgt精確鎖定攻擊者本人(不誤及旁觀敵軍) 驗證通過")
+
+    # 207) 先登死士: maxStackIfLeaderIs(若麴義統領則疊加上限4→5次) —— 麴義統領時應可疊到
+    # 第5層(非麴義/非主將則封頂於4層)。用rate_checked繞過機率擲骰, 逐次呼叫驗證疊層數。
+    bl207_ququyi = Unit(POOL["麴義"], "弓")
+    bl207_ququyi_ally = [bl207_ququyi]                  # index0=麴義=主將
+    bl207_target = Unit(POOL["關羽"], "騎")
+    bl207_target.troop = 9000
+    bl207_ququyi.troop = 3000
+    for _ in range(6):
+        apply_effects(bl207_ququyi, bl207_target, {"effects": [bl_xds_steal_e], "kind": "phys", "nameZh": "先登死士"},
+                      bl207_ququyi_ally, [bl207_target], reactive=True, rate_checked=True)
+    n_stacks_ququyi = sum(1 for a in bl207_ququyi.stat_adds if a[0] == "command" and a[3] == "先登死士")
+    assert n_stacks_ququyi == 5, \
+        f"先登死士: 麴義統領時應可疊加至5層(maxStackIfLeaderIs覆寫), 6次觸發後實得{n_stacks_ququyi}層"
+    bl207_other = Unit(POOL["張飛"], "弓")               # 非麴義, 應維持4層上限
+    bl207_other_ally = [bl207_other]
+    bl207_target2 = Unit(POOL["關羽"], "騎")
+    bl207_target2.troop = 9000
+    bl207_other.troop = 3000
+    for _ in range(6):
+        apply_effects(bl207_other, bl207_target2, {"effects": [bl_xds_steal_e], "kind": "phys", "nameZh": "先登死士"},
+                      bl207_other_ally, [bl207_target2], reactive=True, rate_checked=True)
+    n_stacks_other = sum(1 for a in bl207_other.stat_adds if a[0] == "command" and a[3] == "先登死士")
+    assert n_stacks_other == 4, \
+        f"先登死士: 非麴義持有者疊加上限應維持4層, 6次觸發後實得{n_stacks_other}層"
+    print("    [批L 207] 先登死士 maxStackIfLeaderIs(麴義統領疊加上限4→5次, 非麴義維持4次) 驗證通過")
+
+    # 208) 才辯機捷: e.dmgFromStatus(僅k=='amp')跨戰法橫切限定範圍 —— 只對dot_status命中
+    # 清單內的6種具名狀態(灼燒/水攻/中毒/潰逃/沙暴/叛逃)造成的傷害提升90%, 一般傷害路徑
+    # (dot_status未傳)與清單外狀態皆不應觸發此amp。val應為固定0.9(非45%→90%等級區間)。
+    bl_cbjj_tac = TACTICS["才辯機捷"]
+    bl_cbjj_amp_e = next(e for e in bl_cbjj_tac["effects"] if e["k"] == "amp")
+    assert bl_cbjj_amp_e.get("dmgFromStatus") == ["灼燒", "水攻", "中毒", "潰逃", "沙暴", "叛逃"] \
+        and abs(bl_cbjj_amp_e.get("val", 0) - 0.9) < 1e-9, \
+        f"才辯機捷: amp段real-data應為dmgFromStatus六狀態清單+val:0.9(固定值), 實得{bl_cbjj_amp_e}"
+    bl208_caster = Unit(POOL["張飛"], "盾", inherit=["才辯機捷"])
+    apply_effects(bl208_caster, None, TACTICS["才辯機捷"], [bl208_caster], [], )  # prep套用amp(帶dmgFromStatus旗標)+healGiven
+    bl208_target = Unit(POOL["關羽"], "騎")
+    random.seed(2026071104)
+    dmg_normal = damage(bl208_caster, bl208_target, 1.0, "phys")             # 一般傷害(未傳dot_status)
+    random.seed(2026071104)                                                  # 重設種子, 排除±4%隨機帶差異
+    dmg_burn = damage(bl208_caster, bl208_target, 1.0, "phys", dot_status="灼燒")  # 清單內狀態
+    random.seed(2026071104)
+    dmg_unlisted = damage(bl208_caster, bl208_target, 1.0, "phys", dot_status="未知狀態XYZ")  # 清單外狀態
+    assert abs(dmg_burn - dmg_normal * 1.9) < 1e-6, \
+        (f"才辯機捷: dot_status='灼燒'(清單內)應觸發dmgFromStatus限定的90%增傷(1.9倍), "
+         f"dmg_burn={dmg_burn}, dmg_normal={dmg_normal}, 期望={dmg_normal * 1.9}")
+    assert abs(dmg_unlisted - dmg_normal) < 1e-6, \
+        (f"才辯機捷: dot_status為清單外的狀態不應觸發amp, dmg_unlisted={dmg_unlisted} 應等於 "
+         f"dmg_normal={dmg_normal}")
+    print("    [批L 208] 才辯機捷 e.dmgFromStatus跨戰法橫切限定(清單內具名狀態dot傷害×1.9,"
+          "一般傷害/清單外狀態不受影響) 驗證通過")
+
+    # 209) 端到端整合: 3筆戰法各自掛載(inhA)+三者同時掛在同一人身上(壓力測試共存), 完整
+    # fight()/simulate()跑一輪不應崩潰且應產生合法勝率(對稱既有200的end-to-end慣例)。
+    random.seed(2026071105)
+    for _bl209_name in ("一身是膽", "先登死士", "才辯機捷"):
+        bl209_res = simulate(["張飛", "關羽", "劉備"], ["諸葛亮", "周瑜", "司馬懿"], n=200,
+                             inhA=[[_bl209_name], None, None])
+        assert 0 <= bl209_res["A勝率"] <= 1 and 0 <= bl209_res["B勝率"] <= 1, \
+            f"批L端到端({_bl209_name}): 完整simulate()200場應正常產生合法勝率, got {bl209_res}"
+    bl209_res_all = simulate(["張飛", "關羽", "劉備"], ["諸葛亮", "周瑜", "司馬懿"], n=150,
+                             inhA=[["一身是膽", "先登死士", "才辯機捷"], None, None])
+    assert 0 <= bl209_res_all["A勝率"] <= 1 and 0 <= bl209_res_all["B勝率"] <= 1, \
+        f"批L端到端(三戰法同場共存): 完整simulate()150場應正常產生合法勝率, got {bl209_res_all}"
+    print("    [批L 209] 一身是膽/先登死士/才辯機捷 端到端(各自掛載200場+三者同場共存150場,"
+          "完整fight()/simulate()) 皆無崩潰且產生合法勝率 驗證通過")
 
     print("self-check OK")
 

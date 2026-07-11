@@ -556,6 +556,10 @@ KNOWN_EFFECT_FIELDS = {
     "undispellable", "_est", "_todo", "_note", "_note2", "_approx", "_src",
     "n", "nMax", "rate", "ifLeader",  # ifLeader: 批26 B1, 施放者須為隊伍主將(index 0)才套用該效果段
     "ifLeaderIs",  # 批44 A: 施放者須為隊伍主將(index 0)且武將名匹配指定值(字串或陣列OR)才套用該效果段, 對稱ifLeader, 跨所有k種類通用
+    "maxStackIfLeaderIs",  # 禁近似令-批L: {who, max} —— 對稱coefLeader/rateLeader(基礎值+主將時
+    # 替代值)家族, 但套用維度是maxStack本身(封頂整數, 無法像coef/rate用base+topup相加表達),
+    # 施放者恰為隊伍主將且武將名匹配時整個覆寫e.maxStack為指定值。跨k種類通用(見resolveMaxStack/
+    # resolve_max_stack, stealStat與rateup皆讀取), 先登死士「可疊加4次;若麴義統領則5次」首次落地。
     "everyRound",  # 批30 A: 非heal效果的逐回合重擲通道旗標, 跨所有k種類通用(見 apply_effects 的 e.everyRound 通用閘門判斷)
     "ifStackMaxed",  # 批43 B: 施放者自身k=="stack"疊層已滿(caster.stack.n>=caster.stack.max)才套用該效果段, 跨所有k種類通用(見 apply_effects 對 e.ifLeader 之後新增的判斷式), 搭配 everyRound 表達「疊加N次後才觸發」(如長驅直入)
     "scaleDiv", "capVal",  # 批35: 曲線族原語泛化 —— 與 scale 同層級的跨k通用欄位(任何帶 scale
@@ -654,7 +658,11 @@ KNOWN_EFFECT_FIELDS = {
 }
 PER_KIND_FIELDS = {
     "amp": {"val", "dmgType", "normalOnly", "activeOnly", "chargeOnly",
-             "stackKey", "perStack", "maxStacks", "stackId"},
+             "stackKey", "perStack", "maxStacks", "stackId", "dmgFromStatus"},
+    # 禁近似令-批L: dmgFromStatus(list, 僅k=="amp") —— 限定「只對這些具名dot狀態(灼燒/水攻/
+    # 中毒/潰逃/沙暴/叛逃等)造成的傷害生效」跨戰法橫切範圍(才辯機捷「自身施加的灼燒、水攻、
+    # 中毒、潰逃、沙暴、叛逃狀態造成的傷害提升90%」), 見engine.js/sgz.py damage()新增
+    # dotStatus參數→addbonus("amp",...,dotStatus)過濾。
     # 批K: stackId(dynamic_coef_from_counter族) —— 額外把amp+stackKey的疊層數寫進字串鍵
     # 索引(u.ampLayersById/self.amp_layers_by_id), 供k=="settle"+e.perStackFrom跨效果讀取
     # (密計誅逆settle結算需要讀取這段amp疊層數代入coef公式, 見settle條目/上方別名
@@ -768,9 +776,12 @@ PER_KIND_FIELDS = {
     # scaleDiv/everyRound/rate皆屬KNOWN_EFFECT_FIELDS全域欄位, 不重複於此列出。見
     # engine.js/sgz.py k==="stealStat"分支, 雁行陣「使我軍統率最低單體偷取敵軍全體10點統率」
     # 首次落地, engine_limitations.md本批新節。
-    "stealStat": {"stat", "amount", "recipientSel", "statOptions"},
+    "stealStat": {"stat", "amount", "recipientSel", "statOptions", "victimIsTgt"},
     # 批K: statOptions(陣列) —— 每次觸發隨機從陣列選一個屬性欄位偷取(至柔動剛「任一屬性」),
     # 見上方別名「任一屬性隨機三選一」條目。
+    # 禁近似令-批L: victimIsTgt(bool) —— 受害者精確鎖定「本次反應式事件的另一方」(apply_effects
+    # 第2參數tgt, 於on_hit反應式呼叫時=攻擊者), 對稱who=="eventTarget"精確選標精神但stealStat
+    # 有自己的targeting早退路徑不經過通用dests/who pipeline, 故另立此欄位。先登死士首次落地。
     # 批J: transferMitig(把來源側當下實際持有的正向mitig buff實例整個搬到去向側隨機一人身上)
     # ——from/to(各為"enemy"/"ally", 指定來源/去向側)。dur屬KNOWN_EFFECT_FIELDS全域欄位。見
     # engine.js/sgz.py k==="transferMitig"分支, 雁行陣「轉移傷害降低」首次落地。
@@ -2407,6 +2418,14 @@ CAPABILITY_INVENTORY_IGNORE = {
     # 見equips_parsed.json「衝陣」_note——實際觸發邏輯由e.coef驅動, 走on_deal_eq的coef
     # 直傷派發, 非k派發), 單一裝備專屬窄機制, 無自然語言對照措辭。
     "extraHit",
+    # 禁近似令-批L: dmgFromStatus(才辯機捷專屬, k=="amp"限定「只對6種具名dot狀態造成的傷害
+    # 生效」跨戰法橫切範圍)/victimIsTgt(先登死士專屬, stealStat受害者精確鎖定反應式事件另一方)/
+    # maxStackIfLeaderIs(先登死士專屬, coefLeader/rateLeader家族的maxStack維度變體)——三者皆為
+    # 單一或少數戰法專屬窄用欄位(見PER_KIND_FIELDS/KNOWN_EFFECT_FIELDS已登記完整語意), 無
+    # 「戰法撰寫者可能誤稱引擎不支援」的通用自然語言對照措辭, 不適合登記進
+    # ENGINE_CAPABILITY_ALIASES(該表要求別名描述能對應「原文常見措辭」), 比照上方lifestealGiven/
+    # extraHit等同類窄用欄位慣例列入忽略清單。
+    "dmgFromStatus", "victimIsTgt", "maxStackIfLeaderIs",
 }
 
 
@@ -2897,7 +2916,17 @@ def check_r26(p, txt):
 def _has_leader_bonus(p):
     if p.get("leaderBonus"):
         return True
-    return any(e.get("leaderBonus") for e in (p.get("effects") or []))
+    if any(e.get("leaderBonus") for e in (p.get("effects") or [])):
+        return True
+    # 禁近似令-批L: ifLeaderIs(批44)/maxStackIfLeaderIs(批L)同屬「若XX統領」條件式加成的
+    # 已建模機制(對稱既有leaderBonus, 只是換了不同的套用維度——ifLeaderIs是條件閘門本身,
+    # maxStackIfLeaderIs是maxStack維度的覆寫式讀取), 具備任一者即視為已妥善建模, 不算沉默
+    # 省略。R26自批39建立時leaderBonus是唯一機制, 批44新增ifLeaderIs時未同步更新此函式(對8筆
+    # TROOP家族實務上未現形, 因那批戰法的_note文字恰好也都提及「統領」二字, 靠_topic_disclosed
+    # 文字路徑消音, 非靠本函式), 先登死士(本批maxStackIfLeaderIs)首次真正踩中此登記缺口
+    # (對稱R20漂移偵測「新原語需同步更新既有規則的已解決判定」精神), 本次一併補齊ifLeaderIs
+    # 承認, 徹底解決而非只消音本筆。
+    return any(e.get("ifLeaderIs") or e.get("maxStackIfLeaderIs") for e in (p.get("effects") or []))
 
 
 # ---------------------------------------------------------------------------

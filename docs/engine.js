@@ -56,8 +56,12 @@
     const vs = spec.vs || "caster";
     const refU = (vs === "leader" && allies && allies.length) ? allies[0] : ref;
     if (!refU) return false;
-    const rv = stat === "charm" ? refU.charm : refU.eff(stat);
-    const tv = stat === "charm" ? target.charm : target.eff(stat);
+    // 禁近似令-批L: stat==="hpPct" —— 比較雙方「兵力百分比」(troop/START_TROOP)而非傳統
+    // 四維屬性, 供先登死士「若兵力百分比低於攻擊者」這類跨單位血量比較(對稱既有when.hpBelow/
+    // hpAbove只認caster自身, 這裡是ref/target雙方各自讀u.hpPct, 走既有ifStatCompare的op/vs
+    // 骨架, 零新增比較邏輯, 只新增一種可讀的stat名稱)。
+    const rv = stat === "charm" ? refU.charm : (stat === "hpPct" ? refU.hpPct : refU.eff(stat));
+    const tv = stat === "charm" ? target.charm : (stat === "hpPct" ? target.hpPct : target.eff(stat));
     if (op === "gt") return rv > tv;
     if (op === "gte") return rv >= tv;
     if (op === "lt") return rv < tv;
@@ -555,10 +559,22 @@
       this.onHealEffectTacs = this.tactics.filter(t => !t.when && (t.type === "passive" || t.type === "command" || t.type === "active") && (t.effects || []).some(e => e.when && e.when.on === "healed"));
       // 批52h: on:"controlled" —— 友軍被施加控制時反彈(機鑑先識)
       this.onCtrlEffectTacs = this.tactics.filter(t => !t.when && (t.type === "passive" || t.type === "command" || t.type === "active") && (t.effects || []).some(e => e.when && e.when.on === "controlled"));
+      // 禁近似令-批L: on:"dmgThreshold"(自身累計受傷達門檻)/on:"ctrlImmune"(自身免疫控制事件)
+      // —— 一身是膽「每次免疫控制狀態後或每次累計受最大兵力7%傷害後...」需要的兩個新反應式
+      // 事件, 純自身視角(不做ally/enemy跨隊廣播, 現無資料需要, 見fireSelfReactive註解), 故
+      // 用單一預篩陣列(selfReactEffectTacs)涵蓋兩者, 由呼叫端(fireSelfReactive的onName參數)
+      // 決定要精確比對哪一個事件名。onValues(e)把e.when.on正規化成陣列(單一效果可同時掛兩個
+      // 事件名, 共用同一份stackKey疊層計數, 見k==="critUp"+e.stackKey消費端, 對稱既有
+      // e.eitherK/e.ifLeaderIs的字串或陣列慣例)。
+      this.selfReactEffectTacs = this.tactics.filter(t => !t.when && (t.type === "passive" || t.type === "command" || t.type === "active") && (t.effects || []).some(e => onValues(e).some(v => v === "dmgThreshold" || v === "ctrlImmune")));
       this.lockedTargets = new Map();               // 批12 ModeG: lockTarget:true 戰法的鎖定目標, 鍵=戰法物件本身(同一戰法物件跨回合重用同一 Map)
       // 批16: 原語擴充包 —— 新增狀態欄位(現有資料無新欄位, 皆維持0/null預設值, 行為零變化)
       this.atkCount = new Map();                     // everyN: 自身普攻次數計數器, 鍵=戰法物件本身(同一戰法物件跨回合重用同一 Map)
       this.immune = [];                              // immuneTo: [type, dur] 陣列(單項控制免疫, 對比 insight 全免); O(小陣列)線性掃描, 資料上每單位條數<5
+      // 禁近似令-批L: dmgAccum —— 自身累計受傷計數器(全戰鬥單調遞增, 不因治療/傷兵池消耗
+      // 而回退, 與this.wounded[可被治療消耗的池]是不同語意的兩個獨立計數)。一身是膽「每次
+      // 累計受最大兵力7%傷害後」需要跨事件持續累加再偵測門檻跨越次數, 見bumpDmgAccum()。
+      this.dmgAccum = 0;
       this.hpBelowFired = new Set();                 // hpPct: when.hpBelow(一次性, 首次跨越即觸發) 已觸發的戰法, 依戰法物件去重
       this.fakeReportDur = 0;                        // fakeReport(偽報): 剩餘回合數, >0 時指揮/被動 coef 擲骰段與 onHit 反應式觸發受抑制(prep已套用效果不回收)
 
@@ -604,7 +620,7 @@
     // 戰法」兩個game機制上互斥的分類(士爭先赴明確是「自帶主動戰法」, 不含突擊; 一鼓作氣/
     // 藏刀明確只講「突擊戰法」, 不含主動)混為一談——本批修正呼叫點改傳 isCharge, isActive
     // 維持只在真正 t.type==="active" 時為 true(見下方呼叫點修正)。
-    addbonus(kind, dmgType, isNormal, isActive, isCharge) {
+    addbonus(kind, dmgType, isNormal, isActive, isCharge, dotStatus) {
       let s = 0;
       for (const a of this.adds) {
         if (a[0] !== kind || this.suppressed(a[3])) continue;
@@ -613,6 +629,10 @@
         if (f && f.normalOnly && isNormal !== true) continue;
         if (f && f.activeOnly && isActive !== true) continue;
         if (f && f.chargeOnly && isCharge !== true) continue;
+        // 禁近似令-批L: dmgFromStatus(僅amp) —— 帶此限定的條目只在本次傷害是「dot結算且其
+        // 具名狀態在清單內」(dotStatus命中f.dmgFromStatus)時才計入, 一般傷害路徑(dotStatus
+        // 未傳/undefined)一律跳過這類條目, 見才辯機捷。
+        if (f && f.dmgFromStatus && !(dotStatus && f.dmgFromStatus.includes(dotStatus))) continue;
         s += a[1];
       }
       return s;
@@ -719,14 +739,14 @@
     // 標記的加成(僅普攻傷害生效, 見至柔動剛)。批31 A: isActive(可選) —— 過濾 activeOnly
     // 標記的加成(僅主動戰法傷害生效, 見士爭先赴)。批40 B: isCharge(可選) —— 過濾 chargeOnly
     // 標記的加成(僅突擊戰法傷害生效, 見一鼓作氣/藏刀)。
-    amp(dmgType, isNormal, isActive, isCharge) {
-      let a = this.addbonus("amp", dmgType, isNormal, isActive, isCharge);
+    amp(dmgType, isNormal, isActive, isCharge, dotStatus) {
+      let a = this.addbonus("amp", dmgType, isNormal, isActive, isCharge, dotStatus);
       if (this.stack) a += this.stack.per * this.stack.n;
       if (this.decay) a += this.decay.v0 * this.decay.left / this.decay.total;
       return a;
     }
     tick() {
-      for (const d of this.dots) { this.troop -= d[0]; this.wounded += d[0] * woundedRate(CUR_R); }  // 批18: dot 掉血同樣按當前回合轉化率計入傷兵池
+      for (const d of this.dots) { this.troop -= d[0]; this.wounded += d[0] * woundedRate(CUR_R); fireSelfReactive(this, "dmgThreshold", bumpDmgAccum(this, d[0])); }  // 批18: dot 掉血同樣按當前回合轉化率計入傷兵池; 禁近似令-批L: 一身是膽累積傷害門檻
       this.dots = this.dots.filter(d => --d[1] > 0);
       // 禁近似令-批K: regens(engine_wiring_gaps_misc族) —— 對稱上方dots掉血, 逐回合按登記
       // 金額治療(受傷兵池/START_TROOP上限雙重夾住, 沿用heal效果既有相同clamp慣例), 到期
@@ -765,6 +785,7 @@
         let paid = 0;
         this.deferredDmg = this.deferredDmg.filter(q => {
           this.troop -= q.amt; this.wounded += q.amt * woundedRate(CUR_R); paid += q.amt;
+          fireSelfReactive(this, "dmgThreshold", bumpDmgAccum(this, q.amt));  // 禁近似令-批L
           return --q.left > 0;
         });
         if (TRACE && paid >= 1) lg(`　▸ ${this.nm} 延後傷害分期結算 -${Math.round(paid)}`);
@@ -797,7 +818,7 @@
   //   錨3 屬性差大負值(保底) → 實測 ≈90  傷害 ⇒ DMG_FLOOR = 90/sqrt(10000) = 0.9
   // 之後有更多實測數據(不同兵力/等級)可再校準, 目前僅50級單一等級係數樣本, 折入常數中。
   const DMG_A = 4.76, DMG_B = 1.44, DMG_FLOOR = 0.9;
-  function damage(src, dst, coef, kind, srcTroop, isNormal, isActive, isCharge, forcePierce) {
+  function damage(src, dst, coef, kind, srcTroop, isNormal, isActive, isCharge, forcePierce, dotStatus) {
     const troop = srcTroop == null ? src.troop : srcTroop;
     const atk = kind === "intel" ? src.eff("intel") : src.eff("force");
     const def = kind === "intel" ? dst.eff("intel") : dst.eff("command");
@@ -822,7 +843,7 @@
     // chargeOnly 標記的加成(僅突擊戰法傷害生效/降低, 見一鼓作氣/藏刀)。
     // 批52j: 捕獲狀態無法造成傷害
     if (src.captured > 0) return 0;
-    const totalAmp = src.amp(kind, isNormal, isActive, isCharge);
+    const totalAmp = src.amp(kind, isNormal, isActive, isCharge, dotStatus);  // 禁近似令-批L: dotStatus(可選, 尾端新增, 向後相容既有全部呼叫點)—— 供k==="dot"分支傳入該次dot的具名狀態(才辯機捷 e.dmgFromStatus 過濾用)
     base *= totalAmp <= -1 ? 0 : 1 + Math.max(-0.9, totalAmp);
     // 禁近似令-批K: forcePierce(可選, 尾端新增, 向後相容既有全部呼叫點) —— dot 效果級 e.pierce:true
     // 專用(見 applyEffects k==="dot"分支), 強制本次結算完全無視 dst 的 mitig(無論 src 的
@@ -946,7 +967,8 @@
         ag.unit.hitFlags.add(ag);
         const aShare = ag.share ?? 1.0, aAmt = dmg * aShare, dAmt = dmg * (1 - aShare);
         ag.unit.troop -= aAmt; ag.unit.wounded += aAmt * wr;
-        if (dAmt > 0) { dst.troop -= dAmt; dst.wounded += dAmt * wr; }
+        fireSelfReactive(ag.unit, "dmgThreshold", bumpDmgAccum(ag.unit, aAmt));  // 禁近似令-批L: 一身是膽累積傷害門檻(見bumpDmgAccum/fireSelfReactive註解), 涵蓋範圍對稱wounded
+        if (dAmt > 0) { dst.troop -= dAmt; dst.wounded += dAmt * wr; fireSelfReactive(dst, "dmgThreshold", bumpDmgAccum(dst, dAmt)); }
         if (TRACE) lg(`　▸ ${ag.unit.nm} 代${dst.nm}承受此次普攻傷害 ${Math.round(aAmt)}` + (aShare < 1 ? `（${dst.nm}自行承受剩餘${Math.round(dAmt)}）` : ""));
         absorbed = true;
         break;
@@ -957,9 +979,11 @@
       if (g && g.alive && g !== dst && !(dst.guardNormalOnly && !isNormal)) {
         const gShare = dmg * dst.guardShare, dShare = dmg * (1 - dst.guardShare);
         g.troop -= gShare; g.wounded += gShare * wr;
+        fireSelfReactive(g, "dmgThreshold", bumpDmgAccum(g, gShare));  // 禁近似令-批L
         dst.troop -= dShare; dst.wounded += dShare * wr;
+        fireSelfReactive(dst, "dmgThreshold", bumpDmgAccum(dst, dShare));  // 禁近似令-批L
       }  // normalOnly 援護: 戰法傷害(isNormal=false)不轉移
-      else { dst.troop -= dmg; dst.wounded += dmg * wr; }
+      else { dst.troop -= dmg; dst.wounded += dmg * wr; fireSelfReactive(dst, "dmgThreshold", bumpDmgAccum(dst, dmg)); }  // 禁近似令-批L
     }
     if (TRACE) lg(`　→ ${dst.nm} 損兵 ${Math.round(dmg)}，剩餘 ${Math.max(0, Math.round(dst.troop))}` + (dst.troop <= 0 ? " 【擊破】" : ""));
     // 禁近似令-批K: onKillGrants(engine_wiring_gaps_misc族) —— 「這一下」把dst由存活打至
@@ -986,6 +1010,7 @@
         const buddy = mates[Math.floor(rnd() * mates.length)];
         const shareAmt = dmg * dst.dmgShare.pct;
         buddy.troop -= shareAmt; buddy.wounded += shareAmt * wr;
+        fireSelfReactive(buddy, "dmgThreshold", bumpDmgAccum(buddy, shareAmt));  // 禁近似令-批L
         if (TRACE) lg(`　▸ ${dst.nm} 受傷回饋 ${Math.round(shareAmt)} 給 ${buddy.nm}`);
       }
     }
@@ -1022,6 +1047,7 @@
       // 舊近似(裝備「受到普通攻擊時,反彈5%傷害」——反彈的是「這一下實際承受的傷害量」的5%,
       // dmg是本次已經過block/shield折算後的實際傷害量)。
       const cd = c.ofDamage != null ? dmg * c.ofDamage : damage(dst, src, c.coef ?? 1, ck); src.troop -= cd; src.wounded += cd * woundedRate(CUR_R);
+      fireSelfReactive(src, "dmgThreshold", bumpDmgAccum(src, cd));  // 禁近似令-批L
       if (TRACE) lg(`　↩ ${dst.nm} 反擊 ${src.nm} 損兵 ${Math.round(cd)}，剩餘 ${Math.max(0, Math.round(src.troop))}`);
       // 批52e/f: 反擊亦計「造成傷害」(文武雙全等); 零傷(抵禦/虛弱)仍觸發
       if (onDeal && dst.alive) onDeal(dst, src, false, ck, cd);
@@ -1041,6 +1067,7 @@
           const gk = g.kind || "phys";
           const gd = damage(gu, src, g.coef ?? 1, gk);
           src.troop -= gd; src.wounded += gd * woundedRate(CUR_R);
+          fireSelfReactive(src, "dmgThreshold", bumpDmgAccum(src, gd));  // 禁近似令-批L
           if (TRACE) lg(`　↩ ${gu.nm}(守護${dst.nm}) 反擊 ${src.nm} 損兵 ${Math.round(gd)}，剩餘 ${Math.max(0, Math.round(src.troop))}`);
           // 批52f: 守護反擊零傷仍觸發 dealtDamage
           if (onDeal && gu.alive) onDeal(gu, src, false, gk, gd);
@@ -1109,6 +1136,7 @@
     if (caster && caster.alive && u.alive) {
       const dmg = damage(caster, u, coef, h.kind || "phys");
       u.troop -= dmg; u.wounded += dmg * woundedRate(CUR_R);
+      fireSelfReactive(u, "dmgThreshold", bumpDmgAccum(u, dmg));  // 禁近似令-批L
       if (TRACE) lg(`　▸ 虎嗔結算 → ${u.nm} 傷${Math.round(dmg)}（率${Math.round(coef * 100)}%${early ? ", 提前" : ""}）`);
     }
     if (early && u.alive) u.stun = Math.max(u.stun, 2);
@@ -1602,6 +1630,70 @@
       }
     }
   }
+  // 禁近似令-批L: onValues(e) —— 把 e.when.on 正規化成陣列(單一字串包成單元素陣列, 本已是
+  // 陣列則原樣回傳, 無 on 回傳空陣列)。對稱既有 e.ifLeaderIs/e.eitherK/e.statOptions「單值
+  // 或陣列皆可」慣例, 讓單一效果可同時掛兩個(或以上)反應式事件名共用同一份 stackKey 疊層
+  // 計數(見 fireSelfReactive/selfReactEffectTacs), 一身是膽「每次免疫控制狀態後**或**每次
+  // 累計受傷達門檻後」需要 dmgThreshold/ctrlImmune 兩個事件共用同一組「最多觸發7次」封頂,
+  // 若各自獨立掛兩個效果物件, k==="critUp"+e.stackKey 的疊層計數器以效果物件本身(id(e))為
+  // 鍵, 兩個不同物件會各自疊到7層(合計最多14層), 與本文「最多觸發7次」不符。此處只新增
+  // on 值可為陣列的正規化, 不改動既有任何只認字串 on 值的既有比對式(如 onHitTacs 等既有
+  // prefilter 仍用 === 比對, 不受影響, 因為它們過濾的 on 值集合(attacked/damaged/dealtDamage/
+  // activeFired/healed/controlled)目前全庫沒有任何資料把 on 寫成陣列)。
+  function onValues(e) {
+    const on = e && e.when && e.when.on;
+    if (on == null) return [];
+    return Array.isArray(on) ? on : [on];
+  }
+  // 禁近似令-批L: bumpDmgAccum(u, amt) —— 累計u自身因傷害(含代承/反擊/dot/延遲結算等一切
+  // 途徑)實際扣減的兵力量, 偵測本次增量是否使累計值跨越新的「最大兵力7%」門檻(可能一次跨越
+  // 多格, 如單次巨量傷害), 回傳新跨越的格數(0=未跨越)。呼叫端(hit()/tick()/settleHuchen()/
+  // fight()主迴圈settle結算)在各自「這個單位的troop因傷害而減少」的既有分支旁, 與this.wounded
+  // 更新並列呼叫, 涵蓋範圍與wounded完全對稱(凡wounded有算的傷害來源, dmgAccum同步計入), 確保
+  // 「自身累計受...傷害」是「這個單位自己實際承受的傷害總量」的忠實累加, 不遺漏任何結算路徑。
+  function bumpDmgAccum(u, amt) {
+    if (!u || !u.alive || !(amt > 0)) return 0;
+    const thr = START_TROOP * 0.07;
+    const before = u.dmgAccum || 0;
+    u.dmgAccum = before + amt;
+    return Math.floor(u.dmgAccum / thr) - Math.floor(before / thr);
+  }
+  // 禁近似令-批L: fireSelfReactive(u, onName, times) —— on:"dmgThreshold"/on:"ctrlImmune"
+  // 專用的自身反應式派發(純自身視角, 不做跨隊broadcast——現無資料需要"ally"/"enemy"監聽這兩個
+  // 新事件, 若未來有需要可仿fireControlled/onHitFor補上broadcastHolders廣播, 現維持最小可用
+  // 形狀)。times: 本次事件應觸發幾次獨立判定(dmgThreshold單次巨量傷害可能一次跨越多格門檻,
+  // 每格各自獨立擲骰; ctrlImmune恆為1)。每次呼叫用「合成單效果戰法」重新呼叫applyEffects,
+  // 沿用其既有e.rate/e.rateLeader擲骰+k==="critUp"+e.stackKey疊層consumption, 不另造一套
+  // 機率/疊層邏輯。
+  function fireSelfReactive(u, onName, times) {
+    if (!u || !u.alive || !(times > 0) || !u.selfReactEffectTacs || !u.selfReactEffectTacs.length) return;
+    const allies = (_FIGHT_CTX.alliesOf && _FIGHT_CTX.alliesOf(u)) || [u];
+    const foes = (_FIGHT_CTX.foesOf && _FIGHT_CTX.foesOf(u)) || [];
+    for (let i = 0; i < times; i++) {
+      for (const t of u.selfReactEffectTacs) {
+        for (const e of t.effects) {
+          if (!onValues(e).includes(onName)) continue;
+          if (!roundOk({ when: e.when }, CUR_R)) continue;
+          applyEffects(u, null, { effects: [e], kind: t.kind || "phys", nameZh: t.nameZh }, allies, foes, { reactive: true });
+        }
+      }
+    }
+  }
+  // 禁近似令-批L: resolveMaxStack(caster, e, allies) —— 對稱既有coefLeader/rateLeader(基礎值
+  // +主將時改用替代值)家族, 但套用維度是maxStack(疊層上限本身, 一個「封頂」整數, 不像coef/
+  // rate是可累加的數值, 無法用base+topup相加手法表達「條件式提高上限」), 改用「符合條件則
+  // 整個替換成另一個上限值」的覆寫式讀取。先登死士「可疊加4次;若麴義統領,則可疊加5次」——
+  // e.maxStackIfLeaderIs:{who:"麴義"或陣列(OR), max:5} 於施放者(caster)恰為隊伍主將
+  // (allies[0]===caster)且武將名匹配時, 用max覆蓋e.maxStack(4)。未帶e.maxStackIfLeaderIs
+  // 或條件不成立時原樣回傳e.maxStack(向後相容既有全部stealStat/rateup資料)。
+  function resolveMaxStack(caster, e, allies) {
+    let ms = e.maxStack;
+    if (e.maxStackIfLeaderIs) {
+      const names = Array.isArray(e.maxStackIfLeaderIs.who) ? e.maxStackIfLeaderIs.who : [e.maxStackIfLeaderIs.who];
+      if (allies && allies[0] === caster && caster.g && names.includes(caster.g.name)) ms = e.maxStackIfLeaderIs.max;
+    }
+    return ms;
+  }
   // 批52h: 控制施加事件(機鑑先識反彈) —— onlySlower=速度慢於持有者的友軍才有
   function fireControlled(victim, kind, dur, allies, enemies) {
     if (!victim || !victim.alive || !["stun", "silence", "disarm", "chaos"].includes(kind)) return;
@@ -2075,15 +2167,42 @@
         const wantEach = (e.amount ?? 0) * (e.scale ? scaleOf(caster, e.scale, e.scaleDiv) : 1);
         const recipient = e.recipientSel ? pickByCriterion(allies, e.recipientSel) : caster;
         if (recipient && recipient.alive && wantEach > 0) {
-          const victimPool = (e.who === "ally" ? allies : enemies).filter(x => x.alive);
+          // 禁近似令-批L: e.victimIsTgt —— 受害者精確鎖定「本次反應式事件的另一方」(tgt, 本函式
+          // 第2參數, 於onHit()反應式呼叫時=攻擊者src), 對稱既有who==="eventTarget"精確選標
+          // 精神但走stealStat自己的early-return targeting(在general dests/who解析區塊之前
+          // 就continue掉, 不經過那條pipeline), 故不能複用opt.evtTarget(那是給victim/dst本身
+          // 用的, 見onHitFor的evtTarget:dst)。先登死士「偷取其[攻擊者]10.5→21點統率」需要
+          // 精確鎖定攻擊者本人, 而非既有victimPool(enemies全體)。
+          let victimPool = e.victimIsTgt ? (tgt && tgt.alive ? [tgt] : []) : (e.who === "ally" ? allies : enemies).filter(x => x.alive);
+          // 禁近似令-批L: e.ifStatCompare —— stealStat有自己的targeting早退路徑(不經過通用
+          // dests區塊的既有ifStatCompare過濾, 見該區塊「if (e.ifStatCompare) dests = ...」),
+          // 故在此局部重新套用同一個statCompareOk()比較, 語意與通用路徑完全一致(ref=caster,
+          // target=victim逐一比對)。先登死士「若兵力百分比低於攻擊者」= stat:"hpPct",op:"lt"。
+          if (e.ifStatCompare) victimPool = victimPool.filter(v => statCompareOk(caster, v, allies, e.ifStatCompare));
+          // 禁近似令-批L: resolveMaxStack —— 「可疊加4次;若麴義統領則可疊加5次」, 見其定義註解。
+          const ms = resolveMaxStack(caster, e, allies);
+          // 禁近似令-批L: maxStack封頂時「雙方都不記帳」——先檢查受益者這一側是否已達上限,
+          // 若已封頂則整次偷取視為no-op(僅刷新雙方既有同src疊層的dur, 不再產生新的扣/收記錄),
+          // 避免「受害者被扣但受益者因push_stat_add內部封頂靜默no-op收不到」的無中生有bug
+          // (pushStatAdd達max_stack時只refresh dur、不新增條目, 若這裡不預先檢查, victim那側
+          // 仍會被扣掉stat卻沒有對應的recipient收益, 違反stealStat「一方扣多少另一方就恰好收
+          // 多少」的核心設計約束)。
+          if (ms != null) {
+            const already = recipient.statAdds.filter(a => a[0] === statField && a[3] === src).length;
+            if (already >= ms) {
+              for (const a of recipient.statAdds) if (a[0] === statField && a[3] === src) a[2] = Math.max(a[2], e.dur ?? 1);
+              for (const v of victimPool) for (const a of v.statAdds) if (a[0] === statField && a[3] === src) a[2] = Math.max(a[2], e.dur ?? 1);
+              continue;
+            }
+          }
           let total = 0;
           for (const v of victimPool) {
             const avail = Math.max(0, v.eff(statField));
             const actual = Math.min(wantEach, avail);
-            if (actual > 0) { v.pushStatAdd(statField, -actual, e.dur ?? 1, src); total += actual; }
+            if (actual > 0) { v.pushStatAdd(statField, -actual, e.dur ?? 1, src, undefined, ms); total += actual; }
           }
           if (total > 0) {
-            recipient.pushStatAdd(statField, total, e.dur ?? 1, src);
+            recipient.pushStatAdd(statField, total, e.dur ?? 1, src, undefined, ms);
             if (TRACE) lg(`　▸ ${recipient.nm} 偷取${STAT_ZH[statField] || statField} +${total.toFixed(1)}(來源實際扣除量之和, 不無中生有)`);
           }
         }
@@ -2430,7 +2549,16 @@
       const chargeOnly = k === "amp" && !!e.chargeOnly;
       const ifLeaderTopup = CRIT_KINDS && !!e.ifLeader;  // 批41 B: 見下方dtSrc註解
       const ifLeaderIsTopup = CRIT_KINDS && !!e.ifLeaderIs;  // 批44 A: 同ifLeaderTopup, 見下方dtSrc註解
-      const udFlags = (e.undispellable || e.dmgType || normalOnly || activeOnly || chargeOnly) ? { undispellable: !!e.undispellable, dmgType: e.dmgType, normalOnly, activeOnly, chargeOnly } : undefined;
+      // 禁近似令-批L: e.dmgFromStatus(陣列, 僅k==="amp") —— 才辯機捷「自身施加的灼燒、水攻、
+      // 中毒、潰逃、沙暴、叛逃狀態造成的傷害提升90%」跨戰法橫切限定範圍(這6種具名dot狀態由
+      // 任何戰法施加時都算, 非本效果專屬某一段固定coef)。damage()結算dot傷害時(k==="dot"分支
+      // 呼叫damage()的呼叫點)會傳入該次dot實際解析出的具名狀態(resolveDotName, 與u.dots[3]
+      // 同一份值), addbonus("amp",...)新增dotStatus參數比對: 帶dmgFromStatus的amp條目只在
+      // dotStatus命中清單內才計入, 未帶此欄位的既有全部amp條目不受影響(dotStatus為undefined
+      // 時等同falsy, 帶dmgFromStatus的條目會被跳過——但一般傷害路徑本就不該吃到這個限定範圍的
+      // 加成, 故此為正確行為而非副作用)。
+      const dmgFromStatus = (k === "amp" && e.dmgFromStatus) ? e.dmgFromStatus : null;
+      const udFlags = (e.undispellable || e.dmgType || normalOnly || activeOnly || chargeOnly || dmgFromStatus) ? { undispellable: !!e.undispellable, dmgType: e.dmgType, normalOnly, activeOnly, chargeOnly, dmgFromStatus } : undefined;
       // dmgType 存在時, src 附加類型尾碼區分 dedup key(同一戰法內若有兩條不同 dmgType 的
       // amp/mitig, 如暫避其鋒「智力最高者減兵刃傷害」+「武力最高者減謀略傷害」, 兩者若共用
       // 同一個 src(戰法名)會被 pushAdd 的「同kind+同src刷新」去重機制互相蓋掉, 見 rateup 的
@@ -2446,6 +2574,7 @@
       if (normalOnly && src) dtSrc = (dtSrc || src) + ":normalOnly";
       if (activeOnly && src) dtSrc = (dtSrc || src) + ":activeOnly";
       if (chargeOnly && src) dtSrc = (dtSrc || src) + ":chargeOnly";
+      if (dmgFromStatus && src) dtSrc = (dtSrc || src) + ":dmgFromStatus";  // 禁近似令-批L: 避免與同戰法內其餘amp段共用dtSrc互相覆蓋(才辯機捷目前只有單一amp段, 此尾碼為未來多段並存預留)
       if (ifLeaderTopup && src) dtSrc = (dtSrc || src) + ":ifLeader";
       // 批44 A: ifLeaderIs top-up 尾碼 —— 同批41 B ifLeader top-up的理由(避免base段+差額段
       // 共用dtSrc被pushAdd同kind+同src去重互相覆蓋), 用於白毦兵等「若XX統領, 數值更高」家族的
@@ -2532,16 +2661,16 @@
         else if (k === "critDmgUp") u.pushAdd("critDmgUp", svVal(e.val), e.dur, dtSrc, udFlags, e.maxStack);
         // 批16: immuneTo(單項控制免疫) —— isImmuneTo(k) 只免疫清單內控制類型, 與 insight(全免) 並列判斷
         // 批52h: 成功施加後 fireControlled(機鑑反彈); opt.noCtrlReflect 時跳過
-        else if (k === "stun") { if (!u.insight && !u.isImmuneTo("stun")) { u.stun = Math.max(u.stun, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入震懾(全禁)`); if (!opt.noCtrlReflect) fireControlled(u, "stun", e.dur ?? 1, allies, enemies); } else if (TRACE) lg(`　▸ ${u.nm} 免疫震懾`); }
-        else if (k === "silence") { if (!u.insight && !u.isImmuneTo("silence")) { u.silence = Math.max(u.silence, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入計窮(禁主動戰法)`); if (!opt.noCtrlReflect) fireControlled(u, "silence", e.dur ?? 1, allies, enemies); } else if (TRACE) lg(`　▸ ${u.nm} 免疫計窮`); }
-        else if (k === "disarm") { if (!u.insight && !u.isImmuneTo("disarm")) { u.disarm = Math.max(u.disarm, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入繳械(禁普攻)`); if (!opt.noCtrlReflect) fireControlled(u, "disarm", e.dur ?? 1, allies, enemies); } else if (TRACE) lg(`　▸ ${u.nm} 免疫繳械`); }
-        else if (k === "chaos") { if (!u.insight && !u.isImmuneTo("chaos")) { u.chaos = Math.max(u.chaos, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入混亂(敵我不分)`); if (!opt.noCtrlReflect) fireControlled(u, "chaos", e.dur ?? 1, allies, enemies); } else if (TRACE) lg(`　▸ ${u.nm} 免疫混亂`); }  // 批12 ModeF
+        else if (k === "stun") { if (!u.insight && !u.isImmuneTo("stun")) { u.stun = Math.max(u.stun, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入震懾(全禁)`); if (!opt.noCtrlReflect) fireControlled(u, "stun", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫震懾`); } }  // 禁近似令-批L: 免疫格擋觸發ctrlImmune事件(一身是膽)
+        else if (k === "silence") { if (!u.insight && !u.isImmuneTo("silence")) { u.silence = Math.max(u.silence, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入計窮(禁主動戰法)`); if (!opt.noCtrlReflect) fireControlled(u, "silence", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫計窮`); } }
+        else if (k === "disarm") { if (!u.insight && !u.isImmuneTo("disarm")) { u.disarm = Math.max(u.disarm, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入繳械(禁普攻)`); if (!opt.noCtrlReflect) fireControlled(u, "disarm", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫繳械`); } }
+        else if (k === "chaos") { if (!u.insight && !u.isImmuneTo("chaos")) { u.chaos = Math.max(u.chaos, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入混亂(敵我不分)`); if (!opt.noCtrlReflect) fireControlled(u, "chaos", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫混亂`); } }  // 批12 ModeF
         else if (k === "insight") { u.insight = Math.max(u.insight, (e.dur ?? 1) + 1); u.stun = 0; u.silence = 0; u.disarm = 0; u.chaos = 0; u.ambush = 0; }
         else if (k === "immune") { u.pushImmune(e.types, e.dur); if (TRACE) lg(`　▸ ${u.nm} 獲得控制免疫〔${(e.types || []).join("、")}〕`); }  // 批16: immuneTo
         else if (k === "first") u.first = Math.max(u.first, e.dur ?? 1);
         // 批18: ambush(遇襲, 先攻的反面/遲緩) —— 不鎖行動(仍可行動), 只影響排序(見 fight() 的
         // effFirst 三檔排序鍵)。insight(全免)/immuneTo(單項免疫)可免, 同其他控制類慣例。
-        else if (k === "ambush") { if (!u.insight && !u.isImmuneTo("ambush")) { u.ambush = Math.max(u.ambush, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入遇襲(行動遲滯)`); } else if (TRACE) lg(`　▸ ${u.nm} 免疫遇襲`); }
+        else if (k === "ambush") { if (!u.insight && !u.isImmuneTo("ambush")) { u.ambush = Math.max(u.ambush, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入遇襲(行動遲滯)`); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫遇襲`); } }
         // 批42: e.stackKey(truthy旗標) —— stat 效果的「每次觸發對目標疊加1層」模式, 取代既有
         // add/mult 二選一的「單次套用」語意。原文族: 傲睨王侯「敵軍目標受普攻時觸發1個破綻,
         // 該目標降3%武智統速(受智力影響)可疊加」——每次事件命中對「這一個目標」疊1層, 疊層數
@@ -2685,7 +2814,11 @@
           // 完全無視目標 mitig(見 damage() 的 forcePierce 第9參數), 與 caster 自身的 pierce
           // 累加值(會影響caster所有傷害來源)無關, 只影響這一個dot段本身。
           // 批52g: dots[3]=具名狀態(水攻/沙暴…)
-          u.dots.push([damage(caster, u, dotCoef, e.kind || t.kind || "intel", undefined, undefined, undefined, undefined, !!e.pierce), e.dur, !!e.undispellable, resolveDotName(e, t)]);
+          // 禁近似令-批L: dotStatusName 只解析一次, 同時餵給 damage()(供 e.dmgFromStatus 過濾,
+          // 才辯機捷)與 dots[3](既有具名狀態標籤, 供 ifTargetHas/rateStatusBonus 等既有消費端),
+          // 確保兩處讀到的是同一份名稱, 不會出現「兩套獨立解析結果不一致」的情形。
+          const dotStatusName = resolveDotName(e, t);
+          u.dots.push([damage(caster, u, dotCoef, e.kind || t.kind || "intel", undefined, undefined, undefined, undefined, !!e.pierce, dotStatusName), e.dur, !!e.undispellable, dotStatusName]);
         }
         else if (k === "extra") u.pushAdd("extra", e.val, e.dur, src);
         // 禁近似令-批K: splash(splash_aoe_primitive族) —— 「普攻命中目標時, 濺射傷害給目標
@@ -2827,7 +2960,11 @@
           // 的「同kind+同src刷新」去重會把前一條蓋掉; 用 flags 組出不同的 dedup key 尾碼區分,
           // 讓語意不同的兩條並存, 但同語意(同flags組合)的仍正常刷新不疊加。
           const rSrc = (src && flags) ? src + ":" + ["prepOnly", "nativeOnly", "inheritedOnly"].filter(f => flags[f]).join("") : src;
-          u.pushAdd("rateup", rv, e.dur, rSrc, flags);
+          // 禁近似令-批L: e.maxStack/e.maxStackIfLeaderIs(可疊加N次) —— 先登死士「降低其
+          // 1.5%→3%主動戰法發動率,可疊加4次(若麴義統領則5次)」, val用負值表達「降低」(見
+          // damage()呼叫端fight()主迴圈的addbonusFor("rateup",...)對任意來源的rateup adds
+          // 一視同仁加總, 負值天然表達debuff方向, 無需另立新k)。
+          u.pushAdd("rateup", rv, e.dur, rSrc, flags, resolveMaxStack(caster, e, allies));
         }
         else if (k === "chargeup") {                    // 提高(自身或對象)突擊戰法發動機率; 排除 t.proc===true 特技偽戰法見突擊擲骰處註解
           // chargeup 同樣支援 scale(未有實測前與 rateup 共用預設曲線, 假設同曲線, 見上方常數註解); e.scaleDiv 比照 rateup 透傳(批46 A, 目前 chargeup 尚無獨立實測需要非預設曲線的樣本, 保留擴充點)
@@ -3522,7 +3659,7 @@
           // 見registration端perStackFrom註解), 「最終降傷施加次數」取結算當下(第6回合)的層數。
           const stackLayers = s.perStackFrom ? ((u.ampLayersById && u.ampLayersById[s.perStackFrom]) || 0) : s.layers;
           const targets = s.singleTarget ? [u] : (setA.has(u) ? A : B);
-          for (const v of targets) if (v.alive) { const sd = damage(s.caster, v, s.base + s.per * stackLayers, s.kind, s.snap); v.troop -= sd; v.wounded += sd * woundedRate(CUR_R); }
+          for (const v of targets) if (v.alive) { const sd = damage(s.caster, v, s.base + s.per * stackLayers, s.kind, s.snap); v.troop -= sd; v.wounded += sd * woundedRate(CUR_R); fireSelfReactive(v, "dmgThreshold", bumpDmgAccum(v, sd)); }
           u.settle = null;
         } else s.left -= 1;
       }
