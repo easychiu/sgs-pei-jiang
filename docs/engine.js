@@ -745,19 +745,44 @@
       if (this.decay) a += this.decay.v0 * this.decay.left / this.decay.total;
       return a;
     }
-    tick() {
+    // 時序重構(2026-07): DoT/持續效果的「掉血/回血」結算 —— 取代舊「回合末全體同時 tick()」,
+    // 改於該單位輪到行動時、行動前呼叫(見 fight() 主迴圈)。與 decayDurations() 成對(掉血/
+    // 回血 vs 持續遞減到期), 合稱取代舊 tick()。只結算 troop 增減, 不動任何持續回合數。
+    dotSettle() {
       for (const d of this.dots) { this.troop -= d[0]; this.wounded += d[0] * woundedRate(CUR_R); fireSelfReactive(this, "dmgThreshold", bumpDmgAccum(this, d[0])); }  // 批18: dot 掉血同樣按當前回合轉化率計入傷兵池; 禁近似令-批L: 一身是膽累積傷害門檻
-      this.dots = this.dots.filter(d => --d[1] > 0);
       // 禁近似令-批K: regens(engine_wiring_gaps_misc族) —— 對稱上方dots掉血, 逐回合按登記
-      // 金額治療(受傷兵池/START_TROOP上限雙重夾住, 沿用heal效果既有相同clamp慣例), 到期
-      // 遞減移除(對稱dots的--d[1]>0慣例)。
+      // 金額治療(受傷兵池/START_TROOP上限雙重夾住, 沿用heal效果既有相同clamp慣例)。
       if (this.regens.length) {
         for (const rg of this.regens) {
           const actual = Math.max(0, Math.min(rg[0], this.wounded, START_TROOP - this.troop));
           this.troop += actual; this.wounded -= actual;
         }
-        this.regens = this.regens.filter(rg => --rg[1] > 0);
       }
+      // 禁近似令-批K: preDmgHook(pre_damage_intercept族) deferSettle 排出的分期傷害逐回合
+      // 攤還扣血, 獨立於觸發它的 hook 本身是否仍存活。
+      if (this.deferredDmg.length) {
+        let paid = 0;
+        for (const q of this.deferredDmg) {
+          this.troop -= q.amt; this.wounded += q.amt * woundedRate(CUR_R); paid += q.amt;
+          fireSelfReactive(this, "dmgThreshold", bumpDmgAccum(this, q.amt));  // 禁近似令-批L
+        }
+        if (TRACE && paid >= 1) lg(`　▸ ${this.nm} 延後傷害分期結算 -${Math.round(paid)}`);
+      }
+    }
+    // 時序重構(2026-07): 狀態持續回合遞減/到期清除 —— 取代舊「回合末全體同時 tick()」, 改於
+    // 該單位輪到行動時、行動後呼叫(見 fight() 主迴圈)。與 dotSettle() 成對(掉血/回血已在
+    // 行動前結算), 只負責「持續回合數-1、歸零則清除」, 不再重複扣血/回血。
+    // +1補償清除(時序重構user權威規則): 舊「回合末全體同時tick()」模型下, 效果若在準備階段
+    // 之外的回合中途施加, 當回合末的全域tick()會立即消耗1單位duration, 即使該單位本回合根本
+    // 還沒真正「用滿」這1回合, 故舊碼多處對dur做 +1 補償。新模型逐單位在「自己行動之後」才-1
+    // (此處), 準備階段dur=N的buff在該單位第1~N個行動輪生效、第N輪後清除, 戰中施加的狀態亦
+    // 自然對齊, 不再需要+1補償, 已全庫移除(唯一保留: tacCd 戰法冷卻寫入端的 +1, 見 fight()
+    // 主迴圈 fire 分支註解 —— 冷卻是「本單位自己行動時設下, 同一行動輪內緊接著的
+    // decayDurations 就會立刻扣1」的自我參照場景, 與外部施加的debuff/buff時序不同, 不補償會
+    // 讓 cd=1 完全失效, 故此欄位維持既有 +1 寫法, 不在本次移除範圍內)。
+    decayDurations() {
+      this.dots = this.dots.filter(d => --d[1] > 0);
+      if (this.regens.length) this.regens = this.regens.filter(rg => --rg[1] > 0);
       this.mods = this.mods.filter(m => --m[2] > 0);
       this.adds = this.adds.filter(a => --a[2] > 0);
       this.statAdds = this.statAdds.filter(a => --a[2] > 0);   // 裝備平加到期移除(如 疾馳 speed+25 dur:2)
@@ -777,19 +802,11 @@
         if (this.huchen.left <= 0) settleHuchen(this, false);
       }
       if (this.decay && --this.decay.left <= 0) this.decay = null;
-      // 禁近似令-批K: preDmgHook 到期清除(見 Unit 建構式註解) + deferredDmg 逐回合攤還扣血
+      // 禁近似令-批K: preDmgHook 到期清除(見 Unit 建構式註解) + deferredDmg 持續回合遞減
       // (deferSettle 排出的分期傷害獨立於觸發它的 hook 本身是否仍存活, 已排入隊的錢仍要付完)。
       if (this.preDmgHooks.length) this.preDmgHooks = this.preDmgHooks.filter(h => --h.dur > 0);
       if (this.preAttackHooks.length) this.preAttackHooks = this.preAttackHooks.filter(h => --h.dur > 0);
-      if (this.deferredDmg.length) {
-        let paid = 0;
-        this.deferredDmg = this.deferredDmg.filter(q => {
-          this.troop -= q.amt; this.wounded += q.amt * woundedRate(CUR_R); paid += q.amt;
-          fireSelfReactive(this, "dmgThreshold", bumpDmgAccum(this, q.amt));  // 禁近似令-批L
-          return --q.left > 0;
-        });
-        if (TRACE && paid >= 1) lg(`　▸ ${this.nm} 延後傷害分期結算 -${Math.round(paid)}`);
-      }
+      if (this.deferredDmg.length) this.deferredDmg = this.deferredDmg.filter(q => --q.left > 0);
       this.tauntDur = Math.max(0, this.tauntDur - 1);
       if (this.tauntDur <= 0) this.tauntBy = null;
       if (this.guardDur) { this.guardDur = Math.max(0, this.guardDur - 1); if (this.guardDur <= 0) { this.guardian = null; this.guardShare = 0; this.guardNormalOnly = false; } }  // 代承到期: 清 guardian(如 援助 首回合援護 dur:1)
@@ -808,6 +825,13 @@
         for (const k of Object.keys(this.tacCd)) { const v = this.tacCd[k] - 1; if (v > 0) next[k] = v; }
         this.tacCd = next;
       }
+    }
+    // 時序重構(2026-07)後保留: dotSettle()+decayDurations() 的合併捷徑, 供「模擬該單位自己
+    // 完整一輪(掉血+持續遞減)」的既有測試/呼叫端沿用(fight() 主迴圈本身已改為分開呼叫, 不再
+    // 呼叫 tick(), 見該處 dotSettle→死亡檢查→行動→decayDurations 新時序)。
+    tick() {
+      this.dotSettle();
+      this.decayDurations();
     }
   }
 
@@ -1077,7 +1101,7 @@
           // 派發(hit()無隊伍context, 見上方 g.debuffAttacker/g.selfStack 註冊處註解)。
           if (g.debuffAttacker && src.alive) {
             const da = g.debuffAttacker;
-            src.pushAdd("amp", -(da.val || 0), (da.dur ?? 1) + 1, "counterGuard:debuffAttacker", da.dmgType ? { dmgType: da.dmgType } : undefined);
+            src.pushAdd("amp", -(da.val || 0), da.dur ?? 1, "counterGuard:debuffAttacker", da.dmgType ? { dmgType: da.dmgType } : undefined);
             if (TRACE) lg(`　▸ ${src.nm} 被${gu.nm}反擊命中, 造成傷害降低${Math.round((da.val || 0) * 100)}%(${(da.dur ?? 1)}回合)`);
           }
           if (g.selfStack) {
@@ -1140,7 +1164,7 @@
       fireSelfReactive(u, "dmgThreshold", bumpDmgAccum(u, dmg));  // 禁近似令-批L
       if (TRACE) lg(`　▸ 虎嗔結算 → ${u.nm} 傷${Math.round(dmg)}（率${Math.round(coef * 100)}%${early ? ", 提前" : ""}）`);
     }
-    if (early && u.alive) u.stun = Math.max(u.stun, 2);
+    if (early && u.alive) u.stun = Math.max(u.stun, 1);  // 1 回合震懾(時序重構: dur原值不補償+1)
     if (caster && caster.alive) {
       caster.pushAdd("amp", h.ampOnSettle ?? 0.08, 99, h.src || "虎嗔", { dmgType: "phys" }, h.ampMaxStack ?? 99);
     }
@@ -1233,13 +1257,13 @@
       for (const d of u.dots) if (!d[2]) {   // d[2]=undispellable旗標(見dot k-type施加處), 對稱dispelUnit保留undispellable dot的慣例
         out.push({ kind: "dot:" + (d[3] || "?"), unit: u, move: (dest, dur) => { u.dots.splice(u.dots.indexOf(d), 1); dest.dots.push([d[0], dur, d[2], d[3]]); } });
       }
-      if (u.stun > 0) out.push({ kind: "stun", unit: u, move: (dest, dur) => { u.stun = 0; dest.stun = Math.max(dest.stun, (dur ?? 1) + 1); } });
-      if (u.silence > 0) out.push({ kind: "silence", unit: u, move: (dest, dur) => { u.silence = 0; dest.silence = Math.max(dest.silence, (dur ?? 1) + 1); } });
-      if (u.disarm > 0) out.push({ kind: "disarm", unit: u, move: (dest, dur) => { u.disarm = 0; dest.disarm = Math.max(dest.disarm, (dur ?? 1) + 1); } });
-      if (u.chaos > 0) out.push({ kind: "chaos", unit: u, move: (dest, dur) => { u.chaos = 0; dest.chaos = Math.max(dest.chaos, (dur ?? 1) + 1); } });
-      if (u.healblock > 0) out.push({ kind: "healblock", unit: u, move: (dest, dur) => { u.healblock = 0; dest.healblock = Math.max(dest.healblock, (dur ?? 1) + 1); } });
-      if (u.fakeReportDur > 0) out.push({ kind: "fakeReport", unit: u, move: (dest, dur) => { u.fakeReportDur = 0; dest.fakeReportDur = Math.max(dest.fakeReportDur, (dur ?? 1) + 1); } });
-      if (u.ambush > 0) out.push({ kind: "ambush", unit: u, move: (dest, dur) => { u.ambush = 0; dest.ambush = Math.max(dest.ambush, (dur ?? 1) + 1); } });
+      if (u.stun > 0) out.push({ kind: "stun", unit: u, move: (dest, dur) => { u.stun = 0; dest.stun = Math.max(dest.stun, dur ?? 1); } });
+      if (u.silence > 0) out.push({ kind: "silence", unit: u, move: (dest, dur) => { u.silence = 0; dest.silence = Math.max(dest.silence, dur ?? 1); } });
+      if (u.disarm > 0) out.push({ kind: "disarm", unit: u, move: (dest, dur) => { u.disarm = 0; dest.disarm = Math.max(dest.disarm, dur ?? 1); } });
+      if (u.chaos > 0) out.push({ kind: "chaos", unit: u, move: (dest, dur) => { u.chaos = 0; dest.chaos = Math.max(dest.chaos, dur ?? 1); } });
+      if (u.healblock > 0) out.push({ kind: "healblock", unit: u, move: (dest, dur) => { u.healblock = 0; dest.healblock = Math.max(dest.healblock, dur ?? 1); } });
+      if (u.fakeReportDur > 0) out.push({ kind: "fakeReport", unit: u, move: (dest, dur) => { u.fakeReportDur = 0; dest.fakeReportDur = Math.max(dest.fakeReportDur, dur ?? 1); } });
+      if (u.ambush > 0) out.push({ kind: "ambush", unit: u, move: (dest, dur) => { u.ambush = 0; dest.ambush = Math.max(dest.ambush, dur ?? 1); } });
       if (u.huchen) out.push({ kind: "huchen", unit: u, move: (dest) => { dest.huchen = u.huchen; u.huchen = null; } });
     }
     return out;
@@ -2330,8 +2354,8 @@
             const destsC = pickTargets(pool, e.n || 1);
             const dur = e.dur ?? 2;
             for (const u of destsC) {
-              u.captured = Math.max(u.captured, dur + 1);
-              u.healblock = Math.max(u.healblock, dur + 1);
+              u.captured = Math.max(u.captured, dur);
+              u.healblock = Math.max(u.healblock, dur);
               if (TRACE) lg(`　▸ ${u.nm} 被捕獲(${dur}回合, 不可淨化)`);
             }
           }
@@ -2685,7 +2709,7 @@
         // 會回饋X%傷害給其他敵軍」的傷害轉嫁給隊友機制(連環計), 消費端見 hit() 內 dst.dmgShare
         // 判斷式。取代舊有「用amp(敵全體固定+15%受傷)作EV代理近似, 方向類似但觸發條件/轉移
         // 對象皆與原文不同」的結構性近似。
-        else if (k === "dmgShare") { u.dmgShare = { pct: svVal(e.val), dur: (e.dur ?? 2) + 1 }; if (TRACE) lg(`　▸ ${u.nm} 中鐵鎖連環(受傷回饋${(svVal(e.val) * 100).toFixed(1)}%給隊友)`); }
+        else if (k === "dmgShare") { u.dmgShare = { pct: svVal(e.val), dur: e.dur ?? 2 }; if (TRACE) lg(`　▸ ${u.nm} 中鐵鎖連環(受傷回饋${(svVal(e.val) * 100).toFixed(1)}%給隊友)`); }
         else if (k === "mitig" && e.stackKey) {
           // 禁近似令-批K: mitig+e.stackKey(對稱既有amp+e.stackKey per-target疊層變體, 見上方
           // k==="amp"分支)——離月「友軍受到治療時,40%機率+3%減傷,可疊5層,持續2回合」需要
@@ -2729,16 +2753,16 @@
         else if (k === "critDmgUp") u.pushAdd("critDmgUp", svVal(e.val), e.dur, dtSrc, udFlags, e.maxStack);
         // 批16: immuneTo(單項控制免疫) —— isImmuneTo(k) 只免疫清單內控制類型, 與 insight(全免) 並列判斷
         // 批52h: 成功施加後 fireControlled(機鑑反彈); opt.noCtrlReflect 時跳過
-        else if (k === "stun") { if (!u.insight && !u.isImmuneTo("stun")) { u.stun = Math.max(u.stun, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入震懾(全禁)`); if (!opt.noCtrlReflect) fireControlled(u, "stun", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫震懾`); } }  // 禁近似令-批L: 免疫格擋觸發ctrlImmune事件(一身是膽)
-        else if (k === "silence") { if (!u.insight && !u.isImmuneTo("silence")) { u.silence = Math.max(u.silence, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入計窮(禁主動戰法)`); if (!opt.noCtrlReflect) fireControlled(u, "silence", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫計窮`); } }
-        else if (k === "disarm") { if (!u.insight && !u.isImmuneTo("disarm")) { u.disarm = Math.max(u.disarm, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入繳械(禁普攻)`); if (!opt.noCtrlReflect) fireControlled(u, "disarm", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫繳械`); } }
-        else if (k === "chaos") { if (!u.insight && !u.isImmuneTo("chaos")) { u.chaos = Math.max(u.chaos, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入混亂(敵我不分)`); if (!opt.noCtrlReflect) fireControlled(u, "chaos", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫混亂`); } }  // 批12 ModeF
-        else if (k === "insight") { u.insight = Math.max(u.insight, (e.dur ?? 1) + 1); u.stun = 0; u.silence = 0; u.disarm = 0; u.chaos = 0; u.ambush = 0; }
+        else if (k === "stun") { if (!u.insight && !u.isImmuneTo("stun")) { u.stun = Math.max(u.stun, e.dur ?? 1); if (TRACE) lg(`　▸ ${u.nm} 陷入震懾(全禁)`); if (!opt.noCtrlReflect) fireControlled(u, "stun", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫震懾`); } }  // 禁近似令-批L: 免疫格擋觸發ctrlImmune事件(一身是膽)
+        else if (k === "silence") { if (!u.insight && !u.isImmuneTo("silence")) { u.silence = Math.max(u.silence, e.dur ?? 1); if (TRACE) lg(`　▸ ${u.nm} 陷入計窮(禁主動戰法)`); if (!opt.noCtrlReflect) fireControlled(u, "silence", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫計窮`); } }
+        else if (k === "disarm") { if (!u.insight && !u.isImmuneTo("disarm")) { u.disarm = Math.max(u.disarm, e.dur ?? 1); if (TRACE) lg(`　▸ ${u.nm} 陷入繳械(禁普攻)`); if (!opt.noCtrlReflect) fireControlled(u, "disarm", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫繳械`); } }
+        else if (k === "chaos") { if (!u.insight && !u.isImmuneTo("chaos")) { u.chaos = Math.max(u.chaos, e.dur ?? 1); if (TRACE) lg(`　▸ ${u.nm} 陷入混亂(敵我不分)`); if (!opt.noCtrlReflect) fireControlled(u, "chaos", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫混亂`); } }  // 批12 ModeF
+        else if (k === "insight") { u.insight = Math.max(u.insight, e.dur ?? 1); u.stun = 0; u.silence = 0; u.disarm = 0; u.chaos = 0; u.ambush = 0; }
         else if (k === "immune") { u.pushImmune(e.types, e.dur); if (TRACE) lg(`　▸ ${u.nm} 獲得控制免疫〔${(e.types || []).join("、")}〕`); }  // 批16: immuneTo
         else if (k === "first") u.first = Math.max(u.first, e.dur ?? 1);
         // 批18: ambush(遇襲, 先攻的反面/遲緩) —— 不鎖行動(仍可行動), 只影響排序(見 fight() 的
         // effFirst 三檔排序鍵)。insight(全免)/immuneTo(單項免疫)可免, 同其他控制類慣例。
-        else if (k === "ambush") { if (!u.insight && !u.isImmuneTo("ambush")) { u.ambush = Math.max(u.ambush, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 陷入遇襲(行動遲滯)`); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫遇襲`); } }
+        else if (k === "ambush") { if (!u.insight && !u.isImmuneTo("ambush")) { u.ambush = Math.max(u.ambush, e.dur ?? 1); if (TRACE) lg(`　▸ ${u.nm} 陷入遇襲(行動遲滯)`); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫遇襲`); } }
         // 批42: e.stackKey(truthy旗標) —— stat 效果的「每次觸發對目標疊加1層」模式, 取代既有
         // add/mult 二選一的「單次套用」語意。原文族: 傲睨王侯「敵軍目標受普攻時觸發1個破綻,
         // 該目標降3%武智統速(受智力影響)可疊加」——每次事件命中對「這一個目標」疊1層, 疊層數
@@ -2855,7 +2879,7 @@
             per: e.per ?? 0.30,
             hits: 0,
             maxHits: e.maxHits ?? 3,
-            left: (e.dur ?? 1) + 1,
+            left: e.dur ?? 1,
             caster,
             kind: e.kind || t.kind || "phys",
             src: t.nameZh || "虎嗔",
@@ -2922,7 +2946,7 @@
           u.preDmgHooks.push({
             hookKind: e.hookKind, val: e.val, step: e.step, max: e.max, hits: 0,
             rate: e.rate, dmgType: e.dmgType, pct: e.pct, delayRounds: e.delayRounds,
-            reducePct: e.reducePct, dur: (e.dur ?? 99) + 1,
+            reducePct: e.reducePct, dur: e.dur ?? 99,
           });
           if (TRACE) lg(`　▸ ${u.nm} 獲得傷害結算前攔截〔${e.hookKind}〕`);
         }
@@ -2931,10 +2955,10 @@
         // 準則轉由隊友代承, 雲聚影從)/"healAllyPre"(即將受到普攻時,治療隨機隊友, 益其金鼓)。
         // e.rate=每次觸發機率(每次普攻前重新擲骰, 非prep一次性), dur=常駐(整場戰鬥有效)。
         else if (k === "preAttackHook") {
-          u.preAttackHooks.push({ hookKind: e.hookKind, rate: e.rate, guard: e.guard, coef: e.coef, scale: e.scale, dur: (e.dur ?? 99) + 1 });
+          u.preAttackHooks.push({ hookKind: e.hookKind, rate: e.rate, guard: e.guard, coef: e.coef, scale: e.scale, dur: e.dur ?? 99 });
           if (TRACE) lg(`　▸ ${u.nm} 獲得即將受擊觸發〔${e.hookKind}〕`);
         }
-        else if (k === "swap") u.swap = Math.max(u.swap, (e.dur ?? 1) + 1);
+        else if (k === "swap") u.swap = Math.max(u.swap, e.dur ?? 1);
         // 禁近似令-批K: e.onKill(engine_wiring_gaps_misc族) —— 不立即套用pierce, 改登記到
         // u.onKillGrants(待hit()偵測到u親手擊敗某目標時才真正授予, 見hit()消費端), 供虎痴
         // 「如果擊敗目標，會使自身獲得破陣狀態，直到戰鬥結束」精確表達條件觸發時機(取代舊有
@@ -2975,7 +2999,7 @@
             // 批G: e.normalOnly —— 對稱既有redirect(guardNormalOnly)/amp/mitig已支援的
             // normalOnly慣例, 限定此反擊只在受到普通攻擊(isNormal=true)時觸發, 省略時向後
             // 相容(任意傷害來源皆可觸發反擊)。荊棘「受到普通攻擊時，反彈5%傷害」需要此限定。
-            u.counter = { coef: e.coef ?? 1, kind: e.kind || "phys", prob: e.prob ?? 1, dur: (e.dur ?? 99) + 1, normalOnly: !!e.normalOnly };
+            u.counter = { coef: e.coef ?? 1, kind: e.kind || "phys", prob: e.prob ?? 1, dur: e.dur ?? 99, normalOnly: !!e.normalOnly };
           }
         }
         else if (k === "taunt") {
@@ -2989,13 +3013,13 @@
           let forceTarget = caster;
           if (e.tauntTarget === "leader") forceTarget = (allies && allies[0] && allies[0].alive) ? allies[0] : null;
           else if (e.tauntTarget === "select") forceTarget = e.targetSel ? pickByCriterion(enemies, e.targetSel) : null;
-          if (forceTarget) { u.tauntBy = forceTarget; u.tauntDur = Math.max(u.tauntDur, (e.dur ?? 1) + 1); if (TRACE) lg(`　▸ ${u.nm} 被迫優先攻擊 ${forceTarget.nm}`); }
+          if (forceTarget) { u.tauntBy = forceTarget; u.tauntDur = Math.max(u.tauntDur, e.dur ?? 1); if (TRACE) lg(`　▸ ${u.nm} 被迫優先攻擊 ${forceTarget.nm}`); }
         }
         else if (k === "shield") {
           const amt = (e.amt ?? 0) + (e.pct ? e.pct * caster.troop : 0);
-          u.shield = { amt: (u.shield ? u.shield.amt : 0) + amt, dur: (e.dur ?? 99) + 1, undispellable: !!e.undispellable };  // +1 補償: tick 施加當回合末即扣1, 與 taunt/dodge/surehit 慣例一致
+          u.shield = { amt: (u.shield ? u.shield.amt : 0) + amt, dur: e.dur ?? 99, undispellable: !!e.undispellable };  // 時序重構: dur原值不補償+1(decayDurations於該單位行動輪之後遞減)
         }
-        else if (k === "dodge") { u.dodgeProb = e.prob ?? 0.2; u.dodgeDur = Math.max(u.dodgeDur, (e.dur ?? 1) + 1); u.dodgeDmgType = e.dmgType ?? null; }  // 批G: e.dmgType限定規避類型(榮光「受謀略傷害時完全免疫」等), 對稱amp/mitig/block既有dmgType過濾慣例
+        else if (k === "dodge") { u.dodgeProb = e.prob ?? 0.2; u.dodgeDur = Math.max(u.dodgeDur, e.dur ?? 1); u.dodgeDmgType = e.dmgType ?? null; }  // 批G: e.dmgType限定規避類型(榮光「受謀略傷害時完全免疫」等), 對稱amp/mitig/block既有dmgType過濾慣例
         // 批22: block(次數型格擋, 抵禦/警戒同族) —— times:N(剩餘次數), val:1.0全擋/0.x部分減傷
         // (如警戒基礎40%受智力影響)。同源(同一戰法名 src)再次施加時疊加次數(pushBlock 內部
         // 處理), 不像 pushAdd/pushMod 的「同源刷新覆蓋」慣例 —— 貼合戰報「目前抵禦總次數為N」
@@ -3012,8 +3036,8 @@
           u.pushBlock(bVal, e.times ?? 1, src, e.dmgType);  // 批G: e.dmgType 限定格擋類型(榮光「受謀略傷害時完全免疫」等), 省略時向後相容(不分類型)
           if (TRACE) lg(`　▸ ${u.nm} 獲得${bVal >= 1 ? "抵禦" : `警戒(減傷${Math.round(bVal * 100)}%)`}(${e.times ?? 1}次)`);
         }
-        else if (k === "surehit") u.surehitDur = Math.max(u.surehitDur, (e.dur ?? 1) + 1);
-        else if (k === "healblock") { if (!u.isImmuneTo("healblock")) u.healblock = Math.max(u.healblock, (e.dur ?? 1) + 1); }  // 批8: 禁療 —— heal 套用處(applyEffects 開頭)已排除 healblock 中的目標; 批C: isImmuneTo("healblock")查詢方法自批16即存在但施加端從未讀取(對稱ambush的既有寫法, 見上方k==="ambush"分支), 補上判斷式使k=="immune"(types含healblock)真正生效
+        else if (k === "surehit") u.surehitDur = Math.max(u.surehitDur, e.dur ?? 1);
+        else if (k === "healblock") { if (!u.isImmuneTo("healblock")) u.healblock = Math.max(u.healblock, e.dur ?? 1); }  // 批8: 禁療 —— heal 套用處(applyEffects 開頭)已排除 healblock 中的目標; 批C: isImmuneTo("healblock")查詢方法自批16即存在但施加端從未讀取(對稱ambush的既有寫法, 見上方k==="ambush"分支), 補上判斷式使k=="immune"(types含healblock)真正生效
         else if (k === "lifesteal") u.pushAdd("lifesteal", e.val, e.dur, src);  // 批8: 倒戈 —— 實際回血在 hit() 結算傷害後(見 hit() 內 lifesteal 段), 這裡只掛加成值
         else if (k === "rateup") {                       // 提高(自身或對象)主動戰法發動機率
           // scale: 施放當下(caster 戰鬥內即時素質)用 rateScaleOf(獨立於全域 SCALE) 縮放實際加成
@@ -3069,7 +3093,7 @@
         else if (k === "fakeReport") {
           if (u.insight) { if (TRACE) lg(`　▸ ${u.nm} 洞察免疫偽報`); }
           else {
-            const newDur = (e.dur ?? 1) + 1;
+            const newDur = e.dur ?? 1;
             if (newDur > u.fakeReportDur) { u.fakeReportDur = newDur; if (TRACE) lg(`　▸ ${u.nm} 陷入偽報(被動/指揮戰法失效)`); }
             else if (TRACE) lg(`　▸ ${u.nm} 身上已存在同等或更強的偽報效果，本次不覆蓋`);
           }
@@ -3560,9 +3584,17 @@
       for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
       order.sort((x, y) => (effFirst(y) - effFirst(x)) || (y.eff("speed") - x.eff("speed")));
       for (const u of order) {
-        if (!u.alive) continue;
-        if (u.stun || u.captured) { if (TRACE) lg(`【${u.side}】${u.nm} 被控制(${u.captured ? "捕獲" : "震懾"})，無法行動`); continue; }
-        if (!pickTarget(foesOf(u))) break;
+        if (!u.alive) continue;  // 本回合稍早已被擊殺(其他單位的攻擊), 不再結算/行動
+        // 時序重構(2026-07, user權威規則): DoT跟隨被上狀態的人 —— 輪到該單位行動時才結算它
+        // 自己的DoT(取代舊「回合末全體同時tick()」), 取代處見下方 decayDurations()。
+        u.dotSettle();
+        if (!u.alive) continue;  // DoT致死: 死亡不行動(也不再decayDurations, 已死無意義)
+        if (u.stun || u.captured) {
+          if (TRACE) lg(`【${u.side}】${u.nm} 被控制(${u.captured ? "捕獲" : "震懾"})，無法行動`);
+          u.decayDurations();  // 雖跳過行動, 持續仍需遞減(否則震懾永不解除)
+          continue;
+        }
+        if (!pickTarget(foesOf(u))) { u.decayDurations(); break; }
         if (u.silence && TRACE) lg(`【${u.side}】${u.nm} 陷入計窮，無法發動主動戰法`);
         if (!u.silence) for (const t0 of u.tactics) {   // 自帶 + 傳承: 各自獨立附加發動(計窮時跳過主動/指揮/被動)
           // 批16: fakeReport(偽報) —— 抑制指揮/被動每回合擲骰的coef段(prep已套用效果不回收, 不影響主動戰法)
@@ -3612,6 +3644,12 @@
             if (u.ammo[t0.nameZh] <= 0) fire = false;
           }
           if (fire) {
+            // 批52: 發動成功後進入冷卻。寫入 cd+1: 本單位這輪 decayDurations() 先扣1, 剩餘 cd
+            // 個完整行動輪不可再發。時序重構(2026-07)保留此 +1: 冷卻是「本單位自己行動時設下,
+            // 同一行動輪內緊接著的 decayDurations() 就會立刻扣1」的自我參照場景, 與外部施加的
+            // debuff/buff(已全庫移除+1補償, 見 Unit.decayDurations() 上方註解)時序性質不同 ——
+            // 不補償會讓 cd=1 完全失效(下個行動輪立即可再發), 故此欄位維持既有 +1 寫法, 不在
+            // 本次移除範圍內(已標記待user確認, 見交接文件時序重構節)。
             if (t0.cd && t0.nameZh) u.tacCd[t0.nameZh] = (t0.cd | 0) + 1;
             // 批26 B2: stack.stackPer=="cast" —— 本戰法本次成功發動(fire), 若 u 身上已有
             // stackPer=="cast" 的疊層狀態則遞增1層(見 applyStackCast() 定義)。與round模式
@@ -3718,7 +3756,16 @@
           if (TRACE) lg(`【${u.side}】${u.nm} 普通攻擊`);
           doNormalAttack(u, alliesOf(u), foesOf(u), onHit, dealtDamage, activeFired);
         } else if (TRACE) lg(`【${u.side}】${u.nm} 陷入繳械，無法普通攻擊`);
+        // 時序重構(2026-07, user權威規則): 該單位行動後才持續-1(取代舊回合末全體tick())。
+        // dotSettle()已在本單位行動前結算過掉血, 此處只負責持續回合數遞減/到期清除, 與
+        // hitFlags(每輪節流)重置 —— 皆對「這一單位」而言, 於它自己這輪行動之後。
+        u.decayDurations();
       }
+      // 時序重構(2026-07): 舊「for (const u of [...A,...B]) u.tick()」回合末全體同時結算已
+      // 移除 —— DoT掉血已在上方行動迴圈內, 各單位輪到自己行動時由 dotSettle() 個別結算;
+      // 持續回合遞減已在各單位行動後由 decayDurations() 個別結算。settle(猛毒疊層爆發, 下方
+      // 區塊)為隊伍級疊層機制、非「該單位自身」的DoT/狀態持續, 仍維持逐回合(全局)結算, 不在
+      // 本次改動範圍(詳見交接文件時序重構節「未定義邊角」列表)。
       for (const u of [...A, ...B]) {
         const s = u.settle; if (!s) continue;
         if (s.layers >= s.max || s.left <= 1) {
@@ -3731,7 +3778,6 @@
           u.settle = null;
         } else s.left -= 1;
       }
-      for (const u of [...A, ...B]) u.tick();
       // 批8: 殲滅(kill) —— ROUNDS 回合內一方全滅, 對比「判定勝」(打滿8回合按剩餘兵力比較)。
       if (!A.some(u => u.alive)) { if (TRACE) lg(`〔戰鬥結束〕敵方【殲滅】我方，第${r}回合`); return { winner: "B", rounds: r, kill: true }; }
       if (!B.some(u => u.alive)) { if (TRACE) lg(`〔戰鬥結束〕我方【殲滅】敵方，第${r}回合`); return { winner: "A", rounds: r, kill: true }; }

@@ -1036,20 +1036,47 @@ class Unit:
             return val
         return 0
 
-    def tick(self):
+    def dot_settle(self):
+        """時序重構(2026-07): DoT/持續效果的「掉血/回血」結算 —— 取代舊「回合末全體同時
+        tick()」, 改於該單位輪到行動時、行動前呼叫(見 fight() 主迴圈)。與 decay_durations()
+        成對(掉血/回血 vs 持續遞減到期), 合稱取代舊 tick()。只結算「troop 增減」, 不動任何
+        持續回合數(那是 decay_durations() 的職責, 在本單位行動後才呼叫) —— dur/left 遞減與
+        掉血拆開, 才能表達「先受DoT傷害(可能死亡不行動)→再行動→行動後持續才-1」的新時序。"""
         for dmg, *_ in self.dots:                      # 持續傷害結算(dots[2]為undispellable旗標, 不影響結算量)
             self.troop -= dmg
             self.wounded += dmg * wounded_rate(CUR_ROUND)  # 批18: dot 掉血同樣按當前回合轉化率計入傷兵池
             fire_self_reactive(self, "dmgThreshold", bump_dmg_accum(self, dmg))  # 禁近似令-批L: 一身是膽累積傷害門檻
-        self.dots = [[d, l - 1] + rest for d, l, *rest in self.dots if l - 1 > 0]
         # 禁近似令-批K: regens(engine_wiring_gaps_misc族, 對稱engine.js同名分支) —— 對稱上方
         # dots掉血, 逐回合按登記金額治療(受傷兵池/START_TROOP上限雙重夾住, 沿用heal效果既有
-        # 相同clamp慣例), 到期遞減移除。
+        # 相同clamp慣例)。
         if self.regens:
             for rg in self.regens:
                 actual = max(0, min(rg[0], self.wounded, START_TROOP - self.troop))
                 self.troop += actual
                 self.wounded -= actual
+        # 禁近似令-批K: pre_dmg_hooks(pre_damage_intercept族) 的 deferSettle 排出的分期傷害,
+        # 逐回合攤還扣血, 獨立於觸發它的 hook 本身是否仍存活。
+        if self.deferred_dmg:
+            for q in self.deferred_dmg:
+                self.troop -= q["amt"]
+                self.wounded += q["amt"] * wounded_rate(CUR_ROUND)
+                fire_self_reactive(self, "dmgThreshold", bump_dmg_accum(self, q["amt"]))  # 禁近似令-批L
+
+    def decay_durations(self):
+        """時序重構(2026-07): 狀態持續回合遞減/到期清除 —— 取代舊「回合末全體同時 tick()」,
+        改於該單位輪到行動時、行動後呼叫(見 fight() 主迴圈)。與 dot_settle() 成對(掉血/回血
+        已在行動前結算), 只負責「持續回合數-1、歸零則清除」, 不再重複扣血/回血。
+        +1補償清除(時序重構user權威規則): 舊「回合末全體同時tick()」模型下, 效果若在準備
+        階段之外的回合中途施加, 當回合末的全域tick()會立即消耗1單位duration, 即使該單位
+        本回合根本還沒真正「用滿」這1回合, 故舊碼多處對dur做 +1 補償。新模型逐單位在「自己
+        行動之後」才-1(此處), 準備階段dur=N的buff在該單位第1~N個行動輪生效、第N輪後清除,
+        戰中施加的狀態亦自然對齊(施加時點在本輪行動前後決定本輪算不算入第1輪), 不再需要
+        +1補償, 已全庫移除(唯一保留: tac_cd 戰法冷卻寫入端的 +1, 見 fight() 主迴圈 fire 分支
+        註解 —— 冷卻是「本單位自己行動時設下, 同一行動輪內緊接著的 decay_durations 就會立刻
+        扣1」的自我參照場景, 與外部施加的debuff/buff時序不同, 不補償會讓 cd=1 完全失效, 故
+        此欄位維持既有 +1 寫法, 不在本次移除範圍內; 詳見交接文件時序重構節)。"""
+        self.dots = [[d, l - 1] + rest for d, l, *rest in self.dots if l - 1 > 0]
+        if self.regens:
             self.regens = [[amt, left - 1] for amt, left in self.regens if left - 1 > 0]
         self.mods = [[s, m, l - 1, src, flags] for s, m, l, src, flags in self.mods if l - 1 > 0]
         self.adds = [[k, v, l - 1, src, flags] for k, v, l, src, flags in self.adds if l - 1 > 0]
@@ -1064,17 +1091,17 @@ class Unit:
         self.healblock = max(0, self.healblock - 1)    # 批8: 禁療 逐回合遞減
         self.captured = max(0, self.captured - 1)      # 批52j: 捕獲 逐回合遞減(不可淨化, 自然到期)
         self.swap = max(0, self.swap - 1)
-        # 批52: 戰法冷卻逐回合遞減(發動當回合結束後才開始倒數, 與「進入1回合冷卻=下回合不可用」一致:
-        # 寫入時 tac_cd=cd, 本 tick 先扣 1; cd=1 → 下回合開始前已歸零可再發。若需「含本回合共N回合
-        # 不可用」改為寫入 cd+1。目前採遊戲常見語意: 發動後進入N回合冷卻=接下來N個完整回合不可發。)
+        # 批52: 戰法冷卻逐回合遞減。時序重構後寫入端(fight()主迴圈fire分支)仍保留 cd+1(自我
+        # 參照場景, 見本方法docstring), 此處遞減邏輯本身不變: cd=1 → 本單位下1個行動輪前已
+        # 歸零可再發。
         if self.tac_cd:
             self.tac_cd = {k: v - 1 for k, v in self.tac_cd.items() if v - 1 > 0}
         if self.decay:
             self.decay["left"] -= 1
             if self.decay["left"] <= 0:
                 self.decay = None
-        # 禁近似令-批K: pre_dmg_hooks 到期清除 + deferred_dmg 逐回合攤還扣血, 對稱 engine.js
-        # tick() 同款段落(deferSettle 排出的分期傷害獨立於觸發它的hook本身是否仍存活)。
+        # 禁近似令-批K: pre_dmg_hooks 到期清除 + deferred_dmg 持續回合遞減, 對稱 engine.js
+        # decayDurations() 同款段落(deferSettle 排出的分期傷害獨立於觸發它的hook本身是否仍存活)。
         if self.pre_dmg_hooks:
             for h in self.pre_dmg_hooks:
                 h["dur"] -= 1
@@ -1082,9 +1109,6 @@ class Unit:
         if self.deferred_dmg:
             remain = []
             for q in self.deferred_dmg:
-                self.troop -= q["amt"]
-                self.wounded += q["amt"] * wounded_rate(CUR_ROUND)
-                fire_self_reactive(self, "dmgThreshold", bump_dmg_accum(self, q["amt"]))  # 禁近似令-批L
                 q["left"] -= 1
                 if q["left"] > 0:
                     remain.append(q)
@@ -1126,6 +1150,13 @@ class Unit:
         if self.immune:                                 # 批16: immuneTo 逐回合遞減(修正: 與 engine.js tick() 對齊, 此前 sgz.py 遺漏此行, 雙引擎不同步)
             self.immune = [[ty, l - 1] for ty, l in self.immune if l - 1 > 0]
         self.fake_report_dur = max(0, self.fake_report_dur - 1)  # 批16: 偽報 逐回合遞減(修正: 與 engine.js tick() 對齊, 此前 sgz.py 遺漏此行, 雙引擎不同步)
+
+    def tick(self):
+        """時序重構(2026-07)後保留: dot_settle()+decay_durations() 的合併捷徑, 供「模擬該單位
+        自己完整一輪(掉血+持續遞減)」的既有測試/呼叫端沿用(fight() 主迴圈本身已改為分開呼叫,
+        不再呼叫 tick(), 見該處 dot_settle→死亡檢查→行動→decay_durations 新時序)。"""
+        self.dot_settle()
+        self.decay_durations()
 
 
 # 傷害公式旋鈕(批3 重塑): 社群拆解(知乎菜頭50級傷害模型 + B站櫻謀詭計錨點), 用實測錨點反解常數。
@@ -1394,7 +1425,7 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_a
                 da = g.get("debuffAttacker")
                 if da and src.alive:
                     flags = {"dmgType": da["dmgType"]} if da.get("dmgType") else None
-                    src.push_add("amp", -(da.get("val") or 0), (da.get("dur", 1) or 1) + 1,
+                    src.push_add("amp", -(da.get("val") or 0), da.get("dur", 1) or 1,
                                  "counterGuard:debuffAttacker", flags)
                 ss = g.get("selfStack")
                 if ss:
@@ -1433,7 +1464,7 @@ def settle_huchen(u, early=False):
         u.wounded += dmg * wounded_rate(CUR_ROUND)
         fire_self_reactive(u, "dmgThreshold", bump_dmg_accum(u, dmg))  # 禁近似令-批L
     if early and u.alive:
-        u.stun = max(u.stun, 2)                        # 1 回合震懾(+1 tick 補償)
+        u.stun = max(u.stun, 1)                        # 1 回合震懾(時序重構: dur原值不補償+1)
     if caster and caster.alive:
         amp_v = h.get("ampOnSettle", 0.08)
         src = h.get("src") or "虎嗔"
@@ -1603,37 +1634,37 @@ def collect_debuff_tokens(pool):
         if u.stun > 0:
             def _mv(dest, dur, u=u):
                 u.stun = 0
-                dest.stun = max(dest.stun, (dur if dur is not None else 1) + 1)
+                dest.stun = max(dest.stun, dur if dur is not None else 1)
             out.append({"kind": "stun", "unit": u, "move": _mv})
         if u.silence > 0:
             def _mv(dest, dur, u=u):
                 u.silence = 0
-                dest.silence = max(dest.silence, (dur if dur is not None else 1) + 1)
+                dest.silence = max(dest.silence, dur if dur is not None else 1)
             out.append({"kind": "silence", "unit": u, "move": _mv})
         if u.disarm > 0:
             def _mv(dest, dur, u=u):
                 u.disarm = 0
-                dest.disarm = max(dest.disarm, (dur if dur is not None else 1) + 1)
+                dest.disarm = max(dest.disarm, dur if dur is not None else 1)
             out.append({"kind": "disarm", "unit": u, "move": _mv})
         if u.chaos > 0:
             def _mv(dest, dur, u=u):
                 u.chaos = 0
-                dest.chaos = max(dest.chaos, (dur if dur is not None else 1) + 1)
+                dest.chaos = max(dest.chaos, dur if dur is not None else 1)
             out.append({"kind": "chaos", "unit": u, "move": _mv})
         if u.healblock > 0:
             def _mv(dest, dur, u=u):
                 u.healblock = 0
-                dest.healblock = max(dest.healblock, (dur if dur is not None else 1) + 1)
+                dest.healblock = max(dest.healblock, dur if dur is not None else 1)
             out.append({"kind": "healblock", "unit": u, "move": _mv})
         if getattr(u, "fake_report_dur", 0) > 0:
             def _mv(dest, dur, u=u):
                 u.fake_report_dur = 0
-                dest.fake_report_dur = max(dest.fake_report_dur, (dur if dur is not None else 1) + 1)
+                dest.fake_report_dur = max(dest.fake_report_dur, dur if dur is not None else 1)
             out.append({"kind": "fakeReport", "unit": u, "move": _mv})
         if u.ambush > 0:
             def _mv(dest, dur, u=u):
                 u.ambush = 0
-                dest.ambush = max(dest.ambush, (dur if dur is not None else 1) + 1)
+                dest.ambush = max(dest.ambush, dur if dur is not None else 1)
             out.append({"kind": "ambush", "unit": u, "move": _mv})
         if u.huchen:
             def _mv(dest, dur, u=u):
@@ -2808,8 +2839,8 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     dur = e.get("dur", 2)
                     for u in dests_c:
                         # 獨立狀態: 無視洞察; 不可淨化(dispel 不碰 captured)
-                        u.captured = max(u.captured, dur + 1)
-                        u.healblock = max(u.healblock, dur + 1)
+                        u.captured = max(u.captured, dur)
+                        u.healblock = max(u.healblock, dur)
             continue
         # 禁近似令-批K: armConsume(once_consumable族施放端) —— 對稱 engine.js 同名分支
         # (十二奇策), 武裝一份一次性追加觸發資格。
@@ -3183,7 +3214,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             # 「使其任一目標受到傷害時會回饋X%傷害給其他敵軍」的傷害轉嫁給隊友機制(連環計),
             # 消費端見 hit() 內 dst.dmg_share 判斷式。
             elif k == "dmgShare":
-                u.dmg_share = {"pct": sv_val(e["val"]), "dur": e.get("dur", 2) + 1}
+                u.dmg_share = {"pct": sv_val(e["val"]), "dur": e.get("dur", 2)}
             elif k == "mitig" and e.get("stackKey"):
                 # 禁近似令-批K: mitig+e.stackKey(對稱既有amp+e.stackKey per-target疊層變體),
                 # 對稱engine.js同名分支, 離月首次落地。
@@ -3253,39 +3284,39 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             # 批52h: 成功施加後 fire_controlled 廣播(機鑑先識反彈); no_ctrl_reflect 時跳過
             elif k == "stun":
                 if not u.insight and not u.is_immune_to("stun"):
-                    u.stun = max(u.stun, e["dur"] + 1)
+                    u.stun = max(u.stun, e["dur"])
                     if not no_ctrl_reflect:
                         fire_controlled(u, "stun", e.get("dur", 1), allies, enemies)
                 else:
                     fire_self_reactive(u, "ctrlImmune", 1)  # 禁近似令-批L: 免疫格擋觸發ctrlImmune事件(一身是膽)
             elif k == "silence":
                 if not u.insight and not u.is_immune_to("silence"):
-                    u.silence = max(u.silence, e["dur"] + 1)
+                    u.silence = max(u.silence, e["dur"])
                     if not no_ctrl_reflect:
                         fire_controlled(u, "silence", e.get("dur", 1), allies, enemies)
                 else:
                     fire_self_reactive(u, "ctrlImmune", 1)  # 禁近似令-批L
             elif k == "disarm":
                 if not u.insight and not u.is_immune_to("disarm"):
-                    u.disarm = max(u.disarm, e["dur"] + 1)
+                    u.disarm = max(u.disarm, e["dur"])
                     if not no_ctrl_reflect:
                         fire_controlled(u, "disarm", e.get("dur", 1), allies, enemies)
                 else:
                     fire_self_reactive(u, "ctrlImmune", 1)  # 禁近似令-批L
             elif k == "chaos":                        # 批12 ModeF: 混亂(敵我不分), 同 insight 免疫規則
                 if not u.insight and not u.is_immune_to("chaos"):
-                    u.chaos = max(u.chaos, e.get("dur", 1) + 1)
+                    u.chaos = max(u.chaos, e.get("dur", 1))
                     if not no_ctrl_reflect:
                         fire_controlled(u, "chaos", e.get("dur", 1), allies, enemies)
                 else:
                     fire_self_reactive(u, "ctrlImmune", 1)  # 禁近似令-批L
             elif k == "ambush":                        # 批18: 遇襲(先攻的反面/遲緩) —— 不鎖行動, 只影響排序; insight/immuneTo可免
                 if not u.insight and not u.is_immune_to("ambush"):
-                    u.ambush = max(u.ambush, e.get("dur", 1) + 1)
+                    u.ambush = max(u.ambush, e.get("dur", 1))
                 else:
                     fire_self_reactive(u, "ctrlImmune", 1)  # 禁近似令-批L
             elif k == "insight":                      # 洞察: 免疫控制, 施加時同時解除既有控制
-                u.insight = max(u.insight, e.get("dur", 1) + 1)
+                u.insight = max(u.insight, e.get("dur", 1))
                 u.stun = u.silence = u.disarm = u.chaos = u.ambush = 0
             elif k == "immune":                       # 批16: immuneTo —— 單項控制免疫
                 u.push_immune(e.get("types"), e.get("dur"))
@@ -3376,13 +3407,13 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     u.push_mod(stat_field, sv_mult(e.get("mult", 1.0)), e["dur"], src, ud_flags, max_stack=ms)
             elif k == "huchen":                       # 批52d: 虎嗔(將門虎女) —— 負面狀態, 可被 dispel debuffs 清除
                 # base=初始結算傷害率(滿級0.20), per=每次受傷疊加(0.30), maxHits=3,
-                # left=持續回合(+1 tick 補償→「下一回合」結算), ampOnSettle=結算時施放者兵刃+8%
+                # left=持續回合(時序重構: dur原值不補償+1), ampOnSettle=結算時施放者兵刃+8%
                 u.huchen = {
                     "base": e.get("base", e.get("coef", 0.20)),
                     "per": e.get("per", 0.30),
                     "hits": 0,
                     "maxHits": e.get("maxHits", 3),
-                    "left": (e.get("dur", 1) or 1) + 1,
+                    "left": e.get("dur", 1) or 1,
                     "caster": caster,
                     "kind": e.get("kind") or t.get("kind", "phys"),
                     "src": t.get("nameZh") or "虎嗔",
@@ -3428,7 +3459,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     "max": e.get("max"), "hits": 0, "rate": e.get("rate"),
                     "dmg_type": e.get("dmgType"), "pct": e.get("pct"),
                     "delay_rounds": e.get("delayRounds"), "reduce_pct": e.get("reducePct"),
-                    "dur": (e.get("dur", 99) or 99) + 1,
+                    "dur": e.get("dur", 99) or 99,
                 })
             # 禁近似令-批K: k=="preAttackHook" 註冊(對稱engine.js同名分支) —— 見 Unit.__init__
             # pre_attack_hooks 詳細註解與 do_normal_attack() 消費端。hook_kind: "redirectPre"
@@ -3437,7 +3468,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             elif k == "preAttackHook":
                 u.pre_attack_hooks.append({
                     "hook_kind": e.get("hookKind"), "rate": e.get("rate"), "guard": e.get("guard"),
-                    "coef": e.get("coef"), "scale": e.get("scale"), "dur": (e.get("dur", 99) or 99) + 1,
+                    "coef": e.get("coef"), "scale": e.get("scale"), "dur": e.get("dur", 99) or 99,
                 })
             elif k == "stack":                        # 疊加增益: 每層加 per 增傷; 遞增時機見 stackPer
                 # 批26 B2: e["stackPer"](可選, "round"預設/"cast") —— 過去疊層只有「每回合+1層」
@@ -3464,7 +3495,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 u.decay = {"v0": e.get("v0", 0.5), "left": e.get("rounds", 8),
                            "total": e.get("rounds", 8)}
             elif k == "swap":                         # 武智互換
-                u.swap = max(u.swap, e.get("dur", 1) + 1)
+                u.swap = max(u.swap, e.get("dur", 1))
             # 禁近似令-批K: e["onKill"](engine_wiring_gaps_misc族) —— 不立即套用pierce, 改
             # 登記到u.on_kill_grants(待hit()偵測到u親手擊敗某目標時才真正授予, 見hit()消費端),
             # 供虎痴「如果擊敗目標，會使自身獲得破陣狀態，直到戰鬥結束」精確表達條件觸發時機。
@@ -3502,9 +3533,8 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 else:
                     # 批23 A2: counter 讀 e["dur"](過去是幽靈欄位, 從不寫入/遞減 —— 「反擊持續1
                     # 回合」等帶時限的反擊被無聲變成常駐/永久, 見還擊/千里走單騎等)。dur 預設99
-                    # (=常駐被動慣例, 向後相容無 dur 欄位的既有反擊資料)。+1 補償: tick 施加當
-                    # 回合末即扣1, 與 taunt/dodge/surehit/shield 慣例一致。tick() 逐回合遞減,
-                    # 歸零時清除(見 tick() 對應段落)。
+                    # (=常駐被動慣例, 向後相容無 dur 欄位的既有反擊資料)。時序重構: dur原值不
+                    # 補償+1, decay_durations() 於該單位行動輪之後遞減, 歸零時清除。
                     # 批G: e["normalOnly"] —— 對稱既有redirect(guard_normal_only)/amp/mitig
                     # 已支援的normalOnly慣例, 限定此反擊只在受到普通攻擊(is_normal=True)時觸發,
                     # 省略時向後相容(任意傷害來源皆可觸發反擊, 現行全庫既有counter資料行為不變)。
@@ -3512,7 +3542,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     # 高估觸發範圍)。「反彈傷害的5%」(依本次受到的傷害量比例輸出, 而非固定coef
                     # 重算)仍缺對應原語, 維持既有近似, 移C類(counter缺ofDamage式比例輸出版本)。
                     u.counter = {"coef": e.get("coef", 1.0), "kind": e.get("kind", "phys"),
-                                 "prob": e.get("prob", 1.0), "dur": e.get("dur", 99) + 1,
+                                 "prob": e.get("prob", 1.0), "dur": e.get("dur", 99),
                                  "normalOnly": bool(e.get("normalOnly"))}
             elif k == "taunt":                         # 嘲諷: 中招者普攻/單體戰法強制指向施放者
                 # 禁近似令-批K: e["tauntTarget"](force_attack_reverse族) —— 對稱 engine.js
@@ -3527,14 +3557,14 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     force_target = pick_by_criterion(enemies, e["targetSel"]) if e.get("targetSel") else None
                 if force_target:
                     u.taunt_by = force_target
-                    u.taunt_dur = max(u.taunt_dur, e.get("dur", 1) + 1)
+                    u.taunt_dur = max(u.taunt_dur, e.get("dur", 1))
             elif k == "shield":                        # 護盾: 固定量+按施放者兵力係數, 吸滿或到期為止
                 amt = e.get("amt", 0) + (e.get("pct", 0) * caster.troop if e.get("pct") else 0)
                 prev = u.shield["amt"] if u.shield else 0
-                u.shield = {"amt": prev + amt, "dur": e.get("dur", 99) + 1, "undispellable": bool(e.get("undispellable"))}  # +1 補償: tick 施加當回合末即扣1, 與 taunt/dodge/surehit 慣例一致
+                u.shield = {"amt": prev + amt, "dur": e.get("dur", 99), "undispellable": bool(e.get("undispellable"))}  # 時序重構: dur原值不補償+1(decay_durations於該單位行動輪之後遞減)
             elif k == "dodge":                         # 規避: 機率完全迴避一次傷害
                 u.dodge_prob = e.get("prob", 0.2)
-                u.dodge_dur = max(u.dodge_dur, e.get("dur", 1) + 1)
+                u.dodge_dur = max(u.dodge_dur, e.get("dur", 1))
                 u.dodge_dmg_type = e.get("dmgType")   # 批G: 限定規避只對此類型(phys/intel)傷害生效, 對稱amp/mitig/block既有dmgType過濾慣例(榮光「受謀略傷害時完全免疫」需要只免疫intel傷害); 省略時None=向後相容既有全域規避(不分類型)
             elif k == "block":                         # 批22: block(次數型格擋, 抵禦/警戒同族) —— times:N(剩餘次數), val:1.0全擋/0.x部分減傷
                 # val 的 scale 縮放用 0~1 專屬 clamp(非 sv_val 的 ±SCALE_CLAMP, 因 block val 是
@@ -3546,7 +3576,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 b_val = max(0.0, min(1.0, cap_val_of(e.get("val", 1.0) * locked_scale_of(caster, e), e.get("capVal")))) if e.get("scale") else e.get("val", 1.0)
                 u.push_block(b_val, e.get("times", 1), src, dmg_type=e.get("dmgType"))  # 批G: e["dmgType"]限定格擋類型(榮光「受謀略傷害時完全免疫」等), 省略時向後相容(不分類型)
             elif k == "surehit":                       # 必中: 無視對方 dodge
-                u.surehit_dur = max(u.surehit_dur, e.get("dur", 1) + 1)
+                u.surehit_dur = max(u.surehit_dur, e.get("dur", 1))
             elif k == "healblock":                     # 批8: 禁療 —— heal 套用處(apply_effects 開頭)已排除 healblock 中的目標
                 # 批C: is_immune_to("healblock") 查詢方法自批16 immuneTo落地起即存在(單元測試
                 # 也涵蓋healblock在內的清單, 見demo()斷言), 但施加healblock的這個分支從未真正
@@ -3554,7 +3584,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 # apply_corrections()disclosure key None處理發現的同類「原語存在但未接上」問題)。
                 # 補上判斷式, 讓k=="immune"(types含"healblock")真正能免疫此debuff。
                 if not u.is_immune_to("healblock"):
-                    u.healblock = max(u.healblock, e.get("dur", 1) + 1)
+                    u.healblock = max(u.healblock, e.get("dur", 1))
             elif k == "lifesteal":                     # 批8: 倒戈 —— 實際回血在 hit() 結算傷害後(見 hit() 內 lifesteal 段), 這裡只掛加成值
                 u.push_add("lifesteal", e["val"], e["dur"], src)
             elif k == "rateup":                        # 提高(自身或對象)主動戰法發動機率
@@ -3610,7 +3640,7 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             # 就拒絕覆蓋」的二元判定, 見 engine.js 同段註解)。
             elif k == "fakeReport":
                 if not u.insight:
-                    new_dur = e.get("dur", 1) + 1
+                    new_dur = e.get("dur", 1)
                     if new_dur > u.fake_report_dur:
                         u.fake_report_dur = new_dur
             # 批16: dispel(驅散/淨化) —— 移除目標 adds/mods/dots/控制欄位中對應方向(buffs/debuffs)的條目,
@@ -4224,9 +4254,18 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
         _pool = [x for x in A + B if x.alive]
         random.shuffle(_pool)
         for u in sorted(_pool, key=lambda x: (eff_first(x), x.eff("speed")), reverse=True):
-            if not u.alive or u.stun or getattr(u, "captured", 0):
-                continue  # 批52j: 捕獲同震懾無法行動
+            if not u.alive:
+                continue  # 本回合稍早已被擊殺(其他單位的攻擊), 不再結算/行動
+            # 時序重構(2026-07, user權威規則): DoT跟隨被上狀態的人 —— 輪到該單位行動時才結算
+            # 它自己的DoT(取代舊「回合末全體同時tick()」), 取代處見下方 decay_durations()。
+            u.dot_settle()
+            if not u.alive:
+                continue  # DoT致死: 死亡不行動(也不再decay_durations, 已死無意義)
+            if u.stun or getattr(u, "captured", 0):
+                u.decay_durations()  # 批52j: 捕獲同震懾無法行動, 但持續仍需遞減(否則永不解除)
+                continue
             if pick_target(foes_of(u)) is None:
+                u.decay_durations()
                 break
             if not u.silence:                             # 計窮: 跳過主動/指揮/被動(不影響普攻)
                 for t0 in u.tactics:                       # 自帶 + 傳承: 各自獨立附加發動(不占普攻)
@@ -4296,8 +4335,14 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                         if u.ammo[_an] <= 0:
                             fire = False
                     if fire:
-                        # 批52: 發動成功後進入冷卻。寫入 cd+1: 本回合結束 tick 先扣1, 剩餘 cd
-                        # 個完整回合不可再發(「進入1回合冷卻」= 下回合不可用, 再下回合才可)。
+                        # 批52: 發動成功後進入冷卻。寫入 cd+1: 本單位這輪 decay_durations() 先扣1,
+                        # 剩餘 cd 個完整行動輪不可再發(「進入1回合冷卻」= 下個行動輪不可用, 再下個
+                        # 行動輪才可)。時序重構(2026-07)保留此 +1: 冷卻是「本單位自己行動時設下,
+                        # 同一行動輪內緊接著的 decay_durations() 就會立刻扣1」的自我參照場景, 與
+                        # 外部施加的debuff/buff(已全庫移除+1補償, 見 Unit.decay_durations() docstring)
+                        # 時序性質不同 —— 不補償會讓 cd=1 完全失效(下個行動輪立即可再發, 冷卻形同
+                        # 虛設), 故此欄位維持既有 +1 寫法, 不在本次移除範圍內(已標記待user確認,
+                        # 見交接文件時序重構節)。
                         if t0.get("cd") and t0.get("nameZh"):
                             u.tac_cd[t0["nameZh"]] = int(t0["cd"]) + 1
                         # 批26 B2: stack.stackPer=="cast" —— 本戰法本次成功發動(擲骰命中fire),
@@ -4420,6 +4465,10 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                             apply_effects(u, main_hit_tgt, t, allies_of(u), foes_of(u), no_heal=False, main_hit_tgts=main_hit_tgts)
             # 批52i: 普攻管線抽成 do_normal_attack(連擊/everyN/突擊), 與 proxyNormal 共用
             do_normal_attack(u, allies_of(u), foes_of(u), on_hit, dealt_damage, active_fired)
+            # 時序重構(2026-07, user權威規則): 該單位行動後才持續-1(取代舊回合末全體tick())。
+            # dot_settle()已在本單位行動前結算過掉血, 此處只負責持續回合數遞減/到期清除,
+            # 與 hit_flags(每輪節流)重置 —— 皆對「這一單位」而言, 於它自己這輪行動之後。
+            u.decay_durations()
 
         for u in A + B:                               # 結算傷害: 疊滿層數或到期 → 對其所屬全隊爆發
             s = u.settle
@@ -4436,9 +4485,11 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 u.settle = None
             else:
                 s["left"] -= 1
-
-        for u in A + B:
-            u.tick()
+        # 時序重構(2026-07): 舊「for u in A+B: u.tick()」回合末全體同時結算已移除 —— DoT掉血
+        # 已在上方行動迴圈內, 各單位輪到自己行動時由 dot_settle() 個別結算; 持續回合遞減已在
+        # 各單位行動後由 decay_durations() 個別結算。settle(猛毒疊層爆發, 上方區塊)為隊伍級
+        # 疊層機制、非「該單位自身」的DoT/狀態持續, 仍維持逐回合(全局)結算, 不在本次改動範圍
+        # (詳見交接文件時序重構節「未定義邊角」列表)。
         # 批8: 殲滅(kill) —— ROUNDS 回合內一方全滅, 對比「判定勝」(打滿8回合按剩餘兵力比較)。
         if not any(u.alive for u in A):
             return "B", rnd, True
@@ -5512,14 +5563,14 @@ def demo():
                         "rate": 1.0, "n": 1, "prep": 0, "effects": [{"k": "fakeReport", "who": "enemy", "dur": 1}]}
     fr61_caster = Unit(POOL["諸葛亮"], "弓")
     apply_effects(fr61_caster, fr61_u, fr61_tac_weak, [fr61_caster], [fr61_u], no_heal=True)
-    assert fr61_u.fake_report_dur == 4, "首次施加dur:3應生效(4=3+1補償)"
+    assert fr61_u.fake_report_dur == 3, "首次施加dur:3應生效(時序重構: dur原值, 不補償+1)"
     apply_effects(fr61_caster, fr61_u, fr61_tac_strong, [fr61_caster], [fr61_u], no_heal=True)
-    assert fr61_u.fake_report_dur == 4, "已存在同等或更強的偽報效果(dur:3 > 新的dur:1)時, 新施加不應覆蓋(維持原4, 不降為2)"
+    assert fr61_u.fake_report_dur == 3, "已存在同等或更強的偽報效果(dur:3 > 新的dur:1)時, 新施加不應覆蓋(維持原3, 不降為1)"
     # 更強的新效果應能覆蓋
     fr61_tac_stronger = {"nameZh": "測試偽報更強65", "type": "active", "kind": "phys", "coef": 0,
                           "rate": 1.0, "n": 1, "prep": 0, "effects": [{"k": "fakeReport", "who": "enemy", "dur": 5}]}
     apply_effects(fr61_caster, fr61_u, fr61_tac_stronger, [fr61_caster], [fr61_u], no_heal=True)
-    assert fr61_u.fake_report_dur == 6, "新施加dur:5(6=5+1)比現有更強(4), 應覆蓋"
+    assert fr61_u.fake_report_dur == 5, "新施加dur:5比現有更強(3), 應覆蓋(時序重構: dur原值, 不補償+1)"
 
     # 66) 輸出減益疊加上限 -90%: 多重負向amp疊加落在-90%~-100%之間(未達虛弱門檻-1.0)時, 應封頂在-90%(輸出至少保留10%), 不應被錯誤歸零
     neg90_src = Unit(POOL["呂布"], "騎")
@@ -5625,10 +5676,9 @@ def demo():
     apply_effects(a2_u, None, {"nameZh": "測試A2反擊69", "effects": [{"k": "counter", "who": "self", "coef": 1.0, "dur": 1}]},
                   [a2_u], [], no_heal=True)
     assert a2_u.counter is not None, "A2: 施加後應立即擁有counter"
-    a2_u.tick()  # 第1回合結束: dur=1(+1補償=2) -1 = 1, 仍應存在(本回合內生效)
-    assert a2_u.counter is not None, "A2: dur=1的反擊在施加當回合的tick()後應仍存在(補償+1慣例, 本回合內仍生效)"
-    a2_u.tick()  # 第2回合結束: 應到期清除
-    assert a2_u.counter is None, "A2: dur=1的反擊在下一回合的tick()後應到期清除(過去幽靈欄位從不遞減, 永久存在)"
+    assert a2_u.counter["dur"] == 1, "A2: 時序重構後dur應原值儲存(不補償+1)"
+    a2_u.decay_durations()  # 時序重構: 該單位1個行動輪結束 → dur=1的反擊應到期清除
+    assert a2_u.counter is None, "A2: dur=1的反擊在該單位1個行動輪後應到期清除(過去幽靈欄位從不遞減, 永久存在)"
     # 無 e["dur"] 應預設常駐(99, 向後相容既有反擊資料)
     a2_u2 = Unit(POOL["張飛"], "盾")
     apply_effects(a2_u2, None, {"nameZh": "測試A2常駐69b", "effects": [{"k": "counter", "who": "self", "coef": 1.0}]},
@@ -8965,6 +9015,115 @@ def demo():
                  f"乾淨目標應0/50誤中震懾, 實得{hit_ineligible_211}/50")
     print("    [批B 211] 橫掃千軍filter-then-pick跨種子(2人池×6種子+4人池×6種子, 各50次) "
           "50/50精確命中合格目標+0/50誤中不合格目標 驗證通過")
+
+    # ------------------------------------------------------------------
+    # 時序重構(2026-07, user權威規則): DoT/狀態持續改為逐單位行動時結算
+    # ------------------------------------------------------------------
+
+    # 212) DoT先於行動 —— 輪到該單位行動時, 先結算它自己的DoT(掉血), 行動(造成傷害)時兵力
+    # 已是DoT扣除後的值, 而非扣除前(取代舊「回合末全體同時tick()」; 舊制下本回合行動一律用
+    # DoT結算前的兵力, 傷害公式的sqrt(troop)項因而偏高)。damage()以src.troop為輸入(sqrt
+    # 項), 同一單位dot_settle()前後各採樣一次傷害, 後者(troop較低)應嚴格小於前者。
+    dot212_src = Unit(POOL["呂布"], "騎")
+    dot212_dst = Unit(POOL["張飛"], "盾")
+    dot212_troop_before = dot212_src.troop
+    dmg_before_dot_212 = damage(dot212_src, dot212_dst, 1.0, "phys")
+    dot212_src.dots.append([dot212_src.troop * 0.5, 2])   # 灼燒: 扣50%當前兵力
+    dot212_src.dot_settle()
+    assert dot212_src.troop < dot212_troop_before, "212: dot_settle()後兵力應已扣除(DoT掉血結算)"
+    dmg_after_dot_212 = damage(dot212_src, dot212_dst, 1.0, "phys")
+    assert dmg_after_dot_212 < dmg_before_dot_212, \
+        ("212: DoT先於行動 —— 結算DoT後(兵力已扣)若接著行動(造成傷害), 傷害應以已扣血的兵力"
+         f"計算(較低), 而非扣血前的原始兵力, 實得扣血前={dmg_before_dot_212:.2f} 扣血後={dmg_after_dot_212:.2f}")
+
+    # 213) 持續N回合 = 該單位自己N個行動輪(不是全局回合數, 也不需舊制+1補償) —— dot dur=3
+    # (原值, 全庫已移除+1補償): 該單位連續3次「自己的行動輪」(tick()=dot_settle()+
+    # decay_durations()合併捷徑, 見Unit.tick() docstring)各掉血1次, 第3次後到期清除,
+    # 第4次不再掉血。一般狀態持續(震懾)同語意, dur=2應恰好2個行動輪內生效。
+    dur213_u = Unit(POOL["張飛"], "盾")
+    dot213_dmg = 100.0
+    dur213_u.dots.append([dot213_dmg, 3])
+    troop213_0 = dur213_u.troop
+    dur213_u.tick()  # 第1個行動輪
+    assert abs(dur213_u.troop - (troop213_0 - dot213_dmg)) < 1e-6 and len(dur213_u.dots) == 1, \
+        "213: dur=3的DoT第1個行動輪應掉血1次且仍存在(剩2輪)"
+    dur213_u.tick()  # 第2個行動輪
+    assert abs(dur213_u.troop - (troop213_0 - 2 * dot213_dmg)) < 1e-6 and len(dur213_u.dots) == 1, \
+        "213: dur=3的DoT第2個行動輪應再掉血1次且仍存在(剩1輪)"
+    dur213_u.tick()  # 第3個行動輪
+    assert abs(dur213_u.troop - (troop213_0 - 3 * dot213_dmg)) < 1e-6 and len(dur213_u.dots) == 0, \
+        "213: dur=3的DoT第3個行動輪應第3次掉血後到期清除(恰好3個行動輪, 不需+1補償)"
+    troop213_3 = dur213_u.troop
+    dur213_u.tick()  # 第4個行動輪: 已到期, 不應再掉血
+    assert abs(dur213_u.troop - troop213_3) < 1e-6, "213: 到期後第4個行動輪不應再掉血"
+    stun213_u = Unit(POOL["張飛"], "盾")
+    apply_effects(Unit(POOL["諸葛亮"], "弓"), stun213_u,
+                  {"nameZh": "測試213震懾", "effects": [{"k": "stun", "who": "enemy", "dur": 2}]},
+                  [], [stun213_u], no_heal=True)
+    assert stun213_u.stun == 2, "213: 施加dur=2的震懾應原值儲存(不補償+1)"
+    stun213_u.decay_durations()  # 該單位第1個行動輪(跳過行動, 但持續仍遞減)
+    assert stun213_u.stun == 1, "213: 震懾第1個行動輪後應剩1(仍生效)"
+    stun213_u.decay_durations()  # 該單位第2個行動輪
+    assert stun213_u.stun == 0, "213: 震懾第2個行動輪後應歸零(恰好2個行動輪, 解除)"
+
+    # 214) DoT致死則該單位不行動 —— dot_settle()若使兵力降至<=0(alive為troop>0的計算屬性),
+    # fight()主迴圈於dot_settle()後立即檢查alive, 陣亡則直接continue(不再檢查stun/silence、
+    # 不發動戰法、不普攻), 與「先受傷害才死亡」的一般攻擊死亡完全對稱, 只是觸發源是自己的DoT
+    # 而非敵方普攻/戰法。
+    lethal214_u = Unit(POOL["張飛"], "盾")
+    assert lethal214_u.alive, "214前置: 施加DoT前應存活"
+    lethal214_u.dots.append([lethal214_u.troop + 999999, 1])  # 灼燒傷害遠超剩餘兵力, 必定致死
+    lethal214_u.dot_settle()
+    assert not lethal214_u.alive, \
+        "214: 致命DoT結算後應陣亡(troop<=0), fight()主迴圈的`if not u.alive: continue`應在此觸發, 該單位不再行動"
+    # 對照組: 非致命DoT不應阻止行動
+    survive214_u = Unit(POOL["張飛"], "盾")
+    survive214_u.dots.append([survive214_u.troop * 0.1, 1])  # 僅扣10%兵力, 不致死
+    survive214_u.dot_settle()
+    assert survive214_u.alive, "214對照: 非致命DoT結算後應仍存活, 可正常進入stun檢查/行動"
+
+    # 215) 快慢單位控制/DoT狀態結算時點依行動順序 —— 同一回合內, 較快單位(已行動完才被施加,
+    # 對應「行動後施加」)與較慢單位(尚未行動前被施加, 對應「行動前施加」)最終都應恰好獲得
+    # dur指定的N個「自己的行動輪」效果, 只是起算的絕對回合不同(較快單位下一輪才開始算,
+    # 較慢單位本輪即開始算)。舊制「回合末全體同時tick()」下, +1補償只能兜住其中一種順序,
+    # 另一種順序仍會多算1輪(見 Unit.decay_durations() docstring); 新制逐單位在自己行動之後
+    # 才-1, 兩種順序皆自然精確, 不再有±1回合誤差。
+    def _simulate_n_turns_215(u, n_turns):
+        """依序模擬 u 接下來 n_turns 個自己的行動輪(dot_settle→alive檢查→stun檢查(受控則仍
+        decay_durations但跳過行動)→(略行動)→decay_durations), 回傳被跳過(受控)的輪數。"""
+        skipped = 0
+        for _ in range(n_turns):
+            if not u.alive:
+                break
+            u.dot_settle()
+            if not u.alive:
+                break
+            if u.stun:
+                skipped += 1
+                u.decay_durations()
+                continue
+            u.decay_durations()  # (略去實際攻擊, 此測試只關心是否被跳過)
+        return skipped
+
+    fast215 = Unit(POOL["張飛"], "盾")  # 較快: 先完成本輪行動輪, 之後才被施加
+    slow215 = Unit(POOL["張飛"], "盾")  # 較慢: 本輪行動輪尚未開始前就被施加
+    caster215 = Unit(POOL["諸葛亮"], "弓")
+    stun_tac_215 = {"nameZh": "測試215控制", "effects": [{"k": "stun", "who": "enemy", "dur": 2}]}
+
+    _simulate_n_turns_215(fast215, 1)  # 較快單位先跑完本輪1個行動輪(未受控, 正常行動)
+    apply_effects(caster215, fast215, stun_tac_215, [caster215], [fast215], no_heal=True)
+    assert fast215.stun == 2, "215: 施加dur=2應原值儲存(不補償+1)"
+    fast215_skipped = _simulate_n_turns_215(fast215, 3)
+    assert fast215_skipped == 2, \
+        f"215(較快單位, 行動後施加): dur=2應使接下來恰好2個自己的行動輪被跳過, 實得{fast215_skipped}"
+
+    apply_effects(caster215, slow215, stun_tac_215, [caster215], [slow215], no_heal=True)  # 較慢單位本輪行動輪前就被施加
+    assert slow215.stun == 2, "215: 施加dur=2應原值儲存(不補償+1)"
+    slow215_skipped = _simulate_n_turns_215(slow215, 3)
+    assert slow215_skipped == 2, \
+        f"215(較慢單位, 行動前施加): dur=2應使接下來恰好2個自己的行動輪被跳過, 實得{slow215_skipped}"
+    print("    [時序重構 212-215] DoT先於行動(212)/持續N=該單位N個行動輪(213)/DoT致死不行動(214)/"
+          "快慢單位結算時點依行動順序皆精確無±1誤差(215) 驗證通過")
 
     print("self-check OK")
 
