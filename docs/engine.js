@@ -402,6 +402,12 @@
       // 除錯辨識), campLv=0時不推入(向後相容, adds為空陣列不影響任何既有戰鬥數學)。
       if (this.campLv > 0) this.adds.push(["amp", this.campLv * CAMP_DMG_PER_LV, 9999, "兵種營"]);
       this.settle = null; this.guardian = null; this.guardShare = 0; this.guardDur = 0; this.guardNormalOnly = false;  // guardDur: 代承剩餘回合, 歸零清 guardian; guardNormalOnly: 只代承普攻傷害(如 援助), 戰法傷害不轉移
+      // 時序一致化(2026-07 批次): ownRound —— 該單位自己的行動輪計數(1=第1次輪到自己), 於
+      // fight() 主迴圈進入該單位這輪處理時遞增(見該處註解)。取代settle/coefFromStack一次性
+      // 視窗註冊 + everyRound逐回合重擲(A.2/A.3) 過去使用的全局CUR_R基準——這兩類機制屬
+      // 「持有者自身進程」(user權威規則), 「第N回合」應指該持有者自己第N個行動輪, 非全局
+      // 戰鬥回合數。對稱 sgz.py own_round。
+      this.ownRound = 0;
       this.stack = null; this.decay = null; this.swap = 0; this.counter = null; this.dmgShare = null;
       // 禁近似令-批K: regens(engine_wiring_gaps_misc族) —— 「每回合恢復一次兵力,持續N回合」
       // 的休整/regen類狀態獨立逐回合累計治療清單(對稱this.dots的傷害版, 見tick()消費端),
@@ -780,7 +786,14 @@
     // 主迴圈 fire 分支註解 —— 冷卻是「本單位自己行動時設下, 同一行動輪內緊接著的
     // decayDurations 就會立刻扣1」的自我參照場景, 與外部施加的debuff/buff時序不同, 不補償會
     // 讓 cd=1 完全失效, 故此欄位維持既有 +1 寫法, 不在本次移除範圍內)。
+    //
+    // 時序一致化(2026-07 批次) A.1: stack.stackPer==="round"(預設值, 向後相容) 的逐回合遞增,
+    // 比照本方法(decayDurations)掛點——從舊「fight() 回合迴圈頂端、全體單位同時 +1 層」
+    // (全局回合cadence)移到這裡(該單位自己行動後), 每個自己的行動輪 +1 層, 與
+    // stackPer==="cast"(applyStackCast(), 發動時)/"attack"(dealtDamage(), 命中時)兩種既有
+    // 自參照模式並列一致。
     decayDurations() {
+      if (this.stack && (this.stack.stackPer || "round") === "round") this.stack.n = Math.min(this.stack.max, this.stack.n + 1);
       this.dots = this.dots.filter(d => --d[1] > 0);
       if (this.regens.length) this.regens = this.regens.filter(rg => --rg[1] > 0);
       this.mods = this.mods.filter(m => --m[2] > 0);
@@ -1168,6 +1181,22 @@
     if (caster && caster.alive) {
       caster.pushAdd("amp", h.ampOnSettle ?? 0.08, 99, h.src || "虎嗔", { dmgType: "phys" }, h.ampMaxStack ?? 99);
     }
+  }
+  // 時序一致化(2026-07 批次) A.2: settle(結算傷害·猛毒, 密計誅逆) 疊滿層數/倒數歸零的爆發
+  // 判定 —— 從舊「回合末全體同時檢查」(for u of [...A,...B], 全局回合cadence)改為持有者(u,
+  // 中毒目標)自己的行動輪結算, 比照 dotSettle() 掛點(u 自己行動前, 爆發可能致死, 與DoT對稱
+  // 處理, 見 fight() 主迴圈呼叫點: settleTick(u, alliesOf(u)))。爆發/倒數判斷邏輯本身不變,
+  // 只改cadence基準。模組層級函式(對稱 settleHuchen), 供 fight() 主迴圈與測試直接呼叫。
+  // team: u 所屬隊伍(A 或 B 陣列), 爆發時對其中存活單位造成傷害(singleTarget 時僅打 u 本人)。
+  function settleTick(u, team) {
+    const s = u.settle;
+    if (!s) return;
+    if (s.layers >= s.max || s.left <= 1) {
+      const stackLayers = s.perStackFrom ? ((u.ampLayersById && u.ampLayersById[s.perStackFrom]) || 0) : s.layers;
+      const targets = s.singleTarget ? [u] : team;
+      for (const v of targets) if (v.alive) { const sd = damage(s.caster, v, s.base + s.per * stackLayers, s.kind, s.snap); v.troop -= sd; v.wounded += sd * woundedRate(CUR_R); fireSelfReactive(v, "dmgThreshold", bumpDmgAccum(v, sd)); }
+      u.settle = null;
+    } else s.left -= 1;
   }
   function targetHas(u, type) {
     if (!u) return false;
@@ -1821,6 +1850,12 @@
       }
     }
   }
+  // 時序一致化(2026-07 批次) A.3: opt.ownTurn(可選) —— 對稱 opt.healOnly, 但用於
+  // everyRound(逐回合重擲) 效果的「該持有者自己行動輪」cadence 通道(見 fight() 主迴圈新增
+  // applyOwnTurnEffects() 呼叫端), 取代舊「applyPassives({healOnly:true}) 全局回合頂端」
+  // 通道對 everyRound 非heal效果的處理。opt.healOnly=true 呼叫路徑自本批起收斂為「只處理
+  // k==="heal"」(嚴格heal-only, 見下方頂端閘門), everyRound 非heal效果專屬 opt.ownTurn=true
+  // 通道(兩者互斥, 見下方 everyRound 分支 roundBasis 判斷)。
   function applyEffects(caster, tgt, t, allies, enemies, opt) {
     opt = opt || {};
     const src = t.nameZh || null;                     // 效果來源標籤: 戰法名(兵書/裝備/緣分無 nameZh → null, 不去重)
@@ -1847,7 +1882,11 @@
       // 導致 lockedScaleOf 從未在 prep 階段被呼叫過、鎖定值錯誤地延後到未來真正命中
       // 的那一回合才用當時(可能已變動)的即時智力算定, 违反「準備階段鎖定」語意本身。
       if (k === "block" && e.scale) lockedScaleOf(caster, e);
-      if (opt.healOnly && k !== "heal" && !e.everyRound) continue;  // 批30 A: everyRound 效果亦放行(見下方通用閘門)
+      // 時序一致化(2026-07 批次) A.3: opt.healOnly 自本批起收斂為嚴格「指揮/被動逐回合只跑
+      // 治療」語意(不再放行everyRound, 對稱opt.ownTurn文件註解)——everyRound非heal效果改由
+      // 下面 opt.ownTurn 閘門專屬處理(該持有者自己行動輪cadence, 而非全局回合)。
+      if (opt.healOnly && k !== "heal") continue;
+      if (opt.ownTurn && !e.everyRound) continue;  // ownTurn 通道只放行 everyRound 效果(見函式頂端註解)
       // 批18: e.when 泛化(非 heal 種類) —— heal 早已支援效果級 when(見下方 k==="heal" 分支的
       // opt.healOnly 閘門), 但其餘效果種類(amp/settle/stat/…)過去若帶 e.when 而母戰法無 t.when,
       // 會在 prep 階段(opt.skipWhenEffects=true 時, 見 fight() 呼叫端)被無聲當成「無 when 的常駐
@@ -1968,18 +2007,25 @@
       // 通道重新判定」。與 heal 共用同一份 healRoundsFired/whenFired 去重狀態(鍵是效果物件
       // 本身, heal 與 everyRound 不會撞鍵, 因為同一個效果物件只會是其中一種)。
       //
-      // 語意與 heal 完全對稱: opt.healOnly 模式下, 非 heal 效果只有帶 e.everyRound 才會走到
-      // 這裡(否則在函式開頭的 top-level k!=="heal" 過濾就被跳過); 帶 everyRound 的效果在
-      // **非** opt.healOnly 呼叫路徑(prep/active/charge/when視窗)一律跳過(不套用), 因為它
-      // 只該由 opt.healOnly 常駐通道結算 —— 對稱於 heal 在其他路徑各自決定是否觸發、不依賴
-      // 這裡的慣例。
+      // 語意與 heal 完全對稱: 非 heal 效果只有帶 e.everyRound 才會走到這裡(否則在函式開頭的
+      // top-level 過濾就被跳過); 帶 everyRound 的效果在**非** opt.healOnly/opt.ownTurn 呼叫
+      // 路徑(prep/active/charge/when視窗)一律跳過(不套用), 因為它只該由這兩條常駐通道結算
+      // —— 對稱於 heal 在其他路徑各自決定是否觸發、不依賴這裡的慣例。
+      //
+      // 時序一致化(2026-07 批次) A.3: opt.ownTurn===true 時,「每回合」重擲改採該持有者
+      // (caster)自己的行動輪計數(caster.ownRound)為基準, 取代 opt.healOnly 舊路徑的全局
+      // CUR_R ——機鑑先識「每回合21%→42%機率獲得1次警戒」等 e.everyRound 效果, user權威規則
+      // 「回合」對持有者自身的漸進/計數機制=該持有者自己的行動輪。opt.healOnly===true(現
+      // 嚴格heal-only, 見上方頂端閘門)與 opt.ownTurn===true 為互斥的兩種呼叫模式, 不會同時
+      // 為真時走到此分支處理同一效果(opt.healOnly===true 時 k!=="heal" 已在頂端被擋下)。
       if (e.everyRound && k !== "heal") {
         // 批35 B: block 的「準備階段鎖定」scale 值已在函式最頂端(所有 continue 閘門之前)
         // 算定, 此處不需重複呼叫 lockedScaleOf(見上方新增的閘門與其註解)。
-        if (!opt.healOnly) continue;
+        if (!(opt.healOnly || opt.ownTurn)) continue;
+        const roundBasis = opt.ownTurn ? caster.ownRound : CUR_R;
         const hw = e.when || t.when;
         if (hw) {
-          if (!roundOk({ when: hw }, CUR_R)) continue;
+          if (!roundOk({ when: hw }, roundBasis)) continue;
           // 批A(11筆高嚴重重建): e.when.hpBelow/hpAbove(效果級) —— 過去 hpBelow/hpAbove 只在
           // 戰法級(t.when, 見 fight() 主迴圈 754 行後段的獨立 hpOk 判斷)受理, everyRound 通道
           // 的 hw(可能是 e.when 也可能 fallback 到 t.when)只走 roundOk, 從不檢查 hp。奇兵間道
@@ -1994,8 +2040,8 @@
             if (!caster.healRoundsFired) caster.healRoundsFired = new Map();
             let seen = caster.healRoundsFired.get(e);
             if (!seen) { seen = new Set(); caster.healRoundsFired.set(e, seen); }
-            if (seen.has(CUR_R)) continue;
-            seen.add(CUR_R);
+            if (seen.has(roundBasis)) continue;
+            seen.add(roundBasis);
           }
         } else if (e.once) {
           if (caster.whenFired.has(e)) continue;
@@ -2015,7 +2061,18 @@
         // 套用(奇偶兩組效果同時生效, 塌縮成常駐雙倍輸出, 即R23要抓的缺口本身)。此處補上
         // 通用檢查: 任何非heal/非everyRound效果只要帶 e.when, 就先驗證當前回合是否落在窗口
         // 內, 不符合則跳過該效果段。
-        if (!roundOk({ when: e.when }, CUR_R)) continue;
+        //
+        // 時序一致化(2026-07 批次) A.2: k==="settle"(密計誅逆等猛毒式閾值爆發) 或帶
+        // e.coefFromStack(絕地反擊等自身疊層驅動爆發, dynamic_coef_from_counter族) 的
+        // e.when 一次性視窗註冊屬「持有者(caster, 即施放此效果的單位)自身進程」, 「第N回合」
+        // 改用 caster.ownRound(該持有者自己第N個行動輪)為基準, 取代全局CUR_R。此分支為通用
+        // 防禦閘門(不論呼叫路徑為何皆會核對), 實際註冊入口見 fight() 主迴圈新增的
+        // applyOwnTurnEffects() 內專屬settle/coefFromStack一次性視窗掃描(該處已用
+        // caster.ownRound 預篩+whenFired去重, 這裡的核對是二次防禦, 語意需一致)。其餘
+        // when-gated 非heal/非everyRound效果(如工神/橫戈躍馬等team-wide buff)不受影響, 仍用
+        // 全局CUR_R(團隊級回合窗, 見交接文件時序重構節B類清單, 待user確認)。
+        const roundBasis2 = (k === "settle" || e.coefFromStack) ? caster.ownRound : CUR_R;
+        if (!roundOk({ when: e.when }, roundBasis2)) continue;
       }
       if (k === "heal") {
         if (opt.noHeal) continue;
@@ -3154,6 +3211,35 @@
           applyEffects(team[0], null, pt(bd.effects), team, foesOf(team[0]), opt);
         }
     };
+    // 時序一致化(2026-07 批次) A.2+A.3: 「該持有者自己的行動輪」cadence 掃描 —— 取代舊「全局
+    // 回合」cadence, 於 fight() 主迴圈逐單位處理輪到 u 時呼叫(見下方回合迴圈, 呼叫點在
+    // dotSettle() 之後、settleTick() 之前)。統一處理兩類機制(皆以 caster(=u).ownRound 為
+    // 「第N回合」的比較基準, 取代CUR_R):
+    //   (1) A.3 everyRound(如機鑑先識「每回合21%→42%機率獲得1次警戒」): 逐 u.tactics/u.bs/
+    //       u.eq 呼叫 applyEffects(..., {ownTurn:true}), 由該函式內部閘門只放行帶
+    //       e.everyRound 的效果並依 ownRound 判定視窗/rate(見 applyEffects everyRound 分支)。
+    //   (2) A.2 settle/coefFromStack 的 e.when 一次性視窗註冊(如密計誅逆settle第6回合/
+    //       絕地反擊dot第5回合): 沿用舊「e.when 泛化」全局頂端掃描的同一套邏輯(whenFired
+    //       去重+one-shot套用), 只是預篩的回合基準改為 u.ownRound, 且範圍限定u自己的tactics
+    //       (該持有者自己是這些戰法的擁有者/施放者)。
+    const applyOwnTurnEffects = (u) => {
+      for (const t of u.tactics) {
+        if (t.type === "passive" || t.type === "command") applyEffects(u, null, t, alliesOf(u), foesOf(u), { ownTurn: true });
+      }
+      if (u.bs.length) applyEffects(u, null, pt(u.bs), alliesOf(u), foesOf(u), { ownTurn: true });
+      if (u.eq.length) applyEffects(u, null, pt(u.eq), alliesOf(u), foesOf(u), { ownTurn: true });
+      for (const t of u.tactics) {
+        if (!(t.type === "passive" || t.type === "command") || t.when) continue;  // 母戰法有 t.when 的走既有 t.when 掃描(團隊級回合窗, 不在本次改動範圍)
+        for (const e of t.effects) {
+          if (!(e.k === "settle" || e.coefFromStack) || !e.when) continue;
+          if (u.whenFired.has(e)) continue;
+          if (!roundOk({ when: e.when }, u.ownRound)) continue;
+          if (e.when.rounds) u.whenFired.add(e);  // rounds(明確列出的特定回合): 一次性去重(同 delayedEq/heal 慣例)
+          if (TRACE) lg(`【${u.side}】${u.nm}（自身第${u.ownRound}行動輪）〔${t.nameZh}〕效果段生效`);
+          applyEffects(u, null, { effects: [e], kind: t.kind || "phys", n: t.n || 1, nMax: t.nMax || 0, nameZh: t.nameZh }, alliesOf(u), foesOf(u), { noHeal: true });
+        }
+      }
+    };
     // 批38 A: 跨單位事件廣播 —— e.when.who/t.when.who(選填, 預設"self"向後相容零變化)。
     // 過去 onHit/dealtDamage/activeFired 只掃描「事件發生的那個單位自己」攜帶的反應式戰法/
     // 效果(見上方各陣列皆以「持有者=事件單位本身」為前提預篩+觸發), 無法表達「任一友軍受擊/
@@ -3499,7 +3585,9 @@
 
     for (let r = 1; r <= ROUNDS; r++) {
       CUR_R = r;
-      for (const u of [...A, ...B]) if (u.alive && u.stack && (u.stack.stackPer || "round") === "round") u.stack.n = Math.min(u.stack.max, u.stack.n + 1);  // 批26 B2: 僅stackPer=="round"(預設)才逐回合遞增, 向後相容
+      // 時序一致化(2026-07 批次) A.1: 舊「回合迴圈頂端、全體單位stack同時+1層」(全局回合
+      // cadence)已移除 —— stackPer==="round" 的逐回合遞增改到該單位自己行動後(見
+      // Unit.decayDurations() 對應段落與其註解), 比照decayDurations掛點。
       // 批A(11筆高嚴重重建): chargeConsumedThisRound 逐回合歸零(對應死戰不退「每回合最多觸發5次」
       // 的回合窗口計數, 與蓄威層數charge.n本身跨回合累積不同, 這個計數器只管「這一回合已觸發
       // 過幾次消耗鏈」, 每回合開始重置)。
@@ -3562,12 +3650,16 @@
       // skipWhenEffects 跳過, 這裡才是它們真正套用的時機點), 視窗開啟時一次性套用(whenFired
       // 以效果物件本身去重, 同 delayedEq/heal e.when.rounds 慣例)。heal 種類不進這裡(它有自己
       // 獨立的 opt.healOnly 常駐通道與去重機制, 見 applyEffects 內 k==="heal" 分支)。
+      // 時序一致化(2026-07 批次) A.2: k==="settle"(密計誅逆) 或帶 e.coefFromStack(絕地反擊)
+      // 者亦不進這裡 —— 兩者的「第N回合」屬持有者(caster)自身進程, 已改到 fight() 主迴圈逐
+      // 單位處理時、用 caster.ownRound 為基準的專屬掃描(見下方 applyOwnTurnEffects() 定義與
+      // 其呼叫點), 不再走這條全局回合cadence的頂端掃描。
       for (const u of [...A, ...B]) {
         if (!u.alive) continue;
         for (const t of u.tactics) {
           if (!(t.type === "passive" || t.type === "command") || t.when) continue;  // 母戰法有 t.when 的已由上面 t.when 掃描處理, 這裡只處理母戰法無 when 的情形
           for (const e of t.effects) {
-            if (e.k === "heal" || !e.when) continue;
+            if (e.k === "heal" || e.k === "settle" || e.coefFromStack || !e.when) continue;
             if (!roundOk({ when: e.when }, r) || u.whenFired.has(e)) continue;
             if (e.when.rounds) u.whenFired.add(e);  // rounds(明確列出的特定回合): 一次性去重(同 delayedEq)
             // from/until(範圍視窗): 不加入 whenFired, 讓視窗內每回合都能重新套用(同 heal 的 from/until 慣例)
@@ -3585,10 +3677,26 @@
       order.sort((x, y) => (effFirst(y) - effFirst(x)) || (y.eff("speed") - x.eff("speed")));
       for (const u of order) {
         if (!u.alive) continue;  // 本回合稍早已被擊殺(其他單位的攻擊), 不再結算/行動
+        // 時序一致化(2026-07 批次): ownRound —— 該單位自己第N個行動輪, 在此遞增(輪到u這次
+        // 處理即算u自己的1個行動輪, 不論之後是否因震懾/捕獲/DoT致死而略過實際行動, 與
+        // decayDurations()「即使跳過行動仍要遞減持續」的既有慣例一致, 供settle/coefFromStack
+        // 一次性視窗註冊+everyRound逐回合重擲(見下方 applyOwnTurnEffects 呼叫)以此為「第N
+        // 回合」的比較基準, 取代全局CUR_R(user權威規則: 「回合」對持有者自身的漸進/計數機制
+        // =該持有者自己的行動輪)。
+        u.ownRound += 1;
         // 時序重構(2026-07, user權威規則): DoT跟隨被上狀態的人 —— 輪到該單位行動時才結算它
         // 自己的DoT(取代舊「回合末全體同時tick()」), 取代處見下方 decayDurations()。
         u.dotSettle();
         if (!u.alive) continue;  // DoT致死: 死亡不行動(也不再decayDurations, 已死無意義)
+        // 時序一致化(2026-07 批次) A.2+A.3: u 作為「持有者」的兩類自身進程機制, 於u自己行動
+        // 前結算(比照dotSettle掛點, 與DoT/settle爆發同屬「先結算才行動」語意) ——
+        // applyOwnTurnEffects(u): u 作為施放者/擁有者身分(everyRound重擲+settle/coefFromStack
+        // 視窗註冊); settleTick(u, alliesOf(u)): u 作為settle持有者身分(猛毒疊層爆發/倒數,
+        // 可能致死, 故其後需再次覆核alive)。settleTick 為模組層級函式(對稱settleHuchen, 見其
+        // 定義), 這裡傳入u自己的隊伍供爆發時全隊結算。
+        applyOwnTurnEffects(u);
+        settleTick(u, alliesOf(u));
+        if (!u.alive) continue;  // settle爆發致死: 死亡不行動(與DoT致死同語意)
         if (u.stun || u.captured) {
           if (TRACE) lg(`【${u.side}】${u.nm} 被控制(${u.captured ? "捕獲" : "震懾"})，無法行動`);
           u.decayDurations();  // 雖跳過行動, 持續仍需遞減(否則震懾永不解除)
@@ -3761,23 +3869,13 @@
         // hitFlags(每輪節流)重置 —— 皆對「這一單位」而言, 於它自己這輪行動之後。
         u.decayDurations();
       }
-      // 時序重構(2026-07): 舊「for (const u of [...A,...B]) u.tick()」回合末全體同時結算已
-      // 移除 —— DoT掉血已在上方行動迴圈內, 各單位輪到自己行動時由 dotSettle() 個別結算;
-      // 持續回合遞減已在各單位行動後由 decayDurations() 個別結算。settle(猛毒疊層爆發, 下方
-      // 區塊)為隊伍級疊層機制、非「該單位自身」的DoT/狀態持續, 仍維持逐回合(全局)結算, 不在
-      // 本次改動範圍(詳見交接文件時序重構節「未定義邊角」列表)。
-      for (const u of [...A, ...B]) {
-        const s = u.settle; if (!s) continue;
-        if (s.layers >= s.max || s.left <= 1) {
-          // 禁近似令-批K: e.perStackFrom(dynamic_coef_from_counter族) —— 結算coef改讀u身上
-          // 該stackId的當下疊層數(而非settle自己的內部layers計數, 兩者是不同的計數器,
-          // 見registration端perStackFrom註解), 「最終降傷施加次數」取結算當下(第6回合)的層數。
-          const stackLayers = s.perStackFrom ? ((u.ampLayersById && u.ampLayersById[s.perStackFrom]) || 0) : s.layers;
-          const targets = s.singleTarget ? [u] : (setA.has(u) ? A : B);
-          for (const v of targets) if (v.alive) { const sd = damage(s.caster, v, s.base + s.per * stackLayers, s.kind, s.snap); v.troop -= sd; v.wounded += sd * woundedRate(CUR_R); fireSelfReactive(v, "dmgThreshold", bumpDmgAccum(v, sd)); }
-          u.settle = null;
-        } else s.left -= 1;
-      }
+      // 時序重構(2026-07)+時序一致化(2026-07 批次 A.2): 舊「for (const u of [...A,...B])
+      // u.tick()」回合末全體同時結算已移除 —— DoT掉血已在上方行動迴圈內, 各單位輪到自己行動
+      // 時由 dotSettle() 個別結算; 持續回合遞減已在各單位行動後由 decayDurations() 個別結算;
+      // settle(猛毒疊層爆發/倒數)過去在此以「for (const u of [...A,...B]), 全局回合cadence」
+      // 逐一結算, 本批已改為 settleTick(u)——於u(持有者/中毒目標)自己的行動輪、行動前結算
+      // (比照dotSettle掛點, 見上方行動迴圈 applyOwnTurnEffects/settleTick 呼叫點), 此處全局
+      // 迴圈已整段移除。
       // 批8: 殲滅(kill) —— ROUNDS 回合內一方全滅, 對比「判定勝」(打滿8回合按剩餘兵力比較)。
       if (!A.some(u => u.alive)) { if (TRACE) lg(`〔戰鬥結束〕敵方【殲滅】我方，第${r}回合`); return { winner: "B", rounds: r, kill: true }; }
       if (!B.some(u => u.alive)) { if (TRACE) lg(`〔戰鬥結束〕我方【殲滅】敵方，第${r}回合`); return { winner: "A", rounds: r, kill: true }; }
@@ -3834,7 +3932,7 @@
     defaultBingshu, activeBonds, seasonModsFor, mainByCat: () => MAIN_BY_CAT, subByCat: () => SUB_BY_CAT, bingshu: () => BINGSHU,
     bonds: () => BONDS, equips: () => EQUIPS,
     Unit, hit, damage, pickTarget, pickTargets, pickTargetChaos, resolveLockedTarget, applyEffects, roundOk, fireExtraHits,
-    hpOk, targetHas, dispelUnit, pickChoice, pickByCriterion };  // 批16 新原語供測試腳本直接驗證內部機制(同 sgz.py 直接測 Unit/hit); 批45 C: pickByCriterion供測試腳本直接驗證targetSel(如maxTroop)選標方向
+    hpOk, targetHas, dispelUnit, pickChoice, pickByCriterion, settleTick };  // 批16 新原語供測試腳本直接驗證內部機制(同 sgz.py 直接測 Unit/hit); 批45 C: pickByCriterion供測試腳本直接驗證targetSel(如maxTroop)選標方向; 時序一致化(2026-07批次)A.2: settleTick供測試腳本直接驗證settle倒數/爆發邏輯(對稱sgz.py settle_tick)
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   root.SGZ = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);

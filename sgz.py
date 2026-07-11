@@ -630,6 +630,13 @@ class Unit:
             self.adds.append(["amp", self.camp_lv * CAMP_DMG_PER_LV, 9999, "兵種營", None])
         self.dots = []                                # 持續傷害: [每回合傷害, left]
         self.settle = None                            # 結算狀態(猛毒)
+        # 時序一致化(2026-07 批次): own_round —— 該單位自己的行動輪計數(1=第1次輪到自己,
+        # 於 fight() 主迴圈進入該單位這輪處理時遞增, 見該處註解)。取代settle/coefFromStack
+        # 一次性視窗註冊 + everyRound逐回合重擲(A.2/A.3) 過去使用的全局CUR_ROUND基準——這兩類
+        # 機制屬「持有者自身進程」(user權威規則), 「第N回合」應指該持有者自己第N個行動輪,
+        # 非全局戰鬥回合數。與stack.stackPer=="round"(A.1, 見decay_durations)、tac_cd(A.4,
+        # 上批已是自參照)同批對齊, 皆改用own_round或該單位自己的行動輪cadence。
+        self.own_round = 0
         self.guardian = None                          # 傷害轉移: 代承者
         self.guard_share = 0.0                        # 代承比例
         self.guard_dur = 0                            # 代承剩餘回合, 歸零時清 guardian(source 首回合援護等有限窗)
@@ -1074,7 +1081,16 @@ class Unit:
         +1補償, 已全庫移除(唯一保留: tac_cd 戰法冷卻寫入端的 +1, 見 fight() 主迴圈 fire 分支
         註解 —— 冷卻是「本單位自己行動時設下, 同一行動輪內緊接著的 decay_durations 就會立刻
         扣1」的自我參照場景, 與外部施加的debuff/buff時序不同, 不補償會讓 cd=1 完全失效, 故
-        此欄位維持既有 +1 寫法, 不在本次移除範圍內; 詳見交接文件時序重構節)。"""
+        此欄位維持既有 +1 寫法, 不在本次移除範圍內; 詳見交接文件時序重構節)。
+
+        時序一致化(2026-07 批次) A.1: stack.stackPer=="round"(預設值, 向後相容) 的逐回合遞增,
+        比照本方法(decay_durations)掛點——從舊「fight() 回合迴圈頂端、全體單位同時 +1 層」
+        (全局回合cadence)移到這裡(該單位自己行動後), 每個自己的行動輪 +1 層, 與
+        stackPer=="cast"(apply_stack_cast(), 發動時)/"attack"(dealt_damage(), 命中時)兩種
+        既有自參照模式並列一致(三者皆已是「持有者自己的動作」觸發, 不再有stackPer=="round"
+        單獨走全局回合的不一致)。"""
+        if self.stack and self.stack.get("stackPer", "round") == "round":
+            self.stack["n"] = min(self.stack["max"], self.stack["n"] + 1)
         self.dots = [[d, l - 1] + rest for d, l, *rest in self.dots if l - 1 > 0]
         if self.regens:
             self.regens = [[amt, left - 1] for amt, left in self.regens if left - 1 > 0]
@@ -1470,6 +1486,35 @@ def settle_huchen(u, early=False):
         src = h.get("src") or "虎嗔"
         caster.push_add("amp", amp_v, 99, src=src, max_stack=h.get("ampMaxStack", 99),
                         flags={"dmgType": "phys"})
+
+
+def settle_tick(u, team):
+    """時序一致化(2026-07 批次) A.2: settle(結算傷害·猛毒, 密計誅逆) 疊滿層數/倒數歸零的
+    爆發判定 —— 從舊「回合末全體同時檢查」(for u in A+B, 全局回合cadence)改為持有者(u, 中毒
+    目標)自己的行動輪結算, 比照 dot_settle() 掛點(u 自己行動前, 爆發可能致死, 與DoT對稱處理,
+    見 fight() 主迴圈呼叫點: settle_tick(u, allies_of(u)))。爆發/倒數判斷邏輯本身不變, 只改
+    cadence基準。模組層級函式(對稱 settle_huchen), 供 fight() 主迴圈與測試直接呼叫。team:
+    u 所屬隊伍(A 或 B 陣列), 爆發時對其中存活單位造成傷害(singleTarget 時僅打 u 本人)。
+    順手補上 engine.js 既有但 sgz.py 先前遺漏的 perStackFrom(結算時動態讀取指定
+    amp_layers_by_id 計數器, 而非靜態layers)/singleTarget(僅打holder本人, 而非全隊)處理,
+    達成雙引擎既有能力對齊(密計誅逆目前資料未使用兩者, 此修正面向雙引擎結構parity, 非本次
+    cadence改動直接要求, 但因改寫同一段程式碼故一併補齊, 避免遺留潛在雙引擎分歧)。"""
+    s = u.settle
+    if not s:
+        return
+    if s["layers"] >= s["max"] or s["left"] <= 1:
+        stack_layers = (u.amp_layers_by_id or {}).get(s["perStackFrom"], 0) if s.get("perStackFrom") else s["layers"]
+        targets = [u] if s.get("singleTarget") else team
+        for v in targets:
+            if not v.alive:
+                continue
+            sd = damage(s["caster"], v, s["base"] + s["per"] * stack_layers, s["kind"], s["snap"])
+            v.troop -= sd
+            v.wounded += sd * wounded_rate(CUR_ROUND)
+            fire_self_reactive(v, "dmgThreshold", bump_dmg_accum(v, sd))  # 禁近似令-批L
+        u.settle = None
+    else:
+        s["left"] -= 1
 
 
 def target_has(u, ctype):
@@ -2271,7 +2316,13 @@ def fire_controlled(victim, kind, dur, allies, enemies):
 
 def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=False, skip_when_effects=False,
                    rate_checked=False, reactive=False, dmg=None, evt_target=None, heal_amt=None, main_hit_tgts=None,
-                   no_ctrl_reflect=False, only_kinds=None):
+                   no_ctrl_reflect=False, only_kinds=None, own_turn=False):
+    # 時序一致化(2026-07 批次) A.3: own_turn(可選) —— 對稱 heal_only, 但用於 everyRound(逐回合
+    # 重擲) 效果的「該持有者自己行動輪」cadence 通道(見 fight() 主迴圈新增
+    # apply_own_turn_effects() 呼叫端), 取代舊「apply_passives(heal_only=True) 全局回合頂端」
+    # 通道對 everyRound 非heal效果的處理。heal_only=True 呼叫路徑自本批起收斂為「只處理
+    # k=="heal"」(嚴格heal-only, 見下方頂端閘門), everyRound 非heal效果專屬 own_turn=True 通道
+    # (兩者互斥, 見下方 everyRound 分支 _round_basis 判斷)。
     # 批H: only_kinds(可選, tuple) —— 限定本次只處理 k 在此清單內的效果段, 其餘一律跳過。
     # 唯一用途: active型戰法在主coef攻擊之前, 先套用施放者自身的 critUp/critDmgUp 會心buff
     # (只傳 only_kinds=("critUp","critDmgUp")), 讓「提高自身X%會心機率...隨後造成攻擊」這類
@@ -2307,7 +2358,12 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # 那一回合才用當時(可能已變動)的即時智力算定, 違反「準備階段鎖定」語意本身。
         if k == "block" and e.get("scale"):
             locked_scale_of(caster, e)
-        if heal_only and k != "heal" and not e.get("everyRound"):  # 指揮/被動逐回合只跑治療 + 批30 A: everyRound 效果亦放行
+        # 時序一致化(2026-07 批次) A.3: heal_only 自本批起收斂為嚴格「指揮/被動逐回合只跑
+        # 治療」語意(不再放行everyRound, 對稱own_turn參數docstring)——everyRound非heal效果
+        # 改由下面 own_turn 閘門專屬處理(該持有者自己行動輪cadence, 而非全局回合)。
+        if heal_only and k != "heal":
+            continue
+        if own_turn and not e.get("everyRound"):  # own_turn 通道只放行 everyRound 效果(見函式docstring)
             continue
         # 批18: e.when 泛化(非 heal 種類) —— heal 早已支援效果級 when(見下方 k=="heal" 分支的
         # heal_only 閘門), 但其餘效果種類(amp/settle/stat/…)過去若帶 e["when"] 而母戰法無
@@ -2429,19 +2485,26 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # id(e), heal 與 everyRound 不會撞鍵, 因為同一個效果物件只會是其中一種)。刻意不新增
         # 獨立的 dedup dict, 沿用既有慣例、降低維護面。
         #
-        # 語意與 heal 完全對稱: heal_only 模式下, 非 heal 效果只有帶 e["everyRound"] 才會走
-        # 到這裡(否則在上面的 top-level k!=heal 過濾就被跳過, 見函式開頭); 帶 everyRound 的
-        # 效果在**非** heal_only 呼叫路徑(prep/active/charge/when視窗)一律跳過(不套用),
-        # 因為它只該由 heal_only 常駐通道結算 —— 對稱於 heal 在其他路徑各自決定是否觸發、
-        # 不依賴這裡的慣例。
+        # 語意與 heal 完全對稱: 非 heal 效果只有帶 e["everyRound"] 才會走到這裡(否則在上面的
+        # top-level 過濾就被跳過, 見函式開頭); 帶 everyRound 的效果在**非** heal_only/own_turn
+        # 呼叫路徑(prep/active/charge/when視窗)一律跳過(不套用), 因為它只該由這兩條常駐通道
+        # 結算 —— 對稱於 heal 在其他路徑各自決定是否觸發、不依賴這裡的慣例。
+        #
+        # 時序一致化(2026-07 批次) A.3: own_turn=True 時, 「每回合」重擲改採該持有者(caster)
+        # 自己的行動輪計數(caster.own_round)為基準, 取代 heal_only 舊路徑的全局 CUR_ROUND
+        # ——機鑑先識「每回合21%→42%機率獲得1次警戒」等 e["everyRound"] 效果, user權威規則
+        # 「回合」對持有者自身的漸進/計數機制=該持有者自己的行動輪。heal_only=True(現嚴格
+        # heal-only, 見上方頂端閘門)與 own_turn=True 為互斥的兩種呼叫模式, 不會同時為真時
+        # 走到此分支處理同一效果(heal_only=True 時 k!=heal 已在頂端被擋下)。
         if e.get("everyRound") and k != "heal":
             # 批35 B: block 的「準備階段鎖定」scale 值已在函式最頂端(所有 continue 閘門之前)
             # 算定, 此處不需重複呼叫 locked_scale_of(見上方新增的閘門與其註解)。
-            if not heal_only:
+            if not (heal_only or own_turn):
                 continue
+            _round_basis = caster.own_round if own_turn else CUR_ROUND
             hw = e.get("when") or t.get("when")
             if hw:
-                if not round_ok({"when": hw}, CUR_ROUND):
+                if not round_ok({"when": hw}, _round_basis):
                     continue
                 # 批A(11筆高嚴重重建): e["when"]["hpBelow"]/["hpAbove"](效果級) —— 對稱
                 # engine.js同名擴充(見其詳細註解): 過去hpBelow/hpAbove只在戰法級(t["when"])
@@ -2453,9 +2516,9 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                         continue
                 if hw.get("rounds"):
                     seen = caster.heal_rounds_fired.setdefault(id(e), set())
-                    if CUR_ROUND in seen:
+                    if _round_basis in seen:
                         continue
-                    seen.add(CUR_ROUND)
+                    seen.add(_round_basis)
             elif e.get("once"):
                 if id(e) in caster.when_fired:
                     continue
@@ -2476,8 +2539,19 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # 任何非heal/非everyRound效果只要帶 e["when"], 就先驗證當前回合是否落在窗口內, 不符合
         # 則跳過該效果段(不影響同戰法內其餘無 e.when 的效果, 也不影響 heal_only/skip_when_effects
         # 呼叫路徑既有行為——那些路徑要嘛在更上層已被攔截, 要嘛壓根不會走到這裡)。
+        #
+        # 時序一致化(2026-07 批次) A.2: k=="settle"(密計誅逆等猛毒式閾值爆發) 或帶
+        # e["coefFromStack"](絕地反擊等自身疊層驅動爆發, dynamic_coef_from_counter族) 的
+        # e["when"] 一次性視窗註冊屬「持有者(caster, 即施放此效果的單位)自身進程」, 「第N回合」
+        # 改用 caster.own_round(該持有者自己第N個行動輪)為基準, 取代全局CUR_ROUND。此 elif
+        # 為通用防禦閘門(不論呼叫路徑為何皆會核對), 實際註冊入口見 fight() 主迴圈新增的
+        # apply_own_turn_effects() 內專屬settle/coefFromStack一次性視窗掃描(該處已用
+        # caster.own_round 預篩+when_fired去重, 這裡的核對是二次防禦, 語意需一致)。其餘
+        # when-gated 非heal/非everyRound效果(如工神/橫戈躍馬等team-wide buff)不受影響, 仍用
+        # 全局CUR_ROUND(團隊級回合窗, 見交接文件時序重構節B類清單, 待user確認)。
         elif e.get("when") and k != "heal" and not e.get("everyRound"):
-            if not round_ok({"when": e["when"]}, CUR_ROUND):
+            _round_basis2 = caster.own_round if (k == "settle" or e.get("coefFromStack")) else CUR_ROUND
+            if not round_ok({"when": e["when"]}, _round_basis2):
                 continue
         if k == "heal":                               # 治療: 補我方最殘一人(指揮/被動每回合觸發)
             if no_heal:
@@ -3706,6 +3780,40 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                                   team, foes_of(team[0]), no_heal=no_heal, heal_only=heal_only,
                                   skip_when_effects=skip_when_effects)
 
+    # 時序一致化(2026-07 批次) A.2+A.3: 「該持有者自己的行動輪」cadence 掃描 —— 取代舊「全局
+    # 回合」cadence, 於 fight() 主迴圈逐單位處理輪到 u 時呼叫(見下方回合迴圈, 呼叫點在
+    # dot_settle() 之後、settle_tick() 之前)。統一處理兩類機制(皆以 caster(=u).own_round
+    # 為「第N回合」的比較基準, 取代CUR_ROUND):
+    #   (1) A.3 everyRound(如機鑑先識「每回合21%→42%機率獲得1次警戒」): 逐 u.tactics/u.bs/u.eq
+    #       呼叫 apply_effects(..., own_turn=True), 由該函式內部閘門只放行帶 e["everyRound"]
+    #       的效果並依 own_round 判定視窗/rate(見 apply_effects everyRound 分支)。
+    #   (2) A.2 settle/coefFromStack 的 e["when"] 一次性視窗註冊(如密計誅逆settle第6回合/
+    #       絕地反擊dot第5回合): 沿用舊「e.when 泛化」全局頂端掃描的同一套邏輯(when_fired
+    #       去重+one-shot套用), 只是預篩的回合基準改為 u.own_round, 且範圍限定u自己的tactics
+    #       (該持有者自己是這些戰法的擁有者/施放者)。
+    def apply_own_turn_effects(u):
+        for t in u.tactics:
+            if t["type"] in ("passive", "command"):
+                apply_effects(u, None, t, allies_of(u), foes_of(u), own_turn=True)
+        for eff in (u.bs, u.eq):
+            if eff:
+                apply_effects(u, None, {"effects": eff, "kind": "phys"}, allies_of(u), foes_of(u), own_turn=True)
+        for t in u.tactics:
+            if t["type"] not in ("passive", "command") or t.get("when"):
+                continue  # 母戰法有 t["when"] 的走既有 t["when"] 掃描(團隊級回合窗, 不在本次改動範圍)
+            for e in t["effects"]:
+                if not (e["k"] == "settle" or e.get("coefFromStack")) or not e.get("when"):
+                    continue
+                if id(e) in u.when_fired:
+                    continue
+                if not round_ok({"when": e["when"]}, u.own_round):
+                    continue
+                if e["when"].get("rounds"):
+                    u.when_fired.add(id(e))  # rounds(明確列出的特定回合): 一次性去重(同 delayed_eq/heal 慣例)
+                apply_effects(u, None, {"effects": [e], "kind": t.get("kind", "phys"),
+                                        "n": t.get("n", 1), "nMax": t.get("nMax", 0),
+                                        "nameZh": t.get("nameZh")}, allies_of(u), foes_of(u), no_heal=True)
+
     # 批38 A: 跨單位事件廣播 —— e["when"]["who"]/t["when"]["who"](選填, 預設None=向後相容
     # "self"零變化)。過去 on_hit/dealt_damage/active_fired 只掃描「事件發生的那個單位自己」
     # 攜帶的反應式戰法/效果, 無法表達「任一友軍受擊/造成傷害/發動主動戰法時, 我(持有者,
@@ -4156,9 +4264,9 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
     global CUR_ROUND
     for rnd in range(1, ROUNDS + 1):
         CUR_ROUND = rnd                               # 批15: 供 apply_effects() 的 heal_only 常駐治療通道檢查 t["when"](round_ok)
-        for u in A + B:                               # 疊加增益: 每回合 +1 層(僅 stackPer=="round", 預設值, 向後相容)
-            if u.alive and u.stack and u.stack.get("stackPer", "round") == "round":
-                u.stack["n"] = min(u.stack["max"], u.stack["n"] + 1)
+        # 時序一致化(2026-07 批次) A.1: 舊「回合迴圈頂端、全體單位stack同時+1層」(全局回合
+        # cadence)已移除 —— stackPer=="round" 的逐回合遞增改到該單位自己行動後(見
+        # Unit.decay_durations() 對應段落與其docstring), 比照decay_durations掛點。
         # 批A(11筆高嚴重重建): charge_consumed_this_round 逐回合歸零(對應死戰不退「每回合最多
         # 觸發5次」的回合窗口計數, 與蓄威層數charge["n"]本身跨回合累積不同)。
         for u in A + B:
@@ -4229,6 +4337,10 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
         # skip_when_effects 跳過, 這裡才是它們真正套用的時機點), 視窗開啟時一次性套用(when_fired
         # 以效果物件 id() 去重, 同 delayed_eq/heal e["when"]["rounds"] 慣例)。heal 種類不進這裡
         # (它有自己獨立的 heal_only 常駐通道與去重機制, 見 apply_effects 內 k=="heal" 分支)。
+        # 時序一致化(2026-07 批次) A.2: k=="settle"(密計誅逆) 或帶 e["coefFromStack"](絕地
+        # 反擊) 者亦不進這裡 —— 兩者的「第N回合」屬持有者(caster)自身進程, 已改到 fight() 主
+        # 迴圈逐單位處理時、用 caster.own_round 為基準的專屬掃描(見下方 apply_own_turn_effects()
+        # 定義與其呼叫點), 不再走這條全局回合cadence的頂端掃描。
         for u in A + B:
             if not u.alive:
                 continue
@@ -4236,7 +4348,7 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 if t["type"] not in ("passive", "command") or t.get("when"):
                     continue  # 母戰法有 t["when"] 的已由上面 t["when"] 掃描處理, 這裡只處理母戰法無 when 的情形
                 for e in t["effects"]:
-                    if e["k"] == "heal" or not e.get("when"):
+                    if e["k"] == "heal" or e["k"] == "settle" or e.get("coefFromStack") or not e.get("when"):
                         continue
                     if not round_ok({"when": e["when"]}, rnd) or id(e) in u.when_fired:
                         continue
@@ -4256,11 +4368,28 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
         for u in sorted(_pool, key=lambda x: (eff_first(x), x.eff("speed")), reverse=True):
             if not u.alive:
                 continue  # 本回合稍早已被擊殺(其他單位的攻擊), 不再結算/行動
+            # 時序一致化(2026-07 批次): own_round —— 該單位自己第N個行動輪, 在此遞增(輪到u
+            # 這次處理即算u自己的1個行動輪, 不論之後是否因震懾/捕獲/DoT致死而略過實際行動,
+            # 與decay_durations()「即使跳過行動仍要遞減持續」的既有慣例一致, 供settle/
+            # coefFromStack一次性視窗註冊 + everyRound逐回合重擲(見下方 apply_own_turn_effects
+            # 呼叫)以此為「第N回合」的比較基準, 取代全局CUR_ROUND(user權威規則: 「回合」對
+            # 持有者自身的漸進/計數機制=該持有者自己的行動輪)。
+            u.own_round += 1
             # 時序重構(2026-07, user權威規則): DoT跟隨被上狀態的人 —— 輪到該單位行動時才結算
             # 它自己的DoT(取代舊「回合末全體同時tick()」), 取代處見下方 decay_durations()。
             u.dot_settle()
             if not u.alive:
                 continue  # DoT致死: 死亡不行動(也不再decay_durations, 已死無意義)
+            # 時序一致化(2026-07 批次) A.2+A.3: u 作為「持有者」的兩類自身進程機制, 於u自己
+            # 行動前結算(比照dot_settle掛點, 與DoT/settle爆發同屬「先結算才行動」語意) ——
+            # apply_own_turn_effects(u): u 作為施放者/擁有者身分(everyRound重擲+settle/
+            # coefFromStack視窗註冊); settle_tick(u, allies_of(u)): u 作為settle持有者身分
+            # (猛毒疊層爆發/倒數, 可能致死, 故其後需再次覆核alive)。settle_tick 為模組層級
+            # 函式(對稱settle_huchen, 見其定義), 這裡傳入u自己的隊伍供爆發時全隊結算。
+            apply_own_turn_effects(u)
+            settle_tick(u, allies_of(u))
+            if not u.alive:
+                continue  # settle爆發致死: 死亡不行動(與DoT致死同語意)
             if u.stun or getattr(u, "captured", 0):
                 u.decay_durations()  # 批52j: 捕獲同震懾無法行動, 但持續仍需遞減(否則永不解除)
                 continue
@@ -4469,27 +4598,12 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             # dot_settle()已在本單位行動前結算過掉血, 此處只負責持續回合數遞減/到期清除,
             # 與 hit_flags(每輪節流)重置 —— 皆對「這一單位」而言, 於它自己這輪行動之後。
             u.decay_durations()
-
-        for u in A + B:                               # 結算傷害: 疊滿層數或到期 → 對其所屬全隊爆發
-            s = u.settle
-            if not s:
-                continue
-            if s["layers"] >= s["max"] or s["left"] <= 1:
-                team = A if id(u) in setA else B
-                for v in [x for x in team if x.alive]:
-                    sd = damage(s["caster"], v, s["base"] + s["per"] * s["layers"],
-                                s["kind"], s["snap"])
-                    v.troop -= sd
-                    v.wounded += sd * wounded_rate(CUR_ROUND)
-                    fire_self_reactive(v, "dmgThreshold", bump_dmg_accum(v, sd))  # 禁近似令-批L
-                u.settle = None
-            else:
-                s["left"] -= 1
-        # 時序重構(2026-07): 舊「for u in A+B: u.tick()」回合末全體同時結算已移除 —— DoT掉血
-        # 已在上方行動迴圈內, 各單位輪到自己行動時由 dot_settle() 個別結算; 持續回合遞減已在
-        # 各單位行動後由 decay_durations() 個別結算。settle(猛毒疊層爆發, 上方區塊)為隊伍級
-        # 疊層機制、非「該單位自身」的DoT/狀態持續, 仍維持逐回合(全局)結算, 不在本次改動範圍
-        # (詳見交接文件時序重構節「未定義邊角」列表)。
+        # 時序重構(2026-07)+時序一致化(2026-07 批次 A.2): 舊「for u in A+B: u.tick()」回合末
+        # 全體同時結算已移除 —— DoT掉血已在上方行動迴圈內, 各單位輪到自己行動時由 dot_settle()
+        # 個別結算; 持續回合遞減已在各單位行動後由 decay_durations() 個別結算; settle(猛毒
+        # 疊層爆發/倒數)過去在此以「for u in A+B, 全局回合cadence」逐一結算, 本批已改為
+        # settle_tick(u)——於u(持有者/中毒目標)自己的行動輪、行動前結算(比照dot_settle掛點,
+        # 見上方行動迴圈 apply_own_turn_effects/settle_tick 呼叫點), 此處全局迴圈已整段移除。
         # 批8: 殲滅(kill) —— ROUNDS 回合內一方全滅, 對比「判定勝」(打滿8回合按剩餘兵力比較)。
         if not any(u.alive for u in A):
             return "B", rnd, True
@@ -6151,45 +6265,52 @@ def demo():
         "桃園結義2個傷害分支應分別以minIntel(打智力最低敵)/minCommand(打統率最低敵)為targetSel"
 
     # 84) 批30 A: e["everyRound"](非heal效果的逐回合重擲通道) —— block效果帶everyRound+rate,
-    # 應在 apply_passives(heal_only=True) 的每回合常駐通道重新擲骰/套用(而非prep套用一次),
+    # 應在 own_turn=True 的每個持有者自己行動輪常駐通道重新擲骰/套用(而非prep套用一次),
     # 未命中的回合不新增次數。同時驗證: (a) 不帶everyRound的效果行為零變化(prep套用一次,
-    # heal_only通道不重複套用); (b) everyRound效果在prep(heal_only=False)呼叫時完全不套用。
+    # own_turn通道不重複套用); (b) everyRound效果在prep(heal_only=False/own_turn=False)呼叫
+    # 時完全不套用。時序一致化(2026-07批次)A.3: 改用 own_turn=True + caster.own_round(該
+    # 持有者自己的行動輪計數)取代舊 heal_only=True + 全局CUR_ROUND(user權威規則: 「回合」對
+    # 持有者自身的漸進/計數機制=該持有者自己的行動輪, 詳見 apply_effects everyRound 分支)。
     er_u = Unit(POOL["呂布"], "盾")
     er_ally = Unit(POOL["張飛"], "盾")
     er_team = [er_u, er_ally]
     er_tac_flagged = {"nameZh": "測試everyRound84", "rate": 1.0, "effects": [
         {"k": "block", "who": "self", "val": 1.0, "times": 1, "everyRound": True}]}
-    # (b) prep(heal_only=False)呼叫: everyRound效果不應套用
+    # (b) prep(heal_only=False, own_turn=False)呼叫: everyRound效果不應套用
     apply_effects(er_u, None, er_tac_flagged, er_team, [], no_heal=True, skip_when_effects=True)
-    assert not er_u.block, "everyRound效果不應在prep(heal_only=False)路徑套用"
-    # (a) heal_only常駐通道: rate=1.0應每次都命中, 每回合各自新增1次(block同源疊次語意)
-    CUR_ROUND = 1
-    apply_effects(er_u, None, er_tac_flagged, er_team, [], heal_only=True)
+    assert not er_u.block, "everyRound效果不應在prep(own_turn=False)路徑套用"
+    # (a) own_turn常駐通道: rate=1.0應每次都命中, 該持有者每個自己的行動輪各自新增1次(block同源疊次語意)
+    er_u.own_round = 1
+    apply_effects(er_u, None, er_tac_flagged, er_team, [], own_turn=True)
     assert er_u.block and sum(b["n"] for b in er_u.block) == 1, \
-        "everyRound效果應在heal_only常駐通道套用一次(第1回合, rate=1.0必中)"
-    CUR_ROUND = 2
-    apply_effects(er_u, None, er_tac_flagged, er_team, [], heal_only=True)
+        "everyRound效果應在own_turn常駐通道套用一次(持有者自己第1個行動輪, rate=1.0必中)"
+    er_u.own_round = 2
+    apply_effects(er_u, None, er_tac_flagged, er_team, [], own_turn=True)
     assert sum(b["n"] for b in er_u.block) == 2, \
-        "everyRound效果應逐回合重新擲骰/套用(第2回合再命中一次, 同源block應疊次成2, 而非停留在prep的一次性套用)"
+        "everyRound效果應該持有者每個自己的行動輪重新擲骰/套用(第2個行動輪再命中一次, 同源block應疊次成2, 而非停留在prep的一次性套用)"
     # rate=0時不應新增(驗證擲骰真的生效, 非無條件套用)
     er_u2 = Unit(POOL["呂布"], "盾")
     er_team2 = [er_u2, Unit(POOL["張飛"], "盾")]
     er_tac_norate = {"nameZh": "測試everyRound無命中84", "rate": 0.0, "effects": [
         {"k": "block", "who": "self", "val": 1.0, "times": 1, "everyRound": True}]}
-    CUR_ROUND = 1
-    apply_effects(er_u2, None, er_tac_norate, er_team2, [], heal_only=True)
+    er_u2.own_round = 1
+    apply_effects(er_u2, None, er_tac_norate, er_team2, [], own_turn=True)
     assert not er_u2.block, "everyRound效果rate=0.0時不應套用(擲骰應真的生效, 非無條件通過)"
-    # 對照組: 不帶everyRound的block效果(既有行為) —— prep套用一次, heal_only常駐通道不應重複套用
+    # 對照組: 不帶everyRound的block效果(既有行為) —— prep套用一次, own_turn/heal_only常駐通道皆不應重複套用
     er_u3 = Unit(POOL["呂布"], "盾")
     er_team3 = [er_u3, Unit(POOL["張飛"], "盾")]
     er_tac_plain = {"nameZh": "測試無everyRound對照84", "rate": 1.0, "effects": [
         {"k": "block", "who": "self", "val": 1.0, "times": 1}]}
     apply_effects(er_u3, None, er_tac_plain, er_team3, [], no_heal=True, skip_when_effects=True)
     assert er_u3.block and sum(b["n"] for b in er_u3.block) == 1, "不帶everyRound的效果應維持既有行為: prep套用一次"
+    er_u3.own_round = 1
+    apply_effects(er_u3, None, er_tac_plain, er_team3, [], own_turn=True)
+    assert sum(b["n"] for b in er_u3.block) == 1, \
+        "不帶everyRound的非heal效果在own_turn常駐通道不應被重複套用(零回歸: 既有行為不受本次改動影響)"
     CUR_ROUND = 1
     apply_effects(er_u3, None, er_tac_plain, er_team3, [], heal_only=True)
     assert sum(b["n"] for b in er_u3.block) == 1, \
-        "不帶everyRound的非heal效果在heal_only常駐通道不應被重複套用(零回歸: 既有行為不受本次改動影響)"
+        "不帶everyRound的非heal效果在heal_only(現嚴格heal-only)通道亦不應被重複套用"
     CUR_ROUND = 0
 
     # 85) 批30 C: who=="sub1"/"sub2"(副將固定位置分派) —— 三人隊(leader/sub1/sub2), 兩段效果
@@ -6550,9 +6671,9 @@ def demo():
     apply_effects(er95_caster, None, er95_tac, [er95_dst], [], no_heal=True, skip_when_effects=True)
     assert not er95_dst.block, "prep呼叫時everyRound效果本身不應套用(維持既有行為, 只是鎖定值應已算好)"
     er95_caster.intel = 900.0                      # 模擬戰鬥中智力大幅變動
-    CUR_ROUND = 1
-    apply_effects(er95_caster, None, er95_tac, [er95_dst], [], heal_only=True)  # 模擬第1回合的 apply_passives(heal_only=True)
-    assert er95_dst.block, "everyRound效果應在heal_only常駐通道套用"
+    er95_caster.own_round = 1                       # 時序一致化(2026-07批次)A.3: own_turn改用caster自己的行動輪計數為基準
+    apply_effects(er95_caster, None, er95_tac, [er95_dst], [], own_turn=True)  # 模擬caster自己第1個行動輪的 apply_own_turn_effects()
+    assert er95_dst.block, "everyRound效果應在own_turn常駐通道套用"
     assert abs(er95_dst.block[0]["val"] - 0.7620) < 0.0001, \
         f"迴歸: 即使套用當下(第1回合)intel已變成900, block的scale值仍應沿用prep階段(intel 439.38)鎖定值76.20%, 實得{er95_dst.block[0]['val']*100:.2f}%(若得到用900算出的80.00%即代表鎖定被skip_when_effects閘門繞過的bug重現)"
 
@@ -6628,28 +6749,29 @@ def demo():
 
     # --- 批37 B: 停損決策過期重審(義膽雄心 parity互斥交替 / 奮突 普攻事件精確觸發) ---
     # 102) 義膽雄心(真實資料): everyRound+e.when.parity 奇偶互斥交替 —— 奇數回合只套武力debuff
-    # (單體), 偶數回合只套謀略dot(2人,kind:intel)+智力debuff(2人), 經 heal_only 常駐通道逐回合判定
+    # (單體), 偶數回合只套謀略dot(2人,kind:intel)+智力debuff(2人), 經 own_turn 常駐通道逐該
+    # 持有者自己行動輪判定。時序一致化(2026-07批次)A.3: 改用 own_turn=True +
+    # ydxx_caster.own_round(奇偶parity依caster自己的行動輪計數判定, 取代舊全局CUR_ROUND)。
     ydxx = TACTICS.get("義膽雄心")
     assert ydxx and (ydxx.get("when") or {}).get("parity") == "odd", \
         "義膽雄心應帶戰法級 when.parity:'odd'(main coef 184%兵刃傷害只在奇數回合擲骰, 批37 B重建)"
     assert all(e.get("everyRound") for e in ydxx["effects"]), "義膽雄心三段效果皆應帶everyRound(逐回合重擲通道)"
     ydxx_caster = Unit(POOL["呂布"], "騎")
     ydxx_foes = [Unit(POOL["張飛"], "盾"), Unit(POOL["關羽"], "盾")]
-    CUR_ROUND = 1                                      # 奇數回合: 只有武力debuff段(n=1)應套用
-    apply_effects(ydxx_caster, None, ydxx, [ydxx_caster], ydxx_foes, heal_only=True)
+    ydxx_caster.own_round = 1                           # 奇數(caster自己第1個行動輪): 只有武力debuff段(n=1)應套用
+    apply_effects(ydxx_caster, None, ydxx, [ydxx_caster], ydxx_foes, own_turn=True)
     force_hit_r1 = [u for u in ydxx_foes if any(s[0] == "force" for s in u.stat_adds)]
     intel_hit_r1 = [u for u in ydxx_foes if any(s[0] == "intel" for s in u.stat_adds)]
     dots_r1 = sum(len(u.dots) for u in ydxx_foes)
     assert len(force_hit_r1) == 1, f"義膽雄心奇數回合應對敵軍單體(n=1)套武力debuff, 實中{len(force_hit_r1)}人"
     assert not intel_hit_r1 and dots_r1 == 0, \
         f"義膽雄心奇數回合不應套偶數段(智力debuff/謀略dot), 實得intel={len(intel_hit_r1)} dots={dots_r1}"
-    CUR_ROUND = 2                                      # 偶數回合: 謀略dot(2人)+智力debuff(2人)應套用
-    apply_effects(ydxx_caster, None, ydxx, [ydxx_caster], ydxx_foes, heal_only=True)
+    ydxx_caster.own_round = 2                           # 偶數(caster自己第2個行動輪): 謀略dot(2人)+智力debuff(2人)應套用
+    apply_effects(ydxx_caster, None, ydxx, [ydxx_caster], ydxx_foes, own_turn=True)
     intel_hit_r2 = [u for u in ydxx_foes if any(s[0] == "intel" for s in u.stat_adds)]
     dots_r2 = sum(len(u.dots) for u in ydxx_foes)
     assert len(intel_hit_r2) == 2 and dots_r2 == 2, \
         f"義膽雄心偶數回合應對敵軍群體(2人)套智力debuff+謀略dot, 實得intel={len(intel_hit_r2)} dots={dots_r2}"
-    CUR_ROUND = 0
 
     # 103) 奮突(真實資料): stackPer:"attack" + disarm 反應式重建(when.on:'dealtDamage'+normalOnly+rate:0.35)
     ft = TACTICS.get("奮突")
@@ -6801,14 +6923,16 @@ def demo():
         "象兵 splash(群攻)應帶 ifTargetHas:'dot' + everyRound(自查灼燒狀態, 逐回合重判)"
     assert xb108_chaos.get("ifTargetHas") == "dot" and xb108_chaos.get("everyRound") is True, \
         "象兵 chaos(混亂)應帶 ifTargetHas:'dot' + everyRound(自查灼燒狀態, 逐回合重判)"
-    # 端到端: 無灼燒時不應觸發; 有灼燒時應觸發(直接呼叫 apply_effects heal_only 通道模擬 everyRound 常駐判定)
+    # 端到端: 無灼燒時不應觸發; 有灼燒時應觸發(直接呼叫 apply_effects own_turn 通道模擬該
+    # 持有者自己行動輪的 everyRound 常駐判定; 時序一致化(2026-07批次)A.3: 改用own_turn=True
+    # 取代舊heal_only=True)
     xb108_caster_no_dot = Unit(POOL["張飛"], "盾")
-    apply_effects(xb108_caster_no_dot, None, xb108_tac, [xb108_caster_no_dot], [], heal_only=True)
+    apply_effects(xb108_caster_no_dot, None, xb108_tac, [xb108_caster_no_dot], [], own_turn=True)
     assert not any(a[0] == "splash" for a in xb108_caster_no_dot.adds), "象兵: 無灼燒狀態時, 群攻(splash)不應觸發"
     assert xb108_caster_no_dot.chaos == 0, "象兵: 無灼燒狀態時, 混亂(chaos)不應觸發"
     xb108_caster_dot = Unit(POOL["張飛"], "盾")
     xb108_caster_dot.dots.append([50, 3, False])   # 模擬自身已有灼燒(dot非空)
-    apply_effects(xb108_caster_dot, None, xb108_tac, [xb108_caster_dot], [], heal_only=True)
+    apply_effects(xb108_caster_dot, None, xb108_tac, [xb108_caster_dot], [], own_turn=True)
     assert any(a[0] == "splash" for a in xb108_caster_dot.adds), "象兵: 自身有灼燒狀態時, 群攻(splash)應觸發"
     assert xb108_caster_dot.chaos > 0, "象兵: 自身有灼燒狀態時, 混亂(chaos)應觸發"
 
@@ -7022,12 +7146,14 @@ def demo():
     cqzr_u = Unit(POOL["張飛"], "槍")
     cqzr_ally = Unit(POOL["張飛"], "槍")
     cqzr_u.stack = {"per": 0.15, "max": 5, "n": 3}   # 未滿5層
+    cqzr_u.own_round = 1                              # 時序一致化(2026-07批次)A.3: everyRound改own_turn+own_round
     apply_effects(cqzr_u, None, {"effects": [cqzr_mitig_e], "kind": "phys", "nameZh": "長驅直入"},
-                  [cqzr_u, cqzr_ally], [], heal_only=True)
+                  [cqzr_u, cqzr_ally], [], own_turn=True)
     assert abs(cqzr_ally.addbonus("mitig") - 0) < 1e-9, "長驅直入: stack未滿5層時mitig不應觸發"
     cqzr_u.stack["n"] = 5                            # 疊滿5層
+    cqzr_u.own_round = 2
     apply_effects(cqzr_u, None, {"effects": [cqzr_mitig_e], "kind": "phys", "nameZh": "長驅直入"},
-                  [cqzr_u, cqzr_ally], [], heal_only=True)
+                  [cqzr_u, cqzr_ally], [], own_turn=True)
     assert abs(cqzr_ally.addbonus("mitig") - (0.16 * scale_of(cqzr_u, "force"))) < 1e-6, "長驅直入: stack疊滿5層後mitig應觸發(減傷16%×武力縮放, mitig正值=減傷)"
 
     print(f"    [批43] 疊層家族兄弟遷移: add型stackKey虎侯5層+75點統率(118)/on==\"healed\"反應式事件權僭九鼎(119)/ifStackMaxed長驅直入疊滿才觸發(120)驗證通過")
@@ -9124,6 +9250,202 @@ def demo():
         f"215(較慢單位, 行動前施加): dur=2應使接下來恰好2個自己的行動輪被跳過, 實得{slow215_skipped}"
     print("    [時序重構 212-215] DoT先於行動(212)/持續N=該單位N個行動輪(213)/DoT致死不行動(214)/"
           "快慢單位結算時點依行動順序皆精確無±1誤差(215) 驗證通過")
+
+    # ------------------------------------------------------------------
+    # 時序一致化(2026-07 批次): settle/stack/everyRound 改逐單位行動輪(接續212-215的DoT/
+    # 狀態持續時序重構, 本批處理上批遺留待user確認的三類全局回合cadence機制)
+    # ------------------------------------------------------------------
+
+    # 216) A.1: stack.stackPer=="round"(如長驅直入) 的逐回合遞增, cadence改為該持有者自己的
+    # 行動輪(經 decay_durations() 掛點) —— 直接呼叫 decay_durations() N 次應精確遞增N層
+    # (封頂於max), 且與全局CUR_ROUND是否變動完全無關(decay_durations()本身不讀CUR_ROUND,
+    # 舊「回合迴圈頂端全體單位同時+1層」的全局回合cadence已整段移除)。
+    stk216_u = Unit(POOL["張飛"], "槍")
+    stk216_u.stack = {"per": 0.15, "max": 5, "n": 0, "stackPer": "round"}
+    CUR_ROUND = 99                                      # 刻意設一個與行動輪次數無關的全局回合值
+    for _i in range(3):
+        stk216_u.decay_durations()
+    assert stk216_u.stack["n"] == 3, \
+        f"216: stackPer=='round'應每次decay_durations()(該持有者自己的1個行動輪)+1層, 3次應為3層, 實得{stk216_u.stack['n']}(全局CUR_ROUND={CUR_ROUND}與此無關)"
+    for _i in range(10):                                # 疊到封頂(max=5)
+        stk216_u.decay_durations()
+    assert stk216_u.stack["n"] == 5, f"216: 疊層應封頂於max=5, 實得{stk216_u.stack['n']}"
+    # 對照: 僅改變CUR_ROUND、不呼叫decay_durations(), 不應有任何遞增
+    stk216_ctrl = Unit(POOL["張飛"], "槍")
+    stk216_ctrl.stack = {"per": 0.15, "max": 5, "n": 0, "stackPer": "round"}
+    for _r in range(1, 9):
+        CUR_ROUND = _r
+    assert stk216_ctrl.stack["n"] == 0, "216: 僅變動CUR_ROUND(不呼叫decay_durations)不應遞增stack(全局回合cadence已移除)"
+    CUR_ROUND = 0
+    # stackPer=="cast"/"attack" 兩種既有自參照模式不應受decay_durations()影響(零回歸)
+    stk216_cast = Unit(POOL["張飛"], "槍")
+    stk216_cast.stack = {"per": 0.15, "max": 5, "n": 0, "stackPer": "cast"}
+    stk216_cast.decay_durations()
+    assert stk216_cast.stack["n"] == 0, "216: stackPer=='cast'不應被decay_durations()遞增(只認apply_stack_cast())"
+    print("    [時序一致化 216] A.1 stack.stackPer=='round' cadence改為該持有者自己的行動輪"
+          "(經decay_durations, 與全局CUR_ROUND無關)/疊層封頂/cast模式零回歸 驗證通過")
+
+    # 217) A.2: settle(密計誅逆猛毒式) 的 e["when"] 一次性視窗註冊, 「第N回合」改用持有者
+    # (caster)自己的行動輪計數(own_round)為基準, 與全局CUR_ROUND完全脫鉤 —— 刻意讓兩者背離
+    # (CUR_ROUND固定在一個與own_round不同的值), 證明真正生效的判斷依據是own_round。
+    stl217_caster = Unit(POOL["諸葛亮"], "弓")
+    stl217_tgt = Unit(POOL["張飛"], "盾")
+    stl217_tac = {"nameZh": "測試settle註冊217", "kind": "intel", "effects": [
+        {"k": "settle", "who": "enemy", "base": 1.0, "per": 0.3, "max": 3, "dur": 2, "init": 0,
+         "when": {"rounds": [3]}}]}
+    CUR_ROUND = 999                                     # 刻意設一個遠離3的全局回合值
+    stl217_caster.own_round = 1
+    apply_effects(stl217_caster, None, stl217_tac, [stl217_caster], [stl217_tgt])
+    assert stl217_tgt.settle is None, f"217: caster.own_round=1(非3)不應註冊settle, 即使全局CUR_ROUND={CUR_ROUND}"
+    stl217_caster.own_round = 2
+    apply_effects(stl217_caster, None, stl217_tac, [stl217_caster], [stl217_tgt])
+    assert stl217_tgt.settle is None, "217: caster.own_round=2(非3)不應註冊settle"
+    stl217_caster.own_round = 3
+    apply_effects(stl217_caster, None, stl217_tac, [stl217_caster], [stl217_tgt])
+    assert stl217_tgt.settle is not None, \
+        f"217: caster.own_round=3應觸發settle註冊(縱使全局CUR_ROUND={CUR_ROUND}與3無關), 判斷依據應為caster.own_round非CUR_ROUND"
+    assert stl217_tgt.settle["left"] == 2, "217: 註冊時left應取e['dur']=2原值"
+    CUR_ROUND = 0
+
+    # 217b) A.2: settle註冊必須「持有者(caster)自己真正走到那一個行動輪」才會發生 —— 若caster
+    # 在own_round達到3之前就已死亡(被其他單位搶先擊殺), 即使模擬的全局回合數已經跑過3甚至
+    # 更後面, 也永遠不會註冊(對應fight()主迴圈: own_round遞增點在`if not u.alive: continue`
+    # 之後, 見該處註解)。用模擬迴圈重現此結構(不依賴完整fight()雙隊機制)。
+    def _simulate_registration_217b(u, tac, foe, n_rounds, die_before_round=None):
+        for r in range(1, n_rounds + 1):
+            if not u.alive:
+                break
+            if r == die_before_round:
+                u.troop = 0                             # 模擬本回合稍早已被擊殺, own_round不遞增(對應fight(): if not u.alive: continue)
+                continue
+            u.own_round += 1
+            apply_effects(u, None, tac, [u], [foe], no_heal=True)
+
+    stl217b_caster_dead = Unit(POOL["諸葛亮"], "弓")
+    stl217b_foe_a = Unit(POOL["張飛"], "盾")
+    _simulate_registration_217b(stl217b_caster_dead, stl217_tac, stl217b_foe_a, 5, die_before_round=3)
+    assert stl217b_foe_a.settle is None, \
+        "217b: 若持有者(caster)在own_round達到3之前就死亡(第3回合稍早被擊殺, own_round卡在2), 即使模擬跑完5個全局回合仍不應註冊settle(必須真正走到own_round==3那一輪)"
+    stl217b_caster_alive = Unit(POOL["諸葛亮"], "弓")
+    stl217b_foe_b = Unit(POOL["張飛"], "盾")
+    _simulate_registration_217b(stl217b_caster_alive, stl217_tac, stl217b_foe_b, 5)
+    assert stl217b_foe_b.settle is not None, "217b對照: 未死亡應正常在own_round==3時註冊settle"
+
+    # 218) A.2: settle_tick(u, team) —— 模組層級函式(對稱settle_huchen), 直接驗證倒數/爆發
+    # 邏輯本身(cadence已改由fight()主迴圈於holder自己的行動輪呼叫, 見該處; 此處驗證函式本身
+    # 邏輯正確, 含新補上的perStackFrom動態coef讀取與singleTarget單體結算, 對齊engine.js既有
+    # 能力, 見settle_tick() docstring)。
+    caster218 = Unit(POOL["諸葛亮"], "弓")
+    tgt218 = Unit(POOL["張飛"], "盾")
+    ally218 = Unit(POOL["關羽"], "盾")
+    team218 = [tgt218, ally218]
+    tgt218.settle = {"layers": 1, "max": 3, "left": 2, "caster": caster218, "snap": caster218.troop,
+                      "base": 1.0, "per": 0.3, "kind": "intel", "perStackFrom": None, "singleTarget": False}
+    troop_before_218 = tgt218.troop
+    ally_before_218 = ally218.troop
+    settle_tick(tgt218, team218)                        # left=2, 未達1, 應只倒數(left-=1), 不爆發
+    assert tgt218.settle is not None and tgt218.settle["left"] == 1, \
+        f"218: left=2(>1)第一次settle_tick應只倒數不爆發, 實得settle={tgt218.settle}"
+    assert tgt218.troop == troop_before_218 and ally218.troop == ally_before_218, "218: 未爆發時不應扣血"
+    settle_tick(tgt218, team218)                        # left=1, <=1, 應爆發(對全隊, 含tgt218自己)
+    assert tgt218.settle is None, "218: left<=1時應爆發並清除settle"
+    assert tgt218.troop < troop_before_218, "218: 爆發應對tgt218(holder)自己造成傷害(全隊結算, holder也在team內)"
+    assert ally218.troop < ally_before_218, "218: 爆發應對整隊(含隊友ally218)造成傷害(非singleTarget)"
+
+    # singleTarget: 只打holder本人, 不影響隊友(對齊engine.js既有能力, sgz.py先前遺漏此分支)
+    tgt218b = Unit(POOL["張飛"], "盾")
+    ally218b = Unit(POOL["關羽"], "盾")
+    team218b = [tgt218b, ally218b]
+    tgt218b.settle = {"layers": 3, "max": 3, "left": 5, "caster": caster218, "snap": caster218.troop,
+                       "base": 1.0, "per": 0.3, "kind": "intel", "perStackFrom": None, "singleTarget": True}
+    ally218b_before = ally218b.troop
+    settle_tick(tgt218b, team218b)                      # layers(3)>=max(3), 應立即爆發(不論left), singleTarget只打tgt218b
+    assert tgt218b.settle is None and tgt218b.troop < START_TROOP, "218: layers>=max應立即爆發(不受left影響)"
+    assert ally218b.troop == ally218b_before, "218: singleTarget=True時不應波及隊友(sgz.py先前遺漏此分支, 本批補上對齊engine.js)"
+
+    # perStackFrom: 結算時動態讀取指定amp_layers_by_id計數器(而非靜態settle.layers), 對齊engine.js
+    caster218c = Unit(POOL["諸葛亮"], "弓")
+    tgt218c = Unit(POOL["張飛"], "盾")
+    tgt218c.amp_layers_by_id = {"密計誅逆_test": 5}      # 模擬跨效果疊層計數器(如amp+stackKey+stackId寫入), 掛在holder(tgt218c)身上
+    tgt218c.settle = {"layers": 1, "max": 99, "left": 1, "caster": caster218c, "snap": caster218c.troop,
+                       "base": 1.0, "per": 0.1, "kind": "intel", "perStackFrom": "密計誅逆_test", "singleTarget": True}
+    expected_coef_218c_high = 1.0 + 0.1 * 5             # perStackFrom應讀取的層數(5, 非settle.layers的1)
+    dmg218c_expected_high = damage(caster218c, tgt218c, expected_coef_218c_high, "intel", caster218c.troop)
+    troop218c_before = tgt218c.troop
+    settle_tick(tgt218c, [tgt218c])
+    dmg218c_actual = troop218c_before - tgt218c.troop
+    assert abs(dmg218c_actual - dmg218c_expected_high) < 1e-6, \
+        f"218: perStackFrom應動態讀取holder(tgt218c).amp_layers_by_id['密計誅逆_test']=5層代入coef" \
+        f"(1.0+0.1×5={expected_coef_218c_high:.2f}), 而非settle自身靜態layers=1層, 預期傷害{dmg218c_expected_high:.2f} 實得{dmg218c_actual:.2f}"
+    print("    [時序一致化 217-218] A.2 settle: e['when']一次性視窗註冊改用caster.own_round"
+          "(與全局CUR_ROUND脫鉤, 217)/必須持有者真正走到own_round那一輪才註冊, 中途死亡不觸發"
+          "(217b)/settle_tick()倒數與爆發(218)/singleTarget只打holder(218)/perStackFrom動態coef"
+          "讀取(218) 驗證通過")
+
+    # 219) A.2: coefFromStack(絕地反擊式自身疊層驅動爆發) 的 e["when"] 一次性視窗註冊同settle,
+    # 「第N回合」改用持有者(caster)自己的行動輪計數(own_round)為基準, 與全局CUR_ROUND脫鉤。
+    cfs219_caster = Unit(POOL["張飛"], "槍")
+    cfs219_caster.amp_layers_by_id = {"jdfj_test": 4}
+    cfs219_foe = Unit(POOL["張飛"], "盾")
+    cfs219_tac = {"nameZh": "測試coefFromStack註冊219", "kind": "phys", "effects": [
+        {"k": "dot", "who": "enemy", "n": 1, "kind": "phys", "dur": 1, "when": {"rounds": [5]},
+         "coefFromStack": {"id": "jdfj_test", "base": 0.6, "per": 0.07}}]}
+    CUR_ROUND = 1                                       # 刻意設一個遠離5的全局回合值
+    cfs219_caster.own_round = 4
+    apply_effects(cfs219_caster, None, cfs219_tac, [cfs219_caster], [cfs219_foe])
+    assert not cfs219_foe.dots, f"219: caster.own_round=4(非5)不應觸發coefFromStack的dot註冊, 即使全局CUR_ROUND={CUR_ROUND}"
+    cfs219_caster.own_round = 5
+    apply_effects(cfs219_caster, None, cfs219_tac, [cfs219_caster], [cfs219_foe])
+    assert cfs219_foe.dots, f"219: caster.own_round=5應觸發coefFromStack的dot註冊(縱使全局CUR_ROUND={CUR_ROUND}與5無關)"
+    expected_coef_219 = 0.6 + 0.07 * 4                  # base+per×caster當下amp_layers_by_id層數(4層)
+    expected_dot_dmg_219 = damage(cfs219_caster, cfs219_foe, expected_coef_219, "phys")
+    assert abs(cfs219_foe.dots[0][0] - expected_dot_dmg_219) < 1e-6, \
+        f"219: coefFromStack應讀取caster.amp_layers_by_id['jdfj_test']=4層代入coef(0.6+0.07×4={expected_coef_219:.3f}), dot掉血量應為{expected_dot_dmg_219:.2f}, 實得{cfs219_foe.dots[0][0]:.2f}"
+    CUR_ROUND = 0
+
+    # 220) A.3: everyRound 效果的「每回合」重擲cadence, 改用該持有者(caster)自己的行動輪計數
+    # (own_round)為基準, 與全局CUR_ROUND完全脫鉤 —— 刻意讓兩者背離, 證明真正生效的判斷依據
+    # 是own_round非CUR_ROUND(對稱217的settle背離驗證手法)。
+    er220_caster = Unit(POOL["呂布"], "盾")
+    er220_team = [er220_caster]
+    er220_tac = {"nameZh": "測試everyRound背離220", "rate": 1.0, "effects": [
+        {"k": "block", "who": "self", "val": 1.0, "times": 1, "everyRound": True, "when": {"rounds": [4]}}]}
+    CUR_ROUND = 888                                     # 刻意設一個遠離4的全局回合值
+    er220_caster.own_round = 1
+    apply_effects(er220_caster, None, er220_tac, er220_team, [], own_turn=True)
+    assert not er220_caster.block, f"220: caster.own_round=1(非4)不應觸發everyRound(when.rounds:[4]), 即使全局CUR_ROUND={CUR_ROUND}"
+    er220_caster.own_round = 4
+    apply_effects(er220_caster, None, er220_tac, er220_team, [], own_turn=True)
+    assert er220_caster.block, f"220: caster.own_round=4應觸發everyRound(縱使全局CUR_ROUND={CUR_ROUND}與4無關)"
+    CUR_ROUND = 0
+    print("    [時序一致化 219-220] A.2 coefFromStack(絕地反擊式)一次性視窗註冊同settle改用"
+          "own_round(219)/A.3 everyRound重擲cadence改用own_round, 與CUR_ROUND脫鉤驗證(220)"
+          " 驗證通過")
+
+    # 221) A.4: tac_cd(戰法冷卻) 複核 —— cd=N代表持有者自己接下來N個行動輪不可再發, 第N+1個
+    # 行動輪起可用。上批(時序重構)已將cd+1的寫入與decay_durations()的遞減皆繫於「該單位自己
+    # 行動」這唯一觸發點, 本質上已是自參照模型; 此處明確驗證其在「持有者中途因震懾等被跳過
+    # 行動」情境下(cd遞減與DoT持續同一套decay_durations機制, 跳過行動仍遞減)依然精確。
+    cd221_u = Unit(POOL["張飛"], "盾")
+    cd221_u.tac_cd["測試冷卻221"] = 2 + 1               # 對應fight()主迴圈fire分支寫入慣例: cd(N=2)+1
+    assert cd221_u.tac_cd.get("測試冷卻221", 0) > 0, "221前置: 冷卻中應不可發動(tac_cd>0)"
+    cd221_u.decay_durations()                            # 第1個行動輪後
+    assert cd221_u.tac_cd.get("測試冷卻221", 0) == 2, f"221: cd=2+1寫入後, 第1個行動輪decay_durations()應遞減為2, 實得{cd221_u.tac_cd.get('測試冷卻221', 0)}"
+    cd221_u.decay_durations()                            # 第2個行動輪後
+    assert cd221_u.tac_cd.get("測試冷卻221", 0) == 1, f"221: 第2個行動輪後應為1, 實得{cd221_u.tac_cd.get('測試冷卻221', 0)}"
+    cd221_u.decay_durations()                            # 第3個行動輪後: 應歸零移除(冷卻N=2個行動輪不可用, 第3個行動輪起可用)
+    assert cd221_u.tac_cd.get("測試冷卻221", 0) == 0, \
+        f"221: cd=2代表接下來2個行動輪不可用, 第3個行動輪decay_durations()後應歸零(可再發), 實得{cd221_u.tac_cd.get('測試冷卻221', 0)}"
+    # 震懾等跳過行動的回合仍應正常遞減(fight()主迴圈: 震懾單位仍呼叫decay_durations(), cd是否
+    # 遞減只認decay_durations()是否被呼叫, 不論是否真正行動——獨立於震懾本身的驗證)
+    cd221b_u = Unit(POOL["張飛"], "盾")
+    cd221b_u.tac_cd["測試冷卻221b"] = 1 + 1
+    cd221b_u.stun = 3                                     # 模擬震懾中(fight()主迴圈仍會呼叫decay_durations, 見該處註解)
+    cd221b_u.decay_durations()
+    assert cd221b_u.tac_cd.get("測試冷卻221b", 0) == 1, \
+        f"221b: 即使該單位本輪因震懾跳過實際行動, fight()主迴圈仍會呼叫decay_durations()(該單位自己的1個行動輪已耗用), cd應照常遞減, 實得{cd221b_u.tac_cd.get('測試冷卻221b', 0)}"
+    print("    [時序一致化 221] A.4 tac_cd複核: cd=N代表持有者自己接下來N個行動輪不可用"
+          "(第N+1個行動輪起可用)/震懾跳過行動仍正常遞減 驗證通過")
 
     print("self-check OK")
 
