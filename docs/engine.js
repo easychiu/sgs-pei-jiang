@@ -1483,7 +1483,13 @@
       if (!(dst.alive && src.alive)) break;   // 前一個反擊實例可能已把 src 打死, 死者不再被反擊
       if (c.normalOnly && !isNormal) continue;  // 批G: normalOnly限定只在普攻(isNormal=true)時觸發, 省略時向後相容
       if (rnd() >= (c.prob ?? 1)) continue;
-      const ck = c.kind || "phys";
+      // 行為稽核修復(批M): c.dynamicKind —— 原文「對應類型的傷害(受對應屬性影響)」(溯江搖櫓)
+      // 意指反擊傷害類型應與「這次受到的傷害類型」動態一致(被兵刃打→兵刃反擊, 被謀略打→
+      // 謀略反擊), 取代舊有counter固定用grant時儲存的kind值(不隨每次觸發的來襲傷害類型變動)。
+      // 帶dynamicKind時直接用本次hit()呼叫傳入的kind參數(來襲攻擊的實際類型), 省略時向後
+      // 相容維持原行為(c.kind固定值)。kind本身已決定傷害縮放屬性(phys用武力/intel用智力,
+      // 內建於damage()公式), 不需額外scale欄位。
+      const ck = c.dynamicKind ? kind : (c.kind || "phys");
       // 禁近似令-批K: c.ofDamage(engine_wiring_gaps_misc族) —— 對稱heal既有e.ofDamage慣例
       // (依本次觸發事件的實際傷害量比例輸出), 取代反擊固定用coef重新計算一次全新damage()的
       // 舊近似(裝備「受到普通攻擊時,反彈5%傷害」——反彈的是「這一下實際承受的傷害量」的5%,
@@ -2060,6 +2066,19 @@
       // 胡笳餘音(遇到同類「取較高者」措辭時只能靜態近似取intel, 見tactic_corrections.json
       // 該筆_note)不同, 這裡改為真正動態比較atk.eff("force")與atk.eff("intel"), 更精確。
       const ehKind = eh.kindByStat === "maxForceIntel" ? (atk.eff("force") >= atk.eff("intel") ? "phys" : "intel") : (eh.kind || "phys");
+      // 行為稽核修復(批M): eh.k —— extraHits段本身不一定是傷害, 也可以是「隨main段目標重新
+      // 結算」的狀態/DOT標記(對稱effects[]既有k欄位語意), 取代hit()傷害派發, 改呼叫
+      // applyEffects()套用單一效果(見錦帆軍「潰逃」標記: 過去掛在effects[]僅prep階段套用
+      // 一次, dur:2回合後永久消失, 之後不會隨每回合主coef段命中新目標而重新施加; 改移入
+      // extraHits並補k欄位後, fireExtraHits每回合fire成功時都會重新呼叫, 標記才能真正跟隨
+      // 每回合實際命中目標)。dests沿用上方既有解析(含sameTarget/targetSel/ifTargetHas等
+      // 既有過濾, who/n覆寫成"enemy"/1不沿用eh.who原值, 因dests在此已解析完成, 只是把每個
+      // 已選定的v精確餵給applyEffects的tgt參數, 對稱主coef段沿用_mainHitTgt的既有機制,
+      // 見applyEffects who:"enemy"+hasEN+cnt<=1+tgt有效時直接dests=[tgt]的既有分支)。
+      if (eh.k) {
+        for (const v of dests) applyEffects(atk, v, { effects: [Object.assign({}, eh, { who: "enemy", n: 1 })], kind: ehKind, nameZh: t.nameZh }, alliesOf(atk), foesOf(atk), { rateChecked: true });
+        continue;
+      }
       if (TRACE && dests.length) lg(`　▸ ${t.nameZh || "?"}〔額外段${eh.srcSel ? "·出手" + eh.srcSel : ""}${eh.targetSel ? "·" + eh.targetSel : ""}${mainTargetAllyAtk ? "·mainTargetAlly(" + atk.nm + "被迫出手)" : ""}〕${ehKind === "intel" ? "謀略" : "兵刃"}傷害(${Math.round(coef * 100)}%) by ${atk.nm} → ${dests.map(v => v.nm).join("、")}` + (eh._note ? `（${eh._note}）` : ""));
       // 禁近似令-批K: eh.lifesteal(engine_wiring_gaps_misc族) —— 「僅限本extraHits段自身傷害
       // 的回復欄位」, 對稱既有 lifesteal(持有者身上的standing addbonus, 對該單位往後所有
@@ -2158,6 +2177,11 @@
       { holders: allies, wantWho: "ally", al: allies, en: enemies },                 // ally: hurt同隊(含自己)
       { holders: allies.filter(a => a !== hurt), wantWho: "otherAlly", al: allies, en: enemies },  // otherAlly: hurt同隊, 排除自己
       { holders: enemies, wantWho: "enemy", al: enemies, en: allies },               // enemy: hurt的敵隊(對holder而言方向相反)
+      // 行為稽核修復(批M): who:"leader" —— 「我軍主將恢復兵力時」精確事件過濾(竊幸乘寵),
+      // 對稱既有self/ally/otherAlly/enemy四組。只在hurt(本次被治療者)恰好是其隊伍主將
+      // (allies[0])時才納入holders候選(任一隊友皆可能持有此監聽效果); hurt非主將時本組
+      // holders為空陣列, 不會有任何效果被結算(等同「非主將恢復兵力時, 此監聽不觸發」)。
+      { holders: (hurt === allies[0]) ? allies : [], wantWho: "leader", al: allies, en: enemies },
     ];
     for (const { holders, wantWho, al, en } of groups) {
       for (const holder of holders) {
@@ -2342,6 +2366,11 @@
       // 獨立判定選中哪一種)。
       const k = e.eitherK ? e.eitherK[Math.floor(rnd() * e.eitherK.length)] : e.k;
       if (opt.onlyKinds && !opt.onlyKinds.includes(k)) continue;  // 批H: 限定只處理指定k(pre-coef會心套用, 見上方註解)
+      // 行為稽核修復(批M): opt.onlyAlwaysOn —— 母戰法帶t.when(反應式閘門)時, prep階段仍需
+      // 套用「與反應式子句並列的無條件常駐子句」(e.alwaysOn:true, 如剛烈不屈「統率+38」),
+      // 此旗標限定只放行這些效果, 其餘(含反應式本體)一律跳過(改由onHit等既有反應式路徑
+      // 處理, 不受影響, 見applyPassives()呼叫端)。
+      if (opt.onlyAlwaysOn && !e.alwaysOn) continue;
       // 批35 B: block 的「準備階段鎖定」scale 值優先算定, 放在所有 continue 閘門(healOnly/
       // skipWhenEffects/when.on/rate/ifLeader/everyRound...)之前 —— 必須確保 prep 呼叫
       // (fight() 開場的 applyPassives({prep:true, skipWhenEffects:true}))第一次掃描到
@@ -3610,6 +3639,8 @@
             upsertNamedStatus(u.counters, ["反擊", e], {
               coef: e.coef ?? 1, kind: e.kind || "phys", prob: e.prob ?? 1, dur: e.dur ?? 99,
               normalOnly: !!e.normalOnly, statusName: "反擊", srcName: effectSrcName(t, e),
+              // 行為稽核修復(批M): dynamicKind —— 見hit()消費端註解(溯江搖櫓「對應類型的傷害」)
+              dynamicKind: !!e.dynamicKind,
             });
           }
         }
@@ -3773,7 +3804,18 @@
           if (!u.alive) continue;
           for (const t of u.tactics)            // 同將多個同類: 戰法格順序(陣列順序)決定先後
             if ((t.type === "passive" || t.type === "command") && catOf(t) === cat) {
-              if (t.when && !(opt.healOnly || opt.broadcastOnly)) continue;  // 條件觸發(when): 不在準備階段套用, 改由回合迴圈的 applyWhenTactics 在符合回合時套用
+              if (t.when && !(opt.healOnly || opt.broadcastOnly)) {
+                // 行為稽核修復(批M): e.alwaysOn —— 戰法整體帶t.when(反應式閘門)時, prep階段
+                // 原本整段跳過(含所有effects[]), 但少數戰法把「無條件常駐子句」與「反應式子句」
+                // 誤寫在同一個t.when戰法內(如剛烈不屈「統率+38」本應與反應式反擊各自獨立, 卻
+                // 因戰法整體帶t.when而只剩反應式路徑能套用, 變成「機率觸發時才生效」)。補一個
+                // 窄範圍例外: 若effects[]內有e.alwaysOn:true標記的效果, 仍在此處以
+                // onlyAlwaysOn旗標限定只套用這些效果(其餘含反應式本體一律維持原樣跳過, 改由
+                // 下方when反應式路徑處理, 零回歸)。onHit()等反應式路徑之後仍可能再次套用同一個
+                // alwaysOn效果(pushAdd/pushStatAdd同src去重規則會刷新覆蓋而非疊加, 無副作用)。
+                if ((t.effects || []).some(e => e.alwaysOn)) applyEffects(u, null, t, alliesOf(u), foesOf(u), Object.assign({}, opt, { onlyAlwaysOn: true }));
+                continue;
+              }
               if (TRACE && opt.prep) lg(`【${u.side}】${u.nm}〔${CAT_LABEL[cat]}〕${t.nameZh}`);
               applyEffects(u, null, t, alliesOf(u), foesOf(u), opt);
             }

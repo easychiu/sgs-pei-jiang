@@ -663,6 +663,12 @@ KNOWN_EFFECT_FIELDS = {
     # (任何單位行動前, 全體批次)呼叫, 不進逐單位own_round的apply_own_turn_effects()/
     # applyOwnTurnEffects()通道(該通道明確排除e.broadcast的effects, 見其函式定義)。目前全庫
     # 僅高櫓連營2個effects段使用(amp/disarm, 見tactic_corrections.json「高櫓連營」條目)。
+    "alwaysOn",  # 行為稽核修復(批M): 跨所有k種類通用旗標——母戰法整體帶頂層t.when(反應式
+    # 閘門)時, apply_passives()/applyPassives()原本於prep階段對整個戰法的effects[]一律跳過
+    # (改由反應式路徑套用), 但少數戰法把「無條件常駐子句」與「反應式子句」誤寫在同一個
+    # t.when戰法內(如剛烈不屈「統率+38」)。標記alwaysOn:true的效果, 即使母戰法帶t.when,
+    # 仍會在prep階段額外套用一次(only_always_on/onlyAlwaysOn旗標限定, 見apply_effects()/
+    # applyEffects()對應判斷式), 剛烈不屈首次落地。
 }
 PER_KIND_FIELDS = {
     "amp": {"val", "dmgType", "normalOnly", "activeOnly", "chargeOnly",
@@ -733,7 +739,10 @@ PER_KIND_FIELDS = {
     "dmgShare": {"val", "scale"},
     # 批K7: engine_wiring_gaps_misc族 —— 目標受傷後額外對其隊友分攤傷害, 消費於hit(), 連環計
     # 首次落地, 見上方別名「受傷回饋隊友」條目。
-    "counter": {"coef", "kind", "prob", "guardFor", "ofDamage", "debuffAttacker", "selfStack"},
+    "counter": {"coef", "kind", "prob", "guardFor", "ofDamage", "debuffAttacker", "selfStack", "dynamicKind"},
+    # 行為稽核修復(批M): dynamicKind —— 反擊傷害類型改用觸發本次事件的「來襲攻擊」kind參數
+    # (而非counter物件自身儲存的固定kind), 對稱既有normalOnly/ofDamage同層級旗標, 溯江搖櫓
+    # 首次落地, 見engine.js/sgz.py hit()內counter消費端註解。
     # guardFor: 批28 B1, 守護式反擊("leader"=登記進主將counter_guards, 由代為受擊者反擊)。
     # 批K: ofDamage(engine_wiring_gaps_misc族) —— 依本次受到的實際傷害量比例反彈(對稱heal
     # 既有ofDamage), 荊棘裝備首次落地(equips_parsed.json, 不受本linter掃描但登記備查), 見
@@ -2455,6 +2464,13 @@ CAPABILITY_INVENTORY_IGNORE = {
     # amp/mitig/block等是「本文常見措辭對應的機制」)。比照上方_bsNm/statusName/srcName等
     # 既有TRACE/顯示用bookkeeping欄位慣例列入忽略清單, 而非登記進ENGINE_CAPABILITY_ALIASES。
     "actor", "etype", "stats",
+    # 行為稽核修復(批M): alwaysOn(剛烈不屈專屬, prep階段對帶t.when戰法的無條件常駐子句
+    # 例外套用, 見KNOWN_EFFECT_FIELDS已登記)/dynamicKind(溯江搖櫓專屬, counter反擊傷害類型
+    # 動態跟隨來襲攻擊類型, 見PER_KIND_FIELDS["counter"]已登記)——皆為單一戰法目前唯一
+    # 使用案例的窄機制, 沒有「戰法撰寫者可能誤稱引擎不支援」的通用自然語言對照措辭(不像
+    # ifLeader/主將時那樣是常見措辭), 比照rigorous/huchen/capture等同類窄用欄位慣例列入
+    # 忽略清單而非登記進ENGINE_CAPABILITY_ALIASES。
+    "alwaysOn", "dynamicKind",
 }
 
 
@@ -4030,6 +4046,165 @@ def check_r36(p, txt, _gaps=None):
     return violations
 
 
+# ---------------------------------------------------------------------------
+# R37(行為稽核修復批M): 揭露過期 —— _note/_todo/_note2/_note_self明確以「原文[為/是/:/：]?
+# 「...」/『...』」句型引用一段文字, 應該逐字對應現行data/tactics.json的effectText。若
+# 本文自身文字已修正/改版, 但揭露引用的片段從未跟進更新, 會出現「引用的原文根本不在目前
+# effectText裡」的落差——夢中弒臣即此案例的直接觸發背景: _note引用「戰鬥第3回合起,25%->50%
+# 機率獲得反擊狀態,傷害率150%,直到戰鬥結束」, 但此段文字在現行data/tactics.json完全不
+# 存在, 現行文字是「...則有25%→50%機率獲得100%規避（免疫傷害），持續1回合」——揭露內容
+# 已與本文脫節而不自知, 是lint既有規則結構上無法檢測的維度(R14只抓「_note聲稱的數值」
+# 與「資料實際值」矛盾, 不抓「_note聲稱的原文」與「現行effectText」是否相符)。
+#
+# 低誤報設計(全庫113筆初版誤報後校準, 見批M任務背景實測): 本庫「原文「...」」句型的
+# 實際寫作慣例遠比字面「逐字引號引用」寬鬆——絕大多數(全庫實測113/373)是「摘要/意譯」
+# 而非「逐字全文引用」(如一力拒守_note「原文「自身為副將時，兵力恢復受武力影響」」對照
+# 現行effectText實際是「自身為副將時，統率提升和兵力恢復受武力和智力較高一項影響」,
+# 摘要但語意不衝突), 若要求整段逐字比對(即使容忍空白/箭頭/百分號排版差異)會把這種
+# 正常摘要寫法大量誤判為「過期」。改採更窄但高精準度的訊號——本次落差(夢中弒臣)的
+# 真正特徵不是「不是逐字引用」, 而是「引用內含的具體百分比數字, 在現行effectText裡
+# 完全找不到任何一個」(夢中弒臣引用「傷害率150%」, 現行文字卻是「100%規避」, 150這個
+# 數字現行文字裡完全不存在; 對比一力拒守的摘要式引用根本不含任何百分比數字, 無從比較
+# 也無從產生這種矛盾):
+# - 只認明確的引用句型「原文[為/是/:/：]?「...」」或『...』, 且引用內容長度>=12字。
+# - 引用內容逐字(容忍空白/箭頭/百分號排版差異)出現在現行effectText即視為通過。
+# - 否則, 只在「引用內容含至少一個百分比數字」且「現行effectText本身也含至少一個百分比
+#   數字(txt_pcts非空——若root effectText本身是無具體數字的精簡摘要版本, 如監統震軍/
+#   揮兵謀勝/鎮扼防拒等INHERITANCE來源常見形態, 沒有『數字』可比對, 不應被本規則要求
+#   數字相符, 這是root data本身的既有形態而非本規則管轄的「過期」)」且「引用的百分比
+#   數字集合不是現行文字百分比數字集合的子集(即引用內至少一個數字在現行文字完全找不到
+#   對應, 用子集判定而非交集判定, 因為stale引用常與現行文字共享部分未變的數字, 只有
+#   關鍵數字被替換, 見夢中弒臣「25%→50%機率獲得...150%」與現行「25%→50%機率獲得...
+#   100%」共享25/50但150已不存在, 純交集判定會因25/50有交集而漏抓; 反例克敵制勝
+#   「70%」vs 現行「180%/85%/90%」完全無交集, 子集判定同樣抓到, 經核對top-level
+#   _note已用「(sic,定稿本文為85%)」自行注記此為stale, 佐證此訊號設計方向正確)」
+#   時才判定違規。
+# - 百分比抽取需處理「N→M%」範圍簡寫(僅末位數字帶%, 如「21→42%」實際語意是
+#   「21%→42%」但前半段數字本身未重複寫%符號)——若只抓「數字緊鄰%」會漏掉範圍前半的
+#   min-level數字, 導致「_note引用min-level數字(如21%)但只抓得到root文字裡的
+#   max-level數字(42%)」被誤判為不存在(扶危定傾/整軍經武皆是此排版慣例, 而非數字
+#   真的過期)。
+# - txt為空(本文缺失/損毀)不判定, 該類問題另有維護規約處理, 非本規則範圍。
+# ---------------------------------------------------------------------------
+R37_QUOTE_RE = re.compile(r"原文(?:為|是|[:：])?[「『]([^」』]{12,})[」』]")
+R37_PCT_RANGE_RE = re.compile(r"(\d+(?:\.\d+)?)~(\d+(?:\.\d+)?)%")  # N~M%(已正規化箭頭)範圍簡寫, 兩端皆算百分比
+R37_PCT_SINGLE_RE = re.compile(r"(\d+(?:\.\d+)?)%")
+
+
+def _normalize_for_quote_compare(s):
+    """移除空白並統一常見排版變體(箭頭/百分號), 供R37比對用——只容忍格式差異, 不容忍
+    內容差異。"""
+    s = re.sub(r"\s+", "", s)
+    s = s.replace("→", "~").replace("->", "~").replace("-", "~")
+    s = s.replace("％", "%")
+    return s
+
+
+def _extract_pcts(norm_s):
+    """從已正規化(箭頭統一為~)的字串抽取所有百分比數字, 含「N~M%」範圍簡寫的兩端
+    (見R37 docstring說明)。"""
+    pcts = set()
+    for a, b in R37_PCT_RANGE_RE.findall(norm_s):
+        pcts.add(a)
+        pcts.add(b)
+    pcts.update(R37_PCT_SINGLE_RE.findall(norm_s))
+    return pcts
+
+
+def check_r37(p, txt):
+    violations = []
+    if not txt:
+        return violations
+    norm_txt = _normalize_for_quote_compare(txt)
+    txt_pcts = _extract_pcts(norm_txt)
+    for text, scope, field_src in _collect_disclosure_texts(p):
+        for m in R37_QUOTE_RE.finditer(text):
+            quote = m.group(1)
+            norm_quote = _normalize_for_quote_compare(quote)
+            if norm_quote in norm_txt:
+                continue  # 逐字相符(容忍排版差異), 非違規
+            quote_pcts = _extract_pcts(norm_quote)
+            if not quote_pcts or not txt_pcts:
+                continue  # 引用或現行文字任一方無百分比數字可比對, 保守不判定(避免高誤報, 見一力拒守型摘要)
+            if quote_pcts <= txt_pcts:
+                continue  # 引用的百分比數字皆仍存在於現行文字中(子集), 非違規
+            violations.append({
+                "name": p["nameZh"], "rule": "R37",
+                "message": f"{scope}揭露文字以「原文...」句型引用的片段, 內含百分比數字"
+                           f"{sorted(quote_pcts)}, 其中至少一個在現行data/tactics.json的"
+                           f"effectText(百分比數字{sorted(txt_pcts)})中完全找不到對應, "
+                           "疑似本文已修正但揭露從未跟進重建(見夢中弒臣precedent)",
+                "evidence": quote[:120],
+            })
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# R38(行為稽核修復批M): 副將身份揭露一致性防線 —— 對稱既有R27(主將身份鏡像規則), 原文含
+# 「自身為副將時/若自己為副將/自身若為副將/若為副將/自身不為主將時」等施放者副將身份條件式
+# 加成措辭, 但戰法整體既無ifSub(批52原語, 效果級「施放者須為隊伍副將(非index 0)」布林
+# 閘門, 對稱ifLeader)/scaleIfSub(批52c, 縮放版本, 一力拒守precedent)、且無任何提及
+# 「副將/ifSub」字面的揭露文字, 視為「副將身份條件式加成被沉默省略」的違規。
+#
+# 本規則的直接觸發背景: 全庫373筆行為稽核(scratchpad/behavior_audit.json)發現e.ifSub
+# (批52新增)全庫使用次數為0, 至少5筆(殿後/折衝禦侮/氣凌三軍/陷陣突襲/竊幸乘寵)明確可用
+# 此原語卻從未接線, 其中殿後/氣凌三軍的_todo/_note甚至完全空白(零揭露), 折衝禦侮/陷陣
+# 突襲的_todo/_note技術理由已過期(聲稱引擎無此判斷原語, 但e.ifSub批52已存在)。
+#
+# 掃描範圍/低誤報設計對稱R27: 戰法級全文掃描(非效果級窄化, 「若為副將」條件通常修飾整句
+# 效果描述中的某個數值, 不對應單一固定k類別)、版本區塊感知(split_version_blocks, 只在
+# 含匹配措辭的版本區塊內核對)、不強制要求ifSub欄位本身(若原文是縮放式複合語意, ifSub
+# 二元閘門無法精確表達時, 補一則提及「副將」字面的_todo誠實揭露即可豁免, 同R27設計哲學)。
+# 刻意排除「若我軍副將(存活)」句型(酒池肉林等team-composition語意: 檢查隊伍是否仍有副將
+# 存活, 與「施放者自身是否為副將」是完全不同的條件方向, 若誤含入會把team-wide存活檢查
+# 誤判成ifSub缺口, 見批M任務背景全庫grep核對)。
+# ---------------------------------------------------------------------------
+R38_SUB_COND_RE = re.compile(r"自身為副將時|若自己為副將|自身若為副將|若為副將|自身不為主將")
+R38_TOPIC_KW = ("副將", "ifSub", "非主將")
+
+
+def _has_if_sub(p):
+    if p.get("ifSub"):
+        return True
+    for e in p.get("effects") or []:
+        if e.get("ifSub") or e.get("scaleIfSub"):
+            return True
+    for eh in p.get("extraHits") or []:
+        if eh.get("ifSub"):
+            return True
+    for ch in p.get("choices") or []:
+        if ch.get("ifSub"):
+            return True
+        for e in ch.get("effects") or []:
+            if e.get("ifSub"):
+                return True
+    return False
+
+
+def check_r38(p, txt):
+    violations = []
+    if _has_if_sub(p):
+        return violations
+    for block in split_version_blocks(txt):
+        for clause in split_clauses(block):
+            m = R38_SUB_COND_RE.search(clause)
+            if not m:
+                continue
+            if _topic_disclosed(p, R38_TOPIC_KW):
+                return violations
+            violations.append({
+                "name": p["nameZh"], "rule": "R38",
+                "message": f"原文「{m.group(0)}」為施放者副將身份條件式加成, 但戰法/效果皆無"
+                           "ifSub(批52原語, 對稱ifLeader)/scaleIfSub, 且無提及「副將/ifSub」"
+                           "的揭露文字, 副將身份加成完全被沉默省略",
+                "evidence": clause.strip()[:120],
+            })
+            break
+        if violations:
+            break
+    return violations
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
@@ -4040,7 +4215,7 @@ RULES = [
     ("R23", check_r23), ("R24", check_r24), ("R25", check_r25), ("R26", check_r26),
     ("R27", check_r27), ("R28", check_r28), ("R29", check_r29), ("R30", check_r30),
     ("R31", check_r31), ("R32", check_r32), ("R33", check_r33), ("R34", check_r34),
-    ("R35", check_r35), ("R36", check_r36),
+    ("R35", check_r35), ("R36", check_r36), ("R37", check_r37), ("R38", check_r38),
 ]
 
 
@@ -4707,6 +4882,47 @@ SELFTEST_CASES = {
         ("完全不涉及NAMED_STATUS的戰法(amp)不應觸發R36",
          _base_tactic(effects=[{"k": "amp", "who": "enemy", "val": 0.1, "dur": 1}]),
          "提高敵軍受到的傷害", False),
+    ],
+    "R37": [
+        ("引用原文與現行effectText完全不符應抓到(夢中弒臣型態: 本文已改版, 揭露從未跟進)",
+         _base_tactic(effects=[{"k": "counter", "who": "self", "coef": 1.5, "kind": "phys", "prob": 0.5, "dur": 99,
+                                 "_note": "原文為「戰鬥第3回合起,25%->50%機率獲得反擊狀態,傷害率150%,直到戰鬥結束」"}]),
+         "戰鬥第3回合起，自己行動時如果有負面狀態，則有25%→50%機率獲得100%規避（免疫傷害），持續1回合。", True),
+        ("引用原文與現行effectText相符(容忍箭頭/空白排版差異)不應誤報",
+         _base_tactic(effects=[{"k": "stat", "who": "self", "stat": "force", "add": 30, "dur": 2,
+                                 "_note": "原文「提高自己15點 → 30點武力，持續2回合」"}]),
+         "提高自己15點→30點武力，持續2回合", False),
+        ("_note提及「原文」但非引號引用句型(純敘述, 非逐字比對斷言)不應誤報",
+         _base_tactic(effects=[{"k": "stat", "who": "self", "stat": "force", "add": 10, "dur": 2,
+                                 "_note": "原文明確提到武力加成, 已用stat效果建模。"}]),
+         "提高自己武力", False),
+        ("引用片段過短(<12字)不應誤報(避免排版雜訊誤判)",
+         _base_tactic(effects=[{"k": "stat", "who": "self", "stat": "force", "add": 10, "dur": 2,
+                                 "_note": "原文「武力加成」段對應此效果。"}]),
+         "提高自己武力，持續2回合", False),
+    ],
+    "R38": [
+        ("自身為副將時條件但無ifSub且無揭露應抓到(氣凌三軍型態)",
+         _base_tactic(type="passive", coef=0.52, rate=1, when={"on": "attacked"}),
+         "受到普通攻擊時對攻擊者進行一次反擊（傷害率26%→52%），自身為副將時，傷害率提升至37%→74%", True),
+        ("有ifSub(effects級)不應誤報(殿後型態修復後)",
+         _base_tactic(effects=[{"k": "stat", "who": "self", "stat": "command", "add": 40, "dur": 2, "ifSub": True}]),
+         "提高自己武力，如果自己為副將則額外提高統率，持續2回合", False),
+        ("有ifSub(extraHits級)不應誤報(氣凌三軍型態修復後)",
+         _base_tactic(coef=0.52, when={"on": "attacked"},
+                      extraHits=[{"coef": 0.22, "kind": "phys", "who": "sameTarget", "ifSub": True}]),
+         "受到普通攻擊時對攻擊者進行一次反擊，自身為副將時，傷害率提升", False),
+        ("有scaleIfSub不應誤報(一力拒守precedent)",
+         _base_tactic(effects=[{"k": "heal", "who": "self", "coef": 2.68, "dur": 3, "scale": "force", "scaleIfSub": True}]),
+         "自身為副將時，兵力恢復受武力影響", False),
+        ("有揭露副將缺口不應誤報",
+         _base_tactic(effects=[{"k": "stat", "who": "self", "stat": "force", "add": 30, "dur": 2,
+                                 "_todo": "若自己為副將則額外提高統率的條件未建模, 無ifSub可用"}]),
+         "提高自己武力，如果自己為副將則額外提高統率，持續2回合", False),
+        ("team-composition語意(若我軍副將存活)不應誤報(酒池肉林型態, 與ifSub方向不同)",
+         _base_tactic(coef=0.6, rate=0.5,
+                      effects=[{"k": "stat", "who": "ally", "stat": "force", "add": 10, "dur": 99}]),
+         "戰鬥第5回合起，若我軍副將存活，每回合對敵我全體造成兵刃傷害", False),
     ],
 }
 

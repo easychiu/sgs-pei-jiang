@@ -1802,7 +1802,12 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_a
             continue
         if random.random() >= c.get("prob", 1.0):
             continue
-        ck = c.get("kind", "phys")
+        # 行為稽核修復(批M): c["dynamicKind"] —— 原文「對應類型的傷害(受對應屬性影響)」
+        # (溯江搖櫓)意指反擊傷害類型應與「這次受到的傷害類型」動態一致(被兵刃打→兵刃反擊,
+        # 被謀略打→謀略反擊), 取代舊有counter固定用grant時儲存的kind值。帶dynamicKind時
+        # 直接用本次hit()呼叫傳入的kind參數(來襲攻擊的實際類型), 省略時向後相容維持原行為
+        # (c["kind"]固定值)。對稱engine.js同名分支。
+        ck = kind if c.get("dynamicKind") else c.get("kind", "phys")
         # 禁近似令-批K: c["ofDamage"](engine_wiring_gaps_misc族) —— 對稱 heal 既有 e["ofDamage"]
         # 慣例(依本次觸發事件的實際傷害量比例輸出), 取代反擊固定用coef重新計算一次全新damage()
         # 的舊近似(裝備「受到普通攻擊時,反彈5%傷害」——反彈的是"這一下實際承受的傷害量"的5%,
@@ -2482,6 +2487,21 @@ def fire_extra_hits(u, t, tgt, allies_of, foes_of, on_hit, on_deal=None):
             eh_kind = "phys" if atk.eff("force") >= atk.eff("intel") else "intel"
         else:
             eh_kind = eh.get("kind", "phys")
+        # 行為稽核修復(批M): eh["k"] —— extraHits段本身不一定是傷害, 也可以是「隨main段目標
+        # 重新結算」的狀態/DOT標記(對稱effects[]既有k欄位語意), 對稱engine.js同名分支(見其
+        # 詳細註解)。取代hit()傷害派發, 改呼叫apply_effects()套用單一效果(錦帆軍「潰逃」標記:
+        # 過去掛在effects[]僅prep階段套用一次, 之後不會隨每回合主coef段命中新目標而重新
+        # 施加; 改移入extraHits並補k欄位後, fire_extra_hits每回合fire成功時都會重新呼叫)。
+        # who/n覆寫成"enemy"/1不沿用eh原who值, 因dests在此已解析完成, 只是把每個已選定的v
+        # 精確餵給apply_effects的tgt參數。
+        if eh.get("k"):
+            for v in dests:
+                synth_eh = dict(eh)
+                synth_eh["who"] = "enemy"
+                synth_eh["n"] = 1
+                apply_effects(atk, v, {"effects": [synth_eh], "kind": eh_kind, "nameZh": t.get("nameZh")},
+                               allies_of(atk), foes_of(atk), rate_checked=True)
+            continue
         # 禁近似令-批K: eh["lifesteal"](engine_wiring_gaps_misc族, 對稱engine.js同名分支) ——
         # 「僅限本extraHits段自身傷害的回復欄位」, 顆粒度縮小到只讀這一段的dmg(不透過addbonus
         # 通道, 避免誤及本戰法主coef段等其他傷害來源), 供錦帆軍「若目標已潰逃則造成兵刃攻擊
@@ -2506,6 +2526,11 @@ def healed_for(hurt, caster, actual, allies, enemies):
         (allies, "ally", allies, enemies),                          # ally: hurt同隊(含自己)
         ([a for a in allies if a is not hurt], "otherAlly", allies, enemies),  # otherAlly: hurt同隊, 排除自己
         (enemies, "enemy", enemies, allies),                        # enemy: hurt的敵隊(對holder而言方向相反)
+        # 行為稽核修復(批M): who:"leader" —— 「我軍主將恢復兵力時」精確事件過濾(竊幸乘寵),
+        # 對稱既有self/ally/otherAlly/enemy四組。只在hurt(本次被治療者)恰好是其隊伍主將
+        # (allies[0])時才納入holders候選; hurt非主將時本組holders為空list, 不會有任何效果
+        # 被結算。對稱engine.js同名分支。
+        (allies if (allies and hurt is allies[0]) else [], "leader", allies, enemies),
     ]
     for holders, want_who, al, en in groups:
         for holder in holders:
@@ -2791,7 +2816,8 @@ def apply_control_dur(target, field, dur, ctype, allies, enemies, no_ctrl_reflec
 
 def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=False, skip_when_effects=False,
                    rate_checked=False, reactive=False, dmg=None, evt_target=None, heal_amt=None, main_hit_tgts=None,
-                   no_ctrl_reflect=False, only_kinds=None, own_turn=False, broadcast_only=False):
+                   no_ctrl_reflect=False, only_kinds=None, own_turn=False, broadcast_only=False,
+                   only_always_on=False):
     # 時序一致化(2026-07 批次) A.3: own_turn(可選) —— 對稱 heal_only, 但用於 everyRound(逐回合
     # 重擲) 效果的「該持有者自己行動輪」cadence 通道(見 fight() 主迴圈新增
     # apply_own_turn_effects() 呼叫端), 取代舊「apply_passives(heal_only=True) 全局回合頂端」
@@ -2830,6 +2856,12 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # 控制狀態擇一觸發), 對稱engine.js同名分支。每次觸發各自重新擲骰(非prep鎖定)。
         k = random.choice(e["eitherK"]) if e.get("eitherK") else e["k"]
         if only_kinds is not None and k not in only_kinds:  # 批H: 限定只處理指定k(pre-coef會心套用, 見函式docstring)
+            continue
+        # 行為稽核修復(批M): only_always_on —— 母戰法帶t["when"](反應式閘門)時, prep階段仍需
+        # 套用「與反應式子句並列的無條件常駐子句」(e["alwaysOn"]=True, 如剛烈不屈「統率+38」),
+        # 此旗標限定只放行這些效果, 其餘(含反應式本體)一律跳過(改由on_hit等既有反應式路徑
+        # 處理, 不受影響, 見apply_passives()呼叫端)。對稱engine.js同名分支。
+        if only_always_on and not e.get("alwaysOn"):
             continue
         # 批35 B: block 的「準備階段鎖定」scale 值優先算定, 放在所有 continue 閘門(heal_only/
         # skip_when_effects/when.on/rate/ifLeader/everyRound...)之前 —— 必須確保 prep 呼叫
@@ -4189,6 +4221,9 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                         "prob": e.get("prob", 1.0), "dur": e.get("dur", 99),
                         "normalOnly": bool(e.get("normalOnly")),
                         "status_name": "反擊", "src_name": effect_src_name(t, e),
+                        # 行為稽核修復(批M): dynamicKind —— 見hit()消費端註解(溯江搖櫓「對應
+                        # 類型的傷害」), 對稱engine.js同名分支。
+                        "dynamicKind": bool(e.get("dynamicKind")),
                     })
             elif k == "taunt":                         # 嘲諷: 中招者普攻/單體戰法強制指向施放者
                 # 禁近似令-批K: e["tauntTarget"](force_attack_reverse族) —— 對稱 engine.js
@@ -4354,6 +4389,10 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 for t in u.tactics:                   # 同將多個同類: 戰法格順序(陣列順序)決定先後
                     if t["type"] in ("passive", "command") and cat_of(t) == cat:
                         if t.get("when") and not (heal_only or broadcast_only):  # 條件觸發(when): 不在準備階段套用, 改由回合迴圈在符合回合時套用
+                            # 行為稽核修復(批M): e["alwaysOn"] —— 見apply_effects()同名旗標
+                            # docstring, 對稱engine.js applyPassives()同名分支。
+                            if any(e.get("alwaysOn") for e in (t.get("effects") or [])):
+                                apply_effects(u, None, t, allies_of(u), foes_of(u), only_always_on=True)
                             continue
                         apply_effects(u, None, t, allies_of(u), foes_of(u), no_heal=no_heal, heal_only=heal_only,
                                       skip_when_effects=skip_when_effects, broadcast_only=broadcast_only)
