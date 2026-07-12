@@ -2367,6 +2367,15 @@ CAPABILITY_INVENTORY_IGNORE = {
     "what", "once", "v0", "rounds", "per", "max", "amt", "pct", "share", "guard",
     "init", "base", "prepOnly", "nativeOnly", "inheritedOnly", "leaderBonus", "proc",
     "name", "type", "_eqNm",
+    # 狀態疊加語意對齊批: _bsNm(兵書效果來源標名, 對稱既有_eqNm), 見 Unit 建構子合併
+    # 兵書效果時附加, 純內部bookkeeping欄位(供effectSrcName()讀取來源顯示名), 與_eqNm
+    # 同一性質, 比照既有_eqNm慣例列入忽略清單。
+    "_bsNm",
+    # 狀態疊加語意對齊批: statusName/srcName(具名狀態實例的狀態名/來源顯示名, 見
+    # upsertNamedStatus()呼叫端 k==="counter"分支), 純內部bookkeeping欄位(供未來戰報
+    # 顯示用, 非「戰法撰寫者可能誤稱不支援」的能力語意), 比照_eqNm/_bsNm同慣例列入忽略
+    # 清單。_key(upsertNamedStatus去重鍵本身)同理。
+    "statusName", "srcName", "_key",
     # when.on 基礎字面值: attack(自身普攻次數計數, everyN機制)/attacked(受擊反應式,
     # 批8即存在的既有機制, R17已管轄「反應式治療缺失」不需要R20額外重複警示)/damaged
     # (受任意傷害反應式, 與attacked同批既有機制, 批31 A修復onHitTacs/onHitEffectTacs預篩
@@ -3771,6 +3780,168 @@ def check_r35(p, txt):
     return violations
 
 
+# =============================================================================
+# R36(狀態疊加語意對齊批, 2026-07-12): 具名狀態unique/multi行為與NAMED_STATUS表一致 ——
+# 對稱既有R20 capability drift慣例(_scan_engine_js_tokens/check_r20_capability_drift),
+# 但R36改為「引擎原始碼結構特徵掃描」而非「能力token盤點」: 對每個NAMED_STATUS已確認
+# (mode為unique/multi)的具名狀態, 核對 sgz.py + docs/engine.js 原始碼是否仍帶有對應的
+# 實作結構特徵(如反擊必須是u.counters清單+upsert_named_status, 而非單一u.counter覆蓋
+# 欄位), 防止未來編輯不慎讓已修正的unique/multi語意悄悄退化回舊行為(如counter被改回
+# 單一覆蓋、或急救去重機制被移除)。
+#
+# 與R1-R35(逐戰法核對「本文語意 vs parsed資料」)不同, R36核對的是「引擎程式碼本身的結構
+# 不變量」, 與個別戰法的parsed資料內容本身無關——但為融入既有 lint()/run_selftest() 的
+# per-tactic (p, txt) 呼叫慣例(供 --summary/--json 顯示違規清單、「R1-R36零違規」口徑
+# 一致), 用 _named_status_conformance_gaps()(可覆寫來源文字, 供selftest合成樣例) 算出
+# 「引擎現況是否合格」一次性結果(同一輪lint()呼叫內經_read_text_cached快取, 不重複讀檔
+# 389次), 再對每個「使用了有缺陷狀態」的戰法個別歸因為違規, 讓真正回歸時能精確定位
+# 「哪些戰法會受影響」而不只是一句籠統警告。
+# =============================================================================
+SGZ_PY_PATH = os.path.join(ROOT, "sgz.py")
+
+# 對稱 sgz.py/docs/engine.js 的 NAMED_STATUS 表精簡副本(只留R36核對需要的mode分類;
+# 完整的engine/note散文說明以雙引擎各自的定義為準, 此處不重複維護, 避免三份文字互相
+# 漂移——只有mode分類本身+下方結構特徵regex需要三處一致)。
+NAMED_STATUS = {
+    "急救": {"mode": "unique"},
+    "休整": {"mode": "unique"},
+    "反擊": {"mode": "multi"},
+    "攻心": {"mode": "multi"},
+    "倒戈": {"mode": "multi"},
+    "警戒": {"mode": "pending"}, "抵禦": {"mode": "pending"},
+    "先攻": {"mode": "pending"}, "遇襲": {"mode": "pending"},
+    "虛弱": {"mode": "pending"}, "計窮": {"mode": "pending"},
+    "繳械": {"mode": "pending"}, "震懾": {"mode": "pending"},
+    "混亂": {"mode": "pending"}, "洞察": {"mode": "pending"},
+    "嘲諷": {"mode": "pending"}, "灼燒": {"mode": "pending"},
+    "中毒": {"mode": "pending"}, "潰逃": {"mode": "pending"},
+}
+
+# 各已確認(unique/multi)具名狀態在雙引擎原始碼中應存在的結構特徵(正則, 對sgz.py/
+# docs/engine.js 原始碼文字直接搜尋)。找不到視為「結構退化」(regression)。只核對「有無
+# 此段落存在」, 不執行程式碼、不判斷語意是否正確(低召回但零誤報優先, 與全庫既有規則
+# 設計原則一致)。攻心/倒戈(multi, 本批未變更, 現行lifesteal addbonus加總已符合共存語意)
+# 也一併登記, 作為既有正確行為的一般性回歸防線, 非本批新增邏輯。
+NAMED_STATUS_CODE_SIGNATURES = {
+    "反擊": {
+        "sgz.py": (r"self\.counters\s*=\s*\[\]", r"upsert_named_status\(u\.counters,"),
+        "docs/engine.js": (r"this\.counters\s*=\s*\[\];", r"upsertNamedStatus\(u\.counters,"),
+    },
+    "急救": {
+        "sgz.py": (r"self\.suppressed_named_status\s*=\s*set\(\)", r"holder\.suppressed_named_status"),
+        "docs/engine.js": (r"this\.suppressedNamedStatus\s*=\s*new Set\(\)", r"holder\.suppressedNamedStatus"),
+    },
+    "休整": {
+        "sgz.py": (r'_rg_payload = \[amt_r, e\.get\("dur", 2\), "休整"',),
+        "docs/engine.js": (r'rgPayload = \[amtR, e\.dur \?\? 2, "休整"',),
+    },
+    "攻心": {
+        "sgz.py": (r'addbonus\("lifesteal"\)',),
+        "docs/engine.js": (r'addbonus\("lifesteal"\)',),
+    },
+    "倒戈": {
+        "sgz.py": (r'addbonus\("lifesteal"\)',),
+        "docs/engine.js": (r'addbonus\("lifesteal"\)',),
+    },
+}
+
+
+def _read_text_cached(path, _cache={}):
+    """R36專用: 讀檔內容, 同一輪lint()呼叫內只讀一次(_cache用可變預設引數當簡易
+    memoization, 刻意的常見Python手法, 非bug)。找不到檔案回傳None(呼叫端視為「無法核對」
+    而跳過, 不誤報)。"""
+    if path in _cache:
+        return _cache[path]
+    try:
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+    except OSError:
+        content = None
+    _cache[path] = content
+    return content
+
+
+def _named_status_conformance_gaps(sgz_src=None, js_src=None):
+    """R36核心掃描: 回傳 {status_name: bool}(True=結構特徵缺失, 視為違規)。sgz_src/js_src
+    可覆寫(供selftest傳入合成原始碼片段字串, 不觸碰真實檔案; 預設None時讀取真實sgz.py/
+    docs/engine.js, 走_read_text_cached)。只核對 NAMED_STATUS 中 mode 為 unique/multi
+    (已確認)的項目, pending項目不核對(R36不對未裁決狀態下判斷)。"""
+    if sgz_src is None:
+        sgz_src = _read_text_cached(SGZ_PY_PATH)
+    if js_src is None:
+        js_src = _read_text_cached(ENGINE_JS_PATH)
+    gaps = {}
+    for name, spec in NAMED_STATUS.items():
+        if spec["mode"] not in ("unique", "multi"):
+            continue
+        sigs = NAMED_STATUS_CODE_SIGNATURES.get(name)
+        if not sigs:
+            continue
+        bad = False
+        if sgz_src is not None:
+            for pat in sigs.get("sgz.py", ()):
+                if not re.search(pat, sgz_src):
+                    bad = True
+                    break
+        if not bad and js_src is not None:
+            for pat in sigs.get("docs/engine.js", ()):
+                if not re.search(pat, js_src):
+                    bad = True
+                    break
+        gaps[name] = bad
+    return gaps
+
+
+# k類型 → NAMED_STATUS狀態名(供R36逐戰法歸因; heal的急救另外特判, 見_tactic_named_statuses,
+# 因heal必須同時檢查when.on才算「反應式急救」, 不是所有k=="heal"都算)。lifesteal同時對應
+# 攻心/倒戈兩個名稱(資料層無法區分, 兩者現行走同一套engine機制)。
+R36_K_TO_STATUS = {"counter": "反擊", "regen": "休整", "lifesteal": ("攻心", "倒戈")}
+
+
+def _tactic_named_statuses(p):
+    """掃描單一parsed戰法(含effects/extraHits/choices巢狀effects)用到的NAMED_STATUS
+    (mode已確認的unique/multi項)集合, 供R36歸因——找出「這個戰法會受到哪些具名狀態的
+    引擎行為影響」。"""
+    names = set()
+
+    def walk(effs):
+        for e in (effs or []):
+            k = e.get("k")
+            mapped = R36_K_TO_STATUS.get(k)
+            if isinstance(mapped, tuple):
+                names.update(mapped)
+            elif mapped:
+                names.add(mapped)
+            if k == "heal" and (e.get("when") or {}).get("on") in ("attacked", "damaged"):
+                names.add("急救")
+
+    walk(p.get("effects"))
+    for eh in p.get("extraHits", []) or []:
+        walk([eh])
+    for ch in p.get("choices", []) or []:
+        walk(ch.get("effects"))
+    return names
+
+
+def check_r36(p, txt, _gaps=None):
+    """R36: 具名狀態unique/multi行為與NAMED_STATUS表一致。_gaps(可選)供selftest直接傳入
+    合成的conformance結果, 略過真實檔案掃描(對稱其餘規則selftest不依賴真實資料的設計
+    原則); 預設None時呼叫_named_status_conformance_gaps()核對真實sgz.py/docs/engine.js。"""
+    gaps = _gaps if _gaps is not None else _named_status_conformance_gaps()
+    violations = []
+    for name in sorted(_tactic_named_statuses(p)):
+        if gaps.get(name):
+            violations.append({
+                "name": p["nameZh"], "rule": "R36",
+                "message": f"具名狀態「{name}」在 sgz.py/docs/engine.js 原始碼中缺少對應的"
+                           "unique/multi結構特徵(見NAMED_STATUS_CODE_SIGNATURES), 疑似"
+                           "regression(如counter被改回單一覆蓋欄位、或急救去重機制被移除)——"
+                           f"本戰法使用「{name}」, 其執行期行為現況可能不正確。",
+                "evidence": f"status={name}, mode={NAMED_STATUS[name]['mode']}",
+            })
+    return violations
+
+
 RULES = [
     ("R1", check_r1), ("R2", check_r2), ("R3", check_r3), ("R4", check_r4),
     ("R5", check_r5), ("R6", check_r6), ("R7", check_r7), ("R8", check_r8),
@@ -3781,7 +3952,7 @@ RULES = [
     ("R23", check_r23), ("R24", check_r24), ("R25", check_r25), ("R26", check_r26),
     ("R27", check_r27), ("R28", check_r28), ("R29", check_r29), ("R30", check_r30),
     ("R31", check_r31), ("R32", check_r32), ("R33", check_r33), ("R34", check_r34),
-    ("R35", check_r35),
+    ("R35", check_r35), ("R36", check_r36),
 ]
 
 
@@ -4425,7 +4596,68 @@ SELFTEST_CASES = {
                       _todo="此處數值為近似值, 依原文機率折算而來"),
          "提高自身造成的傷害", True),
     ],
+    "R36": [
+        # 標準SELFTEST_CASES只能用fn(p, txt)兩參數呼叫(_gaps預設None, 走真實sgz.py/
+        # docs/engine.js檔案掃描)——因現行雙引擎已符合本批修正後的unique/multi結構特徵,
+        # 以下皆應為陰性樣例(不誤報); 若未來有人不慎讓結構退化(如counter改回單一覆蓋
+        # 欄位), 這些樣例會在下次跑--selftest時開始失敗, 直接抓到regression。帶_gaps
+        # 合成覆寫的陽性(應抓到違規)路徑另見 _r36_selftest_extra()(run_selftest()內
+        # 特例掛載, 對稱check_r20_capability_drift的作法, 見其呼叫端註解)。
+        ("使用counter(反擊)的戰法, 現行引擎已符合multi結構特徵, 不應誤報",
+         _base_tactic(effects=[{"k": "counter", "who": "self", "coef": 1.0, "kind": "phys", "prob": 1.0}]),
+         "受到攻擊時反擊", False),
+        ("使用regen(休整)的戰法, 現行引擎已符合unique結構特徵, 不應誤報",
+         _base_tactic(effects=[{"k": "regen", "who": "self", "coef": 1.0, "dur": 2}]),
+         "每回合恢復一次兵力", False),
+        ("使用反應式heal(急救, k==heal+when.on:damaged)的戰法, 現行引擎已符合unique結構"
+         "特徵, 不應誤報",
+         _base_tactic(effects=[{"k": "heal", "who": "self", "coef": 0.5, "when": {"on": "damaged"}, "rate": 0.5}]),
+         "受到傷害時機率恢復兵力", False),
+        ("非反應式heal(無when.on, 非急救類)不應被R36管轄(不屬於任何NAMED_STATUS已確認項目)",
+         _base_tactic(effects=[{"k": "heal", "who": "ally", "coef": 0.5}]),
+         "治療我軍單體", False),
+        ("完全不涉及NAMED_STATUS的戰法(amp)不應觸發R36",
+         _base_tactic(effects=[{"k": "amp", "who": "enemy", "val": 0.1, "dur": 1}]),
+         "提高敵軍受到的傷害", False),
+    ],
 }
+
+
+def _r36_selftest_extra():
+    """R36進階自我測試(對稱check_r20_capability_drift的run_selftest()特例掛載模式) ——
+    標準SELFTEST_CASES只能用fn(p, txt)兩參數呼叫, 無法測試「_gaps內帶True時應正確歸因
+    出violation」這條路徑(需要第3參數_gaps)。這裡直接呼叫check_r36()/_named_status_
+    conformance_gaps()驗證: (a) 合成_gaps帶反擊缺陷時, 使用counter的戰法應被抓到,
+    不使用counter的戰法不應被抓到(歸因精確, 不誤傷無關戰法); (b) _named_status_
+    conformance_gaps()對合成的「好」/「壞」原始碼字串應正確判斷有無缺陷(regex本身正確,
+    不依賴真實檔案, 樣例刻意精簡, 對稱既有selftest設計原則)。回傳 (n_pass, n_fail, details)。"""
+    n_pass, n_fail, details = 0, 0, []
+
+    def check(cond, msg):
+        nonlocal n_pass, n_fail
+        if cond:
+            n_pass += 1
+        else:
+            n_fail += 1
+            details.append(f"[R36-extra] {msg}")
+
+    ct_p = _base_tactic(effects=[{"k": "counter", "who": "self", "coef": 1.0, "kind": "phys", "prob": 1.0}])
+    amp_p = _base_tactic(effects=[{"k": "amp", "who": "enemy", "val": 0.1, "dur": 1}])
+    bad_gaps = {"反擊": True}
+    good_gaps = {"反擊": False}
+    check(bool(check_r36(ct_p, "", _gaps=bad_gaps)), "使用counter的戰法在_gaps帶反擊缺陷時應抓到違規")
+    check(not check_r36(ct_p, "", _gaps=good_gaps), "使用counter的戰法在_gaps無缺陷時不應誤報")
+    check(not check_r36(amp_p, "", _gaps=bad_gaps), "不使用counter的戰法即使_gaps帶反擊缺陷也不應被誤傷(歸因需精確)")
+
+    good_py = 'self.counters = []\n...\nupsert_named_status(u.counters, x, y)\n'
+    bad_py_missing_list = 'self.counter = None\n'
+    good_js = 'this.counters = [];\n...\nupsertNamedStatus(u.counters, x, y);\n'
+    gaps_good = _named_status_conformance_gaps(sgz_src=good_py, js_src=good_js)
+    gaps_bad = _named_status_conformance_gaps(sgz_src=bad_py_missing_list, js_src=good_js)
+    check(gaps_good.get("反擊") is False, "合成的合格原始碼(counters清單+upsert)應判定反擊無缺陷")
+    check(gaps_bad.get("反擊") is True, "合成的退化原始碼(缺counters清單宣告)應判定反擊有缺陷")
+
+    return n_pass, n_fail, details
 
 
 def run_selftest():
@@ -4471,6 +4703,28 @@ def run_selftest():
         )
     else:
         n_pass += 1
+
+    # R36進階自我測試(對稱上方R20-drift特例掛載, 見_r36_selftest_extra()說明)
+    r36_pass, r36_fail, r36_details = _r36_selftest_extra()
+    n_pass += r36_pass
+    n_fail += r36_fail
+    fail_details.extend(r36_details)
+
+    # R36: 對真實 sgz.py/docs/engine.js 現況做一次實際掃描(非合成樣例), 確認雙引擎現況
+    # 確實通過(全部已確認具名狀態結構特徵皆存在)——這是「當下鎖定」的防線: --selftest
+    # 每次執行都會用真實檔案重新核對一次, 若未來有人不慎讓結構退化, 這裡會直接失敗
+    # (不必等 lint() 全庫掃描才發現)。
+    real_gaps = _named_status_conformance_gaps()
+    real_bad = {k: v for k, v in real_gaps.items() if v}
+    if real_bad:
+        n_fail += 1
+        fail_details.append(
+            f"[R36-live] sgz.py/docs/engine.js 現況掃描發現具名狀態結構特徵缺失: {sorted(real_bad)}"
+            "(見 NAMED_STATUS_CODE_SIGNATURES), 疑似regression"
+        )
+    else:
+        n_pass += 1
+
     return n_pass, n_fail, fail_details
 
 

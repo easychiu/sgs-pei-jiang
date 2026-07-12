@@ -457,5 +457,16 @@
   "engine_status": "已重構(80ef784後): tick拆dot_settle(行動前)/decay_durations(行動後), fight()逐單位行動輪結算, 移除全局回合末tick與22處+1補償; 灼燒[100,3]→[100,100,100,0]驗證正好3個自己行動輪",
   "attribution": "DoT隊+6.7~8.7pp(舊全局tick的race會少算DoT持續, 修正後DoT時序正確), 低DoT隊~0",
   "待user確認邊角": "settle(密計誅逆閾值爆發)/stack(逐回合buff放大計數)仍走全局回合cadence非逐單位, tac_cd的cd+1保留(自參照); 是否也要改逐單位待user裁決"
+ },
+ "status_stacking_rule_20260711": {
+  "_src": "user規則+準備階段戰報(陷陣營/金丹秘術)",
+  "rule": "具名狀態分兩類: (1)唯一狀態(急救/休整/警戒等)——再施加會覆蓋舊的, 同單位只存在一個實例(陷陣營+青囊不疊雙倍急救); (2)可共存狀態(反擊/攻心/倒戈)——多個獨立實例並存全部生效",
+  "engine_current_findings": {
+   "counter反擊": "engine現為單一欄位 u.counter={...}(engine.js:3059), 再施加會覆蓋——與規則(反擊可共存)不符, 應改多實例清單",
+   "lifesteal倒戈攻心": "engine用addbonus(lifesteal)加總多實例(engine.js:1055), 等同共存疊加——與規則(可共存)大致相符",
+   "急救reactive-heal": "多個when.on:damaged效果各自獨立觸發(共存)——與規則(急救唯一, 覆蓋)不符, 應改唯一狀態(同名覆蓋/刷新)"
+  },
+  "action": "待時序工人(改engine.js中)完工後, 開狀態疊加語意批: (a)counter改多實例清單可共存; (b)急救/休整/警戒等具名唯一狀態同名覆蓋; 需一個「具名狀態」註冊表區分唯一vs可共存。驗收: 雙急救來源只一個實例/雙反擊都生效",
+  "_resolved_20260712": "狀態疊加語意對齊批已完工(雙引擎sgz.py/docs/engine.js對稱): 建NAMED_STATUS註冊表(急救/休整=unique, 反擊/攻心/倒戈=multi已確認; 警戒/抵禦/先攻/遇襲/虛弱/計窮/繳械/震懾/混亂/洞察/嘲諷/灼燒/中毒/潰逃=pending待user逐一裁決, 現況維持不變只記錄觀察)。(a)反擊: u.counter單欄位→u.counters清單, upsert_named_status()以(狀態名,來源id)為鍵——同來源重複施加只刷新, 不同來源各自並存, hit()逐筆結算。(b)急救: Unit建構時掃描戰法/兵書/裝備三路反應式heal候選, 唯一化裁決(tie-break: 裝備>兵書>戰法, 後蒐集者覆蓋前者——此為實作顯式假設, 非user另有明文, 供覆核)寫入suppressed_named_status, on_hit反應式消費端跳過已覆蓋者。休整(regen): 同upsert邏輯, 固定鍵\"休整\"全場至多1筆。(c)來源追蹤: 反擊/休整實例皆帶src_name/status_name(擴充_eqNm/新增_bsNm涵蓋全部裝備/兵書效果, 非僅原本的when限定效果)。lint新增R36(NAMED_STATUS結構退化防線, 對稱R20 capability drift慣例)。驗收全過: sgz.py demo() 227號測試+選jsscratchpad/smoke_status_stacking.js+對局歸因(counter_team NEW比OLD +8.5pp(py)/+7.2pp(js), heal_team NEW比OLD -8.9pp(py)/-5.2pp(js), control_team零影響)。待user確認: pending清單14項狀態的unique/multi歸類, 及急救tie-break優先序政策(裝備>兵書>戰法)是否符合遊戲實際行為。"
  }
 }

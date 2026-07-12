@@ -34,6 +34,118 @@ CUR_ROUND = 0                                          # 批15: 當前回合數(
 _FIGHT_CTX = {"on_hit": None, "on_deal": None, "allies_of": None, "foes_of": None, "active_fired": None}
 
 COUNTER = {"騎": "盾", "盾": "弓", "弓": "槍", "槍": "騎"}  # 騎>盾>弓>槍>騎; 器全被克
+
+# 批(狀態疊加語意對齊, 2026-07-12): NAMED_STATUS —— 具名狀態註冊表(雙引擎共用慣例, engine.js
+# 同名常數見其定義逐字對稱; lint_tactics.py 另維護精簡對照副本供 R36 核對, 三份需同步維護,
+# 本庫無跨語言共用機制, 依現行「對稱」手動雙寫慣例)。user權威規則(見
+# docs/data/calibration_anchors.json → status_stacking_rule_20260711): 具名狀態分兩類:
+#   "unique"(唯一/覆蓋): 同單位全場只存在一個實例, 再施加同名狀態覆蓋舊的(刷新, 保留最新
+#     來源/數值), 不會因多來源疊加而雙倍觸發機率/雙倍生效(如陷陣營+青囊書皆授予「急救」,
+#     全場仍只有一個急救實例)。
+#   "multi"(可共存): 多個來源各自獨立存在、全部生效(如反擊, 兩個不同來源的反擊各自獨立
+#     判定/結算, 都會觸發, 不互相覆蓋)。
+# 本批只落地"已確認"三項的引擎行為: 反擊(multi, 改u.counters清單)、急救(unique, 反應式heal
+# 去重)、休整(unique, regen去重)。其餘具名狀態user尚未逐一裁決, mode 標為 "pending"(維持
+# 現行行為不變, 純粹記錄以供未來裁決/lint參照, R36對pending狀態不作結構核對, 不阻塞現行
+# 行為)。禁止不擅自歸類: pending 項下的 note 只記錄現行觀察到的引擎行為, 不代表已裁決的規則。
+NAMED_STATUS = {
+    # ---- 已確認 unique(覆蓋, 同單位唯一實例) ----
+    "急救": {
+        "mode": "unique",
+        "engine": "reactive heal(k==heal, when.on:attacked/damaged); 見 Unit.__init__ "
+                  "suppressed_named_status 去重掃描(建構時一次裁決) + on_hit_for() 消費端"
+                  "檢查該集合放行/跳過",
+        "note": "陷陣營/青囊書(長健)/三軍之眾/草船借箭/雲聚影從/擊其惰歸/蕙質蘭心/援救等皆"
+                "授予急救; 多來源同時存在時只保留1個生效(tie-break政策: 裝備>兵書>戰法, "
+                "同類別內取後蒐集者, 對應 apply_passives() 既有prep處理順序, 見建構式註解"
+                "——此為本次實作的顯式假設, 非user另有明文裁決, 供未來覆核)",
+    },
+    "休整": {
+        "mode": "unique",
+        "engine": "regen(k==regen, u.regens list, 以 upsert_named_status 鍵=\"休整\" 去重,"
+                  "全場至多1筆, 同名再施加覆蓋刷新)",
+        "note": "乘敵不虞為現行唯一 k==regen 實例。已知殘留缺口: 部分戰法(如金丹秘術)改用"
+                "k==heal + when.from/until(非 when.on 反應式)表達同類「每回合恢復」語意, "
+                "該通路現行仍逐回合獨立重擲/未納入本次去重範圍(架構上是即時重算而非持久狀態"
+                "實例, 風險較低且無實測證據顯示現行有雙重疊加問題, 見k==heal分支註解, 誠實"
+                "揭露為已知限制)",
+    },
+    # ---- 已確認 multi(可共存, 多實例並存) ----
+    "反擊": {
+        "mode": "multi",
+        "engine": "counter(k==counter, u.counters list, 以 upsert_named_status 鍵="
+                  "(\"反擊\", id(e)) 去重: 同一來源重複施加只刷新自己那筆, 不同來源各自"
+                  "獨立並存)",
+        "note": "hit() 逐一走訪 counters 清單每個實例, 各自獨立擲 prob/結算傷害, 互不影響",
+    },
+    "攻心": {
+        "mode": "multi",
+        "engine": "lifesteal(addbonus 累加多實例, 見 hit() 的 ls = src.addbonus(\"lifesteal\"))",
+        "note": "現行 addbonus 加總語意已符合「多來源共存」, 本批未變更(見"
+                "calibration_anchors.json engine_current_findings 既有核對結論)",
+    },
+    "倒戈": {
+        "mode": "multi",
+        "engine": "同攻心, lifesteal(addbonus 累加多實例)",
+        "note": "同上, 未變更",
+    },
+    # ---- 待user確認(pending): 只記錄現行觀察到的引擎行為, 不擅自歸類/不改動現行邏輯 ----
+    "警戒": {
+        "mode": "pending",
+        "engine": "block(次數型格擋, u.block list, 現行不去重: 多來源各自append, 各自獨立"
+                  "計次消耗)",
+        "note": "與抵禦同族(counted-charge家族)。是否應同名覆蓋或維持可共存待user裁決",
+    },
+    "抵禦": {"mode": "pending", "engine": "同警戒, block(val=1.0全擋)", "note": "同上"},
+    "先攻": {
+        "mode": "pending",
+        "engine": "u.first(單一剩餘回合數欄位, 非清單; 再次施加現行為直接覆寫該欄位數值)",
+        "note": "控制/節奏類, 猜測傾向unique(同單位性質上不會疊兩個先攻狀態), 待user裁決",
+    },
+    "遇襲": {"mode": "pending", "engine": "u.ambush(同first, 單一欄位)", "note": "同上"},
+    "虛弱": {
+        "mode": "pending",
+        "engine": "amp(val:-1.0, 走 u.adds 清單, 現行多來源可共存疊加, 但傷害歸零本身已"
+                  "封頂無法\"更虛弱\", 疊加與否對結果無感)",
+        "note": "與控制類/DoT類皆不同的特例, 待user裁決",
+    },
+    "計窮": {
+        "mode": "pending",
+        "engine": "u.silence(單一剩餘回合數欄位, 非清單)",
+        "note": "控制類, 猜測傾向unique(同單位不疊), 待user裁決",
+    },
+    "繳械": {"mode": "pending", "engine": "u.disarm(同計窮, 單一欄位)", "note": "同上"},
+    "震懾": {"mode": "pending", "engine": "u.stun(同計窮, 單一欄位)", "note": "同上"},
+    "混亂": {"mode": "pending", "engine": "u.chaos(同計窮, 單一欄位)", "note": "同上"},
+    "洞察": {
+        "mode": "pending",
+        "engine": "u.insight(單一剩餘回合數欄位, 免控buff)",
+        "note": "buff類, 待user裁決",
+    },
+    "嘲諷": {
+        "mode": "pending",
+        "engine": "u.taunt_by/u.taunt_dur(單一欄位組, 現行後施加者直接覆蓋前者)",
+        "note": "待user裁決",
+    },
+    "灼燒": {
+        "mode": "pending",
+        "engine": "dot(u.dots list, 現行多來源不去重: 各自append獨立逐回合結算, 見"
+                  "resolve_dot_name/count_named_statuses 依名稱分組計數, 供dmgFromStatus"
+                  "等橫切效果讀取)",
+        "note": "DoT家族(灼燒/水攻/中毒/潰逃/沙暴/叛逃共6種具名狀態, 見dmgFromStatus"
+                "清單)之一。「各來源?」——多個同名DoT來源現行各自造成傷害(共存疊加),"
+                "是否應同名覆蓋(如只取最新一份持續傷害)待user裁決",
+    },
+    "中毒": {"mode": "pending", "engine": "同灼燒, dot(DoT家族之一)", "note": "同上"},
+    "潰逃": {
+        "mode": "pending",
+        "engine": "同灼燒, dot(DoT家族之一, 見 dmgFromStatus 清單/左右開弓「若目標為騎兵"
+                  "則額外造成潰逃狀態」)",
+        "note": "同上; 附帶記錄DoT家族另兩員(水攻/沙暴)+叛逃, 供未來一併裁決時參照",
+    },
+}
+
+
 APT_PCT = {"S": 1.20, "A": 1.00, "B": 0.85, "C": 0.70, "D": 0.55, None: 0.85}
 APT_RANK = {"S": 4, "A": 3, "B": 2, "C": 1, "D": 0, None: -1}
 SCALE_CLAMP = 1.5                                    # amp/mitig 縮放後上限保護: |val| <= 1.5
@@ -539,7 +651,13 @@ class Unit:
         self.cmd_passive_srcs = {t.get("nameZh") for t in self.tactics
                                   if t.get("type") in ("command", "passive") and t.get("nameZh")}
         _bn = bingshu if isinstance(bingshu, (list, tuple)) else ([bingshu] if bingshu else [])
-        _bs_all = [e for nm in _bn for e in BINGSHU.get(nm, {}).get("effects", [])]  # 兵書(主+副)合併效果
+        # 狀態疊加語意對齊批: 每筆兵書效果淺拷貝附加 _bsNm(來源兵書名), 對稱既有裝備 _eqNm
+        # 慣例(見下方 _eq_all) —— apply_passives() 對 u.bs 呼叫 apply_effects() 時傳入的 "t"
+        # 是匿名合成 dict({"effects": eff, "kind": "phys"}, 無 nameZh), 反擊/急救/休整等具名
+        # 狀態實例需要來源顯示名(src_name, 供未來戰報「執行來自【X】的【狀態】」)時單靠
+        # t.get("nameZh") 取不到, 故補標在效果本身上(見 effect_src_name() 讀取優先序)。淺拷貝
+        # (不動 BINGSHU 原始共享物件), 與既有 _eqNm 做法一致。
+        _bs_all = [dict(e, _bsNm=nm) for nm in _bn for e in BINGSHU.get(nm, {}).get("effects", [])]  # 兵書(主+副)合併效果
         self.bs = [e for e in _bs_all if not (e.get("when") or {}).get("on")]
         # 批22: 兵書效果級 e.when.on(急救類反應式治療, 如三軍之眾「戰鬥第2-4回合自身獲得急救」)
         # —— 與裝備 on_hit_eq 同慣例, 兵書效果本無獨立回合窗機制(apply_passives 只在 prep/
@@ -560,15 +678,19 @@ class Unit:
             if e and e["name"] not in _eq_seen:
                 _eq_seen.add(e["name"])
                 _eq_objs.append(e)
-        _eq_all = []                                   # 裝備(4欄)合併效果(已去重); 帶 when 的效果淺拷貝附加 _eqNm(供 TRACE 標名), 不動原資料物件
+        _eq_all = []                                   # 裝備(4欄)合併效果(已去重); 每筆淺拷貝附加 _eqNm(供 TRACE 標名, 不動原資料物件)
+        # 狀態疊加語意對齊批: 過去只有帶 e["when"] 的效果才淺拷貝附加 _eqNm(供 TRACE 標名),
+        # 無 when 的效果(如荊棘/灼裂的 counter 反擊效果, 皆無 when 欄)直接沿用原物件、沒有
+        # _eqNm——導致這類效果的具名狀態實例(反擊等)透過 effect_src_name() 讀取來源顯示名時
+        # 落空(t 是 apply_passives() 對 u.eq 呼叫時的匿名合成 dict, 無 nameZh; e 又沒有
+        # _eqNm)。改為無條件淺拷貝+標記, 涵蓋所有裝備效果(不分是否帶 when), 對 TRACE/既有
+        # 讀取端零影響(多了一個從未被讀過的欄位), 只是把來源追蹤範圍從「僅反應式效果」擴大到
+        # 「全部裝備效果」。
         for e in _eq_objs:
             for eff in e.get("effects", []):
-                if eff.get("when"):
-                    eff2 = dict(eff)
-                    eff2["_eqNm"] = e["name"]
-                    _eq_all.append(eff2)
-                else:
-                    _eq_all.append(eff)
+                eff2 = dict(eff)
+                eff2["_eqNm"] = e["name"]
+                _eq_all.append(eff2)
         # 批8: 效果級回合窗(effect.when) —— 裝備效果不像戰法有獨立 when 欄(合併進 eq 陣列時已失去
         # 個別戰法邊界), 故 when 掛在「單條效果」本身(e["when"], 非 t["when"])。無 when 的效果照舊
         # 在準備階段(prep)一次性套用(self.eq); 帶 when 的效果分離到 delayed_eq, 於回合迴圈開始時
@@ -644,7 +766,16 @@ class Unit:
         self.stack = None                             # 疊加增益: {per, max, n}
         self.decay = None                             # 衰減增益: {v0, left, total}
         self.swap = 0                                 # 武智互換 剩餘回合
-        self.counter = None                           # 反擊: {coef, kind, prob}
+        # 狀態疊加語意對齊批: 反擊(counter)為 NAMED_STATUS 已確認的 "multi"(可共存)具名狀態
+        # —— user權威規則: 多來源各自獨立存在、全部生效, 不像急救/休整那樣同名覆蓋。改單一
+        # 欄位 self.counter(dict|None) 為清單 self.counters(list[dict]), 每筆各自獨立的
+        # {coef, kind, prob, dur, normalOnly, status_name, src_name, _key}, 由
+        # upsert_named_status() 以 key=("反擊", id(e)) 寫入(同一來源重複施加只刷新自己那筆,
+        # 不同來源各自並存), hit() 逐筆結算(見其對應段落)、decay_durations() 逐筆遞減到期
+        # 清除(見其對應段落)。下方 counter property 保留向後相容捷徑, 供既有測試/呼叫端
+        # `u.counter = {...}`/`u.counter is None` 等舊寫法沿用(讀寫第一筆), 正式套用路徑
+        # (apply_effects k=="counter" 分支)一律直接操作 self.counters 全清單。
+        self.counters = []
         self.dmg_share = None                         # 禁近似令-批K: {"pct","dur"} 受傷回饋給隊友(連環計), 見 hit() 消費端
         # 禁近似令-批K: regens —— 「每回合恢復一次兵力,持續N回合」逐回合累計治療清單(對稱
         # dots的傷害版), 每筆 [heal_amt, left], 見 tick() 消費端。
@@ -763,6 +894,35 @@ class Unit:
         self.on_hit_effect_tacs = [t for t in self.tactics
                                    if not t.get("when") and t["type"] in ("passive", "command", "active")
                                    and any((e.get("when") or {}).get("on") in ("attacked", "damaged") for e in t.get("effects", []))]
+        # 狀態疊加語意對齊批: 急救(reactive heal, k=="heal"+when.on)為 NAMED_STATUS 已確認的
+        # "unique"(唯一/覆蓋)具名狀態 —— user權威規則: 同單位若有多個來源(戰法/兵書/裝備)
+        # 各自獨立掛反應式治療(如陷陣營+青囊書皆授予急救), 全場只應有一個急救實例生效, 不疊
+        # 雙倍觸發機率。過去 on_hit_effect_tacs/on_hit_eq/on_hit_bs 三條反應式清單各自獨立
+        # 蒐集, on_hit() 逐一檢查全部候選並各自擲率觸發, 等同「共存」——不符合唯一狀態規則。
+        #
+        # 修正: 建構時做一次「急救去重」掃描, 找出所有反應式治療候選效果(k=="heal" 且
+        # when.on 屬於 attacked/damaged, 橫跨戰法/兵書/裝備三條清單), 若超過1個, 只保留
+        # 「最後蒐集到的」那個(依序: 戰法→兵書→裝備, 對應 apply_passives() 既有prep處理
+        # 順序, 見其定義——equip 最後套用, 語意上最接近「最新覆蓋」; tie-break政策為本次
+        # 實作顯式假設, user未另有明文裁決, 見 NAMED_STATUS["急救"]["note"] 供未來覆核),
+        # 其餘的 id() 記入 self.suppressed_named_status, on_hit_for() 反應式觸發點檢查此
+        # 集合、命中則整個跳過(不擲率也不治療), 使全場只有一個急救來源真正生效。此為建構時
+        # 一次性裁決(急救類效果本身皆為開戰即定的固定loadout, 現行引擎無戰中動態新增此類
+        # 反應式效果的管道, 故不需要逐回合重新裁決)。
+        self.suppressed_named_status = set()
+        _fa_candidates = []  # 急救候選 id(e), 依 戰法→兵書→裝備 順序蒐集(此順序即優先序, 見上方註解)
+        for _t in self.on_hit_effect_tacs:
+            for _e in _t.get("effects", []):
+                if _e.get("k") == "heal" and (_e.get("when") or {}).get("on") in ("attacked", "damaged"):
+                    _fa_candidates.append(id(_e))
+        for _e in self.on_hit_bs:
+            if _e.get("k") == "heal" and (_e.get("when") or {}).get("on") in ("attacked", "damaged"):
+                _fa_candidates.append(id(_e))
+        for _e in self.on_hit_eq:
+            if _e.get("k") == "heal" and (_e.get("when") or {}).get("on") in ("attacked", "damaged"):
+                _fa_candidates.append(id(_e))
+        if len(_fa_candidates) > 1:
+            self.suppressed_named_status.update(_fa_candidates[:-1])
         # 批27 A: on:"dealtDamage" —— 「自身造成傷害時/後」反應式掛鉤(對比 on_hit_tacs 的
         # attacked/damaged 是「自己受擊」視角, 這裡是「自己打人」視角, 如白衣渡江「造成兵刃
         # 傷害時25%→50%機率使敵軍單體繳械」)。掛在 hit() 傷害結算後對 src(施加傷害的一方)
@@ -829,6 +989,22 @@ class Unit:
     @property
     def alive(self):
         return self.troop > 0
+
+    # 狀態疊加語意對齊批: counter 向後相容捷徑 —— 反擊已改為 self.counters(清單, 支援多實例
+    # 並存, 見其定義註解與 apply_effects k=="counter" 分支/hit() 消費端), 但既有測試/呼叫端
+    # 大量使用 `u.counter = {...}`(直接賦值單一dict) / `u.counter is None`(讀取)這類舊寫法。
+    # 此 property 讓舊寫法繼續運作(讀: 回傳 counters[0] 或 None; 寫: 整個取代 counters 為
+    # 單一實例清單, 對稱舊行為「賦值即覆蓋」), 供測試harness簡便賦值使用。正式套用路徑(戰法/
+    # 兵書/裝備效果實際生效時)一律走 upsert_named_status(self.counters, ...), 不透過此
+    # property, 也不建議新程式碼呼叫 setter(會直接清空既有多實例, 與"multi"共存語意衝突,
+    # 僅供測試/一次性初始化情境使用)。
+    @property
+    def counter(self):
+        return self.counters[0] if self.counters else None
+
+    @counter.setter
+    def counter(self, val):
+        self.counters = [] if val is None else [dict(val)]
 
     def is_immune_to(self, ctype):                     # 批16: immuneTo —— 單項控制免疫查詢(對比 insight 全免)
         return any(ty == ctype for ty, _ in self.immune)
@@ -1107,8 +1283,13 @@ class Unit:
         值, 而非上一輪的舊值)。本方法自此batch起只負責「持續回合數-1、歸零則清除」與
         hit_flags/tac_cd等行動後才該結算的狀態, 不再相關stack遞增。"""
         self.dots = [[d, l - 1] + rest for d, l, *rest in self.dots if l - 1 > 0]
+        # 狀態疊加語意對齊批: regens(休整, unique具名狀態)現行透過 upsert_named_status 以
+        # 固定鍵"休整"去重寫入(見 apply_effects k=="regen" 分支), 每筆結構延伸為 [amt, dur,
+        # ...其餘欄位(_key/status_name/src_name等)], 比照上面 self.dots 用 *rest 保留延伸
+        # 欄位不遺失(舊寫法 `for amt, left in self.regens` 要求恰好2元素, 會在延伸為4元素後
+        # 拋 ValueError, 已修正為與 dots 一致的變長解構)。
         if self.regens:
-            self.regens = [[amt, left - 1] for amt, left in self.regens if left - 1 > 0]
+            self.regens = [[amt, left - 1] + rest for amt, left, *rest in self.regens if left - 1 > 0]
         self.mods = [[s, m, l - 1, src, flags] for s, m, l, src, flags in self.mods if l - 1 > 0]
         self.adds = [[k, v, l - 1, src, flags] for k, v, l, src, flags in self.adds if l - 1 > 0]
         self.stat_adds = [[s, ad, l - 1, src, flags] for s, ad, l, src, flags in self.stat_adds if l - 1 > 0]  # 裝備平加到期移除(如 疾馳 speed+25 dur:2)
@@ -1160,10 +1341,13 @@ class Unit:
             self.shield["dur"] -= 1
             if self.shield["dur"] <= 0:
                 self.shield = None
-        if self.counter:                               # 批23 A2: 反擊到期清除(過去 dur 幽靈欄位從不遞減, 帶時限的反擊變永久)
-            self.counter["dur"] -= 1
-            if self.counter["dur"] <= 0:
-                self.counter = None
+        # 批23 A2: 反擊到期清除(過去 dur 幽靈欄位從不遞減, 帶時限的反擊變永久)。狀態疊加
+        # 語意對齊批: 改逐筆處理 self.counters(多實例清單, multi具名狀態) —— 每個獨立實例
+        # 各自遞減 dur、各自到期清除, 互不影響(某個來源的反擊到期不影響其他來源的反擊繼續生效)。
+        if self.counters:
+            for _c in self.counters:
+                _c["dur"] -= 1
+            self.counters = [_c for _c in self.counters if _c["dur"] > 0]
         if self.dmg_share:                              # 禁近似令-批K: dmg_share 到期清除(對稱counter既有慣例)
             self.dmg_share["dur"] -= 1
             if self.dmg_share["dur"] <= 0:
@@ -1414,8 +1598,18 @@ def hit(src, dst, coef, kind, is_normal=False, on_event=None, on_deal=None, is_a
         dst.huchen["hits"] = min(dst.huchen["maxHits"], dst.huchen["hits"] + 1)
         if dst.huchen["hits"] >= dst.huchen["maxHits"]:
             settle_huchen(dst, early=True)
-    c = dst.counter                                   # 反擊: 直接還擊 src(不經 hit, 不遞迴)
-    if c and dst.alive and src.alive and not (c.get("normalOnly") and not is_normal) and random.random() < c.get("prob", 1.0):  # 批G: normalOnly限定只在普攻(is_normal=True)時觸發, 省略時向後相容(任意傷害皆可觸發)
+    # 反擊: 直接還擊 src(不經 hit, 不遞迴)。狀態疊加語意對齊批: 反擊為 NAMED_STATUS 已確認
+    # 的 "multi"(可共存)具名狀態, 改逐一走訪 dst.counters(多實例清單) —— 每個獨立來源各自
+    # 判定 prob/結算傷害, 全部生效(不像過去單一 dst.counter 只有一份, 多來源時後者覆蓋前者)。
+    # 先淺拷貝快照(list(...))再迭代, 對稱 counter_guards/absorb_guards 既有防禦性快照慣例,
+    # 避免結算過程中(理論上不會, 但保留彈性)增刪 counters 造成迭代期間清單變動的不確定行為。
+    for c in list(dst.counters):
+        if not (dst.alive and src.alive):    # 前一個反擊實例可能已把 src 打死, 死者不再被反擊
+            break
+        if c.get("normalOnly") and not is_normal:  # 批G: normalOnly限定只在普攻(is_normal=True)時觸發, 省略時向後相容(任意傷害皆可觸發)
+            continue
+        if random.random() >= c.get("prob", 1.0):
+            continue
         ck = c.get("kind", "phys")
         # 禁近似令-批K: c["ofDamage"](engine_wiring_gaps_misc族) —— 對稱 heal 既有 e["ofDamage"]
         # 慣例(依本次觸發事件的實際傷害量比例輸出), 取代反擊固定用coef重新計算一次全新damage()
@@ -1588,6 +1782,36 @@ def count_named_statuses(u, names):
         if len(d) > 3 and d[3] in want:
             found.add(d[3])
     return len(found)
+
+
+def upsert_named_status(lst, key, payload):
+    """狀態疊加語意對齊批: 具名狀態清單通用「插入或覆蓋」原語(對稱 engine.js upsertNamedStatus)。
+    lst: 狀態實例清單(如 u.counters/u.regens), 每筆皆為 dict。key: 本次施加的去重鍵——
+      unique(唯一狀態, 如急救/休整): 傳 status_name 本身(所有來源共用同一把鑰匙, 後蓋前,
+      全場至多1實例, 對應 NAMED_STATUS["急救"/"休整"]["mode"]=="unique")。
+      multi(可共存狀態, 如反擊): 傳 (status_name, 來源id) 二元組(各來源各自一把鑰匙, 同一
+      來源重複施加只刷新自己那筆, 不同來源互不影響、全部並存, 對應 NAMED_STATUS["反擊"]
+      ["mode"]=="multi")。
+    找到相同 key 的既有實例則整筆取代(保留最新來源/數值, 對應 user 規則「再施加同名狀態會
+    覆蓋舊的」); 找不到則新增。就地修改 lst(不回傳新 list), 對稱既有 push_add/push_mod 等
+    呼叫慣例。payload 會被淺拷貝一份並補上 "_key" 欄位(供下次施加時比對用, 不影響既有讀取端
+    只認 index 0/1 等既有慣例, 因為是額外新增欄位, 非取代既有欄位)。"""
+    payload = dict(payload)
+    payload["_key"] = key
+    for i, item in enumerate(lst):
+        if isinstance(item, dict) and item.get("_key") == key:
+            lst[i] = payload
+            return
+    lst.append(payload)
+
+
+def effect_src_name(t, e):
+    """狀態疊加語意對齊批: 具名狀態實例的來源顯示名(供未來戰報「執行來自【X】的【狀態】」,
+    對稱 engine.js effectSrcName)。優先序: 效果自帶的裝備/兵書標名(_eqNm/_bsNm, 見
+    Unit.__init__ 合併裝備/兵書效果時附加, 供 apply_passives() 對 u.eq/u.bs 呼叫 apply_effects
+    時"t"是匿名合成dict、取不到nameZh的情形) > 戰法本身 nameZh(t 為真實戰法物件時)。
+    兩者皆缺(理論上不應發生, 兵書/裝備已在建構時補標)則回傳 None, 不擅自杜撰來源名。"""
+    return e.get("_eqNm") or e.get("_bsNm") or t.get("nameZh")
 
 
 # 批52g: 戰法名→默認 dot 狀態名(資料未寫 name/dotName 時補)
@@ -2770,8 +2994,25 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
             hcoef_r = e.get("coef", 0.8) * (scale_of(caster, e["scale"]) if e.get("scale") else 1)
             heal_troop_base_r = caster.troop * HEAL_TROOP_C if t.get("type") == "active" else caster.heal_base
             amt_r = hcoef_r * heal_troop_base_r
+            # 狀態疊加語意對齊批: 休整(regen)為 NAMED_STATUS 已確認的 "unique"(唯一/覆蓋)
+            # 具名狀態 —— 同單位再施加同名(休整)狀態應覆蓋舊實例(刷新, 保留最新來源/數值),
+            # 不新增第二筆(過去無條件 append, 若同單位有兩個regen來源會變成"共存"疊加, 不
+            # 符合唯一狀態規則)。regens 沿用既有 [amt, dur] 清單形狀(對稱 dots 慣例, 見
+            # decay_durations()/dot_settle() 消費端只讀取前兩格), 延伸第3/4格存放狀態名/
+            # 來源顯示名(供未來戰報「執行來自【X】的【狀態】」)。以"休整"為固定鍵: 找到既有
+            # 筆(第3格=="休整")則整筆取代, 找不到則新增, 全場至多1筆——與 upsert_named_status()
+            # 同一套「找key覆蓋否則新增」邏輯, 但因 regens 是 list-of-list 而非 list-of-dict
+            # 形狀, 這裡用等價的內聯寫法(而非直接呼叫該共用函式, 避免為了共用而改動既有list
+            # 慣例)。
+            _rg_src_name = effect_src_name(t, e)
             for v in targets_r:
-                v.regens.append([amt_r, e.get("dur", 2)])
+                _rg_payload = [amt_r, e.get("dur", 2), "休整", _rg_src_name]
+                for _ri, _rg in enumerate(v.regens):
+                    if len(_rg) > 2 and _rg[2] == "休整":
+                        v.regens[_ri] = _rg_payload
+                        break
+                else:
+                    v.regens.append(_rg_payload)
             continue
         if k == "settle":                             # 結算傷害(猛毒): 掛統率最高敵將, 觸發見 fight
             # 禁近似令-批K: e["perStackFrom"](dynamic_coef_from_counter族) —— 對稱 engine.js
@@ -3664,9 +3905,21 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                     # 荊棘「受到普通攻擊時，反彈5%傷害」需要此限定(舊版counter不分普攻/戰法傷害,
                     # 高估觸發範圍)。「反彈傷害的5%」(依本次受到的傷害量比例輸出, 而非固定coef
                     # 重算)仍缺對應原語, 維持既有近似, 移C類(counter缺ofDamage式比例輸出版本)。
-                    u.counter = {"coef": e.get("coef", 1.0), "kind": e.get("kind", "phys"),
-                                 "prob": e.get("prob", 1.0), "dur": e.get("dur", 99),
-                                 "normalOnly": bool(e.get("normalOnly"))}
+                    #
+                    # 狀態疊加語意對齊批: 反擊為 NAMED_STATUS 已確認的 "multi"(可共存)具名
+                    # 狀態 —— user權威規則: 多來源各自獨立存在、全部生效(與急救/休整的「唯一,
+                    # 覆蓋」相反)。改用 upsert_named_status() 寫入 u.counters(清單), 鍵=
+                    # ("反擊", id(e)): 同一來源(同一個效果物件, 如同一戰法每次prep重新套用/
+                    # 重複觸發when視窗)重複施加只刷新自己那一筆(不無限疊加), 不同來源(不同
+                    # 戰法/兵書/裝備各自的counter效果, id(e)天然不同)各自獨立新增一筆、全部
+                    # 並存, hit() 逐筆結算(見其對應段落)。src_name/status_name 供未來戰報
+                    # 「執行來自【X】的【反擊】」顯示用。
+                    upsert_named_status(u.counters, ("反擊", id(e)), {
+                        "coef": e.get("coef", 1.0), "kind": e.get("kind", "phys"),
+                        "prob": e.get("prob", 1.0), "dur": e.get("dur", 99),
+                        "normalOnly": bool(e.get("normalOnly")),
+                        "status_name": "反擊", "src_name": effect_src_name(t, e),
+                    })
             elif k == "taunt":                         # 嘲諷: 中招者普攻/單體戰法強制指向施放者
                 # 禁近似令-批K: e["tauntTarget"](force_attack_reverse族) —— 對稱 engine.js
                 # 同名分支(反向taunt): "leader"=強制目標改為我方主將(武鋒陣)/"select"=依
@@ -4022,6 +4275,11 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
             # 戰法可能有多個 e.when.on 效果, 需各自獨立節流。
             for t in holder.on_hit_effect_tacs:
                 for e in t["effects"]:
+                    # 狀態疊加語意對齊批: 急救(unique具名狀態)去重後被覆蓋的反應式heal效果
+                    # 整個跳過(不擲率也不治療), 見 Unit.__init__ suppressed_named_status
+                    # 建構時裁決註解。跳過非常便宜的早退檢查, 放在最前面。
+                    if id(e) in holder.suppressed_named_status:
+                        continue
                     ew = e.get("when") or {}
                     if not ew.get("on"):
                         continue
@@ -4056,6 +4314,9 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                                  allies_of(holder), foes_of(holder), rate_checked=True, reactive=True, dmg=dmg, evt_target=dst)  # 批23 A4/reactive: 上面已擲過 e["rate"], 避免重複擲骰; reactive供e.when.on閘門放行; 批33: dmg供e["ofDamage"]使用; 批42: evt_target供who=="eventTarget"
             # 批22: 裝備效果級 e.when.on(見 on_hit_eq 註解) —— 同上, 用合成單效果戰法呼叫 apply_effects
             for e in holder.on_hit_eq:
+                # 狀態疊加語意對齊批: 急救(unique具名狀態)去重, 同 on_hit_effect_tacs 迴圈註解。
+                if id(e) in holder.suppressed_named_status:
+                    continue
                 ew = e["when"]
                 if not who_ok(ew):
                     continue
@@ -4077,6 +4338,9 @@ def fight(teamA, teamB, troopA=None, troopB=None, bsA=None, bsB=None, eqA=None, 
                 apply_effects(holder, src, {"effects": [e], "kind": "phys"}, allies_of(holder), foes_of(holder), rate_checked=True, reactive=True, dmg=dmg, evt_target=dst)  # 批23 A4/reactive; 批33: dmg供e["ofDamage"]使用; 批42: evt_target供who=="eventTarget"
             # 批22: 兵書效果級 e.when.on(見 on_hit_bs 註解) —— 同上, 用合成單效果戰法呼叫 apply_effects
             for e in holder.on_hit_bs:
+                # 狀態疊加語意對齊批: 急救(unique具名狀態)去重, 同 on_hit_effect_tacs 迴圈註解。
+                if id(e) in holder.suppressed_named_status:
+                    continue
                 ew = e["when"]
                 if not who_ok(ew):
                     continue
@@ -9671,6 +9935,104 @@ def demo():
     CUR_ROUND = 0
     print("    [時序徹底一致化 226] 江天長焰(SP周瑜)相一主例: SP周瑜排最後(own_round=0)時易傷仍"
           "在回合開頭broadcast_only統一施加給敵軍(不隨出手順序)/own_turn通道互斥不誤施 驗證通過")
+
+    # 227) 狀態疊加語意對齊批(user權威規則 status_stacking_rule_20260711): NAMED_STATUS表
+    # 分類驗證。(a) 反擊(multi)——兩個不同來源的反擊應各自獨立在counters清單新增一筆、都
+    # 生效; 同一來源(同一效果物件)重複施加只刷新自己那一筆, 不疊加。(b) 休整(unique)——
+    # 兩個不同來源的regen效果全場只應保留1筆(同名覆蓋, 後蓋前)。(c) 急救(unique)——兩個
+    # 不同來源皆授予反應式急救時, 建構時應恰好裁決1個生效、其餘進 suppressed_named_status
+    # (tie-break: 後蒐集者覆蓋前者); 並用端到端fight()確認雙急救來源與單急救來源的隊伍
+    # 表現統計上不可分辨(去重生效, 未共存雙倍觸發)。(d) 來源追蹤——具名狀態實例應帶
+    # status_name/src_name(供未來戰報「執行來自【X】的【狀態】」)。
+    for _ns_name, _ns_spec in NAMED_STATUS.items():
+        assert _ns_spec.get("mode") in ("unique", "multi", "pending"), \
+            f"227前置: NAMED_STATUS[{_ns_name}] mode 必須是 unique/multi/pending 之一"
+    assert NAMED_STATUS["急救"]["mode"] == "unique" and NAMED_STATUS["休整"]["mode"] == "unique", \
+        "227前置: 急救/休整應為已確認的unique(唯一/覆蓋)具名狀態"
+    assert NAMED_STATUS["反擊"]["mode"] == "multi" and NAMED_STATUS["攻心"]["mode"] == "multi" \
+        and NAMED_STATUS["倒戈"]["mode"] == "multi", \
+        "227前置: 反擊/攻心/倒戈應為已確認的multi(可共存)具名狀態"
+
+    # (a) 反擊(multi): 兩個不同來源各自獨立新增一筆, 都會觸發
+    ct227a_tac = {"nameZh": "測試反擊甲227", "type": "passive", "kind": "phys", "coef": 0, "rate": 1,
+                  "effects": [{"k": "counter", "who": "self", "coef": 1.0, "kind": "phys", "prob": 1.0}]}
+    ct227b_tac = {"nameZh": "測試反擊乙227", "type": "passive", "kind": "phys", "coef": 0, "rate": 1,
+                  "effects": [{"k": "counter", "who": "self", "coef": 1.0, "kind": "phys", "prob": 1.0}]}
+    ct227 = Unit(POOL["張飛"], "盾")
+    apply_effects(ct227, None, ct227a_tac, [ct227], [])
+    apply_effects(ct227, None, ct227b_tac, [ct227], [])
+    assert len(ct227.counters) == 2, \
+        f"227a: 兩個不同來源(不同戰法)各自的反擊效果應各自獨立在counters清單新增一筆(multi可共存), 實際{len(ct227.counters)}筆"
+    assert {c.get("src_name") for c in ct227.counters} == {"測試反擊甲227", "測試反擊乙227"}, \
+        f"227a: 每筆反擊實例應帶正確的src_name(來源戰法名, 供未來戰報顯示), 實際{[c.get('src_name') for c in ct227.counters]}"
+    assert all(c.get("status_name") == "反擊" for c in ct227.counters), "227a: 每筆反擊實例應帶status_name==\"反擊\""
+    # 雙反擊都生效: hit() 逐筆判定, on_deal 應被呼叫2次(is_normal=False, 各反擊各自算一次「造成傷害」)
+    atk227 = Unit(POOL["曹操"], "騎")
+    _ct227_fire = [0]
+    def _on_deal227(src, dst, is_normal, kind, dmg):
+        if not is_normal:
+            _ct227_fire[0] += 1
+    random.seed(22701)
+    hit(atk227, ct227, 1.0, "phys", is_normal=True, on_deal=_on_deal227)
+    assert _ct227_fire[0] == 2, \
+        f"227a: 兩個不同來源的反擊(prob=1.0必中)應都觸發, on_deal應被呼叫2次(各反擊各自造成一次傷害), 實際{_ct227_fire[0]}次"
+    # 同一來源(同一效果物件)重複施加只刷新自己那一筆, 不疊加出第2筆
+    dup227_u = Unit(POOL["張飛"], "盾")
+    dup227_tac = {"nameZh": "測試反擊丙227", "type": "passive", "effects": [
+        {"k": "counter", "who": "self", "coef": 1.0, "kind": "phys", "prob": 1.0}]}
+    apply_effects(dup227_u, None, dup227_tac, [dup227_u], [])
+    apply_effects(dup227_u, None, dup227_tac, [dup227_u], [])
+    assert len(dup227_u.counters) == 1, \
+        f"227a: 同一來源(同一效果物件id)重複施加counter應只刷新自己那一筆, 不應疊加出第2筆, 實際{len(dup227_u.counters)}筆"
+
+    # (b) 休整(unique): 兩個不同來源全場只保留1筆(後蓋前)
+    rg227_u = Unit(POOL["張飛"], "盾")
+    rg227a_tac = {"nameZh": "測試休整甲227", "type": "active", "kind": "intel", "coef": 0, "rate": 1,
+                  "effects": [{"k": "regen", "who": "self", "coef": 1.0, "dur": 2}]}
+    rg227b_tac = {"nameZh": "測試休整乙227", "type": "active", "kind": "intel", "coef": 0, "rate": 1,
+                  "effects": [{"k": "regen", "who": "self", "coef": 1.0, "dur": 2}]}
+    apply_effects(rg227_u, None, rg227a_tac, [rg227_u], [])
+    apply_effects(rg227_u, None, rg227b_tac, [rg227_u], [])
+    assert len(rg227_u.regens) == 1, \
+        f"227b: 休整(unique)兩個不同來源施加時應只保留1筆(同名覆蓋, 不共存疊加), 實際{len(rg227_u.regens)}筆"
+    assert rg227_u.regens[0][2] == "休整" and rg227_u.regens[0][3] == "測試休整乙227", \
+        f"227b: 休整覆蓋後應保留\"最新\"(後施加者)的來源, 實際{rg227_u.regens[0]}"
+
+    # (c) 急救(unique): 建構時裁決 —— 兩個不同來源皆授予反應式急救時只保留1個生效
+    TACTICS["測試急救甲227"] = {
+        "nameZh": "測試急救甲227", "type": "passive", "kind": "phys", "coef": 0, "rate": 1, "prep": 0,
+        "effects": [{"k": "heal", "who": "self", "coef": 0.5, "dur": 1, "when": {"on": "damaged"}, "rate": 1.0}]}
+    TACTICS["測試急救乙227"] = {
+        "nameZh": "測試急救乙227", "type": "passive", "kind": "phys", "coef": 0, "rate": 1, "prep": 0,
+        "effects": [{"k": "heal", "who": "self", "coef": 0.5, "dur": 1, "when": {"on": "damaged"}, "rate": 1.0}]}
+    fa227 = Unit(POOL["張飛"], "盾", inherit=["測試急救甲227", "測試急救乙227"])
+    assert len(fa227.suppressed_named_status) == 1, \
+        f"227c: 兩個不同來源皆授予反應式急救(unique具名狀態)時, 建構時應恰好裁決1個為\"覆蓋\"(suppressed), 實際{len(fa227.suppressed_named_status)}個"
+    _fa227_tac_a = next(t for t in fa227.tactics if t.get("nameZh") == "測試急救甲227")
+    _fa227_tac_b = next(t for t in fa227.tactics if t.get("nameZh") == "測試急救乙227")
+    assert id(_fa227_tac_a["effects"][0]) in fa227.suppressed_named_status, \
+        "227c: tie-break政策為\"後蒐集者覆蓋前者\"(對應apply_passives()既有prep處理順序), 甲(先蒐集)應被裁決為覆蓋"
+    assert id(_fa227_tac_b["effects"][0]) not in fa227.suppressed_named_status, \
+        "227c: 乙(後蒐集)應保留為場上唯一生效中的急救實例"
+    # 端到端: 雙急救來源與單急救來源隊伍表現應統計上不可分辨(去重生效, 未共存雙倍觸發)——
+    # 若去重失效(退化回共存), 雙急救隊應顯著優於單急救隊(勝率差距>5pp)。
+    random.seed(22702)
+    n227 = 400
+    res227_double = simulate(["張飛", "諸葛亮", "關羽"], ["曹操", "夏侯惇", "許褚"], n=n227,
+                              inhA=[["測試急救甲227", "測試急救乙227"], None, None])
+    random.seed(22702)
+    res227_single = simulate(["張飛", "諸葛亮", "關羽"], ["曹操", "夏侯惇", "許褚"], n=n227,
+                              inhA=[["測試急救甲227"], None, None])
+    del TACTICS["測試急救甲227"]
+    del TACTICS["測試急救乙227"]
+    assert abs(res227_double["A勝率"] - res227_single["A勝率"]) < 0.05, \
+        (f"227c: 雙急救來源(去重後應只1個生效)與單急救來源勝率應相近(差距<5pp), 實際雙"
+         f"{res227_double['A勝率']} vs 單{res227_single['A勝率']}, 差距過大疑似去重失效"
+         "(退化成共存雙倍觸發治療)")
+
+    print(f"    [227 狀態疊加語意對齊] 反擊(multi, 兩來源各自獨立生效+同源不重複)/休整(unique,"
+          f"覆蓋不共存)/急救(unique, 建構時裁決1個生效, 端到端雙來源≈單來源勝率"
+          f"雙{res227_double['A勝率']}/單{res227_single['A勝率']})/來源追蹤(src_name) 驗證通過")
 
     print("self-check OK")
 
