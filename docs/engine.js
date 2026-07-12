@@ -336,9 +336,38 @@
   let BONDS = [], EQUIPS = {};                       // 緣分(隊伍級) / 裝備(自身)
   let SEASON_MODS = {};                              // 賽季修正 {id:[mod]}
   let TRACE = null, CUR_R = 0;                        // 推演日誌: TRACE=陣列時記錄事件; CUR_R=當前回合(0=準備)
+  // 遊戲式戰報批: CUR_PHASE("broadcast"相一全局/"action"相二逐單位行動輪) + CUR_ACTOR(當前
+  // 行動單位名, broadcast時為null) —— 於 fight() 主迴圈固定幾個切點更新(回合頂端廣播段/
+  // 每單位輪到行動時), 之後(含巢狀反應式onHit/dealtDamage/activeFired觸發)所有 lg() 呼叫
+  // 皆自動歸屬當下的 phase/actor, 不需逐一修改~150處既有呼叫點(JS單執行緒同步呼叫, 巢狀
+  // 觸發仍在同一單位的行動輪內完成, 歸屬天然正確)。
+  let CUR_PHASE = "broadcast", CUR_ACTOR = null;
   // 批52i: fight 期回呼(proxyNormal 代打完整普攻含突擊)
   let _FIGHT_CTX = { onHit: null, onDeal: null, alliesOf: null, foesOf: null, activeFired: null };
-  const lg = t => { if (TRACE) TRACE.push({ r: CUR_R, t }); };
+  // 遊戲式戰報批: 依文字內容粗分 etype(供UI分類/顯示, 不影響任何戰鬥邏輯/不改既有文字),
+  // 讓既有呼叫點免逐一手動標記; src(來源戰法/特技名)/status(狀態關鍵字)為best-effort擷取,
+  // 個別呼叫點若有更精確資訊可用第二參數meta覆蓋(見下方lg定義, Object.assign meta在後)。
+  const STATUS_KEYWORDS = ["震懾", "計窮", "繳械", "混亂", "遇襲", "虎嗔", "偽報", "捕獲", "嘲諷", "洞察"];
+  function classifyLogText(t) {
+    let src = null;
+    let m = t.match(/戰法【([^】]+)】/);
+    if (m) src = m[1];
+    else if ((m = t.match(/〔特技·([^〕]+)〕/))) src = m[1];
+    let etype = null;
+    if (/開始行動/.test(t)) etype = "start";
+    else if (/發動戰法|戰法【[^】]+】(?:（|效果|急救效果)|〔兵書〕(?:（|$)|〔裝備〕|〔特技·|〔緣分〕|〔(?:被動|陣法|兵種|指揮)〕|效果段生效|進入預備/.test(t)) etype = "tactic";
+    else if (/普通攻擊|陷入繳械，無法普通攻擊/.test(t)) etype = "attack";
+    else if (/損兵|規避了攻擊|會心|奇謀觸發|反擊|代[承打]|護盾吸收|抵禦生效|警戒生效|傷害延後|傷害降低|傷害提升|獲得破陣|受傷回饋/.test(t)) etype = "attack";
+    else if (/狀態過期|狀態解除|效果結束/.test(t)) etype = "expire";
+    else if (/受到【.+】傷害|延後傷害分期結算|猛毒|虎嗔結算|疊[層滿]/.test(t)) etype = "dot";
+    else if (/治療|回復|回饋|偷取|倒戈回復|執行來自/.test(t)) etype = "heal";
+    else if (/陷入|免疫|驅散|身上已存在同等或更強|控制免疫|被控制/.test(t)) etype = "status";
+    let status = null;
+    const hit = STATUS_KEYWORDS.find(k => t.includes(k));
+    if (hit) status = hit;
+    return { etype, src, status };
+  }
+  const lg = (t, meta) => { if (TRACE) TRACE.push(Object.assign({ r: CUR_R, phase: CUR_PHASE, actor: CUR_ACTOR }, classifyLogText(t), { t }, meta)); };
   function seasonModsFor(POOL, g, idx, team, scenario) {
     const out = { aptAdd: 0, aptS: false, flat: 0, mult: 1.0 };
     for (const m of (scenario ? (SEASON_MODS[scenario] || []) : [])) {
@@ -1063,13 +1092,21 @@
     // 改於該單位輪到行動時、行動前呼叫(見 fight() 主迴圈)。與 decayDurations() 成對(掉血/
     // 回血 vs 持續遞減到期), 合稱取代舊 tick()。只結算 troop 增減, 不動任何持續回合數。
     dotSettle() {
-      for (const d of this.dots) { this.troop -= d[0]; this.wounded += d[0] * woundedRate(CUR_R); fireSelfReactive(this, "dmgThreshold", bumpDmgAccum(this, d[0])); }  // 批18: dot 掉血同樣按當前回合轉化率計入傷兵池; 禁近似令-批L: 一身是膽累積傷害門檻
+      for (const d of this.dots) {
+        this.troop -= d[0]; this.wounded += d[0] * woundedRate(CUR_R); fireSelfReactive(this, "dmgThreshold", bumpDmgAccum(this, d[0]));  // 批18: dot 掉血同樣按當前回合轉化率計入傷兵池; 禁近似令-批L: 一身是膽累積傷害門檻
+        // 遊戲式戰報批: DoT逐回合掉血過去無TRACE(僅施加瞬間可能有訊息), 補上讓「行動段」內
+        // 能看到DoT持續傷害這一步(user需求「開始行動→狀態過期/DoT→戰法/普攻→結算」)。
+        if (TRACE && d[0] >= 1) lg(`　▸ ${this.nm} 受到【${d[3] || "持續傷害"}】傷害 -${Math.round(d[0])}`, { etype: "dot", status: d[3] || null });
+      }
       // 禁近似令-批K: regens(engine_wiring_gaps_misc族) —— 對稱上方dots掉血, 逐回合按登記
       // 金額治療(受傷兵池/START_TROOP上限雙重夾住, 沿用heal效果既有相同clamp慣例)。
       if (this.regens.length) {
         for (const rg of this.regens) {
           const actual = Math.max(0, Math.min(rg[0], this.wounded, START_TROOP - this.troop));
           this.troop += actual; this.wounded -= actual;
+          // 遊戲式戰報批: 逐回合治療過去無TRACE, 用既有rg[2]/rg[3](狀態名/來源名, 見k==="regen"
+          // 施加處註解)組成user指定格式「執行來自【來源】的【狀態】」。
+          if (TRACE && actual >= 1) lg(`　▸ ${this.nm} 執行來自【${rg[3] || "?"}】的【${rg[2] || "持續治療"}】, 回復+${Math.round(actual)}`, { etype: "heal", status: rg[2] || null, src: rg[3] || null });
         }
       }
       // 禁近似令-批K: preDmgHook(pre_damage_intercept族) deferSettle 排出的分期傷害逐回合
@@ -1104,8 +1141,19 @@
       if (this.stack && (this.stack.stackPer || "round") === "round") this.stack.n = Math.min(this.stack.max, this.stack.n + 1);
     }
     decayDurations() {
-      this.dots = this.dots.filter(d => --d[1] > 0);
-      if (this.regens.length) this.regens = this.regens.filter(rg => --rg[1] > 0);
+      // 遊戲式戰報批: 到期偵測前先記錄控制類欄位的「之前」值(純讀取, 不影響下方任何既有
+      // 邏輯), 供本方法末尾統一補一則「解除」TRACE訊息(user需求「狀態過期」)。
+      const _ctrlBefore = { stun: this.stun, silence: this.silence, disarm: this.disarm, chaos: this.chaos, ambush: this.ambush };
+      this.dots = this.dots.filter(d => {
+        const keep = --d[1] > 0;
+        if (!keep && TRACE) lg(`　▸ ${this.nm}【${d[3] || "持續傷害"}】狀態過期`, { etype: "expire", status: d[3] || null });
+        return keep;
+      });
+      if (this.regens.length) this.regens = this.regens.filter(rg => {
+        const keep = --rg[1] > 0;
+        if (!keep && TRACE) lg(`　▸ ${this.nm} 執行來自【${rg[3] || "?"}】的【${rg[2] || "持續治療"}】效果結束`, { etype: "expire", status: rg[2] || null, src: rg[3] || null });
+        return keep;
+      });
       this.mods = this.mods.filter(m => --m[2] > 0);
       this.adds = this.adds.filter(a => --a[2] > 0);
       this.statAdds = this.statAdds.filter(a => --a[2] > 0);   // 裝備平加到期移除(如 疾馳 speed+25 dur:2)
@@ -1116,6 +1164,13 @@
       this.insight = Math.max(0, this.insight - 1);
       this.first = Math.max(0, this.first - 1);       // 先攻: 逐回合遞減(dur=N 覆蓋前 N 回合, 如「戰鬥前3回合」)
       this.ambush = Math.max(0, this.ambush - 1);     // 批18: 遇襲 逐回合遞減(先攻的反面, 遲緩)
+      // 遊戲式戰報批: 五種主要控制效果(震懾/計窮/繳械/混亂/遇襲)到期時補一則「解除」TRACE
+      // (對稱既有施加時的「陷入X」訊息), 讓UI action段能顯示「狀態過期」——只在此刻(方法末尾
+      // 前)讀取_ctrlBefore/當前值比較, 不影響上方任一行既有遞減邏輯本身。
+      if (TRACE) {
+        const _CTRL_ZH = { stun: "震懾", silence: "計窮", disarm: "繳械", chaos: "混亂", ambush: "遇襲" };
+        for (const _k of Object.keys(_CTRL_ZH)) if (_ctrlBefore[_k] > 0 && this[_k] <= 0) lg(`　▸ ${this.nm}【${_CTRL_ZH[_k]}】狀態解除`, { etype: "expire", status: _CTRL_ZH[_k] });
+      }
       this.rigorous = Math.max(0, this.rigorous - 1); // 狀態疊加精修批: 嚴密 逐回合遞減(同insight/first慣例)
       this.healblock = Math.max(0, this.healblock - 1);  // 批8: 禁療 逐回合遞減
       this.captured = Math.max(0, this.captured - 1);    // 批52j: 捕獲自然到期
@@ -1143,6 +1198,9 @@
       // 遞減 dur、各自到期清除, 互不影響(某個來源的反擊到期不影響其他來源的反擊繼續生效)。
       if (this.counters.length) {
         for (const _c of this.counters) _c.dur -= 1;
+        // 遊戲式戰報批: 到期(dur<=0)發TRACE, 借用既有statusName/srcName(見pushCounter/反擊
+        // 施加處註解「供未來戰報執行來自X的反擊」)——現在是「未來」了。
+        if (TRACE) for (const _c of this.counters) if (_c.dur <= 0) lg(`　▸ ${this.nm}【${_c.statusName || "反擊"}】(來源:${_c.srcName || "?"})效果結束`, { etype: "expire", status: _c.statusName || null, src: _c.srcName || null });
         this.counters = this.counters.filter(_c => _c.dur > 0);
       }
       // 狀態疊加精修批(user追加規則): 攻心/倒戈到期清除, 逐筆處理 this.lifesteals(多實例
@@ -1150,6 +1208,7 @@
       // 清除, 互不影響。
       if (this.lifesteals.length) {
         for (const _l of this.lifesteals) _l.dur -= 1;
+        if (TRACE) for (const _l of this.lifesteals) if (_l.dur <= 0) lg(`　▸ ${this.nm}【${_l.statusName || "攻心/倒戈"}】(來源:${_l.srcName || "?"})效果結束`, { etype: "expire", status: _l.statusName || null, src: _l.srcName || null });
         this.lifesteals = this.lifesteals.filter(_l => _l.dur > 0);
       }
       if (this.dmgShare && --this.dmgShare.dur <= 0) this.dmgShare = null;  // 禁近似令-批K: dmgShare 到期清除(對稱counter既有慣例)
@@ -2020,7 +2079,7 @@
 
   const STAT_ZH = { force: "武力", intel: "智力", command: "統率", speed: "速度", all: "全屬性", charm: "魅力" };
   function effDesc(k, e, caster) {                  // 把15原語效果翻成可讀中文(供日誌); caster 供 scale 縮放後實際值顯示
-    const p = v => Math.round(Math.abs(v) * 100) + "%";
+    const p = v => Number.isFinite(v) ? Math.round(Math.abs(v) * 100) + "%" : "?%";   // 防 undefined/NaN(疊層型效果 val 不在此欄), 顯示層不崩
     const d = e.dur && e.dur < 90 ? `(${e.dur}回合)` : "";
     // 批35 B: k==="block" 顯示用 lockedScaleOf(準備階段鎖定值, 與實際套用時一致), 其餘 k 維持
     // scaleOf 即時值(現階段僅 block 有實測樣本佐證鎖定語意, 見 lockedScaleOf 註解)。
@@ -2042,7 +2101,7 @@
       case "insight": return `洞察·免疫控制${d || "(1回合)"}`;
       case "first": return "先攻·優先行動";
       case "ambush": return `遇襲(遲緩)${d || "(1回合)"}`;
-      case "stat": return e.add != null ? `${STAT_ZH[e.stat] || e.stat} +${(e.scale && caster ? e.add * scaleOf(caster, e.scale) : e.add)}${d}${sfx}` : `${STAT_ZH[e.stat] || e.stat} ×${mult.toFixed(2)}${d}${sfx}`;
+      case "stat": return e.add != null ? `${STAT_ZH[e.stat] || e.stat} +${(e.scale && caster ? e.add * scaleOf(caster, e.scale) : e.add)}${d}${sfx}` : `${STAT_ZH[e.stat] || e.stat} ×${(mult ?? 1).toFixed(2)}${d}${sfx}`;
       case "dot": return `持續傷害${d}`;
       case "extra": return `額外攻擊+${e.val}`;
       case "stack": return "疊加增傷";
@@ -3431,6 +3490,9 @@
           const dotEntry = [damage(caster, u, dotCoef, e.kind || t.kind || "intel", undefined, undefined, undefined, undefined, !!e.pierce, dotStatusName), e.dur, !!e.undispellable, dotStatusName, dotKey];
           const dotIdx = u.dots.findIndex(dd => dd.length > 4 && dd[4] === dotKey);
           if (dotIdx >= 0) u.dots[dotIdx] = dotEntry; else u.dots.push(dotEntry);
+          // 遊戲式戰報批: DoT施加瞬間過去無TRACE(見上方dotSettle()逐回合掉血的對應補充), 用
+          // effectSrcName(既有函式, 供未來戰報「執行來自X的狀態」的來源顯示名)組訊息。
+          if (TRACE) lg(`　▸ ${u.nm} 陷入【${dotStatusName || "持續傷害"}】狀態（來源:${effectSrcName(t, e) || "?"}，每回合${Math.round(dotEntry[0])}，持續${e.dur}回合）`, { etype: "status", status: dotStatusName || null, src: effectSrcName(t, e) || null });
         }
         else if (k === "extra") u.pushAdd("extra", e.val, e.dur, src);
         // 禁近似令-批K: splash(splash_aoe_primitive族) —— 「普攻命中目標時, 濺射傷害給目標
@@ -4136,7 +4198,7 @@
     // 批52i: proxyNormal 代打完整普攻用
     _FIGHT_CTX = { onHit, onDeal: dealtDamage, alliesOf, foesOf, activeFired };
     if (TRACE) {                                    // 準備階段標頭: 兵種 + 城建/陣營
-      CUR_R = 0;
+      CUR_R = 0; CUR_PHASE = "broadcast"; CUR_ACTOR = null;  // 遊戲式戰報批: 準備階段全屬全局訊息, 無行動段概念
       lg(`〔採用兵種〕我方 ${troopA}兵　·　敵方 ${troopB}兵`);
       lg(`〔城建滿〕全員 武智統速 各+${CITY}　〔陣營滿〕全屬性 +${Math.round((FACTION - 1) * 100)}%`);
       // 批36: 兵種營等級標頭 —— 僅任一方 campLv>0 才印(0=舊行為, 不多噪音); Lv10額外標註附贈戰法名(若有)
@@ -4161,7 +4223,7 @@
     }
 
     for (let r = 1; r <= ROUNDS; r++) {
-      CUR_R = r;
+      CUR_R = r; CUR_PHASE = "broadcast"; CUR_ACTOR = null;  // 遊戲式戰報批: 回合頂端相一全局broadcast段起點(見下方applyPassives({broadcastOnly:true}))
       // 時序一致化(2026-07 批次) A.1: 舊「回合迴圈頂端、全體單位stack同時+1層」(全局回合
       // cadence)已移除 —— stackPer==="round" 的逐回合遞增改到該單位自己行動後(見
       // Unit.decayDurations() 對應段落與其註解), 比照decayDurations掛點。
@@ -4188,6 +4250,9 @@
       order.sort((x, y) => (effFirst(y) - effFirst(x)) || (y.eff("speed") - x.eff("speed")));
       for (const u of order) {
         if (!u.alive) continue;  // 本回合稍早已被擊殺(其他單位的攻擊), 不再結算/行動
+        // 遊戲式戰報批: 輪到u行動, 之後(含本單位行動觸發的巢狀反應式, 如對方反擊/守護代承)
+        // 所有lg()皆歸屬u這個「行動段」, 直到下一位輪到才切換(見CUR_ACTOR定義處說明)。
+        CUR_PHASE = "action"; CUR_ACTOR = u.nm;
         // 時序一致化(2026-07 批次): ownRound —— 該單位自己第N個行動輪, 在此遞增(輪到u這次
         // 處理即算u自己的1個行動輪, 不論之後是否因震懾/捕獲/DoT致死而略過實際行動, 與
         // decayDurations()「即使跳過行動仍要遞減持續」的既有慣例一致, 供settle/coefFromStack
@@ -4195,6 +4260,11 @@
         // 回合」的比較基準, 取代全局CUR_R(user權威規則: 「回合」對持有者自身的漸進/計數機制
         // =該持有者自己的行動輪)。
         u.ownRound += 1;
+        // 遊戲式戰報批: 行動段起點標記, 帶當下素質快照(供UI hover/點選面板顯示, 需求3)。
+        if (TRACE) lg(`【${u.side}】${u.nm} 開始行動（第${u.ownRound}輪）`, {
+          etype: "start",
+          stats: { force: Math.round(u.eff("force")), intel: Math.round(u.eff("intel")), command: Math.round(u.eff("command")), speed: Math.round(u.eff("speed")), troop: Math.max(0, Math.round(u.troop)) },
+        });
         // 時序重構(2026-07, user權威規則): DoT跟隨被上狀態的人 —— 輪到該單位行動時才結算它
         // 自己的DoT(取代舊「回合末全體同時tick()」), 取代處見下方 decayDurations()。
         u.dotSettle();
@@ -4401,6 +4471,7 @@
       // 逐一結算, 本批已改為 settleTick(u)——於u(持有者/中毒目標)自己的行動輪、行動前結算
       // (比照dotSettle掛點, 見上方行動迴圈 applyOwnTurnEffects/settleTick 呼叫點), 此處全局
       // 迴圈已整段移除。
+      CUR_PHASE = "broadcast"; CUR_ACTOR = null;  // 遊戲式戰報批: 本回合行動輪已結束, 之後的戰鬥結束判定訊息不屬於任何人的行動段
       // 批8: 殲滅(kill) —— ROUNDS 回合內一方全滅, 對比「判定勝」(打滿8回合按剩餘兵力比較)。
       if (!A.some(u => u.alive)) { if (TRACE) lg(`〔戰鬥結束〕敵方【殲滅】我方，第${r}回合`); return { winner: "B", rounds: r, kill: true }; }
       if (!B.some(u => u.alive)) { if (TRACE) lg(`〔戰鬥結束〕我方【殲滅】敵方，第${r}回合`); return { winner: "A", rounds: r, kill: true }; }
@@ -4412,10 +4483,21 @@
   }
 
   function trace(POOL, teamA, teamB, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null, addA = null, addB = null, inhA = null, inhB = null, scenario = null, campLvA = 0, campLvB = 0) {
-    TRACE = []; CUR_R = 0;                           // 跑一場並記錄事件日誌
+    TRACE = []; CUR_R = 0; CUR_PHASE = "broadcast"; CUR_ACTOR = null;   // 跑一場並記錄事件日誌
     const r = fight(POOL, teamA, troopA, teamB, troopB, bsA, bsB, eqA, eqB, addA, addB, inhA, inhB, scenario, campLvA, campLvB);
     const log = TRACE; TRACE = null;
-    return { ...r, log };
+    // 遊戲式戰報批: 從log(單一事實來源, 每單位行動輪起點的etype:"start"事件)派生
+    // roundOrder[r]=[依序單位名](需求2: 左側行動順序欄)與statsSnapshot[r][unit]=素質快照
+    // (需求3), 不在fight()內部另存一份平行狀態(避免兩份資料日後互相漂移)。向後相容: log本身
+    // 結構不變(仍是陣列, 僅每筆多了幾個欄位), 舊渲染端(如只讀.t/.r的呼叫端)不受影響。
+    const roundOrder = {}, statsSnapshot = {};
+    for (const e of log) {
+      if (e.etype === "start" && e.actor != null) {
+        (roundOrder[e.r] || (roundOrder[e.r] = [])).push(e.actor);
+        if (e.stats) (statsSnapshot[e.r] || (statsSnapshot[e.r] = {}))[e.actor] = e.stats;
+      }
+    }
+    return { ...r, log, roundOrder, statsSnapshot };
   }
   function simulate(POOL, teamA, teamB, n = 2000, troopA = null, troopB = null, bsA = null, bsB = null, eqA = null, eqB = null, addA = null, addB = null, inhA = null, inhB = null, scenario = null, campLvA = 0, campLvB = 0) {
     let a = 0, rs = 0, killA = 0, killB = 0;          // 批8: 殲滅(kill) vs 判定勝(8回合打滿按剩餘兵力) 分開統計

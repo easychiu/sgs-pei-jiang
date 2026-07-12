@@ -7,6 +7,7 @@
 body{margin:0;background:var(--bg);color:var(--ink);
   font-family:"Noto Serif TC","Songti TC",serif;line-height:1.5}
 .gold{color:var(--gold)}
+.gold2{color:var(--gold2)}
 header{padding:18px 20px 0;text-align:center;border-bottom:2px solid var(--line);
   background:linear-gradient(180deg,#241a12,#15100c)}
 header h1{margin:0 0 14px;font-size:26px;letter-spacing:2px;
@@ -72,6 +73,61 @@ button{cursor:pointer;font-family:inherit}
 .tracelog{max-height:55vh;overflow:auto;font-size:12px;line-height:1.7;background:#1b140e;
   border:1px solid var(--line);border-radius:8px;padding:10px}
 .logln{color:#cdbf9c;white-space:pre-wrap}
+
+/* 遊戲式戰報(推演明細): 回合分頁+左側行動順序欄+右側行動段, 見 app.js openTrace() */
+.tr-box{max-width:980px}
+.tr-layout{display:flex;gap:10px;align-items:flex-start}
+.tr-order{flex:0 0 150px;max-height:60vh;overflow-y:auto;background:#1b140e;
+  border:1px solid var(--line);border-radius:8px;padding:6px;display:flex;flex-direction:column;gap:3px}
+.tr-order-empty{color:#6b5a3e;font-size:12px;padding:10px 4px;text-align:center}
+.tr-order-item{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:6px;
+  border-left:3px solid transparent}
+.tr-order-item:hover{background:#241a10}
+.tr-order-item.side-A{border-left-color:#3aa05a}
+.tr-order-item.side-B{border-left-color:#c84646}
+.tr-avatar{width:28px;aspect-ratio:832/1216;object-fit:cover;border-radius:4px;flex-shrink:0;
+  background:#0d0a07;cursor:pointer;border:1px solid var(--line)}
+.tr-avatar:hover{border-color:var(--gold)}
+.tr-nm{font-size:12px;color:var(--ink);cursor:pointer;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.tr-nm:hover{color:var(--gold2);text-decoration:underline}
+.tr-main{flex:1;min-width:0;max-height:60vh;overflow-y:auto;background:#1b140e;
+  border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.tr-seg{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px;
+  background:#18120c;transition:background .3s,border-color .3s}
+.tr-seg.flash{border-color:var(--gold);background:#2a2212}
+.tr-seg-broadcast{border-color:#4a6ebe;background:#141b28}
+.tr-seg-head{display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap}
+.tr-avatar-sm{width:22px;aspect-ratio:832/1216;object-fit:cover;border-radius:4px;flex-shrink:0;
+  background:#0d0a07;cursor:pointer;border:1px solid var(--line)}
+.tr-seg-nm{color:var(--gold2);font-size:14px;cursor:pointer}
+.tr-seg-side{font-size:10px;padding:1px 6px;border-radius:8px;border:1px solid var(--line);color:#b8a987}
+.tr-seg-side.side-A{color:#7fce8a;border-color:#3aa05a}
+.tr-seg-side.side-B{color:#e08a8a;border-color:#c84646}
+.tr-seg-stats{font-size:11px;color:#9a8b6a;margin-left:auto}
+.tr-statpop{position:absolute;background:#241a10;border:1px solid var(--gold);border-radius:6px;
+  padding:6px 10px;font-size:12px;line-height:1.6;color:var(--ink);box-shadow:0 3px 10px rgba(0,0,0,.5);
+  z-index:5;pointer-events:none;white-space:nowrap}
+/* etype 顏色分類(僅裝飾, 呼應「仿遊戲」逐行分色) */
+.logln.etype-tactic{color:var(--gold2)}
+.logln.etype-attack{color:#e0a0a0}
+.logln.etype-heal{color:#9fd4a8}
+.logln.etype-status{color:#c8a2d8}
+.logln.etype-dot{color:#e0b878}
+.logln.etype-expire{color:#8a7c5c;font-style:italic}
+.logln.etype-start{color:var(--gold);font-weight:bold;border-top:1px dashed var(--line);
+  margin-top:4px;padding-top:4px}
+@media(max-width:620px){
+  .tr-layout{flex-direction:column}
+  .tr-order{flex-direction:row;flex:none;max-height:none;overflow-x:auto;overflow-y:hidden;width:100%}
+  .tr-order-item{flex-direction:column;flex-shrink:0;border-left:none;border-bottom:3px solid transparent;
+    width:52px;padding:4px 2px}
+  .tr-order-item.side-A{border-left-color:transparent;border-bottom-color:#3aa05a}
+  .tr-order-item.side-B{border-left-color:transparent;border-bottom-color:#c84646}
+  .tr-nm{font-size:10px;max-width:48px}
+  .tr-avatar{width:36px}
+  .tr-main{max-height:50vh}
+}
 .brow{margin:10px 0;font-size:15px}
 .eqdesc{margin:2px 0 0;min-height:14px}
 .balloc{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}
@@ -187,7 +243,7 @@ select{background:#2a2018;color:var(--ink);border:1px solid var(--line);
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;
   align-items:center;justify-content:center;z-index:10;padding:16px}
 .modal-box{background:var(--bg2);border:2px solid var(--gold);border-radius:12px;
-  max-width:680px;width:100%;max-height:90vh;overflow:auto;padding:20px}
+  max-width:680px;width:100%;max-height:90vh;overflow:auto;padding:20px;position:relative}
 .hidden{display:none!important}
 .pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));
   gap:8px;margin-top:12px}

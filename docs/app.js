@@ -370,7 +370,7 @@ function runSim() {
     <div style="font-size:13px;color:#9a8b6a;margin-top:6px">${A.join("／")}　vs　${B.join("／")}</div>`;
 }
 
-function openTrace() {                                         // 推演明細: 跑一場並顯示逐回合日誌
+function openTrace() {                                         // 推演明細: 跑一場並顯示「遊戲式」逐回合戰報
   const A = [], B = [], bsA = [], bsB = [], eqA = [], eqB = [], adA = [], adB = [], inA = [], inB = [];
   teams.A.forEach((n, i) => { if (n) { A.push(n); bsA.push(bsNames(getBsel("A", i))); eqA.push(eqNames(eqsel.A[i])); adA.push(buildAdd(getBuild("A", i), getBsel("A", i).on)); inA.push((inhsel.A[i] || []).filter(Boolean)); } });
   teams.B.forEach((n, i) => { if (n) { B.push(n); bsB.push(bsNames(getBsel("B", i))); eqB.push(eqNames(eqsel.B[i])); adB.push(buildAdd(getBuild("B", i), getBsel("B", i).on)); inB.push((inhsel.B[i] || []).filter(Boolean)); } });
@@ -381,14 +381,90 @@ function openTrace() {                                         // 推演明細: 
   const tabs = ["準備階段"].concat(Array.from({ length: maxR }, (_, i) => "回合" + (i + 1)));
   let cur = 0;
   const box = $("#modal .modal-box");
+  box.classList.add("tr-box");                                 // 較寬版面(左側行動順序欄+右側行動段), closeModal() 會在關閉時重置
   const winTxt = r.winner === "A" ? `我方勝 · ${r.rounds}回合` : `敵方勝 · ${r.rounds}回合`;
+  // 引擎trace結構化批: log 每筆若帶 phase 欄位即視為新結構(見 engine.js lg())。向後相容:
+  // 舊格式(僅{r,t})或空log時, render() 內 isStructured 分支會退回原本的純文字堆渲染。
+  const isStructured = r.log.length === 0 || r.log.every(x => "phase" in x);
+  const sideOf = n => A.includes(n) ? "我" : "敵";
+  const statLine = st => st ? `武${st.force} 智${st.intel} 統${st.command} 速${st.speed} 兵${st.troop}` : "資料不明";
+  let segs = [];   // 本回合依 etype:"start" 切出的行動段, 每筆{actor,stats,lines}; render() 時重建
   const render = () => {
-    const lines = r.log.filter(x => x.r === cur).map(x => `<div class="logln">${x.t}</div>`).join("") || `<div class="logln" style="color:#8a7c5c">（此回合無事件）</div>`;
+    const roundLog = r.log.filter(x => x.r === cur);
+    segs = [];
+    let bodyHtml;
+    if (!isStructured) {
+      const lines = roundLog.map(x => `<div class="logln">${x.t}</div>`).join("") || `<div class="logln" style="color:#8a7c5c">（此回合無事件）</div>`;
+      bodyHtml = `<div class="tracelog">${lines}</div>`;
+    } else {
+      const broadcastLines = roundLog.filter(x => x.phase === "broadcast");
+      const actionLines = roundLog.filter(x => x.phase === "action");
+      // 需求2: 依 start 標記切段(不用角色名當key——雙方若巧合同名武將, 各自仍是獨立段落)。
+      for (const e of actionLines) {
+        if (e.etype === "start") segs.push({ actor: e.actor, stats: e.stats, lines: [] });
+        if (segs.length) segs[segs.length - 1].lines.push(e);
+      }
+      const orderHtml = segs.length ? segs.map((s, i) => `
+        <div class="tr-order-item side-${sideOf(s.actor) === "我" ? "A" : "B"}">
+          <img class="tr-avatar" src="${cardSrc(s.actor)}" data-seg="${i}" onerror="this.style.visibility='hidden'">
+          <span class="tr-nm" data-seg="${i}" title="跳到行動段">${s.actor}</span>
+        </div>`).join("")
+        : `<div class="tr-order-empty">（此階段無逐一行動順序）</div>`;
+      // 需求5: 相一全局broadcast段(如江天長焰), 顯示在該回合最前並標明「回合開始」。
+      const broadcastHtml = broadcastLines.length ? `
+        <div class="tr-seg tr-seg-broadcast">
+          <div class="tr-seg-head">🌐 <b>${cur === 0 ? "準備階段" : "回合開始"}</b></div>
+          ${broadcastLines.map(x => `<div class="logln etype-${x.etype || "none"}">${x.t}</div>`).join("")}
+        </div>` : "";
+      // 需求4: 行動段內容(開始行動→狀態過期/DoT→戰法/普攻→結算, 依engine.js既有結算順序原樣呈現)。
+      const segsHtml = segs.map((s, i) => `
+        <div class="tr-seg" id="trSeg${i}">
+          <div class="tr-seg-head">
+            <img class="tr-avatar-sm" src="${cardSrc(s.actor)}" data-seg="${i}" onerror="this.style.visibility='hidden'">
+            <b class="tr-seg-nm" data-seg="${i}" title="顯示素質">${s.actor}</b>
+            <span class="tr-seg-side side-${sideOf(s.actor) === "我" ? "A" : "B"}">${sideOf(s.actor) === "我" ? "我方" : "敵方"}</span>
+            <span class="tr-seg-stats">${statLine(s.stats)}</span>
+          </div>
+          ${s.lines.map(x => `<div class="logln etype-${x.etype || "none"}">${x.t}</div>`).join("")}
+        </div>`).join("");
+      bodyHtml = `<div class="tr-layout">
+          <div class="tr-order">${orderHtml}</div>
+          <div class="tr-main">${broadcastHtml}${segsHtml}${(!broadcastHtml && !segsHtml) ? `<div class="logln" style="color:#8a7c5c">（此回合無事件）</div>` : ""}</div>
+        </div>`;
+    }
     box.innerHTML = `<h2 class="gold">📜 推演明細　<small style="color:#b8a987">${winTxt}</small></h2>
       <div id="trTabs" class="catchips" style="margin:6px 0"></div>
-      <div class="tracelog">${lines}</div>`;
+      ${bodyHtml}
+      <div id="trStatPop" class="tr-statpop hidden"></div>`;
     $("#trTabs").innerHTML = tabs.map((t, i) => `<button class="catchip${i === cur ? " on" : ""}" data-i="${i}">${t}</button>`).join("");
     $("#trTabs").querySelectorAll(".catchip").forEach(b => b.onclick = () => { cur = +b.dataset.i; render(); });
+    if (!isStructured || !segs.length) return;
+    // 需求2: 左側行動順序欄點角色名 → 跳到該回合該角色的行動段(高亮閃一下確認)
+    box.querySelectorAll(".tr-order-item .tr-nm").forEach(el => el.onclick = () => {
+      const seg = $("#trSeg" + el.dataset.seg);
+      if (!seg) return;
+      seg.scrollIntoView({ block: "start", behavior: "smooth" });
+      seg.classList.add("flash");
+      setTimeout(() => seg.classList.remove("flash"), 1200);
+    });
+    // 需求3: 點角色(頭像)或hover → 顯示武/智/統/速/當前兵力(側欄頭像 + 行動段標頭頭像/姓名皆可觸發)
+    const pop = $("#trStatPop");
+    const showPop = (el, i) => {
+      const s = segs[i]; if (!s) return;
+      pop.innerHTML = `<b class="gold2">${s.actor}</b><br>${statLine(s.stats)}`;
+      const bb = box.getBoundingClientRect(), eb = el.getBoundingClientRect();
+      pop.style.left = Math.max(4, eb.left - bb.left) + "px";
+      pop.style.top = (eb.bottom - bb.top + 4) + "px";
+      pop.classList.remove("hidden");
+    };
+    const hidePop = () => pop.classList.add("hidden");
+    box.querySelectorAll(".tr-avatar, .tr-avatar-sm, .tr-seg-nm").forEach(el => {
+      const i = +el.dataset.seg;
+      el.onmouseenter = () => showPop(el, i);
+      el.onmouseleave = hidePop;
+      el.onclick = e => { e.stopPropagation(); showPop(el, i); };
+    });
+    box.onclick = e => { if (!e.target.closest(".tr-avatar,.tr-avatar-sm,.tr-seg-nm")) hidePop(); };
   };
   render();
   $("#modal").classList.remove("hidden");
@@ -562,7 +638,7 @@ function showDetail(n) {
   };
   $("#modal").classList.remove("hidden");
 }
-function closeModal() { $("#modal").classList.add("hidden"); }
+function closeModal() { $("#modal").classList.add("hidden"); $("#modal .modal-box").className = "modal-box"; }  // 重置 openTrace() 加的 .tr-box 寬版面修飾, 避免殘留影響下次開其他彈窗(選武將/養成/兵書/裝備/戰法)
 
 function buildSummary(bd) {
   const al = STAT4.filter(k => bd.alloc[k] > 0).map(k => `${STATLAB[k]}+${bd.alloc[k]}`).join(" ");
