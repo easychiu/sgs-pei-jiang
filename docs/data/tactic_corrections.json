@@ -2584,7 +2584,10 @@
      "stat": "force",
      "mult": 1.03,
      "dur": 2,
-     "scale": "intel"
+     "scale": "intel",
+     "rate": 0.4,
+     "everyRound": true,
+     "_note": "每回合自參照時序修正批: 原文「自身每回合有20→40%概率(受統率影響)淨化我軍主將並使武智統提升1.5→3%」——本段(與下2段intel/command同組)過去完全沒有rate欄位, 於準備階段100%無條件套用一次(較原文「20-40%機率」嚴重高估, 且dur:2使其僅蓋開戰前2回合, 之後永久不再觸發), 與同句的dispel段(effects[5], 早已有rate:0.4)明顯脫節——本應是同一次20-40%擲骰驅動「淨化+提升武智統」兩件事, 過去卻只有dispel半句被機率化。補rate:0.4(與dispel同機率值, 取滿級)+everyRound:true, 使3個stat段與dispel段同步依own_round每回合重新判定/重擲。「可疊加」(重複觸發應累積而非覆蓋)仍是push_mod同源刷新限制的既有缺口, 未在本批解決(見頂層_note)。"
     },
     {
      "k": "stat",
@@ -2592,7 +2595,10 @@
      "stat": "intel",
      "mult": 1.03,
      "dur": 2,
-     "scale": "intel"
+     "scale": "intel",
+     "rate": 0.4,
+     "everyRound": true,
+     "_note": "每回合自參照時序修正批: 同effects[2](force段)理由, 補rate:0.4+everyRound:true。"
     },
     {
      "k": "stat",
@@ -2600,20 +2606,24 @@
      "stat": "command",
      "mult": 1.03,
      "dur": 2,
-     "scale": "intel"
+     "scale": "intel",
+     "rate": 0.4,
+     "everyRound": true,
+     "_note": "每回合自參照時序修正批: 同effects[2](force段)理由, 補rate:0.4+everyRound:true。"
     },
     {
      "k": "dispel",
      "who": "leader",
      "what": "debuffs",
      "rate": 0.4,
-     "_note": "批24 A: stale揭露清剿: 原_todo稱「dispel現有為立即套用無prob欄位, 留待後續補上」, 批23 A4已新增e.rate通用套用(任何k種類含dispel皆可套用前擲骰判定), 現補dispel(what:debuffs, e.rate:0.4取滿級機率值)。批C: who由ally改為leader——who:\"leader\"是既有全域已知欄位(對稱who:\"self\"/\"subs\"/\"enemyLeader\", 見apply_effects的dests解析, dests=[allies[0]])精確鎖定「我軍主將」, 取代先前who:ally+n:1(隨機我方1人, 可能誤選到副將)的近似; 舊_note稱「dispel无targetSel/leader專屬選標支援」為過時判斷(who:leader自始即是通用選項, 非dispel專屬新增)。"
+     "everyRound": true,
+     "_note": "批24 A: stale揭露清剿: 原_todo稱「dispel現有為立即套用無prob欄位, 留待後續補上」, 批23 A4已新增e.rate通用套用(任何k種類含dispel皆可套用前擲骰判定), 現補dispel(what:debuffs, e.rate:0.4取滿級機率值)。批C: who由ally改為leader——who:\"leader\"是既有全域已知欄位(對稱who:\"self\"/\"subs\"/\"enemyLeader\", 見apply_effects的dests解析, dests=[allies[0]])精確鎖定「我軍主將」, 取代先前who:ally+n:1(隨機我方1人, 可能誤選到副將)的近似; 舊_note稱「dispel无targetSel/leader專屬選標支援」為過時判斷(who:leader自始即是通用選項, 非dispel專屬新增)。 || 每回合自參照時序修正批: 補everyRound:true——e.rate:0.4只解決了機率精確度, 過去仍是prep階段套用一次(dur無指定即恆定, 但持有者own_round推進後不會重新判定), 與原文「每回合」不符, 且與同句3個stat段(effects[2]/[3]/[4])同步補齊, 使「淨化+提升武智統」四段效果依own_round同步每回合重新判定/重擲。"
     }
    ],
    "_evidence": "自身每回合有20→40%概率(受統率影響)淨化我軍主將並使武智統提升1.5→3%(受智力影響。可疊加，持續2回合)",
-   "_diff": "原stat(who:ally,stat:\"all\",mult:1.03)有兩處錯誤: (1)who應為leader(原文明確'我軍主將'非全體友軍); (2)stat應僅武智統3項而非all(all含速度, 原文未提及速度提升), 現拆成3條leader專屬stat; 批C: 補上mitig的ifLeader top-up段(21%→42%主將加成)+dispel改who:leader精確鎖定主將(取代隨機ally近似); 20→40%機率簡化為恆定生效沿用既有limitation",
+   "_diff": "原stat(who:ally,stat:\"all\",mult:1.03)有兩處錯誤: (1)who應為leader(原文明確'我軍主將'非全體友軍); (2)stat應僅武智統3項而非all(all含速度, 原文未提及速度提升), 現拆成3條leader專屬stat; 批C: 補上mitig的ifLeader top-up段(21%→42%主將加成)+dispel改who:leader精確鎖定主將(取代隨機ally近似); 20→40%機率簡化為恆定生效沿用既有limitation(每回合自參照時序修正批: 此limitation已解決, 見effects[2]~[5]._note)",
    "_bucket": "batch20_lint",
-   "_note": "批20 lint R1修正: 3個stat(武智統提升)效果補scale=intel(原文明寫「受智力影響」, 整批重解時遺漏)。首段mitig(戰鬥首回合全體減傷19.5→39%)維持不變: 原文為「受自身最高屬性影響」(依施放者當下武/智/統/速/魅最高一項動態決定, 15原語的scale僅支援單一固定屬性, 無法表達「取最高者」, 依既有慣例保守不加scale, 見reparse_effects.py SCALE_PLAN說明同類案例)。批C: mitig補ifLeader top-up段(見effects[1]._note); dispel改who:leader精確鎖定主將(見效果_note, 取代隨機ally近似)。「可疊加」(1.5%→3%武智統buff重複觸發不累積)維持既有push_mod同源刷新限制未解決, 一併揭露於_todo。"
+   "_note": "批20 lint R1修正: 3個stat(武智統提升)效果補scale=intel(原文明寫「受智力影響」, 整批重解時遺漏)。首段mitig(戰鬥首回合全體減傷19.5→39%)維持不變: 原文為「受自身最高屬性影響」(依施放者當下武/智/統/速/魅最高一項動態決定, 15原語的scale僅支援單一固定屬性, 無法表達「取最高者」, 依既有慣例保守不加scale, 見reparse_effects.py SCALE_PLAN說明同類案例)。批C: mitig補ifLeader top-up段(見effects[1]._note); dispel改who:leader精確鎖定主將(見效果_note, 取代隨機ally近似)。「可疊加」(1.5%→3%武智統buff重複觸發不累積)維持既有push_mod同源刷新限制未解決, 一併揭露於_todo。 || 每回合自參照時序修正批: 3個stat段(effects[2]/[3]/[4])過去完全無rate欄位(100%無條件套用一次), 與同句dispel段(effects[5])的既有rate:0.4脫節——本批補rate:0.4+everyRound:true給全部4段(3 stat+1 dispel), 使其同步依own_round每回合重新判定/重擲, 不再是「dispel機率正確但stat恆定套用一次」的不一致狀態。首段mitig(戰鬥首回合, dur:1)為「首回合」單次語意, 不受影響, 維持不變。"
   },
   "金丹秘術": {
    "effects": [
@@ -3033,7 +3043,25 @@
      "val": 1,
      "dur": 1,
      "nativeOnly": true,
-     "_note": "使友軍單體自帶主動戰法發動率+100%; 「17.5%→35%(主將時100%)跳過1回合準備」無對應原語(chargeup=突擊發動率非準備跳過), 未建模"
+     "everyRound": true,
+     "when": {
+      "parity": "odd"
+     },
+     "rate": 0.32,
+     "_note": "使友軍單體自帶主動戰法發動率+100%,持續1回合; 每回合自參照時序修正批: 補everyRound+when.parity(奇數段32%, 見effects[1]偶數段75%), 使諸葛亮own_round為奇數的每個他自己的行動輪重新判定/重擲, 取代舊「準備階段套用一次」。「17.5%→35%(主將時100%)跳過1回合準備」無對應原語(chargeup=突擊發動率非準備跳過), 未建模"
+    },
+    {
+     "k": "rateup",
+     "who": "ally",
+     "val": 1,
+     "dur": 1,
+     "nativeOnly": true,
+     "everyRound": true,
+     "when": {
+      "parity": "even"
+     },
+     "rate": 0.75,
+     "_note": "同上段(effects[0]), 偶數回合75%機率(37.5%→75%滿級值), 每回合own_round為偶數時重新判定/重擲。"
     },
     {
      "k": "heal",
@@ -3059,7 +3087,7 @@
     }
    ],
    "_evidence": "奇數回合有16%→32%機率，偶數回合有37.5%→75%機率…自身為主將時，觸發時治療我軍兵力最低單體（治療率50%→100%，受智力影響）",
-   "_note": "rateup 由頂層 rate 0.535 擲骰無誤(command coef=0 不影響); 但 heal 走 healOnly 每回合無條件tick不吃頂層rate, 需自帶期望折算。 || 批K(A): prob-ev(奇偶機率均值0.535折算單一coef:0.54)拆成2段, 各自e.when.parity=\"odd\"/\"even\"搭配真rate:0.32/0.75, 精確表達「奇數回合32%機率,偶數回合75%機率」, 取代均值折算。「自身為主將時,觸發時治療改100%且跳過機率提高至50%→100%」的ifLeader topup(機率/coef雙重conditional縮放)本批未疊加, 見_todo。",
+   "_note": "rateup 由頂層 rate 0.535 擲骰無誤(command coef=0 不影響); 但 heal 走 healOnly 每回合無條件tick不吃頂層rate, 需自帶期望折算。 || 批K(A): prob-ev(奇偶機率均值0.535折算單一coef:0.54)拆成2段, 各自e.when.parity=\"odd\"/\"even\"搭配真rate:0.32/0.75, 精確表達「奇數回合32%機率,偶數回合75%機率」, 取代均值折算。「自身為主將時,觸發時治療改100%且跳過機率提高至50%→100%」的ifLeader topup(機率/coef雙重conditional縮放)本批未疊加, 見_todo。 || 每回合自參照時序修正批: stale清剿——上段「rateup由頂層rate 0.535擲骰無誤」對不上現行架構(頂層rate現為1; command型戰法coef=0且無choices/extraHits/proxy時, main迴圈fire dispatch根本不讀取頂層rate, 見fight()「(t0[\"coef\"] or t0.get(\"choices\") or t0.get(\"extraHits\") or _has_proxy)」閘門, 對本戰法恆假)——rateup過去實際上是在prep階段(apply_passives(no_heal=True))100%無條件套用一次, dur:1使其僅蓋開戰第1回合, 之後永久不再重新觸發, 與原文「奇數回合...偶數回合...」的每回合輪到諸葛亮才判定不符, 為時序徹底一致化批(everyRound/own_round機制)上線後尚未回頭遷移的殘留缺口。本批仿照heal段既有奇偶rate結構, 將effects[0]拆成2段(見effects[0]/[1])各自補everyRound+rate, 使rateup與heal同步依諸葛亮own_round逐回合重新判定/重擲。",
    "_bucket": "rederive_b8",
    "_todo": " 「自身為主將時,觸發治療100%(而非奇偶機率值)並使跳過機率提高至50%→100%」的複合topup(需要ifLeader同時覆蓋coef與另一個獨立rate)本批未建, 現況為主將時仍套用基礎奇偶機率+coef:1.0(已是滿級治療率,非本次未建部分——「跳過1回合準備」機率提升則完全未建模)。"
   },
@@ -3848,12 +3876,13 @@
      "what": "debuffs",
      "rate": 0.5,
      "rateLeader": 0.6,
-     "_note": "批24 A: stale揭露清剿: 原_todo稱「引擎無淨化(cleanse)原語」, 但dispel(批16)+e.rate(批23 A4)組合可精確表達「每回合25%→50%機率淨化自身」——補dispel(who:self, what:debuffs, e.rate:0.5取滿級機率值)。此效果套用時機為prep階段一次性判定(常駐通道限制, 同全庫「每回合機率」近似為「開場一次性判定」的既有慣例, 見engine_limitations.md#4), 非真正逐回合重新擲骰。批C: 原_todo稱「自身為主將時淨化機率+5%→10%的caster-is-leader條件加成仍未建模」——批52续已新增e.rateLeader(效果級「主將時採用不同機率值」, 跨所有k種類通用, 見apply_effects對e.rateLeader的判斷式, 在k分派之前執行, 對本效果(k=dispel)同樣適用)但先前從未實際套用, 補上rateLeader:0.6(=基礎滿級值0.5+加成滿級值0.1, 對應「淨化的觸發機率提高至30%→60%」的主將總機率), 非主將維持基礎值0.5。"
+     "everyRound": true,
+     "_note": "批24 A: stale揭露清剿: 原_todo稱「引擎無淨化(cleanse)原語」, 但dispel(批16)+e.rate(批23 A4)組合可精確表達「每回合25%→50%機率淨化自身」——補dispel(who:self, what:debuffs, e.rate:0.5取滿級機率值)。批C: 原_todo稱「自身為主將時淨化機率+5%→10%的caster-is-leader條件加成仍未建模」——批52续已新增e.rateLeader(效果級「主將時採用不同機率值」, 跨所有k種類通用, 見apply_effects對e.rateLeader的判斷式, 在k分派之前執行, 對本效果(k=dispel)同樣適用)但先前從未實際套用, 補上rateLeader:0.6(=基礎滿級值0.5+加成滿級值0.1, 對應「淨化的觸發機率提高至30%→60%」的主將總機率), 非主將維持基礎值0.5。 || 每回合自參照時序修正批: 上兩批僅解決了機率精確度(真擲骰取代EV折算)與主將加成, 未解決回合cadence——本效果過去仍是「prep階段一次性判定」(見批24 A原note自承「此效果套用時機為prep階段一次性判定...非真正逐回合重新擲骰」), 與原文「每回合25%→50%機率淨化自身」不符, 且與批30(engine_limitations.md第26節)引入的everyRound機制脫鉤未回頭遷移(該節「未遷移」清單誤將本效果與同戰法effects[0]的反應式stun/silence段一併歸類為「自身造成傷害時反應式觸發,非literal每回合」, 但dispel這句在原文中明確是獨立的「每回合」被動判定, 非緊跟在「自身造成傷害時」之後——本批更正此分類, 補everyRound:true, 使其比照機鑑先識/揮兵謀勝等已遷移戰法, 依own_round逐回合重新判定/重擲。effects[0](silence/stun,反應式)維持prep-once近似不變(該段才是真正需要when.on:\"dealtDamage\"掛鉤的反應式缺口, 非本批everyRound範圍, 見本戰法頂層_note「批15修正」段的既有揭露)。"
     }
    ],
    "_evidence": "戰鬥中，每回合有 25%→50% 機率淨化自身，自身造成傷害時，有 17.5%→35% 機率使隨機敵軍單體進入計窮或震懾狀態，持續 1 回合，每回合最多觸發 1 次，受到傷害時，有 30%→60% 機率對敵軍單體造成對應類型的傷害（傷害率 25%→50%，受對應屬性影響）；自身為主將時，淨化的觸發機率提高 5%→10%",
-   "_note": "批15修正: 批14把頂層coef(0.5)+rate(0.6)與effects裡的counter(coef0.5,prob0.6)同時保留, 造成同一句「受到傷害時...造成傷害」被雙重計算(頂層coef+rate每回合額外主動打出一段50%傷害, counter效果本身才是正確映射)。頂層coef歸零消除雙重計算; stun效果因此改為只在準備階段套用一次(不再隨頂層coef每回合重新擲骰套用), 為「自身造成傷害時17.5-35%機率觸發stun」這個反應式機制的簡化近似(開場單次, 較原文的持續反應式觸發保守/低估), 已在stun的_approx更新說明(修正前的_approx誤稱的舊rate值與實際欄位0.6自相矛盾, 已一併修正)。批C: dispel段補rateLeader(見effects[2]._note), 「主將加成」缺口已關閉。 || 批K(A): effects[0]改用e.eitherK隨機擇一silence/stun, 取代固定stun近似, 解決「計窮或震懾」擇一語意缺口。",
-   "_todo": "「每回合25%→50%機率淨化自身」已於批24用dispel+e.rate落地, 「自身為主將時淨化機率提高」已於本批用rateLeader落地(見effects[2]_note), 兩者不再是缺口。",
+   "_note": "批15修正: 批14把頂層coef(0.5)+rate(0.6)與effects裡的counter(coef0.5,prob0.6)同時保留, 造成同一句「受到傷害時...造成傷害」被雙重計算(頂層coef+rate每回合額外主動打出一段50%傷害, counter效果本身才是正確映射)。頂層coef歸零消除雙重計算; stun效果因此改為只在準備階段套用一次(不再隨頂層coef每回合重新擲骰套用), 為「自身造成傷害時17.5-35%機率觸發stun」這個反應式機制的簡化近似(開場單次, 較原文的持續反應式觸發保守/低估), 已在stun的_approx更新說明(修正前的_approx誤稱的舊rate值與實際欄位0.6自相矛盾, 已一併修正)。批C: dispel段補rateLeader(見effects[2]._note), 「主將加成」缺口已關閉。 || 批K(A): effects[0]改用e.eitherK隨機擇一silence/stun, 取代固定stun近似, 解決「計窮或震懾」擇一語意缺口。 || 每回合自參照時序修正批: dispel段(effects[2])補everyRound, 見該效果_note詳細更正說明; stun/silence(effects[0])的prep-once近似維持不變, 屬反應式(when.on)缺口非本批範圍。",
+   "_todo": "「每回合25%→50%機率淨化自身」的機率精確度已於批24用dispel+e.rate落地, 「自身為主將時淨化機率提高」已於批C用rateLeader落地(見effects[2]_note); 回合cadence缺口已於每回合自參照時序修正批補everyRound(見effects[2]_note)。effects[0](反應式stun/silence)仍未改用when.on:\"dealtDamage\"掛鉤(維持prep-once近似), 該反應式改造非everyRound範疇, 留待未來批次(見本戰法頂層_note「批15修正」段)。",
    "_bucket": "batch15_zero_score_fix"
   },
   "奮突": {
@@ -5870,7 +5899,8 @@
      "dur": 1,
      "rate": 0.35,
      "scale": "intel",
-     "_note": "批I(禁近似令-scale/比較族): 原文「有17.5%→35%機率(受智力影響)使自身1回合內受到傷害降低10%→20%(受智力影響,若自身行動時處於控制狀態,基礎值提升至17.5%→35%)」——重新核對句構: 「基礎值提升至17.5%→35%」緊接在「受到傷害降低10%→20%」之後, 修飾的是【減傷幅度】(這一段的基礎值)而非稍早的觸發機率(機率本身17.5%→35%全程不變)。拆成本段(自身不處於任何控制狀態時, val:0.2=20%滿級值)與下方topup段(自身處於控制狀態任一時,val:0.35=35%滿級值, 互斥全值而非delta疊加)。ifTargetHasNot(批I新增陣列/OR語意, 見target_has())=[\"stun\",\"silence\",\"disarm\",\"chaos\"]精確表達「未處於任一控制狀態」, 取代舊_todo的「無法表達OR邏輯, 保守取基礎機率不建模此加成」空白。兩段各自獨立擲同一個rate:0.35, 因gate本身是決定論式(基於當下狀態, 非隨機)只會有一段的dests非空(自身不可能同時處於控制與非控制), 故最終命中率在兩種狀態下皆為35%, 只是量級依狀態二選一, 精確對應原文語意, 非近似。",
+     "everyRound": true,
+     "_note": "批I(禁近似令-scale/比較族): 原文「有17.5%→35%機率(受智力影響)使自身1回合內受到傷害降低10%→20%(受智力影響,若自身行動時處於控制狀態,基礎值提升至17.5%→35%)」——重新核對句構: 「基礎值提升至17.5%→35%」緊接在「受到傷害降低10%→20%」之後, 修飾的是【減傷幅度】(這一段的基礎值)而非稍早的觸發機率(機率本身17.5%→35%全程不變)。拆成本段(自身不處於任何控制狀態時, val:0.2=20%滿級值)與下方topup段(自身處於控制狀態任一時,val:0.35=35%滿級值, 互斥全值而非delta疊加)。ifTargetHasNot(批I新增陣列/OR語意, 見target_has())=[\"stun\",\"silence\",\"disarm\",\"chaos\"]精確表達「未處於任一控制狀態」, 取代舊_todo的「無法表達OR邏輯, 保守取基礎機率不建模此加成」空白。兩段各自獨立擲同一個rate:0.35, 因gate本身是決定論式(基於當下狀態, 非隨機)只會有一段的dests非空(自身不可能同時處於控制與非控制), 故最終命中率在兩種狀態下皆為35%, 只是量級依狀態二選一, 精確對應原文語意, 非近似。 || 每回合自參照時序修正批: 原文「戰鬥中,每回合...有17.5%→35%機率...」明確每回合, 過去本段(與下方topup段)皆無everyRound, 於準備階段擲一次骰後dur:1只蓋開戰第1回合, 之後永久不再觸發, 不符「每回合」語意。補everyRound:true(topup段同步, 見effects[2]), 使其依own_round每回合重新判定(含ifTargetHasNot的控制狀態即時重新核對, 而非prep當下的一次性快照)。",
      "ifTargetHasNot": [
       "stun",
       "silence",
@@ -5885,19 +5915,20 @@
      "dur": 1,
      "rate": 0.35,
      "scale": "intel",
+     "everyRound": true,
      "ifTargetHas": [
       "stun",
       "silence",
       "disarm",
       "chaos"
      ],
-     "_note": "批I: 原文「若自身行動時處於控制狀態,基礎值提升至17.5%→35%」的條件topup段——ifTargetHas(批I新增陣列/OR語意)=[\"stun\",\"silence\",\"disarm\",\"chaos\"](震懾/計窮/繳械/混亂任一), 命中時直接採全值0.35(35%, 而非基礎0.2+delta),與上方base段(effects同陣列前一筆)互斥, 見該筆_note詳細推導。"
+     "_note": "批I: 原文「若自身行動時處於控制狀態,基礎值提升至17.5%→35%」的條件topup段——ifTargetHas(批I新增陣列/OR語意)=[\"stun\",\"silence\",\"disarm\",\"chaos\"](震懾/計窮/繳械/混亂任一), 命中時直接採全值0.35(35%, 而非基礎0.2+delta),與上方base段(effects同陣列前一筆)互斥, 見該筆_note詳細推導。 || 每回合自參照時序修正批: 同上方base段(effects[1])理由, 補everyRound:true, 使其每回合own_round重新核對「自身行動時是否處於控制狀態」(而非僅prep當下一次性判定)。"
     }
    ],
    "_evidence": "並有17.5%→35%機率（受智力影響）使自身1回合內受到傷害降低10%→20%（受智力影響，若自身行動時處於控制狀態，基礎值提升至17.5%→35%）",
    "_todo": null,
    "_bucket": "batch12_modeD_control_prob",
-   "_note": "批12 ModeD: 原mitig.val=0.2為機率clause的滿級值未折算(相當於100%必定觸發20%降傷, 高估), 改用prob-ev折算(35%×20%=7%)符合house convention。批C: 批23 A4已補上通用e.rate真機率判定(較prob-ev折算更精確保留方差), 改用e.rate:0.35+val:0.2取代prob-ev折算(見effects[1]._note)。"
+   "_note": "批12 ModeD: 原mitig.val=0.2為機率clause的滿級值未折算(相當於100%必定觸發20%降傷, 高估), 改用prob-ev折算(35%×20%=7%)符合house convention。批C: 批23 A4已補上通用e.rate真機率判定(較prob-ev折算更精確保留方差), 改用e.rate:0.35+val:0.2取代prob-ev折算(見effects[1]._note)。 || 每回合自參照時序修正批: effects[1]/[2]兩段mitig補everyRound(見各自_note), 取代準備階段套用一次的殘留缺口, 與同戰法heal段(本就每回合own_round常駐治療)cadence一致。"
   },
   "眾動萬計": {
    "effects": [
@@ -6560,14 +6591,24 @@
      "who": "subs",
      "val": 0.3,
      "targetSel": "mostDamaged",
-     "dur": 1
+     "dur": 1,
+     "everyRound": true,
+     "when": {
+      "until": 5
+     },
+     "_note": "每回合自參照時序修正批: 補everyRound+when.until:5(對應「戰鬥前5回合」, 持有者own_round<=5)。原無everyRound時只在準備階段(開戰前兩副將兵力相同, targetSel等同任選)套用一次, dur:1使其僅蓋第1回合, 第2-5回合完全不再重選/施加, 與原文「每回合行動前,使損失兵力較多的副將...」不符。targetSel:mostDamaged本就每次呼叫時即時依當下兵力重新比較(見pick_by_criterion), 搭配everyRound後天然滿足「每回合重選」語意, 不需新targetSel/新原語。"
     },
     {
      "k": "amp",
      "who": "subs",
      "val": 0.25,
      "targetSel": "maxTroop",
-     "dur": 1
+     "dur": 1,
+     "everyRound": true,
+     "when": {
+      "until": 5
+     },
+     "_note": "每回合自參照時序修正批: 同上(effects[0]之mitig)理由, 補everyRound+when.until:5, 使「另一名副將」(targetSel:maxTroop, 兩副將間較少受損者)每回合重新比較/施加, 而非準備階段套用一次。"
     },
     {
      "k": "rateup",
@@ -6575,7 +6616,7 @@
      "val": 0.16,
      "dur": 5,
      "nativeOnly": true,
-     "_note": "主將自帶主動+16% 前5回合; 三陣營各異/主將自帶條件無法表達, 近似恆真"
+     "_note": "主將自帶主動+16% 前5回合; 三陣營各異/主將自帶條件無法表達, 近似恆真。每回合自參照時序修正批: 核對cadence——本段目標固定為leader(無動態重選需求)且無機率(無條件恆定), 「前5回合」是單次prep+dur:5的持續窗語意(非「每回合」重新評估型), 維持準備階段套用一次+dur:5不變, 不補everyRound。"
     },
     {
      "k": "chargeup",
@@ -6583,13 +6624,13 @@
      "val": 0.16,
      "dur": 5,
      "nativeOnly": true,
-     "_note": "主將自帶突擊+16% 前5回合; 同上近似"
+     "_note": "主將自帶突擊+16% 前5回合; 同上近似。每回合自參照時序修正批: 同左(effects[2]rateup)cadence核對結論, 維持不變。"
     }
    ],
    "_evidence": "戰鬥前5回合…每回合行動前,使損失兵力較多的副將受到傷害降低30%,另一名副將造成傷害提高25%,持續1回合",
    "_diff": "mitig/amp原套全軍(who:ally)且dur1只蓋首回合;改who:subs+dur5,並因兩副將各得其一而折半",
    "_bucket": "rederive_b1",
-   "_note": " || 批K(A): 新增who==\"subs\"+targetSel池限縮(engine本次擴充: targetSel的pool可選subs, 對稱既有enemy/ally), 精確表達「損失兵力較多的副將」(targetSel:mostDamaged, 僅在兩名副將間比較)受30%減傷、「另一名副將」(targetSel:maxTroop, 僅在兩名副將間比較, 即較少受損的那位)造成傷害+25%, 取代「均值攤到兩副將」的split-ev近似。"
+   "_note": " || 批K(A): 新增who==\"subs\"+targetSel池限縮(engine本次擴充: targetSel的pool可選subs, 對稱既有enemy/ally), 精確表達「損失兵力較多的副將」(targetSel:mostDamaged, 僅在兩名副將間比較)受30%減傷、「另一名副將」(targetSel:maxTroop, 僅在兩名副將間比較, 即較少受損的那位)造成傷害+25%, 取代「均值攤到兩副將」的split-ev近似。 || 每回合自參照時序修正批: 批K(A)解決了「選誰」(targetSel動態比較), 但未解決「何時重選」——mitig/amp仍無everyRound, 準備階段套用一次(dur:1, 第2-5回合不再重選/施加), 與原文「每回合行動前」不符。本批補everyRound+when:{until:5}(見effects[0]/[1]), rateup/chargeup(主將自帶發動率, effects[2]/[3])核對後為單次prep+dur:5持續窗語意, 維持不變。"
   },
   "三軍之眾": {
    "set": {},
@@ -6656,9 +6697,10 @@
      "k": "mitig",
      "who": "ally",
      "val": 0.04,
-     "dur": 99,
+     "dur": 1,
      "scale": "intel",
-     "_note": "每回合刷新持續1回合=實質常駐;指揮戰法效果只在準備階段套用一次,dur1只蓋首回合→改99",
+     "everyRound": true,
+     "_note": "每回合自參照時序修正批: 原文明說「每回合...使其受到傷害降低4%,持續1回合」——本應每回合輪到持有者行動時重新套用一次1回合的減傷, 舊版因指揮戰法效果只在準備階段套用一次(無everyRound機制前的權宜作法)而改dur:99偽裝成常駐(見下方舊_note2「dur1只蓋首回合→改99」), 兩者最終數值雖同(0.04恆定)但語意不同: dur:99一旦被驅散/覆蓋即永久消失, 且scale:intel鎖死在prep當下智力值不再重算; 改everyRound+dur:1後每回合own_round重新套用, 忠實對應「每回合」文字, 亦修復驅散後的復原能力。target(who:ally,n:1, 隨機我方1人)未指定為heal相同對象的既有近似(原文「其」實指被治療的2-3人)維持不變, 非本批範圍(見批28 A1既有揭露)。",
      "n": 1,
      "_note2": "批35 C: 兄弟掃描(狀態屬性曲線375族) —— 本效果帶scale但曲線族(350/375)未經實測樣本裁決, 現行沿用全域SCALE(除數350)預設, 曲線族未定(350/375待實測); 僅機鑑先識(警戒)有六點實測錨點佐證375(見calibration_anchors status_scale_375_20260704), 本效果不擅自套用375, 待未來實測樣本才裁決。"
     },
@@ -6670,13 +6712,14 @@
      "n": 1,
      "rate": 0.1,
      "rateLeader": 0.25,
-     "_note": "批32 R24: 原用stun(震懾, 全禁一切行動)頂替虛弱(無法造成傷害), 兩者機制威力天差地遠(stun連普攻/被動觸發都封鎖, 虛弱只封鎖傷害輸出), 屬機制替換錯誤而非近似, 已修正為amp(val:-1)慣例(見乘敵不虞/克敵制勝/威謀靡亢/臨戰先登同款做法)——傷害公式在total_amp<=-1時完全歸零, 精確對應「無法造成傷害」語意。批23 A4新增的e.rate通用機率判定用於表達5%→10%發動機率(取滿級值0.10, 真擲骰而非無條件套用), n:1對應原文「敵軍單體」。批C: 補上rateLeader:0.25(效果級「主將時採用不同機率值」原語, 批52续新增, sgz.py/engine.js建置註解明確以本戰法為動機案例, 但先前從未實際套用), 對應「自身為主將時，施加虛弱狀態的機率提高至12.5%→25%」滿級值, 非主將維持基礎值0.1(=10%)。"
+     "everyRound": true,
+     "_note": "批32 R24: 原用stun(震懾, 全禁一切行動)頂替虛弱(無法造成傷害), 兩者機制威力天差地遠(stun連普攻/被動觸發都封鎖, 虛弱只封鎖傷害輸出), 屬機制替換錯誤而非近似, 已修正為amp(val:-1)慣例(見乘敵不虞/克敵制勝/威謀靡亢/臨戰先登同款做法)——傷害公式在total_amp<=-1時完全歸零, 精確對應「無法造成傷害」語意。批23 A4新增的e.rate通用機率判定用於表達5%→10%發動機率(取滿級值0.10, 真擲骰而非無條件套用), n:1對應原文「敵軍單體」。批C: 補上rateLeader:0.25(效果級「主將時採用不同機率值」原語, 批52续新增, sgz.py/engine.js建置註解明確以本戰法為動機案例, 但先前從未實際套用), 對應「自身為主將時，施加虛弱狀態的機率提高至12.5%→25%」滿級值, 非主將維持基礎值0.1(=10%)。 || 每回合自參照時序修正批: e.rate只解決了機率精確度, 過去仍是prep階段套用一次(dur:1使其僅蓋開戰第1回合)。補everyRound:true, 使其比照同戰法heal段(本就每回合own_round常駐治療)與新補的mitig段(見effects[1]), 三段同步逐回合重新判定/重擲, 符合原文「每回合治療...並使其受到傷害降低4%...且有5%→10%機率...虛弱」的整體「每回合」語境。"
     }
    ],
    "_evidence": "每回合治療我軍群體…並使其受到傷害降低4%(受智力影響),持續1回合",
-   "_diff": "mitig每回合刷新應為常駐,原dur1在指揮戰法只生效首回合→dur99",
+   "_diff": "mitig每回合刷新應為常駐,原dur1在指揮戰法只生效首回合→dur99(每回合自參照時序修正批: 改回dur:1+everyRound, 見effects[1]._note)",
    "_bucket": "rederive_b1",
-   "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=mitig] 缺 e['n'], 原文目標為「單體」, 補 e['n']=1。批C: amp段補rateLeader(見effects[2]._note)。",
+   "_note": "批28 A1: R13主題綁定豁免修復後新現形違規——effects[k=mitig] 缺 e['n'], 原文目標為「單體」, 補 e['n']=1。批C: amp段補rateLeader(見effects[2]._note)。 || 每回合自參照時序修正批: mitig(effects[1])改dur:99→1+補everyRound(取代舊「偽裝常駐」權宜作法), amp(effects[2])補everyRound(取代舊「prep套用一次」), 兩者依own_round每回合重新判定, 詳見各效果_note。",
    "_todo": null
   },
   "兵無常勢": {
@@ -8163,15 +8206,16 @@
      "k": "pierce",
      "who": "self",
      "val": 0.33,
-     "dur": 99,
+     "dur": 1,
      "scale": "speed",
-     "_note": "原文「每回合...持續1回合」, 因無when子句只在開戰套用一次, dur改99以反映常駐(見批9分項註解)",
+     "everyRound": true,
+     "_note": "原文「每回合...持續1回合」, 批9因無everyRound機制只能開戰套用一次, dur改99以反映常駐(見批9分項註解)。每回合自參照時序修正批: everyRound機制(批30)上線後回頭遷移本段——改回dur:1(對應原文字面「持續1回合」)+補everyRound:true, 使其依own_round每回合重新套用(而非prep一次性套用後靠dur:99撐住整場)。scale:speed現會每回合用當下即時速度重算(而非鎖死在prep當下的速度值), 亦使本效果不再被單次驅散後永久失效(每回合重新授予, 對稱其餘everyRound效果慣例)。無rate欄位(原文無機率修飾詞, 確定觸發, 頂層t.rate=1亦確認無條件)。",
      "_note2": "批35 C: 兄弟掃描(狀態屬性曲線375族) —— 本效果帶scale但曲線族(350/375)未經實測樣本裁決, 現行沿用全域SCALE(除數350)預設, 曲線族未定(350/375待實測); 僅機鑑先識(警戒)有六點實測錨點佐證375(見calibration_anchors status_scale_375_20260704), 本效果不擅自套用375, 待未來實測樣本才裁決。"
     }
    ],
    "_evidence": "戰鬥中，自身每回合獲得16.5%→33%看破(受速度影響，持續1回合，看破；造成傷害時無視目標一定比例的受到傷害降低效果)；敵軍主將每回合行動前，自身有16.5%→33%機率(受雙方速度差影響)對敵軍速度低於自身的武將發動1次普通攻擊；自身為主將時，每次判定成功後自身速度提升9點(受雙方速度差影響)，可疊加。",
    "_bucket": "batch17_v5_primitives",
-   "_todo": "批17核對everyN是否可表達「主將時每次判定成功後速度+9可疊加」: 不適用——everyN.on僅支援\"attack\"(自身第N次普通攻擊觸發), 而本條款的觸發條件是「每回合行動前的16.5%→33%機率判定(受雙方速度差影響)成功」, 屬機率性回合觸發而非攻擊次數計數, everyN無法表達; 且「鎖定速度較低敵軍」的目標選取與「自身為主將時」的身份判定亦非本次任何新原語(ifTargetHas/hpBelow/immune/dispel/choices/fakeReport/healBoost/healGiven/everyN/parity)涵蓋範圍。維持_todo, 主段(自身33%看破+33%機率追加普攻)已由既有extra/pierce精確建模不變。"
+   "_todo": "批17核對everyN是否可表達「主將時每次判定成功後速度+9可疊加」: 不適用——everyN.on僅支援\"attack\"(自身第N次普通攻擊觸發), 而本條款的觸發條件是「每回合行動前的16.5%→33%機率判定(受雙方速度差影響)成功」, 屬機率性回合觸發而非攻擊次數計數, everyN無法表達; 且「鎖定速度較低敵軍」的目標選取與「自身為主將時」的身份判定亦非本次任何新原語(ifTargetHas/hpBelow/immune/dispel/choices/fakeReport/healBoost/healGiven/everyN/parity)涵蓋範圍。維持_todo, 主段之「敵軍主將每回合行動前,33%機率追加普攻」由既有extra(effects[0])近似代表(非逐字精確, 詳見該效果無_note揭露之既有近似); pierce段(effects[1], 「自身每回合獲得33%看破」)的cadence缺口已於每回合自參照時序修正批修復(見effects[1]._note補everyRound), 「主將時速度+9可疊加」子句本身(本_todo的核心缺口)仍未建模, 維持不變。"
   },
   "臥薪嘗膽": {
    "effects": [

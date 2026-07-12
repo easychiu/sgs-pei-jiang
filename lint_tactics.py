@@ -2448,6 +2448,13 @@ CAPABILITY_INVENTORY_IGNORE = {
     # ENGINE_CAPABILITY_ALIASES(該表要求別名描述能對應「原文常見措辭」), 比照上方lifestealGiven/
     # extraHit等同類窄用欄位慣例列入忽略清單。
     "dmgFromStatus", "victimIsTgt", "maxStackIfLeaderIs",
+    # 遊戲式戰報UI批(commit 952fa94): actor/etype/stats —— TRACE戰報事件的分類/歸屬中繼資料
+    # (見 classifyLogText()/lg() 對 CUR_ACTOR 的封裝、Unit 建構時附加的 stats 快照), 純粹是
+    # 「這則戰報事件屬於哪個回合/哪個行動者/分類成哪種UI顯示類別」的內部bookkeeping, 不是戰法
+    # JSON會設定的效果欄位、也不是任何戰法撰寫者可能誤稱「引擎不支援」的能力語意(不像
+    # amp/mitig/block等是「本文常見措辭對應的機制」)。比照上方_bsNm/statusName/srcName等
+    # 既有TRACE/顯示用bookkeeping欄位慣例列入忽略清單, 而非登記進ENGINE_CAPABILITY_ALIASES。
+    "actor", "etype", "stats",
 }
 
 

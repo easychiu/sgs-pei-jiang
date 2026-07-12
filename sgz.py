@@ -2899,8 +2899,20 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
         # 批52g: ratePerTarget/rateStatusBonus —— 逐目標擲骰(五雷轟頂水攻/沙暴加機率),
         # 跳過此處全局一次擲骰, 改在 dests 選定後按目標狀態調 rate 再各自判定。
         _per_tgt_rate = bool(e.get("ratePerTarget") or e.get("rateStatusBonus"))
-        # 批52j: capture 的 rate 在 k 分支內處理(已有捕獲時必轉 530% 直傷, 不吃 rate 失敗)
-        if not rate_checked and not _per_tgt_rate and k != "capture" and _e_rate is not None and random.random() >= _e_rate:
+        # 每回合自參照時序修正批: e["everyRound"] 效果本身在下方(批30分支)有自己專屬的 ev_rate
+        # 擲骰(見「if e.get("everyRound") and k != "heal":」分支), 該分支與此處是同一份 e["rate"]
+        # (經 rateLeader/rateSub/rateFactionBonus/rateBonusPerBuffType 調整後的 _e_rate) ——
+        # 過去此處不排除 everyRound 效果, 導致 own_turn/heal_only/broadcast_only 呼叫時對同一
+        # 效果的同一個 rate 擲兩次骰(此處一次+批30分支一次), 機率被平方(如0.32→0.1024, 較原文
+        # 嚴重低估), 正是本函式docstring前面「避免在這裡對同一效果重複擲骰,機率會被平方,造成
+        # 低估」這句話原本要防的事, 但當時只顧到 on_hit/delayed_eq 呼叫端(靠 rate_checked 旗標
+        # 排除), 遺漏了 everyRound 分支這個「內部也會自己擲一次」的第二個重複來源。修法: 比照
+        # rate_checked 的既有排除慣例, 對 e["everyRound"] 效果直接跳過此處擲骰, 把「擲骰」這件事
+        # 完全交給批30分支自己處理(該分支的 ev_rate 已改讀這裡算好的 _e_rate, 見其定義處), 使
+        # 每個 everyRound 效果全函式只擲一次骰(而非零次或兩次)。批52j: capture 的 rate 在 k 分支
+        # 內處理(已有捕獲時必轉 530% 直傷, 不吃 rate 失敗)。
+        if not rate_checked and not _per_tgt_rate and k != "capture" and not e.get("everyRound") \
+                and _e_rate is not None and random.random() >= _e_rate:
             continue
         # 批52g: e.ifCasterNames —— 施放者武將名須在名單內(太平道法黃巾主將, 含 SP)
         if e.get("ifCasterNames"):
@@ -3016,7 +3028,15 @@ def apply_effects(caster, tgt, t, allies, enemies, heal_only=False, no_heal=Fals
                 if id(e) in caster.when_fired:
                     continue
                 caster.when_fired.add(id(e))
-            ev_rate = e.get("rate", t.get("rate", 1))
+            # 每回合自參照時序修正批: 改讀 _e_rate(函式頂端已算好, 含 rateLeader/rateSub/
+            # rateFactionBonus/rateBonusPerBuffType 調整後的最終值), 取代直接重讀原始
+            # e["rate"](後者會漏掉 rateLeader 等調整——例如仁德載世「自身為主將時,施加虛弱
+            # 狀態的機率提高至12.5%→25%」, 若這裡繼續讀e["rate"]=0.1, 主將時仍會錯用基礎值
+            # 而非rateLeader=0.25調整後的值)。_e_rate 為 None(效果本身無rate/rateLeader/
+            # rateSub, 且無rateFactionBonus/rateBonusPerBuffType可疊加)時 fallback 到
+            # t.get("rate", 1), 與舊行為 e.get("rate", t.get("rate", 1)) 在「效果無rate」
+            # 情形下完全等價(零回歸)。
+            ev_rate = _e_rate if _e_rate is not None else t.get("rate", 1)
             if random.random() >= ev_rate:
                 continue
             # 通過閘門後不 continue —— 落到下方通用 who/dests 派發邏輯(amp/mitig/block/...),
@@ -9116,19 +9136,26 @@ def demo():
     print("    [批I 187] 聚石成金 real-data ifStatCompare(vs='leader', 比較我軍主將而非施放者自身) 驗證通過")
 
     # 188) 真實資料: 深藏若虛(base/topup mitig互斥) —— 自身無/有控制狀態時分別採用不同段的滿級值
+    # 每回合自參照時序修正批: 兩段mitig已補everyRound(取代準備階段套用一次的殘留缺口, 見
+    # tactic_corrections.json「深藏若虛」), 本測試呼叫改用own_turn=True(對稱apply_own_turn_effects()
+    # 真實呼叫路徑), 不再用no_heal/skip_when_effects的prep式呼叫(everyRound效果在該路徑必定跳過,
+    # 見apply_effects頂端「if own_turn and not(...): continue」閘門)。
     sczx_tac = TACTICS["深藏若虛"]
     sczx_mitigs = [e for e in sczx_tac["effects"] if e.get("k") == "mitig"]
     assert len(sczx_mitigs) == 2, f"深藏若虛: 應有base+topup兩段mitig, got {len(sczx_mitigs)}"
+    assert all(e.get("everyRound") for e in sczx_mitigs), "深藏若虛: 兩段mitig皆應帶everyRound(每回合自參照時序修正批)"
     # 本地複本強制rate=1.0(隔離驗證ifTargetHas/ifTargetHasNot互斥邏輯本身, e.rate機制另有批23 A4既有測試涵蓋)
     sczx_forced = {"nameZh": "深藏若虛測試", "effects": [dict(e, rate=1.0) for e in sczx_mitigs]}
     sczx_clean = Unit(POOL["張飛"], "騎")
-    apply_effects(sczx_clean, None, sczx_forced, [sczx_clean], [], no_heal=True, skip_when_effects=True)
+    sczx_clean.own_round = 1
+    apply_effects(sczx_clean, None, sczx_forced, [sczx_clean], [], own_turn=True)
     clean_mitig = [a for a in sczx_clean.adds if a[0] == "mitig"]
     assert len(clean_mitig) == 1, f"深藏若虛(無控制狀態): 應恰好一段mitig生效(base段, 互斥), got {len(clean_mitig)}"
     assert abs(clean_mitig[0][1] - 0.2 * scale_of(sczx_clean, "intel")) < 1e-6, "深藏若虛(無控制狀態): 應套用base段(20%×智力縮放)"
     sczx_chaotic = Unit(POOL["張飛"], "騎")
+    sczx_chaotic.own_round = 1
     sczx_chaotic.chaos = 2
-    apply_effects(sczx_chaotic, None, sczx_forced, [sczx_chaotic], [], no_heal=True, skip_when_effects=True)
+    apply_effects(sczx_chaotic, None, sczx_forced, [sczx_chaotic], [], own_turn=True)
     chaotic_mitig = [a for a in sczx_chaotic.adds if a[0] == "mitig"]
     assert len(chaotic_mitig) == 1, f"深藏若虛(混亂狀態): 應恰好一段mitig生效(topup段, 互斥), got {len(chaotic_mitig)}"
     assert abs(chaotic_mitig[0][1] - 0.35 * scale_of(sczx_chaotic, "intel")) < 1e-6, \
@@ -10548,6 +10575,169 @@ def demo():
     assert tt233_u.taunt_by is tt233_holder2 and tt233_u.taunt_dur == 5, \
         "233c: 嘲諷更強施加應覆蓋(5>3), 且taunt_by應改指向新施放者"
     print("    [233 控制類+先攻/遇襲/洞察/嘲諷 unique_strongest] 繳械/計窮/震懾/混亂(a/b)+先攻/遇襲/洞察/嘲諷(c)皆驗證「同等或更強才覆蓋, 較弱完全失效」 驗證通過")
+
+    # --- 每回合自參照時序修正批(user權威規則2026-07-12): 相二逐單位——輪到持有者自己行動時
+    # (行動前)才判定/重新評估, 用持有者own_round。全庫掃描發現「本文明寫每回合, 實作卻是準備
+    # 階段套用一次」的殘留缺口(everyRound機制批30上線後未回頭遷移), 補everyRound(+targetSel
+    # 每次呼叫本就即時重算, 天然滿足重選語意)。234a/234b為user點名的兩個明確實例(真實資料)。
+    # 234a) 三勢陣(真實資料): mitig/amp每回合own_round<=5(「戰鬥前5回合」)行動前重新比較兩副將
+    # 兵力並施加, 而非鎖定準備階段當下(開戰前兩副將兵力相同, targetSel等同任選且dur:1只蓋
+    # 第1回合, 第2-5回合完全不再重選)這個殘留缺口。targetSel(mostDamaged/maxTroop)本就每次
+    # 呼叫時即時依當下兵力重新比較(見pick_by_criterion), 補everyRound後天然滿足「每回合重選」。
+    ss234_tac = TACTICS["三勢陣"]
+    ss234_mitig = next(e for e in ss234_tac["effects"] if e["k"] == "mitig")
+    ss234_amp = next(e for e in ss234_tac["effects"] if e["k"] == "amp")
+    assert ss234_mitig.get("everyRound") and (ss234_mitig.get("when") or {}).get("until") == 5, \
+        "三勢陣mitig應帶everyRound+when.until:5(每回合自參照時序修正批, 對應「戰鬥前5回合」)"
+    assert ss234_amp.get("everyRound") and (ss234_amp.get("when") or {}).get("until") == 5, \
+        "三勢陣amp應帶everyRound+when.until:5(每回合自參照時序修正批)"
+
+    def _ss234_round(troop1, troop2, own_round):
+        leader = Unit(POOL["呂布"], "騎")
+        sub1 = Unit(POOL["張飛"], "盾")
+        sub2 = Unit(POOL["趙雲"], "騎")
+        sub1.troop, sub2.troop = troop1, troop2
+        leader.own_round = own_round
+        apply_effects(leader, None, ss234_tac, [leader, sub1, sub2], [], own_turn=True)
+        return sub1, sub2
+
+    r1_sub1, r1_sub2 = _ss234_round(3000, 9000, 1)          # sub1損失較多(troop低) → sub1中mitig, sub2(較沛)中amp
+    assert any(a[0] == "mitig" for a in r1_sub1.adds) and not any(a[0] == "mitig" for a in r1_sub2.adds), \
+        "三勢陣own_round=1: 損失兵力較多的sub1應中mitig, sub2不應中"
+    assert any(a[0] == "amp" for a in r1_sub2.adds) and not any(a[0] == "amp" for a in r1_sub1.adds), \
+        "三勢陣own_round=1: 損失較少(較沛)的sub2應中amp, sub1不應中"
+    r2_sub1, r2_sub2 = _ss234_round(8000, 2000, 2)          # own_round=2: 兵力逆轉(sub2變殘, sub1回沛) → 應重新比較換人, 非沿用第1回合鎖定
+    assert any(a[0] == "mitig" for a in r2_sub2.adds) and not any(a[0] == "mitig" for a in r2_sub1.adds), \
+        "三勢陣own_round=2(兵力逆轉後): 改為損失較多的sub2應中mitig(重新選標, 非沿用own_round=1時的sub1), sub1不應中"
+    assert any(a[0] == "amp" for a in r2_sub1.adds) and not any(a[0] == "amp" for a in r2_sub2.adds), \
+        "三勢陣own_round=2(兵力逆轉後): 改為較沛的sub1應中amp, sub2不應中"
+    r6_sub1, r6_sub2 = _ss234_round(3000, 9000, 6)          # own_round=6超出「戰鬥前5回合」窗, 不應再套用
+    assert not any(a[0] == "mitig" for a in r6_sub1.adds) and not any(a[0] == "mitig" for a in r6_sub2.adds), \
+        "三勢陣own_round=6(超出前5回合窗)不應再套用mitig"
+    assert not any(a[0] == "amp" for a in r6_sub1.adds) and not any(a[0] == "amp" for a in r6_sub2.adds), \
+        "三勢陣own_round=6(超出前5回合窗)不應再套用amp"
+    print("    [每回合自參照時序修正批 234a] 三勢陣: mitig/amp每回合own_round<=5行動前重新比較兩副將兵力並施加"
+          "(own_round=2兵力逆轉後角色互換, 證明每回合即時重選而非鎖定own_round=1的結果)/own_round=6超出前5回合窗即不再套用 驗證通過")
+
+    # 234b) 錦囊妙計(真實資料): rateup奇偶段依own_round每回合重新判定/重擲(對稱既有heal段結構,
+    # 取代舊「頂層rate 0.535擲骰無誤」stale說法——該說法所指的main dispatch路徑對coef=0且無
+    # choices/extraHits的command型戰法根本不會執行, rateup過去實為prep階段100%無條件套用一次,
+    # dur:1只蓋開戰第1回合)。
+    jnmj234_tac = TACTICS["錦囊妙計"]
+    jnmj234_rateups = [e for e in jnmj234_tac["effects"] if e["k"] == "rateup"]
+    assert len(jnmj234_rateups) == 2, f"錦囊妙計應有奇偶兩段rateup(每回合自參照時序修正批), got {len(jnmj234_rateups)}"
+    jnmj234_odd = next(e for e in jnmj234_rateups if (e.get("when") or {}).get("parity") == "odd")
+    jnmj234_even = next(e for e in jnmj234_rateups if (e.get("when") or {}).get("parity") == "even")
+    assert jnmj234_odd.get("everyRound") and abs(jnmj234_odd.get("rate", 0) - 0.32) < 1e-9, \
+        "錦囊妙計rateup奇數段應帶everyRound+rate:0.32(對稱heal奇數段既有值, 每回合自參照時序修正批)"
+    assert jnmj234_even.get("everyRound") and abs(jnmj234_even.get("rate", 0) - 0.75) < 1e-9, \
+        "錦囊妙計rateup偶數段應帶everyRound+rate:0.75(對稱heal偶數段既有值, 每回合自參照時序修正批)"
+
+    # (a) prep路徑(非own_turn/非heal_only)不應套用rateup —— 對稱既有everyRound通用機制(test 84/
+    # 95等已驗證合成戰法), 這裡驗證「本戰法真實資料」確實吃到此閘門(過去正是這裡被stale誤判為
+    # 「頂層rate擲骰無誤」而100%無條件套用)。
+    jnmj234_prep_caster = Unit(POOL["諸葛亮"], "弓")
+    jnmj234_prep_ally = Unit(POOL["劉備"], "盾")
+    apply_effects(jnmj234_prep_caster, None, jnmj234_tac, [jnmj234_prep_caster, jnmj234_prep_ally], [],
+                  no_heal=True, skip_when_effects=True)
+    assert not any(a[0] == "rateup" for a in jnmj234_prep_caster.adds) and \
+        not any(a[0] == "rateup" for a in jnmj234_prep_ally.adds), \
+        "錦囊妙計: prep(非own_turn)呼叫不應套用rateup(舊bug為準備階段100%無條件套用一次, 現應完全不套用)"
+
+    # (b) 結構驗證: own_round奇偶各自只對應到自己的段(即使兩段rate皆強制1.0, parity不符的一段仍不應觸發)
+    jnmj234_forced = {"nameZh": "錦囊妙計測試234", "effects": [dict(jnmj234_odd, rate=1.0), dict(jnmj234_even, rate=1.0)]}
+    jnmj234_odd_c, jnmj234_odd_a = Unit(POOL["諸葛亮"], "弓"), Unit(POOL["劉備"], "盾")
+    jnmj234_odd_c.own_round = 1
+    apply_effects(jnmj234_odd_c, None, jnmj234_forced, [jnmj234_odd_c, jnmj234_odd_a], [], own_turn=True)
+    assert any(a[0] == "rateup" for a in jnmj234_odd_c.adds) or any(a[0] == "rateup" for a in jnmj234_odd_a.adds), \
+        "錦囊妙計own_round=1(奇數, 奇偶皆強制rate=1.0): 奇數段應觸發"
+    jnmj234_even_c, jnmj234_even_a = Unit(POOL["諸葛亮"], "弓"), Unit(POOL["劉備"], "盾")
+    jnmj234_even_c.own_round = 2
+    apply_effects(jnmj234_even_c, None, jnmj234_forced, [jnmj234_even_c, jnmj234_even_a], [], own_turn=True)
+    assert any(a[0] == "rateup" for a in jnmj234_even_c.adds) or any(a[0] == "rateup" for a in jnmj234_even_a.adds), \
+        "錦囊妙計own_round=2(偶數, 奇偶皆強制rate=1.0): 偶數段應觸發"
+
+    # (c) 統計驗證(真實rate值0.32奇/0.75偶): own_round固定的重複own_turn呼叫下, 經驗觸發率應
+    # 接近對應滿級值, 證明每次own_turn呼叫都是獨立重擲(而非prep鎖定後恆定同一結果)。
+    def _jnmj234_trial(own_round):
+        c = Unit(POOL["諸葛亮"], "弓")
+        a = Unit(POOL["劉備"], "盾")
+        c.own_round = own_round
+        apply_effects(c, None, jnmj234_tac, [c, a], [], own_turn=True)
+        return any(x[0] == "rateup" for x in c.adds) or any(x[0] == "rateup" for x in a.adds)
+
+    random.seed(20260712)
+    _N234 = 4000
+    _odd234_fire = sum(1 for _ in range(_N234) if _jnmj234_trial(1))
+    _odd234_rate = _odd234_fire / _N234
+    assert abs(_odd234_rate - 0.32) < 0.03, f"錦囊妙計own_round=1(奇數)經驗觸發率應≈32%, 實測{_odd234_rate:.3f}(N={_N234})"
+    _even234_fire = sum(1 for _ in range(_N234) if _jnmj234_trial(2))
+    _even234_rate = _even234_fire / _N234
+    assert abs(_even234_rate - 0.75) < 0.03, f"錦囊妙計own_round=2(偶數)經驗觸發率應≈75%, 實測{_even234_rate:.3f}(N={_N234})"
+    print(f"    [每回合自參照時序修正批 234b] 錦囊妙計: rateup prep不套用(a)/own_round奇偶各自對應段觸發(b)/"
+          f"經驗機率奇{_odd234_rate:.3f}≈0.32偶{_even234_rate:.3f}≈0.75(N={_N234}, own_round每回合獨立重擲)(c) 驗證通過")
+
+    # 234c) 全庫掃描補全(每回合自參照時序修正批): 溯江搖櫓dispel/扶危定傾dispel+3個stat/仁德載世
+    # mitig+amp/深藏若虛mitig×2/威武並昭pierce, 皆補everyRound(取代準備階段套用一次殘留缺口)。
+    sjyl234 = next(e for e in TACTICS["溯江搖櫓"]["effects"] if e["k"] == "dispel")
+    assert sjyl234.get("everyRound"), "溯江搖櫓dispel應帶everyRound(每回合自參照時序修正批, 更正批30誤將本效果歸類為反應式的分類錯誤)"
+    fwdq234_stats = [e for e in TACTICS["扶危定傾"]["effects"] if e["k"] == "stat"]
+    fwdq234_dispel = next(e for e in TACTICS["扶危定傾"]["effects"] if e["k"] == "dispel")
+    assert len(fwdq234_stats) == 3 and all(e.get("everyRound") and abs(e.get("rate", 0) - 0.4) < 1e-9 for e in fwdq234_stats), \
+        "扶危定傾3個stat(武智統)應皆帶everyRound+rate:0.4(每回合自參照時序修正批, 與同句dispel同步機率/cadence)"
+    assert fwdq234_dispel.get("everyRound"), "扶危定傾dispel應帶everyRound"
+    rdzs234_mitig = next(e for e in TACTICS["仁德載世"]["effects"] if e["k"] == "mitig")
+    rdzs234_amp = next(e for e in TACTICS["仁德載世"]["effects"] if e["k"] == "amp")
+    assert rdzs234_mitig.get("everyRound") and rdzs234_mitig.get("dur") == 1, \
+        "仁德載世mitig應帶everyRound+dur:1(取代舊dur:99偽裝常駐的權宜作法)"
+    assert rdzs234_amp.get("everyRound"), "仁德載世amp應帶everyRound"
+    scrx234_mitigs = [e for e in TACTICS["深藏若虛"]["effects"] if e["k"] == "mitig"]
+    assert len(scrx234_mitigs) == 2 and all(e.get("everyRound") for e in scrx234_mitigs), \
+        "深藏若虛base/topup兩段mitig皆應帶everyRound"
+    wwbz234_pierce = next(e for e in TACTICS["威武並昭"]["effects"] if e["k"] == "pierce")
+    assert wwbz234_pierce.get("everyRound") and wwbz234_pierce.get("dur") == 1, \
+        "威武並昭pierce應帶everyRound+dur:1(取代舊dur:99偽裝常駐的權宜作法)"
+    print("    [每回合自參照時序修正批 234c] 全庫掃描補全清單(溯江搖櫓/扶危定傾/仁德載世/深藏若虛/威武並昭)資料層everyRound皆已正確落地 驗證通過")
+
+    # 234d) 引擎回歸: e["everyRound"]效果同時帶e["rate"]時, 過去在own_turn/heal_only/
+    # broadcast_only呼叫下會被擲兩次骰(函式頂端「批23 A4」通用e.rate閘門一次+批30 everyRound
+    # 分支自己的ev_rate一次), 機率被平方(如0.5→0.25), 較本文嚴重低估——全庫掃描(234b)撰寫
+    # 統計測試時意外發現此engine既有bug(非本批新增, batch 30上線everyRound起即存在, 影響
+    # 剛柔並濟/南蠻渠魁/忠勇義烈/承天靖世/揮兵謀勝/機鑑先識/虛實奇謀/鎮扼防拒/雁行陣/高櫓連營/
+    # 魚鱗陣等全庫至少11筆真實戰法+本批新增6筆, 因過去無statistical-N-trial測試曾直接驗證這些
+    # 戰法everyRound段的精確經驗機率, 恆用rate=1.0的合成測試遮蔽了此問題, 潛伏至今才被抓到)。
+    # 已修正: 函式頂端閘門對e["everyRound"]效果直接跳過(交給下方分支獨力擲骰), 下方分支改讀
+    # 已含rateLeader/rateSub/rateFactionBonus/rateBonusPerBuffType調整的_e_rate(而非重讀原始
+    # e["rate"], 後者會漏掉這些調整)。此處用合成戰法(非真實資料)隔離驗證機制本身, 對稱test 220
+    # 「背離驗證」手法。
+    er234d_tac = {"nameZh": "測試everyRound雙擲234d", "effects": [
+        {"k": "block", "who": "self", "val": 1.0, "times": 1, "everyRound": True, "rate": 0.5, "rateLeader": 0.8}]}
+    random.seed(20260712)
+    _N234d = 6000
+    _plain_fire = 0
+    for _ in range(_N234d):
+        leader_stub = Unit(POOL["劉備"], "盾")   # allies[0](主將), 非施放者本人
+        u = Unit(POOL["張飛"], "盾")             # 施放者, 位於allies[1](非主將) => 應吃基礎rate=0.5
+        u.own_round = 1
+        apply_effects(u, None, er234d_tac, [leader_stub, u], [], own_turn=True)
+        if u.block:
+            _plain_fire += 1
+    _plain_rate = _plain_fire / _N234d
+    assert abs(_plain_rate - 0.5) < 0.03, \
+        f"234d: e.rate=0.5+everyRound應維持單次擲骰(經驗機率≈0.5), 若被平方應≈0.25——實測{_plain_rate:.3f}(N={_N234d})"
+    _leader_fire = 0
+    for _ in range(_N234d):
+        u = Unit(POOL["張飛"], "盾")             # 施放者位於allies[0](主將) => 應吃rateLeader=0.8
+        ally2 = Unit(POOL["關羽"], "盾")
+        u.own_round = 1
+        apply_effects(u, None, er234d_tac, [u, ally2], [], own_turn=True)
+        if u.block:
+            _leader_fire += 1
+    _leader_rate = _leader_fire / _N234d
+    assert abs(_leader_rate - 0.8) < 0.03, \
+        f"234d: 主將時everyRound應正確採用rateLeader=0.8(而非基礎rate=0.5或其平方), 實測{_leader_rate:.3f}(N={_N234d})"
+    print(f"    [每回合自參照時序修正批 234d] 引擎回歸: e.everyRound+e.rate不再被擲兩次骰(平方低估)——"
+          f"基礎rate經驗值{_plain_rate:.3f}≈0.5(非0.25)/rateLeader經驗值{_leader_rate:.3f}≈0.8(非其平方或基礎值) 驗證通過")
 
     print("self-check OK")
 

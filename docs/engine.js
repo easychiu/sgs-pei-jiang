@@ -2403,7 +2403,18 @@
       }
       // 批52g: ratePerTarget/rateStatusBonus —— 逐目標擲骰, 跳過全局一次 rate
       const perTgtRate = !!(e.ratePerTarget || e.rateStatusBonus);
-      if (!opt.rateChecked && !perTgtRate && eRate != null && rnd() >= eRate) { if (TRACE) lg(`　▸ ${effDesc(k, e, caster)}〔${Math.round(eRate * 100)}%機率〕未觸發`); continue; }
+      // 每回合自參照時序修正批: e.everyRound 效果本身在下方(批30分支)有自己專屬的 evRate 擲骰
+      // (見「if (e.everyRound && k !== "heal")」分支), 該分支與此處共用同一份 e.rate(經
+      // rateLeader/rateSub/rateFactionBonus/rateBonusPerBuffType 調整後的 eRate) —— 過去此處
+      // 不排除 everyRound 效果, 導致 ownTurn/healOnly/broadcastOnly 呼叫時對同一效果的同一個
+      // rate 擲兩次骰(此處一次+批30分支一次), 機率被平方(如0.32→0.1024, 較原文嚴重低估),
+      // 正是本函式上方註解「避免在這裡對同一效果重複擲骰,機率會被平方,造成低估」原本要防的事,
+      // 但當時只顧到 onHit/delayedEq 呼叫端(靠 opt.rateChecked 旗標排除), 遺漏了 everyRound
+      // 分支這個「內部也會自己擲一次」的第二個重複來源(對稱 sgz.py 同名修正)。修法: 比照
+      // opt.rateChecked 的既有排除慣例, 對 e.everyRound 效果直接跳過此處擲骰, 把「擲骰」這件事
+      // 完全交給批30分支自己處理(該分支的 evRate 已改讀這裡算好的 eRate, 見其定義處), 使每個
+      // everyRound 效果全函式只擲一次骰(而非零次或兩次)。
+      if (!opt.rateChecked && !perTgtRate && !e.everyRound && eRate != null && rnd() >= eRate) { if (TRACE) lg(`　▸ ${effDesc(k, e, caster)}〔${Math.round(eRate * 100)}%機率〕未觸發`); continue; }
       // 批52g: ifCasterNames —— 施放者武將名須在名單(太平道法黃巾主將含 SP)
       if (e.ifCasterNames) {
         const cn = Array.isArray(e.ifCasterNames) ? e.ifCasterNames : [e.ifCasterNames];
@@ -2524,7 +2535,14 @@
           if (caster.whenFired.has(e)) continue;
           caster.whenFired.add(e);
         }
-        const evRate = e.rate ?? t.rate ?? 1;
+        // 每回合自參照時序修正批: 改讀 eRate(函式頂端已算好, 含 rateLeader/rateSub/
+        // rateFactionBonus/rateBonusPerBuffType 調整後的最終值), 取代直接重讀原始 e.rate
+        // (後者會漏掉 rateLeader 等調整——例如仁德載世「自身為主將時,施加虛弱狀態的機率提高
+        // 至12.5%→25%」, 若這裡繼續讀 e.rate=0.1, 主將時仍會錯用基礎值而非 rateLeader=0.25
+        // 調整後的值)。eRate 為 null(效果本身無 rate/rateLeader/rateSub, 且無
+        // rateFactionBonus/rateBonusPerBuffType 可疊加)時 fallback 到 t.rate ?? 1, 與舊行為
+        // e.rate ?? t.rate ?? 1 在「效果無 rate」情形下完全等價(零回歸)。
+        const evRate = eRate != null ? eRate : (t.rate ?? 1);
         if (rnd() >= evRate) { if (TRACE) lg(`　▸ ${caster.nm} 〔${t.nameZh || "?"}〕每回合判定〔${Math.round(evRate * 100)}%機率〕未觸發`); continue; }
         // 通過閘門後不 continue —— 落到下方通用 who/dests 派發邏輯(amp/mitig/block/...),
         // 走與 prep 套用相同的效果分派, 只是改成每回合重新判定/套用一次。
