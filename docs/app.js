@@ -228,6 +228,49 @@ function tacSummary(name, full) {                               // 短摘要(≤
   return s + est;
 }
 
+// 預設對手隊伍(user+agy查證的當前meta配法, 供敵方(B)快速套用測試): 三隊皆已核對武將名
+// (含 SP 系武將於資料中「SP」與姓名間有空格, 如"SP 馬超"而非"SP馬超")與傳承戰法名
+// 均確實存在於 docs/data/generals.json / tactics_parsed.json, 且三隊各自的傳承+自帶戰法
+// 分類(cat)彼此不衝突(同隊至多1個「陣法／兵種」類, 對齊 openTactic() 的 lockedCats 規則)。
+// 兵書/裝備/養成刻意不覆寫、維持各將預設(defaultBingshuCfg 等) —— 對應 user 規格「兵書用
+// 預設」。已知資料缺口(唯讀紅線內, 不可自行修正): SP 郭嘉的自帶戰法「經天緯地」雖存在於
+// tactics_parsed.json, 但 generals.json 該筆 tactic 欄位為 null(未連結來源資料缺失,
+// 非本功能引入), 沿用現有 buildPool 機制 tacticName 會顯示"—"、圖鑑呈現「資料未建模」,
+// 自帶戰法不參與模擬計算——不影響隊伍其餘2個傳承戰法生效, 也不會造成模擬報錯。
+const PRESET_TEAMS = {
+  "皇馬槍": { troop: "槍", members: [
+    { name: "SP 馬超",   inh: ["當鋒摧決", "速乘其利"] },
+    { name: "SP 皇甫嵩", inh: ["草船借箭", "威謀靡亢"] },
+    { name: "許攸",      inh: ["解煩衛", "臨危救主"] },
+  ] },
+  "富貴騎": { troop: "騎", members: [
+    { name: "SP 荀彧", inh: ["竭力佐謀", "刮骨療毒"] },
+    { name: "SP 郭嘉", inh: ["奪魂挾魄", "上兵伐謀"] },
+    { name: "賈詡",    inh: ["暫避其鋒", "偽書相間"] },
+  ] },
+  "法官盾": { troop: "盾", members: [
+    { name: "SP 法正", inh: ["蓄勢待發", "非攻制勝"] },
+    { name: "SP 關羽", inh: ["忠勇義烈", "以寡敵眾"] },
+    { name: "劉備",    inh: ["藤甲兵", "草船借箭"] },
+  ] },
+};
+function applyPreset(key) {                  // 套用預設隊到敵方(B): 三將+兵種+傳承, 兵書/裝備/養成留預設
+  const p = PRESET_TEAMS[key];
+  if (!p) return;
+  const missing = p.members.filter(m => !POOL[m.name]).map(m => m.name);   // 防禦: 資料若異動導致武將消失, 提示而非讓後續 renderSlots 出錯
+  if (missing.length) { alert(`預設隊「${key}」缺少武將資料：${missing.join("、")}（資料可能已異動）`); return; }
+  teams.B = p.members.map(m => m.name);
+  troops.B = p.troop;
+  bsel.B = [null, null, null];
+  eqsel.B = [{}, {}, {}];
+  builds.B = [null, null, null];
+  inhsel.B = p.members.map(m => (m.inh || []).slice());
+  const sel = document.querySelector('.troop[data-side="B"]');
+  if (sel) sel.value = p.troop;
+  renderSlots("B");
+  $("#simResult").classList.add("hidden");
+}
+
 async function load() {
   const j = u => fetch(u).then(r => r.json()).catch(() => []);
   const jo = u => fetch(u).then(r => r.json()).catch(() => ({}));
@@ -282,6 +325,7 @@ async function load() {
     document.querySelector(`.blankall[data-side="${s}"]`).onclick = () => setAll(s, false);
     renderSlots(s);
   });
+  document.querySelectorAll(".preset-btn").forEach(b => b.onclick = () => applyPreset(b.dataset.preset));
   $("#runSim").onclick = runSim;
   $("#trace").onclick = openTrace;
   $("#optimize").onclick = optimizeTeam;

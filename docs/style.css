@@ -137,6 +137,13 @@ button{cursor:pointer;font-family:inherit}
 #modal .modal-box button{background:#2a2018;color:var(--ink);border:1px solid var(--line);
   padding:10px 16px;border-radius:8px}
 #modal .modal-box button.primary{background:linear-gradient(180deg,var(--red),#5c1a1a);color:var(--gold2);border-color:var(--gold)}
+/* 預設對手(敵方B快速套用鈕): 沿用暗色調, gold描邊與.redall(紅)/.blankall(灰)區隔避免混淆 */
+.preset-bar{text-align:center;margin-bottom:10px;display:flex;flex-wrap:wrap;
+  gap:6px;align-items:center;justify-content:center}
+.preset-label{color:#9a8b6a;font-size:13px}
+.preset-btn{font-family:inherit;font-size:13px;border-radius:6px;padding:5px 12px;
+  cursor:pointer;background:#241a10;color:var(--gold2);border:1px solid var(--gold)}
+.preset-btn:hover{background:#2a2212;filter:brightness(1.15)}
 .troop-sel{text-align:center;margin-bottom:10px;color:#b8a987;font-size:14px}
 .slot .eq,.slot .bs{max-width:46%}
 .troop-sel select{margin-left:4px}
