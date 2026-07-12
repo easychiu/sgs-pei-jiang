@@ -153,37 +153,54 @@
   // 批(狀態疊加語意對齊, 2026-07-12): NAMED_STATUS —— 具名狀態註冊表(雙引擎共用慣例, 對稱
   // sgz.py 同名常數逐字對稱; lint_tactics.py 另維護精簡對照副本供 R36 核對, 三份需同步維護,
   // 本庫無跨語言共用機制, 依現行「對稱」手動雙寫慣例)。user權威規則(見
-  // docs/data/calibration_anchors.json → status_stacking_rule_20260711): 具名狀態分兩類:
+  // docs/data/calibration_anchors.json → status_stacking_rule_20260711/status_stacking_
+  // detail_20260712/control_status_rule_20260712): 具名狀態現分五類(狀態疊加精修批新增後
+  // 三類):
   //   "unique"(唯一/覆蓋): 同單位全場只存在一個實例, 再施加同名狀態覆蓋舊的(刷新, 保留最新
-  //     來源/數值), 不會因多來源疊加而雙倍觸發機率/雙倍生效(如陷陣營+青囊書皆授予「急救」,
-  //     全場仍只有一個急救實例)。
-  //   "multi"(可共存): 多個來源各自獨立存在、全部生效(如反擊, 兩個不同來源的反擊各自獨立
-  //     判定/結算, 都會觸發, 不互相覆蓋)。
-  // 本批只落地"已確認"三項的引擎行為: 反擊(multi, 改 this.counters 清單)、急救(unique, 反應式
-  // heal去重)、休整(unique, regen去重)。其餘具名狀態user尚未逐一裁決, mode 標為 "pending"
-  // (維持現行行為不變, 純粹記錄以供未來裁決/lint參照, R36對pending狀態不作結構核對, 不阻塞
-  // 現行行為)。禁止不擅自歸類: pending 項下的 note 只記錄現行觀察到的引擎行為, 不代表已裁決
-  // 的規則。
+  //     來源/數值), 不會因多來源疊加而雙倍觸發機率/雙倍生效(如休整)。
+  //   "multi"(可共存): 多個來源各自獨立存在、全部生效(如反擊/攻心/倒戈, 各來源獨立判定/
+  //     結算/到期, 不互相覆蓋)。
+  //   "overwrite_fallback"(覆蓋+到期回退): 同單位可能有多個來源, 目前生效者=最新(優先序
+  //     最高)且仍在自己duration窗內者; 該來源到期後回退成次新仍在窗內者的值, 全部到期才
+  //     消失(如急救)。
+  //   "accumulate"(累積): 新施加的次數/層數直接加總到現有(如警戒)。
+  //   "conditional"(條件式): 依持有者當下是否處於某輔助狀態, 在不同疊加行為間切換(如
+  //     抵禦: 預設「有剩餘不補不刷」, 持有者處於「嚴密」時例外改累積)。
+  //   "unique_strongest"(唯一+同等或更強擋新): 同單位全場只存在一個實例, 但只有「嚴格更
+  //     強」(以dur近似強度)的新施加才覆蓋, 同等或更弱的新施加完全失效, 是既有偽報
+  //     (fakeReport)same-or-stronger規則的推廣(如繳械/計窮/震懾/混亂/先攻/遇襲/洞察/嘲諷)。
+  // 本批("狀態疊加精修"批, 2026-07-12)落地: 灼燒/中毒/潰逃/水攻/沙暴/叛逃(DoT家族, 改
+  // refresh/唯一)、警戒(accumulate)、抵禦(conditional, 嚴密偵測+「有剩餘不補不刷」)、急救
+  // (unique→overwrite_fallback細化)、攻心/倒戈(multi語意不變, 但底層改真正多實例清單取代
+  // addbonus加總標量)、繳械/計窮/震懾/混亂/先攻/遇襲/洞察/嘲諷(pending→unique_strongest)。
+  // 虛弱(clamp效果, 分析後判定現行push_add/amp機制OBSERVATIONALLY等價於unique_strongest,
+  // 未改動底層機制)。其餘user仍未裁決的具名狀態(現無)mode維持"pending"(維持現行行為不變,
+  // 純粹記錄以供未來裁決/lint參照, R36對pending狀態不作結構核對, 不阻塞現行行為)。
   const NAMED_STATUS = {
-    // ---- 已確認 unique(覆蓋, 同單位唯一實例) ----
+    // ---- 已確認 overwrite_fallback(覆蓋+到期回退) ----
     "急救": {
-      mode: "unique",
+      mode: "overwrite_fallback",
       engine: "reactive heal(k===\"heal\", when.on:attacked/damaged); 見 Unit 建構子 "
-             + "suppressedNamedStatus 去重掃描(建構時一次裁決) + onHitFor() 消費端檢查該集合放行/跳過",
+             + "this._healCandidates 蒐集(依戰法→兵書→裝備優先序) + suppressedNamedStatus"
+             + "(getter, 每次存取依當下ownRound動態算出目前生效者) + onHitFor() 消費端檢查"
+             + "該集合放行/跳過",
       note: "陷陣營/青囊書(長健)/三軍之眾/草船借箭/雲聚影從/擊其惰歸/蕙質蘭心/援救等皆授予"
-           + "急救; 多來源同時存在時只保留1個生效(tie-break政策: 裝備>兵書>戰法, 同類別內取"
-           + "後蒐集者, 對應 applyPassives() 既有prep處理順序, 見建構式註解——此為本次實作的"
-           + "顯式假設, 非user另有明文裁決, 供未來覆核)",
+           + "急救; 多來源同時存在時, 目前生效者=優先序最高(裝備>兵書>戰法, 同類別內取後"
+           + "蒐集者)且仍在自己when回合窗內(roundOk)的那個; 若最高優先者的窗已過而次高優先"
+           + "者仍在窗內, 回退成次高優先者(見status_stacking_detail_20260712範例: 陷陣營+"
+           + "草船借箭)。tie-break優先序本身為本次實作的顯式假設, 供未來覆核",
     },
+    // ---- 已確認 unique(覆蓋, 同單位唯一實例, 覆蓋後舊來源徹底消失不回退) ----
     "休整": {
       mode: "unique",
       engine: "regen(k===\"regen\", this.regens list, 以 upsertNamedStatus 鍵=\"休整\" 去重,"
              + "全場至多1筆, 同名再施加覆蓋刷新)",
       note: "乘敵不虞為現行唯一 k===\"regen\" 實例。已知殘留缺口: 部分戰法(如金丹秘術)改用"
-           + "k===\"heal\" + when.from/until(非 when.on 反應式)表達同類「每回合恢復」語意, "
-           + "該通路現行仍逐回合獨立重擲/未納入本次去重範圍(架構上是即時重算而非持久狀態實例,"
-           + "風險較低且無實測證據顯示現行有雙重疊加問題, 見k===\"heal\"分支註解, 誠實揭露為"
-           + "已知限制)",
+             + "k===\"heal\" + when.from/until(非 when.on 反應式)表達同類「每回合恢復」語意, "
+             + "該通路現行仍逐回合獨立重擲/未納入本次去重範圍。狀態疊加精修批: user規則明確"
+             + "要求急救改overwrite_fallback(見上), 並提及「休整同理若有多來源, 不確定比照"
+             + "急救+標記」——本批保守不動休整現行的單槽覆蓋(無回退)實作(user自陳不確定,"
+             + "依「無法判斷時保守維持既有行為」原則不擅自比照擴大, 標記待user後續裁決)",
     },
     // ---- 已確認 multi(可共存, 多實例並存) ----
     "反擊": {
@@ -194,68 +211,111 @@
     },
     "攻心": {
       mode: "multi",
-      engine: "lifesteal(addbonus 累加多實例, 見 hit() 的 ls = src.addbonus(\"lifesteal\"))",
-      note: "現行 addbonus 加總語意已符合「多來源共存」, 本批未變更(見"
-           + "calibration_anchors.json engine_current_findings 既有核對結論)",
+      engine: "lifesteal(k===\"lifesteal\", this.lifesteals list, 以 upsertNamedStatus 鍵="
+             + "[\"攻心倒戈\", e] 去重: 同一來源重複施加只刷新自己那筆, 不同來源各自獨立"
+             + "並存, hit() 逐筆結算加總回復量)",
+      note: "狀態疊加精修批(user追加規則, coordinator訊息): 前批(623afc4)用 "
+           + "addbonus(\"lifesteal\") 把多個來源加總成單一標量, 總量雖數學正確(對val線性"
+           + "可加)但遺失個別來源獨立到期追蹤與戰報歸因能力, user糾正改真正多實例清單"
+           + "(比照反擊 this.counters 做法), 見 hit() 對應段落與 pushLifesteal()",
     },
     "倒戈": {
       mode: "multi",
-      engine: "同攻心, lifesteal(addbonus 累加多實例)",
-      note: "同上, 未變更",
+      engine: "同攻心, lifesteal(this.lifesteals list, 見上)",
+      note: "同上",
     },
-    // ---- 待user確認(pending): 只記錄現行觀察到的引擎行為, 不擅自歸類/不改動現行邏輯 ----
+    // ---- 已確認 accumulate(累積, 新施加次數加總到現有) ----
     "警戒": {
-      mode: "pending",
-      engine: "block(次數型格擋, this.block list, 現行不去重: 多來源各自push, 各自獨立計次"
-             + "消耗)",
-      note: "與抵禦同族(counted-charge家族)。是否應同名覆蓋或維持可共存待user裁決",
+      mode: "accumulate",
+      engine: "block(次數型格擋, this.block list, val<1.0/val>=0.999為分界, 見pushBlock()"
+             + "──同源同值合併次數, 不同來源/不同值各自成一筆, 消耗時皆先進先出逐筆扣減,"
+             + "總可用次數=全部筆數總和, 即「累積」的可觀察結果)",
+      note: "與抵禦同族(counted-charge家族), 但疊加規則不同(抵禦預設「有剩餘不補不刷」,"
+           + "見下)。user規則: 新施加的次數加總到現有(如折衝施加2次→現有+2)",
     },
-    "抵禦": { mode: "pending", engine: "同警戒, block(val=1.0全擋)", note: "同上" },
-    "先攻": {
-      mode: "pending",
-      engine: "this.first(單一剩餘回合數欄位, 非清單; 再次施加現行為直接覆寫該欄位數值)",
-      note: "控制/節奏類, 猜測傾向unique(同單位性質上不會疊兩個先攻狀態), 待user裁決",
+    // ---- 已確認 conditional(依當下是否處於「嚴密」在不同疊加行為間切換) ----
+    "抵禦": {
+      mode: "conditional",
+      engine: "同警戒, block(val>=1.0全擋), 見pushBlock(): 預設(非嚴密)「有剩餘不補不刷,"
+             + "歸零才套用新來源」(existingN=同dmgType既有次數總和, >0時新施加整個忽略,"
+             + "===0才push); 持有者處於「嚴密」(this.rigorous>0, 赴湯蹈火施加)時例外改累積"
+             + "(同警戒的同源合併/不同源並存邏輯)",
+      note: "user規則(2026-07-12追加修正, 更正本批較早版本誤植的「取代成最新值」寫法):"
+           + "抵禦=有剩餘次數時新施加不補不刷(如身上1次, 折衝禦侮再給2次仍維持1次不變);"
+           + "只有現有次數歸零才套用新來源的次數。例外: 持有者處於「嚴密」狀態(赴湯蹈火"
+           + "戰法施加)時→改累積(add疊加)",
     },
-    "遇襲": { mode: "pending", engine: "this.ambush(同first, 單一欄位)", note: "同上" },
-    "虛弱": {
-      mode: "pending",
-      engine: "amp(val:-1.0, 走 this.adds 清單, 現行多來源可共存疊加, 但傷害歸零本身已封頂"
-             + "無法\"更虛弱\", 疊加與否對結果無感)",
-      note: "與控制類/DoT類皆不同的特例, 待user裁決",
-    },
+    // ---- 已確認 unique_strongest(唯一+同等或更強擋新, 偽報same-or-stronger規則的推廣) ----
     "計窮": {
-      mode: "pending",
-      engine: "this.silence(單一剩餘回合數欄位, 非清單)",
-      note: "控制類, 猜測傾向unique(同單位不疊), 待user裁決",
+      mode: "unique_strongest",
+      engine: "this.silence(單一剩餘回合數欄位), applyControlDur() 統一處理: 新dur須嚴格"
+             + "大於現有值才覆蓋+觸發fireControlled反彈廣播, 同等或更弱完全失效(不覆蓋/不"
+             + "疊加/不延長/不重新廣播)",
+      note: "user規則(control_status_rule_20260712): 控制類「不動作」狀態(繳械/計窮/震懾/"
+           + "混亂)= 唯一+「同等或更強擋新」, 是既有偽報(fakeReport)same-or-stronger規則的"
+           + "推廣, 以dur近似強度。不含監統震軍機變「繳械狀態增加1回合」的extendDur延長機制"
+           + "(需新原語, 待後批)",
     },
-    "繳械": { mode: "pending", engine: "this.disarm(同計窮, 單一欄位)", note: "同上" },
-    "震懾": { mode: "pending", engine: "this.stun(同計窮, 單一欄位)", note: "同上" },
-    "混亂": { mode: "pending", engine: "this.chaos(同計窮, 單一欄位)", note: "同上" },
+    "繳械": { mode: "unique_strongest", engine: "this.disarm(同計窮, 單一欄位), applyControlDur() 同上", note: "同計窮" },
+    "震懾": { mode: "unique_strongest", engine: "this.stun(同計窮, 單一欄位), applyControlDur() 同上", note: "同計窮" },
+    "混亂": { mode: "unique_strongest", engine: "this.chaos(同計窮, 單一欄位), applyControlDur() 同上", note: "同計窮" },
+    // ---- 追加規則(coordinator訊息, 2026-07-12): 先攻/遇襲/洞察/嘲諷/虛弱 比照控制類同套
+    // unique_strongest規則, 由pending轉正 ----
+    "先攻": {
+      mode: "unique_strongest",
+      engine: "this.first(單一剩餘回合數欄位), 改用 applyControlDur() 統一處理(fireControlled"
+             + "對 kind===\"first\" 本就no-op不廣播, 只借用其「新dur須嚴格大於現有值才覆蓋」"
+             + "判斷, 不影響其餘語意)",
+      note: "user規則(2026-07-12追加): 先攻/遇襲/洞察/嘲諷/虛弱與繳械/計窮/震懾/混亂同規則"
+           + "(唯一+同等或更強擋新), 由pending轉正",
+    },
+    "遇襲": {
+      mode: "unique_strongest",
+      engine: "this.ambush(同first, 單一欄位), applyControlDur() 同上(insight/immuneTo免疫"
+             + "邏輯不變, 只有通過免疫檢查後才進入同等或更強比較)",
+      note: "同先攻",
+    },
     "洞察": {
-      mode: "pending",
-      engine: "this.insight(單一剩餘回合數欄位, 免控buff)",
-      note: "buff類, 待user裁決",
+      mode: "unique_strongest",
+      engine: "this.insight(單一剩餘回合數欄位, 免控buff), applyControlDur() 同上——「施加時"
+             + "同時解除既有控制」這個副作用現在也隨主判斷gate: 只有本次insight施加確實通過"
+             + "『同等或更強』檢查才觸發解除控制, 較弱的insight施加完全跳過(不解控、不覆蓋)",
+      note: "同先攻",
     },
     "嘲諷": {
-      mode: "pending",
-      engine: "this.tauntBy/this.tauntDur(單一欄位組, 現行後施加者直接覆蓋前者)",
-      note: "待user裁決",
+      mode: "unique_strongest",
+      engine: "this.tauntBy/this.tauntDur(單一欄位組) —— 新dur須嚴格大於現有tauntDur才會"
+             + "同時更新tauntBy(改指向新施加者)與tauntDur, 否則兩者皆維持原值(tauntBy不因"
+             + "較弱的新嘲諷施加而變更目標)",
+      note: "同先攻",
     },
+    "虛弱": {
+      mode: "unique_strongest",
+      engine: "amp(val:-1.0, 走 this.adds 清單, 現行多來源仍走pushAdd既有(kind,src)去重/"
+             + "共存機制, 本批未改動底層amp/adds通道)",
+      note: "user規則要求虛弱比照unique_strongest, 但虛弱是「總amp<=-1即封頂全歸零」的clamp"
+           + "效果(非線性可加): 分析後確認「多來源共存加總」與「唯一+同等或更強覆蓋」在此"
+           + "clamp語意下OBSERVATIONALLY等價(weak的持續時間=所有已施加來源中最晚到期者,"
+           + "兩種實作方式算出的『weak還剩幾回合』結果相同)——本批因此未改動pushAdd/amp底層"
+           + "機制, 只重新歸類mode為unique_strongest並記錄此判斷供覆核",
+    },
+    // ---- 已確認 refresh(刷新覆蓋, 唯一/非共存) ----
     "灼燒": {
-      mode: "pending",
-      engine: "dot(this.dots list, 現行多來源不去重: 各自push獨立逐回合結算, 見"
-             + "resolveDotName/countNamedStatuses 依名稱分組計數, 供dmgFromStatus等橫切效果"
-             + "讀取)",
+      mode: "refresh",
+      engine: "dot(this.dots list, 以狀態名(dots[3], 解析不到時退而用來源戰法名)為鍵, 見"
+             + "k===\"dot\"分支: 同鍵新施加時整筆取代舊的(用最新coef/dur/來源), 不同鍵各自"
+             + "並存; resolveDotName/countNamedStatuses 依名稱分組計數, 供dmgFromStatus等"
+             + "橫切效果讀取)",
       note: "DoT家族(灼燒/水攻/中毒/潰逃/沙暴/叛逃共6種具名狀態, 見dmgFromStatus清單)之一。"
-           + "「各來源?」——多個同名DoT來源現行各自造成傷害(共存疊加), 是否應同名覆蓋(如只取"
-           + "最新一份持續傷害)待user裁決",
+           + "user規則: 同名DoT新施加時覆蓋舊的, 不並存多個(前批this.dots.push不去重, 把DoT"
+           + "當共存清單是錯的, 已改refresh)",
     },
-    "中毒": { mode: "pending", engine: "同灼燒, dot(DoT家族之一)", note: "同上" },
+    "中毒": { mode: "refresh", engine: "同灼燒, dot(DoT家族之一)", note: "同上" },
     "潰逃": {
-      mode: "pending",
+      mode: "refresh",
       engine: "同灼燒, dot(DoT家族之一, 見 dmgFromStatus 清單/左右開弓「若目標為騎兵則額外"
              + "造成潰逃狀態」)",
-      note: "同上; 附帶記錄DoT家族另兩員(水攻/沙暴)+叛逃, 供未來一併裁決時參照",
+      note: "同上; 附帶記錄DoT家族另兩員(水攻/沙暴)+叛逃, 同規則(refresh)",
     },
   };
 
@@ -414,6 +474,13 @@
       this.silence = 0; this.disarm = 0; this.insight = 0; this.first = 0;  // 控制細分: 計窮/繳械/洞察(免控) + 先攻(優先行動, 剩餘回合數)
       this.chaos = 0;                              // 批12 ModeF: 混亂(不鎖行動, 但普攻/單體主動戰法改為敵我不分隨機選目標), 剩餘回合數
       this.ambush = 0;                              // 批18: 遇襲(先攻的反面, 遲緩) —— 剩餘回合數, 行動排序時與 first 一併算 effFirst(見 fight() 排序鍵)
+      // 狀態疊加精修批(user規則 status_stacking_detail_20260712): 嚴密 —— 赴湯蹈火「賦予我軍
+      // 群體抵禦狀態與特殊護盾『嚴密』」的第二個狀態(過去只建模了抵禦/block那一半, 嚴密本身
+      // 完全未編碼)。本批新增此欄位純粹作為「持有者是否處於嚴密」的偵測旗標(單一剩餘回合數
+      // 欄位, 對稱insight/first等既有簡單buff慣例), 供 pushBlock() 判斷抵禦(block val>=1.0)
+      // 例外改累積(見其定義); 『特殊護盾』本身若還有額外機制則仍未編碼, 該部分揭露維持原狀
+      // 不變, 本欄位只承接user規則明確要求的「偵測嚴密決定抵禦刷新或累積」這一件事。
+      this.rigorous = 0;
       this.wounded = 0;                             // 批18: 傷兵池 —— 累積「可救援」量(受到的傷害按當時回合轉化率折算, 見 WOUNDED_RATES); 治療結算上限=min(治療量, wounded, START_TROOP-troop)
       // 自帶 + 傳承; 自帶戰法(g.tactic)淺拷貝附加 native:true 旗標(供 rateup/chargeup 的 nativeOnly
       // 修飾判斷「這是不是自帶戰法」, 如太平道法只加成張角自帶的五雷轟頂)。淺拷貝而非直接改
@@ -541,6 +608,18 @@
       // {...}`/`u.counter == null` 等舊寫法沿用(讀寫第一筆), 正式套用路徑(applyEffects
       // k==="counter" 分支)一律直接操作 this.counters 全清單。
       this.counters = [];
+      // 狀態疊加精修批(user追加規則, 2026-07-12 coordinator訊息, 併入status_stacking_detail_
+      // 20260712批): 攻心/倒戈與反擊同族, 改為 NAMED_STATUS "multi"(可共存)具名狀態的真正
+      // 多實例清單 —— 前批(623afc4)用 addbonus("lifesteal") 把多個倒戈/攻心來源加總成單一
+      // 標量(見 hit() 舊碼), 總回復量雖然數學上正確(對val線性可加), 但遺失個別來源的獨立
+      // 到期追蹤與未來戰報歸因能力, user此次明確要求改真正多實例清單(比照 this.counters
+      // 的 upsertNamedStatus 寫法): 每筆 {val, dur, statusName, srcName, _key}, 同來源(同一
+      // 效果物件)重複施加只刷新自己那一筆, 不同來源各自並存、各自到期(見 decayDurations()),
+      // hit() 逐筆結算(取代舊 ls=src.addbonus("lifesteal") 單一標量寫法)。攻心/倒戈在資料層
+      // 皆是同一個 k==="lifesteal" 原語(無欄位區分兩者是「攻心」還是「倒戈」這兩個遊戲內
+      // 不同戰法族群共用的中文名), statusName 統一標記 "攻心/倒戈"(供未來戰報使用, 非擅自
+      // 二選一裁定, 見 pushLifesteal()/upsert 呼叫處)。
+      this.lifesteals = [];
       // 禁近似令-批K: regens(engine_wiring_gaps_misc族) —— 「每回合恢復一次兵力,持續N回合」
       // 的休整/regen類狀態獨立逐回合累計治療清單(對稱this.dots的傷害版, 見tick()消費端),
       // 取代乘敵不虞「引擎active heal不讀dur,實際只治1次=2倍低估, 改用單次折算216%近似」的
@@ -666,32 +745,39 @@
       // 雙倍觸發機率。過去 onHitEffectTacs/onHitEq/onHitBs 三條反應式清單各自獨立蒐集, onHit()
       // 逐一檢查全部候選並各自擲率觸發, 等同「共存」——不符合唯一狀態規則。
       //
-      // 修正: 建構時做一次「急救去重」掃描, 找出所有反應式治療候選效果(k==="heal" 且 when.on
-      // 屬於 attacked/damaged, 橫跨戰法/兵書/裝備三條清單), 若超過1個, 只保留「最後蒐集到的」
-      // 那個(依序: 戰法→兵書→裝備, 對應 applyPassives() 既有prep處理順序, 見其定義——equip
-      // 最後套用, 語意上最接近「最新覆蓋」; tie-break政策為本次實作顯式假設, user未另有明文
-      // 裁決, 見 NAMED_STATUS["急救"].note 供未來覆核), 其餘的效果物件參考記入
-      // this.suppressedNamedStatus(Set), onHitFor() 反應式觸發點檢查此集合、命中則整個跳過
-      // (不擲率也不治療), 使全場只有一個急救來源真正生效。此為建構時一次性裁決(急救類效果
-      // 本身皆為開戰即定的固定loadout, 現行引擎無戰中動態新增此類反應式效果的管道, 故不需要
-      // 逐回合重新裁決)。
-      this.suppressedNamedStatus = new Set();
-      {
-        const _faCandidates = [];  // 急救候選效果物件參考, 依 戰法→兵書→裝備 順序蒐集(此順序即優先序, 見上方註解)
-        for (const _t of this.onHitEffectTacs) {
-          for (const _e of (_t.effects || [])) {
-            if (_e.k === "heal" && _e.when && (_e.when.on === "attacked" || _e.when.on === "damaged")) _faCandidates.push(_e);
-          }
+      // 狀態疊加精修批(user規則 status_stacking_detail_20260712): 急救 = 「覆蓋+到期回退」
+      // (overwrite-with-fallback), 不是前批的「唯一dedup永久丟棄舊來源」——前批在建構時
+      // 一次性算出 suppressedNamedStatus(靜態Set, 整場戰鬥固定), 被裁決為「非最新」的來源
+      // 整場都不會生效, 即使「最新」來源自己的持續回合窗已經到期; user糾正: 每個施加急救的
+      // 來源應各自追蹤(rate/倍率+duration窗), 當前生效的用「最新來源」, 但最新來源到期時,
+      // 若有更早來源仍在自己的窗內, 急救不消失、生效rate回退成該更早來源的值, 所有來源都
+      // 到期才真正消失(例: 陷陣營3回合(1-3)+第1回合草船覆蓋, 草船到期但陷陣營窗還在→回退
+      // 陷陣營rate)。
+      //
+      // 實作: 建構時只蒐集候選(依 戰法→兵書→裝備 順序, 此順序=優先序/「最新來源」的既有
+      // tie-break慣例不變, 見 NAMED_STATUS["急救"].note), 不在此處算出永久suppression集合。
+      // 改為 this.suppressedNamedStatus 定義成 getter(見下方 get alive 屬性旁的定義), 每次
+      // 存取時依「當下 this.ownRound」動態算出: 由高優先(=清單最後面, 最新)到低優先依序
+      // 檢查候選自己的 when(until/from/rounds等既有回合窗欄位, 如陷陣營 when.until:3) 是否
+      // 仍在 this.ownRound 內(roundOk), 第一個仍在窗內者即為目前生效者(即使它是較舊來源,
+      // 只要更新來源已到期——回退語意), 其餘全部(不論是否在窗內)回傳為suppressed。全部
+      // 到期(無人在窗內)則所有候選都算suppressed(全部消失)。onHitFor() 呼叫端沿用既有
+      // `holder.suppressedNamedStatus.has(e)` 寫法不必改動即可取得新語意(getter在每次access
+      // 時重新計算, 天然反映當下ownRound)。
+      // 舊行為相容性: 建構完成當下(ownRound預設0, 尚未開戰)存取本getter, 對「候選的when無
+      // 回合窗欄位」(如demo()合成戰法只帶when.on無until/from)的情形, roundOk對「無rounds/
+      // from/until/parity/every」的when恆真, 與前批靜態版行為逐位元相同。
+      this._healCandidates = [];  // 急救候選效果物件參考, 依 戰法→兵書→裝備 順序蒐集(此順序即優先序)
+      for (const _t of this.onHitEffectTacs) {
+        for (const _e of (_t.effects || [])) {
+          if (_e.k === "heal" && _e.when && (_e.when.on === "attacked" || _e.when.on === "damaged")) this._healCandidates.push(_e);
         }
-        for (const _e of this.onHitBs) {
-          if (_e.k === "heal" && _e.when && (_e.when.on === "attacked" || _e.when.on === "damaged")) _faCandidates.push(_e);
-        }
-        for (const _e of this.onHitEq) {
-          if (_e.k === "heal" && _e.when && (_e.when.on === "attacked" || _e.when.on === "damaged")) _faCandidates.push(_e);
-        }
-        if (_faCandidates.length > 1) {
-          for (let _i = 0; _i < _faCandidates.length - 1; _i++) this.suppressedNamedStatus.add(_faCandidates[_i]);
-        }
+      }
+      for (const _e of this.onHitBs) {
+        if (_e.k === "heal" && _e.when && (_e.when.on === "attacked" || _e.when.on === "damaged")) this._healCandidates.push(_e);
+      }
+      for (const _e of this.onHitEq) {
+        if (_e.k === "heal" && _e.when && (_e.when.on === "attacked" || _e.when.on === "damaged")) this._healCandidates.push(_e);
       }
       // 批27 A: on:"dealtDamage" —— 「自身造成傷害時/後」反應式掛鉤(對比 onHitTacs 的
       // attacked/damaged 是「自己受擊」視角, 這裡是「自己打人」視角, 如白衣渡江「造成兵刃
@@ -761,6 +847,21 @@
     get counter() { return this.counters.length ? this.counters[0] : null; }
     set counter(val) { this.counters = val == null ? [] : [Object.assign({}, val)]; }
     get alive() { return this.troop > 0; }
+    // 狀態疊加精修批(user規則 status_stacking_detail_20260712): 急救「覆蓋+到期回退」的
+    // 動態裁決 —— 見建構子內 this._healCandidates 蒐集處的完整規則說明。每次存取都重新
+    // 掃描 this._healCandidates(高優先/最新在清單尾端), 找出當下(this.ownRound)第一個仍
+    // 在自己when窗內(roundOk)的候選當作「目前生效者」, 其餘一律回傳為suppressed(含窗外
+    // 的舊來源與非目前生效者的候選)。全部到期(無人在窗內)則所有候選皆suppressed。回傳一個
+    // 新建的 Set(每次存取即時計算, 非快取——候選數量通常<=3, 對onHitFor()的呼叫頻率而言
+    // 成本可忽略), 供既有 `holder.suppressedNamedStatus.has(e)` 呼叫慣例不必改動。
+    get suppressedNamedStatus() {
+      let activeE = null;
+      for (let i = this._healCandidates.length - 1; i >= 0; i--) {
+        const cand = this._healCandidates[i];
+        if (roundOk({ when: cand.when || {} }, this.ownRound)) { activeE = cand; break; }
+      }
+      return new Set(this._healCandidates.filter(c => c !== activeE));
+    }
     // 批18: fakeReport(偽報) 期間, 來源為「自己的指揮/被動戰法」(src ∈ cmdPassiveSrcs) 的條目
     // 暫停參與計算(到期自動恢復, 不刪除條目本身 —— 條目仍在 adds/mods/statAdds 陣列裡, tick()
     // 到期照舊遞減/移除, 只是這裡讀取時跳過)。src 為 null/undefined(兵書/裝備/緣分/其他來源)
@@ -866,17 +967,49 @@
     }
     // 批22: block(次數型格擋, 抵禦/警戒同族) —— 與 shield/mitig 語意不同: 不是持續減傷/固定量
     // 吸收池, 而是「剩餘次數」計次器, 每次受擊消耗1次(而非按傷害量扣減), val=1.0時完全格擋
-    // 該次傷害、val=0.x時該次傷害打折(如警戒 -75.35%≈val:0.7535)。同源(同 src)再次施加時
-    // 疊加次數(而非同 pushAdd/pushMod 慣例的「同源刷新覆蓋」), 貼合原文「抵禦(N次)」「目前
-    // 抵禦總次數為N」的疊次語意(見 docs/data/calibration_anchors.json battle_report_round_20260703
-    // 戰報實測: 「抵禦(1)」用一次消一層, 「警戒(1)」-75.35%減傷/次用後消層)。
+    // 該次傷害、val=0.x時該次傷害打折(如警戒 -75.35%≈val:0.7535)。
+    //
+    // 狀態疊加精修批(user規則 status_stacking_detail_20260712 + 追加修正, coordinator訊息
+    // 2026-07-12): 引擎既有慣例(NAMED_STATUS["抵禦"]既有註解/describeEffect顯示)以
+    // val>=1.0 為「抵禦」(全擋)、val<1.0 為「警戒」(部分減傷)的判準——user明確裁決兩者疊加
+    // 語意不同, 不再共用同一套「同源疊次數」規則:
+    //   - 警戒(val<1.0): 累積(accumulate) —— 新施加的次數加總到現有(不論同源或不同來源皆
+    //     計入總可用次數; 同源同值仍合併進同一筆, 不同來源/不同值各自成一筆, 兩者在
+    //     consumeBlock() 消耗時皆先進先出逐筆扣減, 總「目前可用次數」等於全部筆數總和)。
+    //   - 抵禦(val>=1.0): **「有剩餘次數時新施加不補不刷」**(user追加修正, 更正本批較早
+    //     版本誤植的「取代成最新值」寫法) —— 身上已有抵禦次數(同dmgType的既有格擋層總數
+    //     >0)時, 新施加的抵禦**完全被忽略**(不覆蓋/不補充/不刷新, 現有次數原封不動, 如
+    //     身上剩1次, 折衝禦侮再給2次仍維持1次不變); 只有現有次數已耗盡(0, 含從未施加過)
+    //     時, 新來源的次數才真正生效(直接套用其值)。例外: 持有者當下處於「嚴密」狀態
+    //     (this.rigorous>0, 赴湯蹈火戰法施加)時, 改為累積(與警戒同規則: 同源同值合併,
+    //     不同來源各自並存加總)。
     // 批G: dmgType(可選, 尾端新增, 向後相容既有全部呼叫點)—— 對稱 amp/mitig 既有的 dmgType
     // 過濾慣例(批24 D2), 限定此格擋只對該類型(phys/intel)傷害生效, 省略時維持原行為(不分
     // 類型, 任何傷害皆可消耗, 如「抵禦」「警戒」既有全域格擋)。榮光「受到謀略傷害時, 有4%
     // 機率完全免疫此次傷害」需要限定只對 intel 傷害生效, 過去 block 無此過濾維度。
     pushBlock(val, n, src, dmgType) {
+      const isDeflect = val >= 0.999;  // 抵禦(全擋) vs 警戒(部分減傷), 對稱既有 TRACE/describeEffect 顯示判準
+      if (isDeflect && this.rigorous <= 0) {
+        // 抵禦, 非嚴密: 有剩餘(同dmgType既有格擋層總次數>0)時新施加完全忽略; 歸零時才
+        // 真正套用新來源的次數。
+        const existingN = this.block.reduce((s, b) => s + (b.val >= 0.999 && b.dmgType === dmgType ? b.n : 0), 0);
+        if (existingN > 0) return;               // 仍有剩餘: 新施加的抵禦不補不刷, 忽略
+        this.block.push({ val, n, src, dmgType });
+        return;
+      }
+      // 警戒(恆累積), 或 抵禦+嚴密(例外改累積): 同源同值合併次數(貼合原文「總次數」疊次
+      // 語意), 不同來源/不同值各自新增一筆並存(consumeBlock 逐筆消耗, 總可用次數仍是加總)
       const existed = src && this.block.find(b => b.src === src && Math.abs(b.val - val) < 1e-9 && b.dmgType === dmgType);
       if (existed) existed.n += n; else this.block.push({ val, n, src, dmgType });
+    }
+    // 狀態疊加精修批(user追加規則, coordinator訊息): 攻心/倒戈(multi可共存具名狀態) 便利
+    // 方法, 對稱 pushBlock/pushAdd —— 供 applyEffects k==="lifesteal" 分支與測試harness
+    // 直接呼叫, 內部走 upsertNamedStatus(以 ["攻心倒戈", src] 為鍵: 同一來源重複施加只刷新
+    // 自己那一筆, 不同來源各自並存)。
+    pushLifesteal(val, dur, src, statusName) {
+      upsertNamedStatus(this.lifesteals, ["攻心倒戈", src ?? null], {
+        val, dur: dur ?? 99, statusName: statusName || "攻心/倒戈", srcName: src ?? null,
+      });
     }
     // 消耗一次格擋(若有, 且該格擋層未限定類型或類型與本次傷害相符): 從陣列中第一筆符合條件者
     // (先加的先消耗, 貼合戰報「總次數」單一計數語意)扣1次, n<=0時整筆移除。回傳消耗到的 val
@@ -983,6 +1116,7 @@
       this.insight = Math.max(0, this.insight - 1);
       this.first = Math.max(0, this.first - 1);       // 先攻: 逐回合遞減(dur=N 覆蓋前 N 回合, 如「戰鬥前3回合」)
       this.ambush = Math.max(0, this.ambush - 1);     // 批18: 遇襲 逐回合遞減(先攻的反面, 遲緩)
+      this.rigorous = Math.max(0, this.rigorous - 1); // 狀態疊加精修批: 嚴密 逐回合遞減(同insight/first慣例)
       this.healblock = Math.max(0, this.healblock - 1);  // 批8: 禁療 逐回合遞減
       this.captured = Math.max(0, this.captured - 1);    // 批52j: 捕獲自然到期
       this.swap = Math.max(0, this.swap - 1);
@@ -1010,6 +1144,13 @@
       if (this.counters.length) {
         for (const _c of this.counters) _c.dur -= 1;
         this.counters = this.counters.filter(_c => _c.dur > 0);
+      }
+      // 狀態疊加精修批(user追加規則): 攻心/倒戈到期清除, 逐筆處理 this.lifesteals(多實例
+      // 清單, multi具名狀態) —— 對稱上方 counters 慣例, 每個獨立來源各自遞減dur、各自到期
+      // 清除, 互不影響。
+      if (this.lifesteals.length) {
+        for (const _l of this.lifesteals) _l.dur -= 1;
+        this.lifesteals = this.lifesteals.filter(_l => _l.dur > 0);
       }
       if (this.dmgShare && --this.dmgShare.dur <= 0) this.dmgShare = null;  // 禁近似令-批K: dmgShare 到期清除(對稱counter既有慣例)
       this.hitFlags.clear();                           // 受擊觸發(when.on) 每回合各戰法重置一次觸發額度
@@ -1238,13 +1379,24 @@
         if (TRACE) lg(`　▸ ${dst.nm} 受傷回饋 ${Math.round(shareAmt)} 給 ${buddy.nm}`);
       }
     }
-    const ls = src.addbonus("lifesteal");                            // 批8: 倒戈 —— 造成傷害時按比例回復自身兵力(以本次造成的傷害量 dmg 為基準), 上限 START_TROOP
-    if (ls > 0 && src.alive) {
-      const before = src.troop;
-      // 批G: lifestealGiven(倒戈效果量加成) —— 對稱既有healGiven, 長慮「使自身攻心效果提高
-      // 30%」需要此欄位("攻心"=倒戈lifesteal的裝備稱呼)。
-      src.troop = Math.min(START_TROOP, src.troop + dmg * ls * Math.max(0, 1 + src.addbonus("lifestealGiven")));
-      if (TRACE && src.troop - before >= 1) lg(`　▸ ${src.nm} 倒戈回復 +${Math.round(src.troop - before)}`);
+    // 批8: 倒戈 —— 造成傷害時按比例回復自身兵力(以本次造成的傷害量 dmg 為基準), 上限
+    // START_TROOP。狀態疊加精修批(user追加規則, coordinator訊息): 攻心/倒戈為 NAMED_STATUS
+    // "multi"(可共存)具名狀態, 改逐一走訪 src.lifesteals(多實例清單, 對稱上方 dst.counters
+    // 反擊的逐筆結算慣例) —— 每個獨立來源各自按自己的 val 回復, 總回復量=各實例加總(數學上
+    // 與前批 ls=src.addbonus("lifesteal") 單一標量寫法完全等價, 因回復量對val線性可加:
+    // sum(val_i)×dmg == sum(val_i×dmg); 差異在於現在逐筆結算, 使個別來源在decayDurations()
+    // 各自獨立到期、未來可各自於TRACE歸因, 不再是單一去向不明的加總值)。
+    // 批G: lifestealGiven(倒戈效果量加成) —— 對稱既有healGiven(施放的治療×(1+val)), 掛在
+    // src(倒戈觸發者)自己身上, 使倒戈本身回復的兵力量再乘上(1+val); 這是「自身攻心效果+X%」
+    // 的自我buff(長慮), 不是具名狀態多實例, 維持既有addbonus加總語意不變, 對所有倒戈實例
+    // 套用同一個加成倍率(只算一次, 迴圈外先算好, 避免每筆重複addbonus)。
+    if (src.lifesteals.length && src.alive) {
+      const givenMult = Math.max(0, 1 + src.addbonus("lifestealGiven"));
+      for (const _ls of src.lifesteals.slice()) {
+        const before = src.troop;
+        src.troop = Math.min(START_TROOP, src.troop + dmg * _ls.val * givenMult);
+        if (TRACE && src.troop - before >= 1) lg(`　▸ ${src.nm} 倒戈回復 +${Math.round(src.troop - before)}（來源:${_ls.srcName || "?"}）`);
+      }
     }
     // 批33: onEvent/onDeal 補傳 dmg(本次結算後的實際傷害量, 已經過block/shield/代承折算,
     // 與寫入 wounded 池的量一致) —— 供 e.ofDamage(傷害比例治療) 反應式heal使用, 見
@@ -1509,7 +1661,9 @@
         out.push({ kind: "stat:" + s[0], unit: u, move: (dest, dur) => { u.statAdds.splice(u.statAdds.indexOf(s), 1); dest.pushStatAdd(s[0], s[1], dur, s[3]); } });
       }
       for (const d of u.dots) if (!d[2]) {   // d[2]=undispellable旗標(見dot k-type施加處), 對稱dispelUnit保留undispellable dot的慣例
-        out.push({ kind: "dot:" + (d[3] || "?"), unit: u, move: (dest, dur) => { u.dots.splice(u.dots.indexOf(d), 1); dest.dots.push([d[0], dur, d[2], d[3]]); } });
+        // 狀態疊加精修批: 轉移時一併保留 d[4](refresh覆蓋比對鍵, 見k==="dot"分支新增註解)——
+        // 若不保留, 轉移後的DoT會退化成「無鍵」永遠不參與同名覆蓋比對(保守起見延續既有鍵)。
+        out.push({ kind: "dot:" + (d[3] || "?"), unit: u, move: (dest, dur) => { u.dots.splice(u.dots.indexOf(d), 1); dest.dots.push([d[0], dur, d[2], d[3], d[4]]); } });
       }
       if (u.stun > 0) out.push({ kind: "stun", unit: u, move: (dest, dur) => { u.stun = 0; dest.stun = Math.max(dest.stun, dur ?? 1); } });
       if (u.silence > 0) out.push({ kind: "silence", unit: u, move: (dest, dur) => { u.silence = 0; dest.silence = Math.max(dest.silence, dur ?? 1); } });
@@ -2078,6 +2232,33 @@
         }
       }
     }
+  }
+  // 狀態疊加精修批(追加規則6, user權威規則 control_status_rule_20260712): 控制類「不動作」
+  // 狀態(繳械 disarm/計窮 silence/震懾 stun/混亂 chaos) = 唯一 + 「同等或更強擋新」——既有
+  // 偽報(fakeReport, 見 k==="fakeReport" 分支)「身上已存在同等或更強的偽報效果→不覆蓋」
+  // 規則的推廣, 以 dur(持續回合數)近似「強度」: 目標已有該控制且現有dur>=新施加的dur時,
+  // 新施加**完全失效**(不覆蓋/不疊加/不延長, 也不重新觸發 fireControlled 反彈廣播——過去
+  // u.stun = Math.max(u.stun, e.dur) 這類寫法雖然「數值」上等同(max()本身已隱含「較大者
+  // 存活」), 但仍會無條件重新呼叫 fireControlled() 廣播「被施加控制」事件, 即使這次施加
+  // 因較弱而被實質擋下, 語意上不應視為「有效施加」而重新觸發反彈鏈); 新的更強(dur嚴格
+  // 大於現有值)才真正覆蓋+廣播。與 fakeReport 同用嚴格大於(>, 非>=)判準,「同等」視為
+  // 「不夠強, 應擋下」(對稱fakeReport `if (newDur > u.fakeReportDur)`)。
+  // **不包含**: 監統震軍機變「繳械狀態增加1回合」的 extendDur(延長既有持續時間)機制——
+  // 需要新原語(區分「延長現有」vs「施加新的」兩種語意, 現有k===disarm等只表達後者), 本批
+  // 不做, 標記待後批(見 tactic_corrections.json 該戰法條目 _todo, 若無則待補)。
+  //
+  // 追加規則(coordinator訊息, 2026-07-12): 先攻(first)/遇襲(ambush)/洞察(insight)/嘲諷
+  // (taunt, 見k==="taunt"分支另有tauntBy/tauntDur雙欄位客製寫法, 不直接呼叫本函式)/虛弱
+  // 比照同套規則, 由pending轉正為unique_strongest, 一併沿用本函式(ctype傳入"first"/
+  // "ambush"/"insight"等非四大控制類型時, fireControlled() 內部既有的
+  // `!["stun","silence","disarm","chaos"].includes(kind)` 守門會直接no-op, 不會誤廣播,
+  // 故可安全重用同一份「同等或更強比較」邏輯)。
+  // 回傳 true=已套用(dur嚴格提升), false=被同等或更強的既有狀態擋下(無任何變化)。
+  function applyControlDur(target, field, dur, ctype, allies, enemies, noCtrlReflect) {
+    if (dur <= target[field]) return false;
+    target[field] = dur;
+    if (!noCtrlReflect) fireControlled(target, ctype, dur, allies, enemies);
+    return true;
   }
   // 時序一致化(2026-07 批次) A.3: opt.ownTurn(可選) —— 對稱 opt.healOnly, 但用於
   // everyRound(逐回合重擲) 效果的「該持有者自己行動輪」cadence 通道(見 fight() 主迴圈新增
@@ -3068,16 +3249,26 @@
         else if (k === "critDmgUp") u.pushAdd("critDmgUp", svVal(e.val), e.dur, dtSrc, udFlags, e.maxStack);
         // 批16: immuneTo(單項控制免疫) —— isImmuneTo(k) 只免疫清單內控制類型, 與 insight(全免) 並列判斷
         // 批52h: 成功施加後 fireControlled(機鑑反彈); opt.noCtrlReflect 時跳過
-        else if (k === "stun") { if (!u.insight && !u.isImmuneTo("stun")) { u.stun = Math.max(u.stun, e.dur ?? 1); if (TRACE) lg(`　▸ ${u.nm} 陷入震懾(全禁)`); if (!opt.noCtrlReflect) fireControlled(u, "stun", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫震懾`); } }  // 禁近似令-批L: 免疫格擋觸發ctrlImmune事件(一身是膽)
-        else if (k === "silence") { if (!u.insight && !u.isImmuneTo("silence")) { u.silence = Math.max(u.silence, e.dur ?? 1); if (TRACE) lg(`　▸ ${u.nm} 陷入計窮(禁主動戰法)`); if (!opt.noCtrlReflect) fireControlled(u, "silence", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫計窮`); } }
-        else if (k === "disarm") { if (!u.insight && !u.isImmuneTo("disarm")) { u.disarm = Math.max(u.disarm, e.dur ?? 1); if (TRACE) lg(`　▸ ${u.nm} 陷入繳械(禁普攻)`); if (!opt.noCtrlReflect) fireControlled(u, "disarm", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫繳械`); } }
-        else if (k === "chaos") { if (!u.insight && !u.isImmuneTo("chaos")) { u.chaos = Math.max(u.chaos, e.dur ?? 1); if (TRACE) lg(`　▸ ${u.nm} 陷入混亂(敵我不分)`); if (!opt.noCtrlReflect) fireControlled(u, "chaos", e.dur ?? 1, allies, enemies); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫混亂`); } }  // 批12 ModeF
-        else if (k === "insight") { u.insight = Math.max(u.insight, e.dur ?? 1); u.stun = 0; u.silence = 0; u.disarm = 0; u.chaos = 0; u.ambush = 0; }
+        else if (k === "stun") { if (!u.insight && !u.isImmuneTo("stun")) { if (applyControlDur(u, "stun", e.dur ?? 1, "stun", allies, enemies, opt.noCtrlReflect)) { if (TRACE) lg(`　▸ ${u.nm} 陷入震懾(全禁)`); } else if (TRACE) lg(`　▸ ${u.nm} 身上已存在同等或更強的震懾效果，本次不覆蓋`); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫震懾`); } }  // 禁近似令-批L: 免疫格擋觸發ctrlImmune事件(一身是膽)
+        else if (k === "silence") { if (!u.insight && !u.isImmuneTo("silence")) { if (applyControlDur(u, "silence", e.dur ?? 1, "silence", allies, enemies, opt.noCtrlReflect)) { if (TRACE) lg(`　▸ ${u.nm} 陷入計窮(禁主動戰法)`); } else if (TRACE) lg(`　▸ ${u.nm} 身上已存在同等或更強的計窮效果，本次不覆蓋`); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫計窮`); } }
+        else if (k === "disarm") { if (!u.insight && !u.isImmuneTo("disarm")) { if (applyControlDur(u, "disarm", e.dur ?? 1, "disarm", allies, enemies, opt.noCtrlReflect)) { if (TRACE) lg(`　▸ ${u.nm} 陷入繳械(禁普攻)`); } else if (TRACE) lg(`　▸ ${u.nm} 身上已存在同等或更強的繳械效果，本次不覆蓋`); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫繳械`); } }
+        else if (k === "chaos") { if (!u.insight && !u.isImmuneTo("chaos")) { if (applyControlDur(u, "chaos", e.dur ?? 1, "chaos", allies, enemies, opt.noCtrlReflect)) { if (TRACE) lg(`　▸ ${u.nm} 陷入混亂(敵我不分)`); } else if (TRACE) lg(`　▸ ${u.nm} 身上已存在同等或更強的混亂效果，本次不覆蓋`); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫混亂`); } }  // 批12 ModeF
+        // 狀態疊加精修批(追加規則): 洞察比照unique_strongest——只有本次施加確實「同等或
+        // 更強」而真的套用(applyControlDur回傳true)時, 才觸發解除既有控制的副作用; 較弱的
+        // 洞察施加完全跳過(不解控、不覆蓋dur)。
+        else if (k === "insight") { if (applyControlDur(u, "insight", e.dur ?? 1, "insight", allies, enemies, opt.noCtrlReflect)) { u.stun = 0; u.silence = 0; u.disarm = 0; u.chaos = 0; u.ambush = 0; } }
         else if (k === "immune") { u.pushImmune(e.types, e.dur); if (TRACE) lg(`　▸ ${u.nm} 獲得控制免疫〔${(e.types || []).join("、")}〕`); }  // 批16: immuneTo
-        else if (k === "first") u.first = Math.max(u.first, e.dur ?? 1);
+        // 狀態疊加精修批(追加規則): 先攻比照unique_strongest
+        else if (k === "first") applyControlDur(u, "first", e.dur ?? 1, "first", allies, enemies, opt.noCtrlReflect);
+        // 狀態疊加精修批: 嚴密(赴湯蹈火賦予, 見 Unit 建構子 this.rigorous 欄位註解) —— 純
+        // 偵測旗標buff, 對稱既有first/insight單值buff慣例(取max, 不套用unique_strongest,
+        // 非user規則列舉的9個具名狀態之一, 屬本批為實作抵禦conditional例外開關新增的輔助
+        // 欄位)。
+        else if (k === "rigorous") u.rigorous = Math.max(u.rigorous, e.dur ?? 1);
         // 批18: ambush(遇襲, 先攻的反面/遲緩) —— 不鎖行動(仍可行動), 只影響排序(見 fight() 的
         // effFirst 三檔排序鍵)。insight(全免)/immuneTo(單項免疫)可免, 同其他控制類慣例。
-        else if (k === "ambush") { if (!u.insight && !u.isImmuneTo("ambush")) { u.ambush = Math.max(u.ambush, e.dur ?? 1); if (TRACE) lg(`　▸ ${u.nm} 陷入遇襲(行動遲滯)`); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫遇襲`); } }
+        // 狀態疊加精修批(追加規則): 遇襲比照控制類同套unique_strongest(唯一+同等或更強擋新)
+        else if (k === "ambush") { if (!u.insight && !u.isImmuneTo("ambush")) { if (applyControlDur(u, "ambush", e.dur ?? 1, "ambush", allies, enemies, opt.noCtrlReflect)) { if (TRACE) lg(`　▸ ${u.nm} 陷入遇襲(行動遲滯)`); } else if (TRACE) lg(`　▸ ${u.nm} 身上已存在同等或更強的遇襲效果，本次不覆蓋`); } else { fireSelfReactive(u, "ctrlImmune", 1); if (TRACE) lg(`　▸ ${u.nm} 免疫遇襲`); } }
         // 批42: e.stackKey(truthy旗標) —— stat 效果的「每次觸發對目標疊加1層」模式, 取代既有
         // add/mult 二選一的「單次套用」語意。原文族: 傲睨王侯「敵軍目標受普攻時觸發1個破綻,
         // 該目標降3%武智統速(受智力影響)可疊加」——每次事件命中對「這一個目標」疊1層, 疊層數
@@ -3225,7 +3416,21 @@
           // 才辯機捷)與 dots[3](既有具名狀態標籤, 供 ifTargetHas/rateStatusBonus 等既有消費端),
           // 確保兩處讀到的是同一份名稱, 不會出現「兩套獨立解析結果不一致」的情形。
           const dotStatusName = resolveDotName(e, t);
-          u.dots.push([damage(caster, u, dotCoef, e.kind || t.kind || "intel", undefined, undefined, undefined, undefined, !!e.pierce, dotStatusName), e.dur, !!e.undispellable, dotStatusName]);
+          // 狀態疊加精修批(user規則 status_stacking_detail_20260712): DoT(灼燒/中毒/潰逃/
+          // 水攻/沙暴/叛逃等具名持續傷害狀態) = 刷新(refresh)覆蓋, 唯一(非共存)——前批
+          // u.dots.push 不去重, 把DoT當共存清單是錯的(同名DoT會疊加成多份逐回合掉血, 高估
+          // 傷害); 改為「同名DoT(以狀態名為鍵)新施加時覆蓋舊的(用最新的coef/dur/來源),
+          // 不並存多個」。
+          // 鍵優先用可解析的具名狀態(dotStatusName, 如灼燒/水攻…); 解析不到時(DOT_NAME_
+          // BY_TACTIC未收錄的其餘dot效果)退而用來源戰法名(src)當鍵——同一戰法重複施加自己
+          // 的DoT視為同一狀態覆蓋刷新, 不同(尚未具名的)戰法各自的DoT仍視為彼此獨立(保守不
+          // 變, 對稱急救/block等本批「無法判斷時保守維持既有行為」的原則)。只影響「找相同
+          // 鍵是否覆蓋」的判斷(dots[4], 本批新增第5欄), dots[3](具名狀態本身)欄位值不變,
+          // 不影響 targetHas/dmgFromStatus 等既有讀取端。
+          const dotKey = dotStatusName || src;
+          const dotEntry = [damage(caster, u, dotCoef, e.kind || t.kind || "intel", undefined, undefined, undefined, undefined, !!e.pierce, dotStatusName), e.dur, !!e.undispellable, dotStatusName, dotKey];
+          const dotIdx = u.dots.findIndex(dd => dd.length > 4 && dd[4] === dotKey);
+          if (dotIdx >= 0) u.dots[dotIdx] = dotEntry; else u.dots.push(dotEntry);
         }
         else if (k === "extra") u.pushAdd("extra", e.val, e.dur, src);
         // 禁近似令-批K: splash(splash_aoe_primitive族) —— 「普攻命中目標時, 濺射傷害給目標
@@ -3339,7 +3544,16 @@
           let forceTarget = caster;
           if (e.tauntTarget === "leader") forceTarget = (allies && allies[0] && allies[0].alive) ? allies[0] : null;
           else if (e.tauntTarget === "select") forceTarget = e.targetSel ? pickByCriterion(enemies, e.targetSel) : null;
-          if (forceTarget) { u.tauntBy = forceTarget; u.tauntDur = Math.max(u.tauntDur, e.dur ?? 1); if (TRACE) lg(`　▸ ${u.nm} 被迫優先攻擊 ${forceTarget.nm}`); }
+          if (forceTarget) {
+            // 狀態疊加精修批(追加規則): 嘲諷比照unique_strongest——新dur須嚴格大於現有
+            // tauntDur, tauntBy才會一併更新(改指向新施加者), 否則兩者皆維持原值(tauntBy
+            // 不因較弱的新嘲諷施加而變更目標)。
+            const newTauntDur = e.dur ?? 1;
+            if (newTauntDur > u.tauntDur) {
+              u.tauntBy = forceTarget; u.tauntDur = newTauntDur;
+              if (TRACE) lg(`　▸ ${u.nm} 被迫優先攻擊 ${forceTarget.nm}`);
+            } else if (TRACE) lg(`　▸ ${u.nm} 身上已存在同等或更強的嘲諷效果，本次不覆蓋`);
+          }
         }
         else if (k === "shield") {
           const amt = (e.amt ?? 0) + (e.pct ? e.pct * caster.troop : 0);
@@ -3364,7 +3578,19 @@
         }
         else if (k === "surehit") u.surehitDur = Math.max(u.surehitDur, e.dur ?? 1);
         else if (k === "healblock") { if (!u.isImmuneTo("healblock")) u.healblock = Math.max(u.healblock, e.dur ?? 1); }  // 批8: 禁療 —— heal 套用處(applyEffects 開頭)已排除 healblock 中的目標; 批C: isImmuneTo("healblock")查詢方法自批16即存在但施加端從未讀取(對稱ambush的既有寫法, 見上方k==="ambush"分支), 補上判斷式使k=="immune"(types含healblock)真正生效
-        else if (k === "lifesteal") u.pushAdd("lifesteal", e.val, e.dur, src);  // 批8: 倒戈 —— 實際回血在 hit() 結算傷害後(見 hit() 內 lifesteal 段), 這裡只掛加成值
+        // 批8: 倒戈 —— 實際回血在 hit() 結算傷害後(見 hit() 內 lifesteal 段), 這裡只掛加成值。
+        // 狀態疊加精修批(user追加規則): 攻心/倒戈為multi(可共存)具名狀態, 改走
+        // upsertNamedStatus 寫入 u.lifesteals(清單), 鍵=["攻心倒戈", e]: 同一來源(同一效果
+        // 物件, 如同一戰法每次prep重新套用/重複觸發when視窗)重複施加只刷新自己那筆(不無限
+        // 疊加), 不同來源(不同戰法/兵書/裝備各自的lifesteal效果, 效果物件參考天然不同)各自
+        // 獨立新增一筆、全部並存(取代前批 pushAdd 通用adds混合清單+addbonus加總單一標量的
+        // 寫法; 對稱上方 k==="counter" 分支同款 upsertNamedStatus 慣例, 用效果物件參考而非
+        // effectSrcName當鍵——後者可能重複, 只有物件本身參考天然唯一)。
+        else if (k === "lifesteal") {
+          upsertNamedStatus(u.lifesteals, ["攻心倒戈", e], {
+            val: e.val, dur: e.dur ?? 99, statusName: "攻心/倒戈", srcName: effectSrcName(t, e),
+          });
+        }
         else if (k === "rateup") {                       // 提高(自身或對象)主動戰法發動機率
           // scale: 施放當下(caster 戰鬥內即時素質)用 rateScaleOf(獨立於全域 SCALE) 縮放實際加成
           // (批7: 太平道法「受智力影響」, 見 docs/data/calibration_anchors.json → rate_scale)。

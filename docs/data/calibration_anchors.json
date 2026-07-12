@@ -468,5 +468,25 @@
   },
   "action": "待時序工人(改engine.js中)完工後, 開狀態疊加語意批: (a)counter改多實例清單可共存; (b)急救/休整/警戒等具名唯一狀態同名覆蓋; 需一個「具名狀態」註冊表區分唯一vs可共存。驗收: 雙急救來源只一個實例/雙反擊都生效",
   "_resolved_20260712": "狀態疊加語意對齊批已完工(雙引擎sgz.py/docs/engine.js對稱): 建NAMED_STATUS註冊表(急救/休整=unique, 反擊/攻心/倒戈=multi已確認; 警戒/抵禦/先攻/遇襲/虛弱/計窮/繳械/震懾/混亂/洞察/嘲諷/灼燒/中毒/潰逃=pending待user逐一裁決, 現況維持不變只記錄觀察)。(a)反擊: u.counter單欄位→u.counters清單, upsert_named_status()以(狀態名,來源id)為鍵——同來源重複施加只刷新, 不同來源各自並存, hit()逐筆結算。(b)急救: Unit建構時掃描戰法/兵書/裝備三路反應式heal候選, 唯一化裁決(tie-break: 裝備>兵書>戰法, 後蒐集者覆蓋前者——此為實作顯式假設, 非user另有明文, 供覆核)寫入suppressed_named_status, on_hit反應式消費端跳過已覆蓋者。休整(regen): 同upsert邏輯, 固定鍵\"休整\"全場至多1筆。(c)來源追蹤: 反擊/休整實例皆帶src_name/status_name(擴充_eqNm/新增_bsNm涵蓋全部裝備/兵書效果, 非僅原本的when限定效果)。lint新增R36(NAMED_STATUS結構退化防線, 對稱R20 capability drift慣例)。驗收全過: sgz.py demo() 227號測試+選jsscratchpad/smoke_status_stacking.js+對局歸因(counter_team NEW比OLD +8.5pp(py)/+7.2pp(js), heal_team NEW比OLD -8.9pp(py)/-5.2pp(js), control_team零影響)。待user確認: pending清單14項狀態的unique/multi歸類, 及急救tie-break優先序政策(裝備>兵書>戰法)是否符合遊戲實際行為。"
+ },
+ "status_stacking_detail_20260712": {
+  "_src": "user權威規則(2026-07-12)",
+  "rules": {
+   "警戒": "累積(accumulate): 新施加的次數加總。如折衝施加2次→+2次。",
+   "抵禦": "刷新(refresh)覆蓋; 例外: 當處於「嚴密」狀態(赴湯蹈火戰法)時→改累積(accumulate)。",
+   "灼燒中毒潰逃DoT": "刷新(refresh): 新的DoT覆蓋舊的, 唯一(非共存)。前批把DoT當共存清單是錯的, 應改refresh。",
+   "急救": "覆蓋+回退(overwrite-with-fallback): 新施加覆蓋當前生效值(倍率/rate用最新來源), 但每個來源各自追蹤持續時間。例: 陷陣營給急救3回合(1-3), 第1回合草船急救覆蓋(生效變草船); 草船時間到但陷陣營時間還在→急救不消失, 倍率回退成陷陣營。所有來源都到期才消失。前批的「唯一dedup丟棄舊來源」不對, 應保留各來源duration供回退。",
+   "反擊": "多實例共存(前批已對)。",
+   "攻心倒戈": "addbonus加總共存(前批已對)。",
+   "抵禦_精修": "抵禦: 有剩餘次數時新施加不補不刷(身上1次時折衝給2不會刷成2, 保持1); 僅歸零(0次)才能重新施加新來源的次數; 嚴密狀態(赴湯蹈火)時改累積(add)。即「無剩餘才套用, 有剩餘則忽略新的; 嚴密例外累積」。",
+   "先攻遇襲洞察嘲諷虛弱": "跟控制類(繳械/計窮等)同: 唯一 + 同等或更強擋新(見control_status_rule_20260712)。"
+  },
+  "correction_needed": "前批623afc4: (1)DoT改refresh(非共存清單) (2)急救改覆蓋+回退(非簡單dedup丟棄) (3)警戒accumulate (4)抵禦refresh+嚴密時accumulate。急救suppression來源優先序作廢, 改「最新覆蓋+到期回退」。"
+ },
+ "control_status_rule_20260712": {
+  "_src": "user規則+戰報(高櫓連營/監統震軍繳械)",
+  "rule": "控制類「不動作」狀態(繳械/計窮/震懾/混亂等)=唯一, 且「同等或更強」擋新: 目標已有該控制且現有同等或更強→新施加失效(不覆蓋不疊加), 戰報顯示「身上已存在同等或更強的【狀態】效果」。新的更強才覆蓋。(同偽報same-or-stronger族)",
+  "battle_log": "我方戰報也需顯示相同訊息「身上已存在同等或更強的【狀態】效果」(戰報UI批用)。另戰報實例: 監統震軍機變「繳械狀態增加1回合」=extendDur延長現有控制(獨立機制, 待extendDur原語)。",
+  "evidence": "戰報: 左慈已有繳械, 再施加顯示「身上已存在同等或更強的繳械效果」; 高櫓連營對重複角色施加繳械同款"
  }
 }

@@ -2396,6 +2396,11 @@ CAPABILITY_INVENTORY_IGNORE = {
     "proxyNormal", "proxyHit", "srcSel", "checkSrcSel", "ifNoExtra", "ifHasExtra",
     # 批52d: 虎嗔(將門虎女專屬), 見PER_KIND_FIELDS["huchen"]已登記。單一戰法專屬窄機制。
     "huchen", "maxHits", "ampOnSettle", "ampMaxStack",
+    # 狀態疊加精修批: 嚴密(赴湯蹈火專屬) —— 純內部偵測旗標(供push_block/pushBlock判斷抵禦
+    # conditional例外, 見Unit建構子/apply_effects k=="rigorous"分支), 單一戰法專屬窄機制,
+    # 無自然語言對照措辭會被誤稱「引擎不支援」(不像block/dot等基礎原語會被泛稱), 比照
+    # huchen/capture同慣例列入忽略清單而非登記進ENGINE_CAPABILITY_ALIASES。
+    "rigorous",
     # 批52g: 逐目標機率/具名狀態機率加成(五雷轟頂專屬)+施放者/目標武將名單過濾(太平道法
     # 專屬), 見KNOWN_EFFECT_FIELDS已登記。皆為單一戰法專屬窄機制。
     "ratePerTarget", "rateStatusBonus", "ifCasterNames", "whoNames",
@@ -2627,10 +2632,11 @@ def check_r21(p, txt):
 #   已局部落地(如白衣渡江遷移後只剩其中一段)不算違規(避免對「已用新原語但同戰法內其他
 #   效果段仍維持既有近似, 且該近似有自己揭露」的正常漸進遷移狀態誤判)。
 # - who=="enemy"/"ally"的lifesteal(倒戈)/攻心類效果若已通過既有「造成傷害時按比例回復」
-#   常駐機制(addbonus("lifesteal")在hit()内建結算, 非反應式回合輪詢)精確表達, 不算本規則
-#   管轄範圍(lifesteal本身就是根據「本次造成的傷害量」由hit()直接結算, 不需要when.on掛鉤;
-#   只有「造成傷害後才附加另一個獨立狀態效果」如disarm/silence/dot/stat疊加等, 才是
-#   dealtDamage原語要補的缺口)——用效果k白名單排除純lifesteal戰法降低誤報。
+#   常駐機制(u.lifesteals多實例清單, 狀態疊加精修批改走此結構取代前批addbonus("lifesteal")
+#   單一標量, 但同樣在hit()内建結算, 非反應式回合輪詢)精確表達, 不算本規則管轄範圍
+#   (lifesteal本身就是根據「本次造成的傷害量」由hit()直接結算, 不需要when.on掛鉤; 只有
+#   「造成傷害後才附加另一個獨立狀態效果」如disarm/silence/dot/stat疊加等, 才是dealtDamage
+#   原語要補的缺口)——用效果k白名單排除純lifesteal戰法降低誤報。
 # ---------------------------------------------------------------------------
 R22_DEALT_DMG_RE = re.compile(r"(?:自身|自己)?造成(?:的)?(?:兵刃|謀略)?(?:傷害|攻擊)(?:時|後)|每次(?:造成|命中)")
 R22_ATTACKED_EXCLUDE_RE = re.compile(r"受到[^。；;，,]{0,6}(?:傷害|攻擊)(?:時|後)")
@@ -3781,13 +3787,15 @@ def check_r35(p, txt):
 
 
 # =============================================================================
-# R36(狀態疊加語意對齊批, 2026-07-12): 具名狀態unique/multi行為與NAMED_STATUS表一致 ——
-# 對稱既有R20 capability drift慣例(_scan_engine_js_tokens/check_r20_capability_drift),
-# 但R36改為「引擎原始碼結構特徵掃描」而非「能力token盤點」: 對每個NAMED_STATUS已確認
-# (mode為unique/multi)的具名狀態, 核對 sgz.py + docs/engine.js 原始碼是否仍帶有對應的
+# R36(狀態疊加語意對齊批, 2026-07-12; 狀態疊加精修批擴充, 2026-07-12): 具名狀態疊加行為
+# 與NAMED_STATUS表一致 —— 對稱既有R20 capability drift慣例(_scan_engine_js_tokens/
+# check_r20_capability_drift), 但R36改為「引擎原始碼結構特徵掃描」而非「能力token盤點」:
+# 對每個 NAMED_STATUS_CODE_SIGNATURES 已登記簽章的具名狀態(現況涵蓋 unique/multi/
+# overwrite_fallback/accumulate/conditional/unique_strongest/refresh 七類, 見
+# NAMED_STATUS 各狀態 mode 欄位), 核對 sgz.py + docs/engine.js 原始碼是否仍帶有對應的
 # 實作結構特徵(如反擊必須是u.counters清單+upsert_named_status, 而非單一u.counter覆蓋
-# 欄位), 防止未來編輯不慎讓已修正的unique/multi語意悄悄退化回舊行為(如counter被改回
-# 單一覆蓋、或急救去重機制被移除)。
+# 欄位), 防止未來編輯不慎讓已修正的疊加語意悄悄退化回舊行為(如counter被改回單一覆蓋、
+# 或急救去重機制被移除)。
 #
 # 與R1-R35(逐戰法核對「本文語意 vs parsed資料」)不同, R36核對的是「引擎程式碼本身的結構
 # 不變量」, 與個別戰法的parsed資料內容本身無關——但為融入既有 lint()/run_selftest() 的
@@ -3803,45 +3811,95 @@ SGZ_PY_PATH = os.path.join(ROOT, "sgz.py")
 # 完整的engine/note散文說明以雙引擎各自的定義為準, 此處不重複維護, 避免三份文字互相
 # 漂移——只有mode分類本身+下方結構特徵regex需要三處一致)。
 NAMED_STATUS = {
-    "急救": {"mode": "unique"},
+    "急救": {"mode": "overwrite_fallback"},
     "休整": {"mode": "unique"},
     "反擊": {"mode": "multi"},
     "攻心": {"mode": "multi"},
     "倒戈": {"mode": "multi"},
-    "警戒": {"mode": "pending"}, "抵禦": {"mode": "pending"},
-    "先攻": {"mode": "pending"}, "遇襲": {"mode": "pending"},
-    "虛弱": {"mode": "pending"}, "計窮": {"mode": "pending"},
-    "繳械": {"mode": "pending"}, "震懾": {"mode": "pending"},
-    "混亂": {"mode": "pending"}, "洞察": {"mode": "pending"},
-    "嘲諷": {"mode": "pending"}, "灼燒": {"mode": "pending"},
-    "中毒": {"mode": "pending"}, "潰逃": {"mode": "pending"},
+    "警戒": {"mode": "accumulate"}, "抵禦": {"mode": "conditional"},
+    "先攻": {"mode": "unique_strongest"}, "遇襲": {"mode": "unique_strongest"},
+    "虛弱": {"mode": "unique_strongest"}, "計窮": {"mode": "unique_strongest"},
+    "繳械": {"mode": "unique_strongest"}, "震懾": {"mode": "unique_strongest"},
+    "混亂": {"mode": "unique_strongest"}, "洞察": {"mode": "unique_strongest"},
+    "嘲諷": {"mode": "unique_strongest"}, "灼燒": {"mode": "refresh"},
+    "中毒": {"mode": "refresh"}, "潰逃": {"mode": "refresh"},
 }
 
-# 各已確認(unique/multi)具名狀態在雙引擎原始碼中應存在的結構特徵(正則, 對sgz.py/
-# docs/engine.js 原始碼文字直接搜尋)。找不到視為「結構退化」(regression)。只核對「有無
-# 此段落存在」, 不執行程式碼、不判斷語意是否正確(低召回但零誤報優先, 與全庫既有規則
-# 設計原則一致)。攻心/倒戈(multi, 本批未變更, 現行lifesteal addbonus加總已符合共存語意)
-# 也一併登記, 作為既有正確行為的一般性回歸防線, 非本批新增邏輯。
+# 各已確認具名狀態在雙引擎原始碼中應存在的結構特徵(正則, 對sgz.py/docs/engine.js 原始碼
+# 文字直接搜尋)。找不到視為「結構退化」(regression)。只核對「有無此段落存在」, 不執行程式碼、
+# 不判斷語意是否正確(低召回但零誤報優先, 與全庫既有規則設計原則一致)。
+#
+# 狀態疊加精修批(2026-07-12)新增: 急救(unique→overwrite_fallback細化, 簽章改認
+# _heal_candidates/suppressedNamedStatus getter)、攻心/倒戈(簽章改認this.lifesteals多實例
+# 清單, 取代前批已作廢的addbonus("lifesteal")單一標量寫法)、警戒/抵禦(共用pushBlock內的
+# isDeflect/existingN條件分支, 兩者結構上不可分割, 用同一組簽章)、繳械/計窮/震懾/混亂/先攻/
+# 遇襲/洞察/嘲諷(共用applyControlDur()函式存在與否, 8個具名狀態底層是同一份「同等或更強
+# 擋新」邏輯)、灼燒/中毒/潰逃(共用k=="dot"分支內的dotKey覆蓋比對邏輯, DoT家族3個具名狀態
+# 底層是同一套refresh機制)。虛弱(unique_strongest, 但本批分析後未改動底層push_add/amp
+# 機制, 見NAMED_STATUS["虛弱"].note)未登記簽章(該機制被全庫數十筆戰法共用, 若損壞會被
+# 其他既有規則/測試更快攔截, 專屬R36簽章價值低, 刻意不登記, 對稱既有pending項目「無簽章
+# 則不核對」的既有容錯行為, 不會誤報)。
 NAMED_STATUS_CODE_SIGNATURES = {
     "反擊": {
         "sgz.py": (r"self\.counters\s*=\s*\[\]", r"upsert_named_status\(u\.counters,"),
         "docs/engine.js": (r"this\.counters\s*=\s*\[\];", r"upsertNamedStatus\(u\.counters,"),
     },
     "急救": {
-        "sgz.py": (r"self\.suppressed_named_status\s*=\s*set\(\)", r"holder\.suppressed_named_status"),
-        "docs/engine.js": (r"this\.suppressedNamedStatus\s*=\s*new Set\(\)", r"holder\.suppressedNamedStatus"),
+        "sgz.py": (r"self\._heal_candidates\s*=\s*\[\]", r"def suppressed_named_status\(self\)"),
+        "docs/engine.js": (r"this\._healCandidates\s*=\s*\[\];", r"get suppressedNamedStatus\(\)"),
     },
     "休整": {
         "sgz.py": (r'_rg_payload = \[amt_r, e\.get\("dur", 2\), "休整"',),
         "docs/engine.js": (r'rgPayload = \[amtR, e\.dur \?\? 2, "休整"',),
     },
     "攻心": {
-        "sgz.py": (r'addbonus\("lifesteal"\)',),
-        "docs/engine.js": (r'addbonus\("lifesteal"\)',),
+        "sgz.py": (r"self\.lifesteals\s*=\s*\[\]", r"upsert_named_status\(u\.lifesteals,"),
+        "docs/engine.js": (r"this\.lifesteals\s*=\s*\[\];", r"upsertNamedStatus\(u\.lifesteals,"),
     },
     "倒戈": {
-        "sgz.py": (r'addbonus\("lifesteal"\)',),
-        "docs/engine.js": (r'addbonus\("lifesteal"\)',),
+        "sgz.py": (r"self\.lifesteals\s*=\s*\[\]", r"upsert_named_status\(u\.lifesteals,"),
+        "docs/engine.js": (r"this\.lifesteals\s*=\s*\[\];", r"upsertNamedStatus\(u\.lifesteals,"),
+    },
+    "警戒": {
+        "sgz.py": (r"is_deflect = val >= 0\.999",),
+        "docs/engine.js": (r"isDeflect = val >= 0\.999",),
+    },
+    "抵禦": {
+        "sgz.py": (r"is_deflect = val >= 0\.999", r"existing_n = sum\(b\[.n.\] for b in self\.block"),
+        "docs/engine.js": (r"isDeflect = val >= 0\.999", r"existingN = this\.block\.reduce"),
+    },
+    "計窮": {
+        "sgz.py": (r"def apply_control_dur\(",), "docs/engine.js": (r"function applyControlDur\(",),
+    },
+    "繳械": {
+        "sgz.py": (r"def apply_control_dur\(",), "docs/engine.js": (r"function applyControlDur\(",),
+    },
+    "震懾": {
+        "sgz.py": (r"def apply_control_dur\(",), "docs/engine.js": (r"function applyControlDur\(",),
+    },
+    "混亂": {
+        "sgz.py": (r"def apply_control_dur\(",), "docs/engine.js": (r"function applyControlDur\(",),
+    },
+    "先攻": {
+        "sgz.py": (r"def apply_control_dur\(",), "docs/engine.js": (r"function applyControlDur\(",),
+    },
+    "遇襲": {
+        "sgz.py": (r"def apply_control_dur\(",), "docs/engine.js": (r"function applyControlDur\(",),
+    },
+    "洞察": {
+        "sgz.py": (r"def apply_control_dur\(",), "docs/engine.js": (r"function applyControlDur\(",),
+    },
+    "嘲諷": {
+        "sgz.py": (r"def apply_control_dur\(",), "docs/engine.js": (r"function applyControlDur\(",),
+    },
+    "灼燒": {
+        "sgz.py": (r"_dot_key = _dot_status_name or src",), "docs/engine.js": (r"dotKey = dotStatusName \|\| src",),
+    },
+    "中毒": {
+        "sgz.py": (r"_dot_key = _dot_status_name or src",), "docs/engine.js": (r"dotKey = dotStatusName \|\| src",),
+    },
+    "潰逃": {
+        "sgz.py": (r"_dot_key = _dot_status_name or src",), "docs/engine.js": (r"dotKey = dotStatusName \|\| src",),
     },
 }
 
@@ -3864,16 +3922,17 @@ def _read_text_cached(path, _cache={}):
 def _named_status_conformance_gaps(sgz_src=None, js_src=None):
     """R36核心掃描: 回傳 {status_name: bool}(True=結構特徵缺失, 視為違規)。sgz_src/js_src
     可覆寫(供selftest傳入合成原始碼片段字串, 不觸碰真實檔案; 預設None時讀取真實sgz.py/
-    docs/engine.js, 走_read_text_cached)。只核對 NAMED_STATUS 中 mode 為 unique/multi
-    (已確認)的項目, pending項目不核對(R36不對未裁決狀態下判斷)。"""
+    docs/engine.js, 走_read_text_cached)。狀態疊加精修批: 篩選條件由「mode in
+    (unique,multi)」簡化為「NAMED_STATUS_CODE_SIGNATURES 有登記該狀態的簽章」——兩者
+    在既有3項(反擊/急救/休整)上等價, 但此寫法讓新增的簽章(警戒/抵禦/控制類/DoT類)
+    自動被納入核對範圍, 不需要每次新增mode分類時額外同步這裡的白名單元組; 沒有登記簽章的
+    狀態(現況: 虛弱, 見上方註解; 以及理論上未來新增但尚未補簽章的狀態)一律跳過, 不誤報。"""
     if sgz_src is None:
         sgz_src = _read_text_cached(SGZ_PY_PATH)
     if js_src is None:
         js_src = _read_text_cached(ENGINE_JS_PATH)
     gaps = {}
-    for name, spec in NAMED_STATUS.items():
-        if spec["mode"] not in ("unique", "multi"):
-            continue
+    for name in NAMED_STATUS:
         sigs = NAMED_STATUS_CODE_SIGNATURES.get(name)
         if not sigs:
             continue
@@ -3894,14 +3953,25 @@ def _named_status_conformance_gaps(sgz_src=None, js_src=None):
 
 # k類型 → NAMED_STATUS狀態名(供R36逐戰法歸因; heal的急救另外特判, 見_tactic_named_statuses,
 # 因heal必須同時檢查when.on才算「反應式急救」, 不是所有k=="heal"都算)。lifesteal同時對應
-# 攻心/倒戈兩個名稱(資料層無法區分, 兩者現行走同一套engine機制)。
-R36_K_TO_STATUS = {"counter": "反擊", "regen": "休整", "lifesteal": ("攻心", "倒戈")}
+# 攻心/倒戈兩個名稱(資料層無法區分, 兩者現行走同一套engine機制)。狀態疊加精修批新增:
+# dot(k=="dot"本身無法單獨判斷是灼燒/中毒/潰逃/水攻/沙暴/叛逃中哪一種具名狀態, 保守全部
+# 歸因, 因三者底層是同一套refresh機制, 只要用到dot就適用)、control系8種(stun/silence/
+# disarm/chaos/first/ambush/insight/taunt 各自1:1對應到震懾/計窮/繳械/混亂/先攻/遇襲/
+# 洞察/嘲諷, 底層共用同一份applyControlDur)。block(警戒/抵禦, 依val<1.0與否二分)與
+# amp(val<=-1.0時歸因虛弱, 但虛弱無登記簽章故不影響核對)兩者無法用純k映射(需檢查e.val),
+# 於下方 _tactic_named_statuses() 的 walk() 內特判, 不放進此靜態字典。
+R36_K_TO_STATUS = {
+    "counter": "反擊", "regen": "休整", "lifesteal": ("攻心", "倒戈"),
+    "dot": ("灼燒", "中毒", "潰逃"),
+    "stun": "震懾", "silence": "計窮", "disarm": "繳械", "chaos": "混亂",
+    "first": "先攻", "ambush": "遇襲", "insight": "洞察", "taunt": "嘲諷",
+}
 
 
 def _tactic_named_statuses(p):
     """掃描單一parsed戰法(含effects/extraHits/choices巢狀effects)用到的NAMED_STATUS
-    (mode已確認的unique/multi項)集合, 供R36歸因——找出「這個戰法會受到哪些具名狀態的
-    引擎行為影響」。"""
+    (已登記簽章的具名狀態項)集合, 供R36歸因——找出「這個戰法會受到哪些具名狀態的引擎行為
+    影響」。"""
     names = set()
 
     def walk(effs):
@@ -3914,6 +3984,17 @@ def _tactic_named_statuses(p):
                 names.add(mapped)
             if k == "heal" and (e.get("when") or {}).get("on") in ("attacked", "damaged"):
                 names.add("急救")
+            # 狀態疊加精修批: block(警戒/抵禦) 依資料層原始val(縮放前)二分, 對稱引擎
+            # push_block()/pushBlock() 既有 val>=0.999 判準(見sgz.py/docs/engine.js
+            # 對應段落), 現況全庫資料的block val不論是否帶scale, 縮放前的原始值本身已
+            # 落在其所屬family的清楚範圍內(抵禦恆為1.0, 警戒恆<1.0且capVal<=0.8), 足夠
+            # 供lint歸因使用(僅供「哪些戰法受影響」的低風險提示, 非精確結算引擎)。
+            if k == "block":
+                names.add("抵禦" if (e.get("val", 1.0) >= 0.999) else "警戒")
+            # amp(val<=-1.0) 對應虛弱, 但虛弱未登記簽章(見NAMED_STATUS_CODE_SIGNATURES
+            # 註解), 此處仍記入names(供未來若補簽章時歸因立即可用), 不影響現況核對結果。
+            if k == "amp" and (e.get("val") or 0) <= -1.0:
+                names.add("虛弱")
 
     walk(p.get("effects"))
     for eh in p.get("extraHits", []) or []:
@@ -3924,9 +4005,9 @@ def _tactic_named_statuses(p):
 
 
 def check_r36(p, txt, _gaps=None):
-    """R36: 具名狀態unique/multi行為與NAMED_STATUS表一致。_gaps(可選)供selftest直接傳入
-    合成的conformance結果, 略過真實檔案掃描(對稱其餘規則selftest不依賴真實資料的設計
-    原則); 預設None時呼叫_named_status_conformance_gaps()核對真實sgz.py/docs/engine.js。"""
+    """R36: 具名狀態疊加行為與NAMED_STATUS表一致。_gaps(可選)供selftest直接傳入合成的
+    conformance結果, 略過真實檔案掃描(對稱其餘規則selftest不依賴真實資料的設計原則);
+    預設None時呼叫_named_status_conformance_gaps()核對真實sgz.py/docs/engine.js。"""
     gaps = _gaps if _gaps is not None else _named_status_conformance_gaps()
     violations = []
     for name in sorted(_tactic_named_statuses(p)):
@@ -3934,9 +4015,9 @@ def check_r36(p, txt, _gaps=None):
             violations.append({
                 "name": p["nameZh"], "rule": "R36",
                 "message": f"具名狀態「{name}」在 sgz.py/docs/engine.js 原始碼中缺少對應的"
-                           "unique/multi結構特徵(見NAMED_STATUS_CODE_SIGNATURES), 疑似"
-                           "regression(如counter被改回單一覆蓋欄位、或急救去重機制被移除)——"
-                           f"本戰法使用「{name}」, 其執行期行為現況可能不正確。",
+                           "結構特徵(見NAMED_STATUS_CODE_SIGNATURES), 疑似regression(如"
+                           "counter被改回單一覆蓋欄位、或急救去重機制被移除)——本戰法使用"
+                           f"「{name}」, 其執行期行為現況可能不正確。",
                 "evidence": f"status={name}, mode={NAMED_STATUS[name]['mode']}",
             })
     return violations
